@@ -1,0 +1,129 @@
+extends GutTest
+
+## 教程系统（对标游戏 doc10 §1.3）：格式解析 + 目录/加载。
+## 教程用与谜题库完全不同的自定义文本格式：制表符分列、各行列数必须相等、
+## `{注解}` 前缀、`?` 行终止盘面、空单元格分隔主板与副板。
+
+
+func test_parse_basic_grid_and_annotations() -> void:
+	var src := "q\tF\tq\n{@clue}1\t{@!}q\tq\n"
+	var p := Tutorial.parse(src)
+	assert_eq(p["error"], "", "应解析成功")
+	assert_eq(p["cols"], 3, "列数应为 3")
+	assert_eq((p["rows"] as Array).size(), 2, "应有 2 行")
+	var cell = (p["rows"] as Array)[1][0]
+	assert_eq(str(cell["value"]), "1", "注解应被剥掉，取值为 1")
+	assert_eq((cell["annotations"] as Array).size(), 1, "应记录 1 条注解")
+	# 注解按文档原样保留（`{@clue}` → `@clue`；文档写法为 `{@<clue>}V4`）
+	assert_eq(str((cell["annotations"] as Array)[0]), "@clue", "注解应原样保留（含 @ 前缀）")
+
+
+func test_parse_annotation_matches_doc_forms() -> void:
+	# 文档四种写法：{@!} / {@<clue>} / {@<hover>} / {@x<wrong>}
+	var src := "{@!}q\t{@<clue>}V4\t{@<hover>}F\t{@x<wrong>}q\n"
+	var p := Tutorial.parse(src)
+	assert_eq(p["error"], "", "应解析成功")
+	var row: Array = (p["rows"] as Array)[0]
+	assert_true(Tutorial.is_emphasis((row[0] as Dictionary)["annotations"]), "{@!} 应为高亮强调")
+	assert_true(Tutorial.is_clue((row[1] as Dictionary)["annotations"]), "{@<clue>} 应为线索标注")
+	assert_true(Tutorial.is_hover((row[2] as Dictionary)["annotations"]), "{@<hover>} 应为悬停示意")
+	assert_true(Tutorial.is_wrong((row[3] as Dictionary)["annotations"]), "{@x<wrong>} 应为错误标记")
+	assert_eq(str((row[1] as Dictionary)["value"]), "V4", "注解后的取值为 V4")
+
+
+func test_parse_text_after_question_mark() -> void:
+	var src := "q\tq\n? 第一行提示\n第二行提示\n"
+	var p := Tutorial.parse(src)
+	assert_eq(p["error"], "", "应解析成功")
+	assert_eq((p["rows"] as Array).size(), 1, "`?` 之后不再计入盘面行")
+	assert_eq(p["text"], "第一行提示\n第二行提示", "提示正文应为 `?` 之后的内容")
+
+
+func test_parse_non_rectangular_is_error() -> void:
+	var src := "q\tq\tq\nq\tq\n"
+	var p := Tutorial.parse(src)
+	assert_eq(p["error"], "Problem is not rectangular", "非等宽盘面必须报错")
+
+
+func test_parse_empty_cell_marks_separator() -> void:
+	var src := "q\t\tq\nF\t\tF\n"
+	var p := Tutorial.parse(src)
+	assert_eq(p["error"], "", "空单元格不是错误")
+	assert_true(p["has_empty"], "含空单元格应置 has_empty")
+	assert_eq(p["cols"], 3, "空单元格仍占一列")
+
+	var no_empty := Tutorial.parse("q\tq\n")
+	assert_false(no_empty["has_empty"], "无空单元格时 has_empty 应为 false")
+
+
+func test_annotation_classifiers() -> void:
+	assert_true(Tutorial.is_wrong(["x<wrong>"]), "x 前缀应为错误标记")
+	assert_false(Tutorial.is_wrong(["!"]), "感叹号不是错误标记")
+	assert_true(Tutorial.is_emphasis(["!"]), "感叹号应为高亮强调")
+	assert_true(Tutorial.is_emphasis(["@!"]), "@! 也应为高亮强调")
+	assert_true(Tutorial.is_hover(["<hover>"]), "含 hover 应为悬停示意")
+	assert_true(Tutorial.is_hover(["@<hover>"]), "@<hover> 也应为悬停示意")
+	assert_true(Tutorial.is_clue(["<clue>"]), "其余非空注解应视为线索标注")
+	assert_false(Tutorial.is_clue(["x<wrong>"]), "错误标记不算线索标注")
+	assert_false(Tutorial.is_clue([""]), "空注解不算线索标注")
+
+
+## 真实教程文件：目录可枚举、能加载、盘面等宽、且顺序稳定。
+func test_real_tutorial_files_load() -> void:
+	var ids := Tutorial.list_ids()
+	assert_gt(ids.size(), 0, "levels/tutorial 下应有教程文件")
+
+	for id in ids:
+		var page := Tutorial.load_page(id)
+		assert_eq(page["error"], "", "%s 应能解析成功" % id)
+		var rows: Array = page["rows"]
+		assert_gt(rows.size(), 0, "%s 应有盘面行" % id)
+		for r in rows:
+			assert_eq((r as Array).size(), int(page["cols"]), "%s 各行应等宽" % id)
+		assert_ne(str(page["text"]), "", "%s 应有提示正文" % id)
+
+
+## pages_for 必须按序号数值排序（不是字符串排序，否则 _10 会排在 _2 前面）。
+func test_pages_for_is_numerically_sorted() -> void:
+	var pages := Tutorial.pages_for("classic")
+	assert_gt(pages.size(), 0, "classic 应有多页教程")
+	assert_eq(pages[0], "tutorial_classic_0", "第一页应为 _0")
+	if pages.size() >= 2:
+		assert_eq(pages[1], "tutorial_classic_1", "第二页应为 _1")
+
+
+## 教程覆盖层冒烟：能实例化、能构建 UI、能加载当前页。
+func test_overlay_smoke() -> void:
+	var script: Variant = load("res://ui/tutorial_overlay.gd")
+	assert_true(script != null, "覆盖层脚本可加载")
+	if script == null:
+		return
+	var ov: Control = script.new()
+	add_child_autofree(ov)
+	assert_true(ov.get_child_count() > 0, "覆盖层应构建出 UI 节点")
+	ov.call("open")
+	var title: Label = ov.get("_title")
+	assert_true(title != null, "应构建出标题 Label")
+	assert_true(title.text.find("tutorial_") >= 0, "标题应显示当前教程页 id：%s" % title.text)
+
+
+## 覆盖层对不存在的页必须优雅降级（不崩溃）。
+func test_overlay_handles_missing_page() -> void:
+	var script: Variant = load("res://ui/tutorial_overlay.gd")
+	if script == null:
+		pending("覆盖层脚本不可用")
+		return
+	var ov: Control = script.new()
+	add_child_autofree(ov)
+	ov.call("open", ["tutorial_不存在_99"])
+	var title: Label = ov.get("_title")
+	assert_eq(title.text, "tutorial_不存在_99", "应显示页 id")
+	var text: RichTextLabel = ov.get("_text")
+	assert_true(text.text.find("解析失败") >= 0, "应提示解析失败而不是崩溃")
+
+
+## 不存在的页返回 error 而不是崩溃。
+func test_load_missing_page_is_graceful() -> void:
+	var page := Tutorial.load_page("tutorial_不存在_99")
+	assert_ne(page["error"], "", "缺失页应返回 error")
+	assert_eq((page["rows"] as Array).size(), 0, "缺失页盘面应为空")
