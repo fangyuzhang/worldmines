@@ -1,0 +1,9 @@
+{@clue}D	q	q	{@clue}D	q
+q	q	F	q	q
+F	{@clue}D	q	q	F
+q	q	q	{@clue}D	q
+{@clue}D	q	F	q	{@clue}D
+? DT（Domino）规则：棋盘事先被划分成若干「骨牌」（相邻两格一组），
+每块骨牌中恰好有 1 颗雷。
+
+所以骨牌里一旦确定一格安全，另一格必是雷——反之亦然。

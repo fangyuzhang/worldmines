@@ -21,7 +21,8 @@ func test_from_board_state() -> void:
 	assert_eq(view.get_state(Vector2i(2, 2)), PlayerView.STATE_REVEALED, "翻开格应为 REVEALED")
 	assert_eq(view.get_state(Vector2i(0, 0)), PlayerView.STATE_HIDDEN, "未翻开雷格应为 HIDDEN")
 	assert_eq(view.get_clue(Vector2i(2, 2)), 1, "翻开格线索值应正确（(2,2) 邻域仅 1 雷）")
-	assert_eq(view.get_interval(Vector2i(2, 0)), Vector2i(0, 1), "? 格区间应正确")
+	# v2.9.3 区间口径统一：真值 ≥1 的 ? 格下界归一为 1（原数据写 [0,1]）
+	assert_eq(view.get_interval(Vector2i(2, 0)), Vector2i(1, 1), "? 格区间应正确（口径已统一）")
 	assert_eq(view.size(), Vector2i(3, 3), "尺寸应正确")
 
 

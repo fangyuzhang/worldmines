@@ -152,7 +152,20 @@ func load_level(level: Dictionary) -> void:
                 if r.has("interval"):
                         var iv: Array = r["interval"]
                         var cell: Cell = grid.get_cell(pos)
-                        cell.hidden_interval = Vector2i(iv[0], iv[1])
+                        var iv_lo: int = int(iv[0])
+                        var iv_hi: int = int(iv[1])
+                        # ? 格区间口径统一（v2.9.3）：手工关历史上写 [0, hi]（几乎无信息），
+                        # 生成关写 [1, hi]（含「≥1」）。同为「?」符号但难度不可比。
+                        # ? 的语义是「这是个线索格、值未知」，真值 0 不可能是有意义的 ? 格，
+                        # 故真值 ≥1 时把下界抬到 1。
+                        # 安全护栏：真值确为 0 时保持原区间并告警——抬高会让该关卡无解，
+                        # 宁可保住可解性，把「作者该改数据」明确报出来。
+                        if iv_lo == 0:
+                                if cell.value is int and int(cell.value) >= 1:
+                                        iv_lo = 1
+                                else:
+                                        push_warning("关卡 ? 格 (%d,%d) 真值为 %s，保留区间 [0,%d]（口径未统一，建议改关卡数据）" % [pos.x, pos.y, str(cell.value), iv_hi])
+                        cell.hidden_interval = Vector2i(iv_lo, iv_hi)
                 reveal_initial(pos)
 
 

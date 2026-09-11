@@ -92,6 +92,20 @@ func test_pages_for_is_numerically_sorted() -> void:
 		assert_eq(pages[1], "tutorial_classic_1", "第二页应为 _1")
 
 
+## 覆盖面守卫：每个内置机制至少有一页教程。
+## 历史上教程只覆盖 classic（对标游戏有 61 个教学盘面），这条防止回退。
+func test_covers_all_mechanisms() -> void:
+	var combos := {}
+	for id in Tutorial.list_ids():
+		var body: String = id.substr("tutorial_".length())
+		var cut := body.rfind("_")
+		if cut > 0:
+			combos[body.substr(0, cut)] = true
+	for need in ["classic", "4n", "sc", "knight", "clock", "fr", "loopruns", "distsum", "hv",
+			"mx", "rl", "pf", "qd", "dt", "ep", "4c", "combo"]:
+		assert_true(combos.has(need), "机制 %s 应有教程页" % need)
+
+
 ## 教程覆盖层冒烟：能实例化、能构建 UI、能加载当前页。
 func test_overlay_smoke() -> void:
 	var script: Variant = load("res://ui/tutorial_overlay.gd")

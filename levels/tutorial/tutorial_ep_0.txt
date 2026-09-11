@@ -1,0 +1,9 @@
+{@clue}1	q	q	q	{@clue}1
+F	q	q	q	F
+q	q	q	q	q
+{@clue}1	q	q	q	{@clue}1
+q	q	q	q	q
+? EP（Endpoint）规则：左右两列（端点列）的雷数被绑定，
+通常要求两列雷数相等。
+
+端点列的线索值直接给出了该列雷数信息，可与其他列做交叉推理。

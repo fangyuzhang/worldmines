@@ -1,0 +1,9 @@
+q	F	q	q	q
+F	q	q	F	q
+q	q	{@clue}0	q	q
+q	F	q	q	F
+q	q	q	q	q
+? PF（Pattern Forbidden）规则：盘面上不允许出现某种 2×2 的雷分布形状。
+
+例如禁止「四格全雷」时，任意 2×2 窗口内至少有 1 格安全。
+这类约束跨越邻域边界，属于全局约束。

@@ -1,0 +1,9 @@
+{@clue}1	q	F	q	q
+q	{@!}2	q	q	F
+F	q	q	q	q
+q	q	F	{@clue}1	q
+q	q	q	q	q
+? SC（Same Color）规则：数字只统计 4 个「对角」邻格中的雷数，
+正交邻格不参与计数。
+
+它是 4N 的对偶——一个看十字，一个看叉。
