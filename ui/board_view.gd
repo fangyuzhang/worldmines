@@ -278,8 +278,9 @@ func _draw_single_clue(v: Variant, rect: Rect2, scale: float, font: Font) -> voi
 		text = "%d·%d" % [int(v[0]), int(v[1])]  # HV 纵横分计 [正交, 对角]
 	elif v is String:
 		text = "∞" if v == "inf" else str(v)     # FR 首雷无雷哨兵
-	elif v is int and v > 0 and v <= 12:
+	elif v is int and v >= 0 and v <= 12:
 		text = str(v)
+		# number(n) 对 n<1 或 n>8 退化为主文本色，所以 0 自然用主文本色（可读但不抢眼）。
 		col = ThemeManager.number(v)
 	if text == "":
 		return
