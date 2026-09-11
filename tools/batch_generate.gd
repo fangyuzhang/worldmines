@@ -2,7 +2,7 @@
 # 彻底解决「40% 密度 + 庞大数量」的矛盾：离线预先跑大量题，运行时零生成直接加载。
 #
 # 用法（命令行，-- 后为参数）：
-#   godot --headless --path . -s res://tools/batch_generate.gd -- <clue> <globals> <WxH> <mines> <seed_from> <seed_count> <per_tier> <out_dir> [shard_idx shard_total]
+#   godot --headless --path . -s res://tools/batch_generate.gd -- <clue> <globals> <WxH> <mines> <seed_from> <seed_count> <per_tier> <out_dir> [shard_idx shard_total timeout_seconds]
 #
 # 例 1（单进程，40% 密度 classic，8×8 26雷，seed 1..100，每档 20 关，输出 user://batch40）：
 #   godot --headless --path . -s res://tools/batch_generate.gd -- classic - 8x8 26 1 100 20 user://batch40
@@ -21,6 +21,12 @@
 #
 # 参数默认值：classic / 无全局 / 8×8 / 26雷 / seed 1..100 / 每档 20 / user://batch_levels
 # globals 用逗号分隔（如 "mx,rl"），"-" 或 "none" = 无全局约束。
+#
+# 删线索超时（timeout_seconds，可选第 11 参）：
+#   · 默认 0 = 按尺寸自动放大（max(30s, 格数×0.6s)；16×16 → ~154s）。
+#   · **不要**用 15s 跑大棋盘：删线索半途而废 → 产出线索超多（clue_ratio ~0.57）的「假 easy」关，
+#     normal/hard 档永远为空（实测 16×16 完整删线索需 ~100s）。
+#   · 显式传 timeout_seconds 可覆盖（如 16×16 给 200）。
 extends SceneTree
 
 # 可靠退出：Godot 4.7.2 mono 在本工程里 quit() 后进程间歇性不退出（实测 7/8），
@@ -40,6 +46,7 @@ var _per_tier := 20
 var _out_dir := "user://batch_levels"
 var _shard_idx := -1    # -1 = 单进程（不分片）
 var _shard_total := 1
+var _timeout_ms := 0    # 0 = 按尺寸自动放大（见下）；>0 = 显式覆盖（毫秒）
 
 var _stats := {"total": 0, "ok": 0, "fail": 0, "dup": 0, "tiers": {"easy": 0, "normal": 0, "hard": 0}}
 
@@ -49,6 +56,13 @@ func _initialize() -> void:
 	# 分片批跑：每进程单 worker。进程数 × 1 worker = 物理核数，避免默认 4 worker × 多进程
 	# 超额订阅互相抢核（墙钟不线性）。单进程模式保持 C# 默认 4 worker（单次 Solve 内并行）。
 	_gen.num_workers = 1 if _shard_idx >= 0 else 0
+	# 删线索超时：**不能**用 15s 默认——大棋盘（≥12×12）15s 删不完，会静默产出
+	# 线索超多（clue_ratio ~0.57）的「假 easy」关，normal/hard 档永远为空（实测 16×16 完整 ~100s）。
+	# 按 ~0.6s/格 估上界（16×16 → 154s），地板 30s；显式 -timeout 可覆盖。
+	var timeout_ms := _timeout_ms
+	if timeout_ms <= 0:
+		timeout_ms = maxi(30_000, _size.x * _size.y * 600)
+	_timeout_ms = timeout_ms  # 回写有效值，供报告打印/落盘
 	var t0 := Time.get_ticks_msec()
 
 	# seed 范围：分片模式下切出本进程的一段
@@ -63,7 +77,7 @@ func _initialize() -> void:
 		# 进度打印：每个 seed 前后各一行，卡死时能立即定位到哪个 seed（可观测性）。
 		print("[seed %d] 开始..." % seed)
 		var t_seed := Time.get_ticks_msec()
-		var level := _gen.generate_with_rules(_clue, _globals, _size, _mines, seed)
+		var level := _gen.generate_with_rules(_clue, _globals, _size, _mines, seed, 0, 50, null, timeout_ms)
 		var dt := float(Time.get_ticks_msec() - t_seed) / 1000.0
 		_stats["total"] += 1
 		if level.is_empty():
@@ -134,6 +148,8 @@ func _parse_args() -> void:
 		_shard_idx = int(args[8])
 	if args.size() >= 10:
 		_shard_total = int(args[9])
+	if args.size() >= 11 and args[10] != "":
+		_timeout_ms = int(args[10]) * 1000  # 秒 → 毫秒
 	# 分片模式：输出到独立子目录，避免多进程写同一批文件冲突
 	if _shard_idx >= 0:
 		_out_dir = "%s/shard_%02d" % [_out_dir, _shard_idx]
@@ -168,13 +184,14 @@ func _report(t0: int, lo: int, hi: int) -> void:
 		"mines": _mines,
 		"seed_range": [lo, hi - 1],
 		"per_tier": _per_tier,
+		"timeout_ms": _timeout_ms,
 		"shard": {"idx": _shard_idx, "total": _shard_total} if _shard_idx >= 0 else null,
 		"stats": _stats,
 	}
 	_write("%s/report.json" % _out_dir, r)
 	var shard_tag := " [shard %d/%d]" % [_shard_idx, _shard_total] if _shard_idx >= 0 else ""
 	print("=== 批量生成完成%s ===" % shard_tag)
-	print("  配置: %s+%s %dx%d %d雷" % [_clue, str(_globals), _size.x, _size.y, _mines])
+	print("  配置: %s+%s %dx%d %d雷（删线索超时 %.0fs）" % [_clue, str(_globals), _size.x, _size.y, _mines, float(_timeout_ms) / 1000.0])
 	print("  种子: %d..%d" % [lo, hi - 1])
 	print("  结果: 总 %d | 成功 %d | 失败 %d | 重复 %d | 接受率 %.0f%%" % [
 		_stats["total"], _stats["ok"], _stats["fail"], _stats["dup"], _stats["accept_rate"] * 100.0])
