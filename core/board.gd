@@ -358,7 +358,8 @@ func _flood_reveal(start: Vector2i) -> void:
 ## ? 格不扩散；FR 永不扩散；HV 按 [A,B] 分量分别扩散；其余按线索窗口。
 func _flood_neighbors(pos: Vector2i) -> Array[Vector2i]:
         var cell: Cell = grid.get_cell(pos)
-        if cell == null or cell.is_hidden_clue():
+        # is_mine 守卫与原 Cell.is_zero_clue() 口径一致（雷格永不扩散）
+        if cell == null or cell.is_mine or cell.is_hidden_clue():
                 return []
         # 自举式规则：0 值扩散邻域由规则自己声明（平台不硬编码窗口；value 交给规则判断）。
         if rule_clue_id != "":
@@ -371,29 +372,10 @@ func _flood_neighbors(pos: Vector2i) -> Array[Vector2i]:
                 if cell.is_zero_clue():
                         return grid.get_neighbors(pos)
                 return []
+        # 内置变体的 0 值语义：**单点定义在 ClueEngine.zero_safe_dirs**（v2.9.3 收敛）。
+        # 此前这段 match 与 hint_solver 的零值特判各写一套，新增变体易漏改一处。
         var out: Array[Vector2i] = []
-        var size: Vector2i = grid.size()
-        match clue_variant:
-                ClueEngine.Variant.FR:
-                        return []
-                ClueEngine.Variant.N4:
-                        if cell.is_zero_clue():
-                                _append_flood_dirs(out, pos, size, ClueEngine.orthogonal_dirs())
-                ClueEngine.Variant.SAME_COLOR:
-                        if cell.is_zero_clue():
-                                _append_flood_dirs(out, pos, size, ClueEngine.diagonal_dirs())
-                ClueEngine.Variant.HV:
-                        if cell.value is Array:
-                                if cell.value[0] == 0:
-                                        _append_flood_dirs(out, pos, size, ClueEngine.orthogonal_dirs())
-                                if cell.value[1] == 0:
-                                        _append_flood_dirs(out, pos, size, ClueEngine.diagonal_dirs())
-                _:
-                        # CLASSIC / CLOCK / LOOP_RUNS / DIST_SUM：值 0 ⟹ 8 邻无雷
-                        # 统一走 Cell.is_zero_clue()（not is_mine and value is int and == 0），
-                        # 避免此处与 cell.gd 各写一套判零口径导致漂移。
-                        if cell.is_zero_clue():
-                                _append_flood_dirs(out, pos, size, ClueEngine.ring_dirs())
+        _append_flood_dirs(out, pos, grid.size(), ClueEngine.zero_safe_dirs(clue_variant, cell.value))
         return out
 
 

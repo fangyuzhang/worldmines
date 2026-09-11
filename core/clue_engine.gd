@@ -92,6 +92,52 @@ static func _clock_value(mine_set: Dictionary, pos: Vector2i, grid_size: Vector2
 	return 0
 
 
+## 变体「0 值 ⟹ 邻域全安全」的**权威定义（单点，v2.9.3）**。
+##
+## 为什么必须单点：这条语义散落过 4 处（board 扩散 / hint 零值特判 / 规则
+## zero_safe_neighbors / clue_engine 各自实现），新增变体时极易漏改一处 → 漂移。
+## 规则关卡走 RulePlugin.zero_safe_neighbors（每个规则自己声明，同一契约）；
+## 本函数是**内置变体**路径的对应单点，二者语义一致。
+##
+## 返回该变体在本格线索值下「保证安全」的方向集合；空数组 = 永不扩散。
+## 调用方负责：过滤已翻开/?格、按盘面边界裁剪、去重。
+static func zero_safe_dirs(variant: int, value: Variant) -> Array[Vector2i]:
+	# 注意：必须逐分支构造**带类型的** Array[Vector2i]。ring_dirs()/orthogonal_dirs()/
+	# diagonal_dirs() 返回的是无类型 Array，直接 return 会破坏 Array[Vector2i] 契约，
+	# 调用方（board._append_flood_dirs）会报 "does not have the same element type"。
+	var out: Array[Vector2i] = []
+	match variant:
+		Variant.FR:
+			# 0 = 「右邻必雷」，语义与雷数无关，故永不扩散
+			return out
+		Variant.N4:
+			if _is_zero_value(value):
+				out.append_array(orthogonal_dirs())
+			return out
+		Variant.SAME_COLOR:
+			if _is_zero_value(value):
+				out.append_array(diagonal_dirs())
+			return out
+		Variant.HV:
+			# 双分量：任一分量 0 就扩散对应的那一组（两个都 0 时并集即 8 邻）
+			if value is Array and (value as Array).size() >= 2:
+				if int(value[0]) == 0:
+					out.append_array(orthogonal_dirs())
+				if int(value[1]) == 0:
+					out.append_array(diagonal_dirs())
+			return out
+		_:
+			# CLASSIC / CLOCK / LOOP_RUNS / DIST_SUM：值 0 ⟹ 8 邻无雷
+			if _is_zero_value(value):
+				out.append_array(ring_dirs())
+			return out
+
+
+## 线索值是否为「零」（仅 int 型；HV 的 Array 与 FR 的 "inf" 不在此列）。
+static func _is_zero_value(value: Variant) -> bool:
+	return value is int and int(value) == 0
+
+
 ## FR：向右逐格扫描，返回到第一颗雷之间的安全格数；无雷返回 "inf"。
 static func _fr_value(mine_set: Dictionary, pos: Vector2i, grid_size: Vector2i) -> Variant:
 	var c := pos.x

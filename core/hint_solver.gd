@@ -351,7 +351,8 @@ func _hint_clock(board: Board, pos: Vector2i, constraint: Dictionary, steps: Arr
 	var k: int = value
 	var ring := ClueEngine.ring_dirs()
 	if k == 0:
-		for d in ring:
+		# 0 值扩散语义统一取自单点定义（ClueEngine.zero_safe_dirs），不在此另写窗口
+		for d in ClueEngine.zero_safe_dirs(ClueEngine.Variant.CLOCK, 0):
 			var p := pos + d
 			if board.grid.in_board(p) and board.grid.get_cell(p).state != Cell.State.REVEALED:
 				steps.append(_make_step(p, "safe", pos, "clock",
@@ -422,7 +423,8 @@ func _hint_loop_runs(board: Board, pos: Vector2i, constraint: Dictionary, steps:
 	if not (value is int):
 		return
 	if value == 0:
-		for d in ClueEngine.ring_dirs():
+		# 0 值扩散语义统一取自单点定义（ClueEngine.zero_safe_dirs），不在此另写窗口
+		for d in ClueEngine.zero_safe_dirs(ClueEngine.Variant.LOOP_RUNS, 0):
 			var p := pos + d
 			if board.grid.in_board(p) and board.grid.get_cell(p).state != Cell.State.REVEALED:
 				steps.append(_make_step(p, "safe", pos, "loopruns",
