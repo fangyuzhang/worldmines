@@ -28,7 +28,9 @@ func _initialize() -> void:
 
 	# 汇总各分片的关卡 + 统计
 	var by_tier := {"easy": [], "normal": [], "hard": []}
-	var agg := {"total": 0, "ok": 0, "fail": 0, "dup": 0, "tiers": {"easy": 0, "normal": 0, "hard": 0}, "elapsed_ms": 0}
+	var agg := {"total": 0, "ok": 0, "fail": 0, "dup": 0, "cross_dup": 0,
+		"tiers": {"easy": 0, "normal": 0, "hard": 0}, "elapsed_ms": 0}
+	var seen := {}  # 跨分片去重：不同 seed 撞出同一盘时只留第一次出现
 
 	for shard in shards:
 		var files := _list_json("%s/shard_%02d" % [_out_dir, shard])
@@ -36,6 +38,11 @@ func _initialize() -> void:
 			var data: Variant = _load_json(f)
 			if not (data is Dictionary):
 				continue
+			var fp := _fingerprint(data)
+			if seen.has(fp):
+				agg["cross_dup"] += 1
+				continue  # 跨分片重复盘（仅小棋盘理论可能；大棋盘概率≈0），跳过
+			seen[fp] = true
 			var tier := str(data.get("name", "").split("_", false)[0])
 			if by_tier.has(tier):
 				by_tier[tier].append(data)
@@ -73,9 +80,11 @@ func _initialize() -> void:
 	print("=== 合并完成 ===")
 	print("  分片数: %d" % shards.size())
 	print("  总关卡: easy=%d normal=%d hard=%d" % [agg["tiers"]["easy"], agg["tiers"]["normal"], agg["tiers"]["hard"]])
-	print("  总尝试: %d | 成功 %d | 失败 %d | 重复 %d | 接受率 %.0f%%" % [
-		agg["total"], agg["ok"], agg["fail"], agg["dup"], agg["accept_rate"] * 100.0])
+	print("  总尝试: %d | 成功 %d | 失败 %d | 重复 %d | 跨分片去重 %d | 接受率 %.0f%%" % [
+		agg["total"], agg["ok"], agg["fail"], agg["dup"], agg["cross_dup"], agg["accept_rate"] * 100.0])
 	print("  输出: %s/<tier>_NN.json + merged_report.json" % _out_dir)
+	# ASCII 判据（供流水线脚本判定成功）
+	print("=== BATCH-MERGE-OK ===")
 	CliShutdown.request_exit(0)
 
 
@@ -122,3 +131,16 @@ func _load_json(path: String) -> Dictionary:
 	var data: Variant = JSON.parse_string(f.get_as_text())
 	f.close()
 	return data if data is Dictionary else {}
+
+
+## 关卡指纹：mines 坐标（排序）+ 尺寸 + 雷数（与 batch_generate._fingerprint 同口径）。
+## 跨分片去重用：不同 seed 撞出同一盘面时（小棋盘理论可能）视为重复。
+func _fingerprint(level: Dictionary) -> String:
+	var parts: Array = []
+	parts.append("%dx%d-%d" % [int(level["size"]["cols"]), int(level["size"]["rows"]), int(level["total_mines"])])
+	var ms: Array = []
+	for m in level["mines"]:
+		ms.append("%d,%d" % [int(m["c"]), int(m["r"])])
+	ms.sort()
+	parts.append("|".join(ms))
+	return "|".join(parts)

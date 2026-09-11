@@ -198,3 +198,5 @@ func _report(t0: int, lo: int, hi: int) -> void:
 	print("  分档: easy=%d normal=%d hard=%d" % [_stats["tiers"]["easy"], _stats["tiers"]["normal"], _stats["tiers"]["hard"]])
 	print("  耗时: %.1f s (平均 %.1f s/关)" % [_stats["elapsed_ms"] / 1000.0, _stats["elapsed_ms"] / 1000.0 / float(maxi(1, _stats["total"]))])
 	print("  输出: %s" % _out_dir)
+	# ASCII 判据（供流水线脚本/CI 判定成功，中文串会被 PS 编码转换搞坏，见坑 #27）
+	print("=== BATCH-GEN-OK ===")

@@ -29,6 +29,8 @@ func _initialize() -> void:
 		return
 	var ok := 0
 	var failed: Array[String] = []
+	var tiers := {"easy": 0, "normal": 0, "hard": 0}
+	var profiled := 0  # 有 difficulty_profile 的关卡数（手工关可能没有，不计入分布告警）
 	for path in files:
 		var level := _load_json(path)
 		if level.is_empty():
@@ -38,11 +40,23 @@ func _initialize() -> void:
 		var log: Dictionary = ProofLog.build(level)
 		if bool(log.get("solved", false)):
 			ok += 1
+			var prof: Dictionary = level.get("difficulty_profile", {})
+			var d := float(prof.get("difficulty", -1.0))
+			if d >= 0.0:
+				profiled += 1
+				var t := Difficulty.tier_of(d)
+				if tiers.has(t):
+					tiers[t] += 1
 		else:
 			failed.append("%s (%s)" % [path, str(log.get("reason", "推不到底"))])
 	print("=== 题库验证完成 ===")
 	print("  目录: %s" % _out_dir)
 	print("  可解 %d / 失败 %d" % [ok, failed.size()])
+	print("  难度分布: easy=%d normal=%d hard=%d（有画像 %d 关）" % [tiers["easy"], tiers["normal"], tiers["hard"], profiled])
+	if profiled >= 3 and tiers["normal"] == 0 and tiers["hard"] == 0:
+		# 症状提示（不判失败）：删线索超时不足会静默产出「全 easy」的偷工题库，
+		# 根因见 batch_generate.gd 的超时说明。需要 normal/hard 请加大 timeout_seconds。
+		print("  警告: normal/hard 档为空——可能是删线索超时不足（见 batch_generate 超时说明）")
 	for x in failed:
 		print("  FAIL: " + x)
 	if failed.is_empty():
