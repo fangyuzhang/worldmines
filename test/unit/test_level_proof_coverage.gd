@@ -5,14 +5,14 @@ extends GutTest
 ## 把「关卡质量」变成可回归的断言：levels/ 下每一关都应能被**玩家视角**的推理链推到底。
 ## 任何新关卡若不满足序贯可解、或提示能力发生回退，都会在这里失败。
 ##
-## 已知开放项（不是「通过」，是**记录在案**的例外）：
-##   classic_07 / generated_07 —— 卡住那一步 CP-SAT 报 `模型数 = 1`（唯一解），
-##   却没有任何 forced 格。即 `count_solutions` 与 `find_forced_cells` 口径不一致，
-##   属提示侧待查项（证据可用 tools/diag_stuck_levels.gd 复现），不是关卡数据问题。
+## 已修复（v2.9.3）：早前 classic_07 / generated_07 卡住，根因是 C# `FindForcedCells`
+## 里一个不健全的剪枝——它跳过了「未被任何线索引用的格」，但这类格仍会被
+## 「其他格被线索逼定 + 总雷数」间接逼定为安全。移除剪枝后 20/20 全部可推完。
 ##
-## 这两条测试成对使用：第一条防「新关卡坏掉」，第二条防「例外名单腐烂」。
+## 这两条测试成对使用：第一条防「新关卡坏掉」，第二条防「例外名单腐烂」
+## （目前名单为空；一旦有新的暂不可推关卡，应把 key 加进 KNOWN_STUCK 并在此说明根因）。
 
-const KNOWN_STUCK := ["classic_07", "generated_07"]
+const KNOWN_STUCK: Array[String] = []
 
 
 func _read_json(path: String) -> Dictionary:

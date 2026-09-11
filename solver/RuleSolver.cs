@@ -139,11 +139,13 @@ namespace MinesweeperSolver
             {
                 var v = _freeVars[i];
                 var (r, c) = _freeCells[i];
-                // 候选格剪枝：未被任何约束引用的格只受总雷数约束。
-                // 上面已处理 free==remaining（全必雷）；此处 free>remaining，
-                // 总雷数约束不强制未引用格 → 非强制，跳过探测。
-                if (!_referencedCells.Contains(r * _cols + c))
-                    continue;
+                // 注意：这里**不能**剪掉「未被任何线索引用的格」。
+                // 早前有个剪枝假设这类格只受总雷数约束、free>remaining 时必不强制——
+                // 那是错的：当其余格已被线索逼成雷、总雷数恰好被填满时，这格会被
+                // 「消元 + 总雷数」间接逼定为安全（classic_07 实测：模型数=1 却推不出，
+                // 正是被这层剪枝吃掉了最后一个必安全格）。
+                // assumption 探测本身对未引用格同样健全（firstSol 取唯一解的值，反值不可行即强制），
+                // 故一律探测，牺牲一点无关格的探测成本换取完备性。
                 if (firstSol[i] == 1)
                 {
                     // 第一解 v 是雷：v==0 不可行 → v 必雷
