@@ -1,0 +1,20 @@
+# Godot 4+ specific ignores
+.godot/
+/android/
+
+# 工具/IDE 缓存（不参与构建，勿提交）
+.codebuddy/
+.gdmcp/
+.logs/
+addons/.godot_ai_update/
+
+# 交付包与临时压缩包（体积大、可再生）
+*.zip
+
+# 插件更新失败残留（形如 ~godot-wasm.dll~RF1f1b32.TMP，单个 11MB）
+~*.TMP
+*.TMP
+
+# 临时诊断脚本（下划线开头，勿提交）
+/_*.ps1
+/_*.gd
