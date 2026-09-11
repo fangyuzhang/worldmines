@@ -37,8 +37,12 @@ var ult_hide_mines: bool = true
 var ult_hide_deducible: bool = true
 # 勾选则「剩余可推格数为 0 时自动按下提示按钮」（doc: AddOnAutoReveal）。
 var ult_auto_reveal: bool = false
-# 注：doc 的 AddOnSecondary（必须标出副板格）在本作**不适用**——本作无「主板/副板」双板概念，
-# 教程格式里的空列只是视觉分隔，不是需要标记的副盘面。
+# ★ 已决策（v2.9.3）：doc 的 AddOnSecondary「必须标出副板格」**明确不引入**。
+# 依据：本作是「单盘面 + 变体/全局规则组合」架构，不存在对标游戏那种同屏并置的
+# 「主板/副板」双盘面；该机制依赖于对标游戏特有的关卡结构，移植过来没有可约束的对象。
+# 教程文本格式里的空单元格只是**视觉留白**（分组展示用），不是需要被标记的副盘面。
+# 若日后真要做双盘面对照（例如对称类规则的对照盘），应作为独立特性重新设计，
+# 而不是把这个开关塞进终极模式。
 # 窗口模式：true = 独占全屏；false = 窗口模式（可调整大小）
 var fullscreen: bool = false
 

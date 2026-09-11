@@ -196,6 +196,12 @@ func request_hint() -> Array[ReasoningStep]:
             for s in steps:
                 (s as ReasoningStep).method = "weak"
         steps = _limit_hint_budget(steps)
+        # 提示断言为「必雷」的格 = 演绎确证 → 记入棋盘的确证雷集。
+        # 后续提示可复用它（跨调用不再丢信息，避免「只剩 1 格却推不动」的假卡死）；
+        # 注意这与玩家插的旗**不是一回事**：错旗永远不参与推理。
+        for st in steps:
+            if (st as ReasoningStep).state == "mine":
+                board.mark_proven_mine((st as ReasoningStep).pos)
         # 终极模式（对标 doc10 §2.4）：星号格遮蔽着线索值。
         # 当前若能推出安全格 → 正常给提示；若确实推不出任何安全格（卡住了）
         # → 揭开全部星号让对局继续（这一步本身就消耗一次提示）。

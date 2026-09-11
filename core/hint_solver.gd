@@ -17,25 +17,80 @@ const VARIANT_TO_DEF := {
 	ClueEngine.Variant.HV: "hv",
 }
 
+## 内置线索变体 → 内置规则 id（P4「提示统一到约束原语」）。
+## 内置变体与规则是同一语义的两套注册（dogfood：内置也走规则平台），故可互映。
+const VARIANT_TO_RULE := {
+	ClueEngine.Variant.CLASSIC: "classic",
+	ClueEngine.Variant.N4: "4n",
+	ClueEngine.Variant.SAME_COLOR: "sc",
+	ClueEngine.Variant.CLOCK: "clock",
+	ClueEngine.Variant.FR: "fr",
+	ClueEngine.Variant.LOOP_RUNS: "loopruns",
+	ClueEngine.Variant.DIST_SUM: "distsum",
+	ClueEngine.Variant.HV: "hv",
+}
+
+## 演绎不动点的最大轮数（每轮把「已确证的雷」并入已知条件再推一次）。
+## 上界取 8 是安全冗余：实测每轮至少新增 1 格才会继续，最多 2~3 轮即到不动点。
+const MAX_PROOF_ROUNDS := 8
+
+## 内置全局约束变体 → 内置规则 id（同样用于 P4 统一）。
+const CONSTRAINT_TO_RULE := {
+	ConstraintEngine.Variant.MX: "mx",
+	ConstraintEngine.Variant.RL: "rl",
+	ConstraintEngine.Variant.PF: "pf",
+	ConstraintEngine.Variant.QD: "qd",
+	ConstraintEngine.Variant.DT: "dt",
+	ConstraintEngine.Variant.EP: "ep",
+	ConstraintEngine.Variant.FOUR_COLOR: "4c",
+}
+
 var engine := DefEngine.new()
 
 
 ## 一步直推（默认按 board 内置变体）。
 func hint(board: Board) -> Array[ReasoningStep]:
-	# 自举式规则关卡：Def 推理只覆盖内置变体的有限窗口，非 classic 规则会套用错误的
-	# 邻域（如「骑士」窗口完全不同）→ 给出错误结论比不给更糟。
-	# v2.9.3：改走规则感知路径 hint_rule()（RuleOracle + CP-SAT forced-cell），
-	# 覆盖全部线索规则与全局约束，不再只对 classic 生效。
-	if board.rule_clue_id != "":
+	# P4「提示统一到约束原语」：**规则关卡与内置变体关卡统一走约束原语路径**
+	# （hint_rule → RuleOracle + CP-SAT forced-cell），旧 Def 路径退化为兜底。
+	#
+	# 收益（不是纯重构）：内置变体关卡此前只特判了 MX/DT 两条全局约束，
+	# RL/QD/EP/4C/PF 全部漏掉 → 现在自动进入 spec，变体关卡的提示首次具备完整全局推理。
+	#
+	# 例外：E 类线索混合（clue_variant2 ≥ 0）不走原语路径——RuleOracle 只持有**一个**
+	# 线索规则，表达不了「一格双线索」，硬走会漏掉第二条线索。该形态仅服务 archive 工具
+	# （GDD R11 已禁多 C 叠加），保留旧的 Def 路径处理。
+	#
+	# 安全性：原语路径若因某种原因少算了约束（例如自定义 constraint_def），
+	# 只会得到**更少**的结论而不会得到错误结论——少约束 = 模型集合变大，
+	# 在大集合里恒成立的格在小集合里依然恒成立。提示的 100% 必然承诺不受影响。
+	if board.clue_variant2 < 0:
 		var rs := hint_rule(board)
 		if not rs.is_empty():
 			return rs
-		# 规则路径推不出时，classic 规则回退旧的 Def 路径（保持既有行为与测试基线）
-		if board.rule_clue_id == "classic":
-			return hint_def(board, VARIANT_TO_DEF.get(board.clue_variant, ""))
-		return rs
 	var def_name: String = VARIANT_TO_DEF.get(board.clue_variant, "")
+	if def_name == "":
+		var empty: Array[ReasoningStep] = []
+		return empty
 	return hint_def(board, def_name)
+
+
+## 收集本局生效的全局约束规则：规则关卡的 rule_global_ids + 内置变体的 constraint_variant(v2)。
+func _resolve_globals(board: Board) -> Array:
+	var ids: Array = []
+	for gid in board.rule_global_ids:
+		ids.append(str(gid))
+	for cv in [board.constraint_variant, board.constraint_variant2]:
+		if cv >= 0 and CONSTRAINT_TO_RULE.has(cv):
+			var rid: String = CONSTRAINT_TO_RULE[cv]
+			if not ids.has(rid):
+				ids.append(rid)
+	var out: Array = []
+	var reg := RuleRegistry.default()
+	for rid in ids:
+		var g: Object = reg.resolve(StringName(rid))
+		if g != null and g.get_kind() == RulePlugin.KIND_GLOBAL:
+			out.append(g)
+	return out
 
 
 ## 规则感知提示（自举式规则平台）：RuleOracle 组装 spec → CP-SAT forced-cell 检测。
@@ -53,15 +108,16 @@ func hint_rule(board: Board) -> Array[ReasoningStep]:
 	var steps: Array[ReasoningStep] = []
 	if board.grid == null:
 		return steps
-	var reg := RuleRegistry.default()
-	var clue_rule: Object = reg.resolve(StringName(board.rule_clue_id))
+	var clue_id := board.rule_clue_id
+	if clue_id == "":
+		# 内置变体：映射到同语义的内置规则（P4 统一到约束原语）
+		clue_id = str(VARIANT_TO_RULE.get(board.clue_variant, ""))
+	if clue_id == "":
+		return steps
+	var clue_rule: Object = RuleRegistry.default().resolve(StringName(clue_id))
 	if clue_rule == null:
 		return steps
-	var globals: Array = []
-	for gid in board.rule_global_ids:
-		var g: Object = reg.resolve(StringName(str(gid)))
-		if g != null and g.get_kind() == RulePlugin.KIND_GLOBAL:
-			globals.append(g)
+	var globals: Array = _resolve_globals(board)
 	var size: Vector2i = board.grid.size()
 	# 异形拓扑（邻接表）：约束构造必须走拓扑邻域，否则方向型窗口在邻接表上无意义。
 	var topo: GridInterface = board.grid if board.grid is AdjacencyGrid else null
@@ -94,19 +150,52 @@ func hint_rule(board: Board) -> Array[ReasoningStep]:
 				pass  # 星号格 / 无线索格：玩家视角无信息，不参与推理
 	if active.is_empty():
 		return steps
-	var forced: Dictionary = RuleCpSat.find_forced_cells(oracle.build_spec(active, [], masked))
-	if forced.is_empty():
+	# 不动点迭代：**只信任「可演绎确证」的雷**。
+	#
+	# 为什么必须迭代：单次零信任推导会漏掉「用已确证的雷继续推」这一大类推理。
+	# 实测代价很实在——对 levels/ 下 20 关导出证明链，单轮版本有 2 关
+	#（classic_07 / generated_07）推不动；迭代后全部推完。
+	#
+	# 为什么仍然安全：每轮加入 known_mines 的都是**上一轮 CP-SAT 在全部模型里
+	# 恒成立的雷**，即演绎确证的结论，不是玩家的猜测。玩家手动插的旗子始终不计入
+	#（错旗会让「已标数 == 线索值」提前成立，把含雷格判成安全）。
+	# 这正是 25_HANDOFF §13.2 给出的正解：「先零信任推理出必然雷集，再只把集合内的旗计入」。
+	# 种子：把**此前已演绎确证**的雷先并入已知条件（不含玩家插的旗）。
+	# 没有这一步，跨调用会丢掉上一批确证结论 → 出现「只剩 1 格却推不动」的假卡死。
+	var proven: Array[Vector2i] = []
+	for p in board.proven_mines:
+		proven.append(p)
+	var mine_out: Array[Vector2i] = []
+	var safe_out: Array[Vector2i] = []
+	for _round in MAX_PROOF_ROUNDS:
+		var forced: Dictionary = RuleCpSat.find_forced_cells(oracle.build_spec(active, proven, masked))
+		if forced.is_empty():
+			break
+		var grew := false
+		for m in forced.get("mine", []):
+			var p := Vector2i(int(m[1]), int(m[0]))
+			if not mine_out.has(p):
+				mine_out.append(p)
+				grew = true
+			if not proven.has(p):
+				proven.append(p)
+		for s in forced.get("safe", []):
+			var p := Vector2i(int(s[1]), int(s[0]))
+			if not safe_out.has(p):
+				safe_out.append(p)
+				grew = true
+		if not grew:
+			break  # 已达不动点
+	if mine_out.is_empty() and safe_out.is_empty():
 		return steps
-	var tag := "规则演绎(%s)" % board.rule_clue_id
-	for m in forced.get("mine", []):
-		var p := Vector2i(int(m[1]), int(m[0]))
+	var tag := "规则演绎(%s)" % clue_id
+	for p in mine_out:
 		var c: Cell = board.grid.get_cell(p)
 		if c == null or c.state == Cell.State.REVEALED or c.state == Cell.State.FLAGGED:
 			continue
 		steps.append(_make_rule_step(p, "mine",
 			"%s：在所有满足当前线索与全局约束的雷分布中该格恒为雷，故必为雷" % tag))
-	for s in forced.get("safe", []):
-		var p := Vector2i(int(s[1]), int(s[0]))
+	for p in safe_out:
 		var c: Cell = board.grid.get_cell(p)
 		if c == null or c.state != Cell.State.HIDDEN:
 			continue

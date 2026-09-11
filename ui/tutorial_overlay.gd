@@ -46,7 +46,7 @@ class DemoGrid extends Control:
 				var value := str(cd.get("value", ""))
 				var ann: Array = cd.get("annotations", [])
 				if value == "" and ann.is_empty():
-					continue  # 空单元格 = 主板/副板分隔，留白
+					continue  # 空单元格 = 视觉留白（分组分隔）
 				var rect := Rect2(origin + Vector2(c, r) * cell, Vector2(cell, cell))
 				var inner := rect.grow(-1.0)
 				draw_rect(inner, Color(ThemeManager.text(), 0.10), true)

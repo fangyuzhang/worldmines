@@ -4,7 +4,8 @@
 #   · 按 `\n` 分行、按 `\t` 分列；**各行列数必须相等**（否则 `error = "Problem is not rectangular"`）
 #   · 单元格可带 `{注解}` 前缀，写入独立的注解列表（用于教学标注）
 #   · 以 `?` 开头的行终止盘面定义，其后为**提示正文**
-#   · **空单元格**用于在视觉上分隔主板与副板；一旦出现空单元格则 has_empty = true
+#   · **空单元格**用于视觉留白（把一组格与另一组格在视觉上分开）；
+#     一旦出现空单元格则 has_empty = true
 #
 # 注解标记（对标 61 个教学盘面归纳）：
 #   `@!`         高亮强调（教学重点格）
@@ -23,7 +24,7 @@ const TAG_WRONG := "wrong"
 ## 解析教程文本。返回：
 ##   { "rows": Array[Array[Dictionary]],  # 每格 {"value": String, "annotations": Array[String]}
 ##     "cols": int,
-##     "has_empty": bool,                 # 含空单元格（主板/副板分隔）
+##     "has_empty": bool,                 # 含空单元格（视觉留白/分组分隔）
 ##     "text": String,                    # `?` 行之后的提示正文
 ##     "error": String }                  # "" = 解析成功
 static func parse(src: String) -> Dictionary:

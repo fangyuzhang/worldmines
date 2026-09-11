@@ -17,6 +17,23 @@ var state: int = GameState.PLAYING
 ## 关卡难度画像（生成关落盘的 difficulty_profile.difficulty；-1 = 无画像）。
 ## 供提示预算等「按难度调节」的能力消费，不参与任何胜负/线索逻辑。
 var difficulty: float = -1.0
+## **已被演绎确证的雷**（pos -> true）。只由提示/求解器的必然结论写入，
+## **绝不等于玩家插的旗**——玩家可能插错，而这里的每一格都是在「当时全部玩家视角约束下
+## 所有模型里恒成立的雷」。
+##
+## 为什么需要它：`HintSolver.hint_rule` 的零信任不动点迭代只在**单次调用内**有效，
+## 跨调用会丢掉这批结论 → 出现「只剩 1 个隐藏格却推不动」的假卡死
+##（实测 classic_07：14 翻开 + 10 确证雷，最后 1 格本可由「总雷数已满」直接判安全，
+## 但因为确证雷没被记住，CP-SAT 仍认为该格有两种可能）。
+## 这正是 25_HANDOFF §13.2 给出的正解：「先零信任推理出必然雷集，再只把集合内的旗计入」。
+var proven_mines: Dictionary = {}
+
+
+## 登记一格「演绎确证的雷」。
+func mark_proven_mine(pos: Vector2i) -> void:
+        proven_mines[pos] = true
+
+
 ## 终极模式（对标 doc10 §2.4）：**玩家新翻开的线索格一律打星号**（值隐藏），
 ## 直到玩家点提示且当前确实无可推格时才由 reveal_stars() 揭开。
 ## 只影响「玩家视角」（get_player_constraint）与显示，不影响引擎真值/胜负/离线验证。
@@ -74,6 +91,7 @@ func load_level(level: Dictionary) -> void:
         constraint_def_name = ""
         rule_clue_id = ""
         rule_global_ids = []
+        proven_mines = {}  # 新关卡：确证雷集必须清空，否则会带着上一局的结论推理
 
         # ★ P3 自举式规则：读取 rule_level / clue_rule / global_rules 字段。
         # 规则由 RuleRegistry 解析（内置 + mod 注册同源）；命中即优先于 variant/def。
