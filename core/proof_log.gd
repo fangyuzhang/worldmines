@@ -74,6 +74,8 @@ static func build(level: Dictionary, max_rounds: int = MAX_ROUNDS) -> Dictionary
 	out["solved"] = b.state == Board.GameState.WON
 	if out["solved"] and str(out["reason"]) == "":
 		out["reason"] = "已推出全部格子"
+	# cert_hash：盘面内容哈希 ‖ 认证结果（GDD 13 号 §13.3，防「盘面被篡改却沿用旧认证」）
+	out["cert_hash"] = (_canonical_level_hash(level) + "|" + str(out["solved"])).sha256_text()
 	return out
 
 
@@ -176,6 +178,20 @@ static func signature(board: Board) -> String:
 			items.append("m%d,%d" % [pos.x, pos.y])
 	items.sort()
 	return "|".join(items).sha256_text()
+
+
+## 关卡内容规范哈希（雷位/翻开格排序后序列化），用于 cert_hash 防篡改。
+static func _canonical_level_hash(level: Dictionary) -> String:
+	var mines: Array = []
+	for m in level.get("mines", []):
+		mines.append([int(m["c"]), int(m["r"])])
+	mines.sort()
+	var revealed: Array = []
+	for rc in level.get("revealed", []):
+		revealed.append([int(rc["c"]), int(rc["r"])])
+	revealed.sort()
+	var canon := {"mines": mines, "revealed": revealed, "total_mines": int(level.get("total_mines", 0))}
+	return JSON.stringify(canon).sha256_text()
 
 
 ## 线索值 → 签名片段（确定性，不依赖字典字段顺序）。

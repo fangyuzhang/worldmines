@@ -159,3 +159,17 @@ func test_find_next_empty_on_no_match() -> void:
 	# 步骤缺少 precondition_signature 时不应被匹配
 	var no_sig := {"steps": [{"pos": [0, 0], "state": "safe"}]}
 	assert_eq(ProofLog.find_next(no_sig, b).size(), 0, "无签名步骤不应被匹配")
+
+
+func test_cert_hash_present_and_stable() -> void:
+	if not RuleCpSat.available():
+		pending("C# 后端不可用（跳过）")
+		return
+	var level := _try_generate()
+	assert_false(level.is_empty(), "关卡应能生成")
+	if level.is_empty():
+		return
+	var h1 := str(ProofLog.build(level).get("cert_hash", ""))
+	var h2 := str(ProofLog.build(level).get("cert_hash", ""))
+	assert_ne(h1, "", "cert_hash 应非空")
+	assert_eq(h1, h2, "同盘面 cert_hash 应稳定")
