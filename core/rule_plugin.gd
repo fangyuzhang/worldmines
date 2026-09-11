@@ -98,14 +98,9 @@ func place_mines(_rng: RandomNumberGenerator, _cols: int, _rows: int, _count: in
 # ==== 共享工具 ====
 
 ## 数 mine_set 中 dirs 邻域的雷数（内置计数规则共用）。
+## 单点化：委托给 ClueEngine._count_dirs，避免与内置变体路径（ClueEngine）各写一份计数逻辑。
 static func count_dirs(mine_set: Dictionary, pos: Vector2i, grid_size: Vector2i, dirs: Array) -> int:
-	var n := 0
-	for d in dirs:
-		var p: Vector2i = pos + d
-		if p.x >= 0 and p.x < grid_size.x and p.y >= 0 and p.y < grid_size.y:
-			if mine_set.has(p):
-				n += 1
-	return n
+	return ClueEngine._count_dirs(mine_set, pos, grid_size, dirs)
 
 
 ## dirs 偏移 → 板内邻格列表（zero_safe_neighbors 共用的便捷实现）。

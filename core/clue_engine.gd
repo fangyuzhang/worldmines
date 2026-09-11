@@ -71,10 +71,10 @@ static func compute(variant: int, mine_set: Dictionary, pos: Vector2i, grid_size
 			return _count_dirs(mine_set, pos, grid_size, ring_dirs())
 
 
-static func _count_dirs(mine_set: Dictionary, pos: Vector2i, grid_size: Vector2i, dirs: Array[Vector2i]) -> int:
+static func _count_dirs(mine_set: Dictionary, pos: Vector2i, grid_size: Vector2i, dirs: Array) -> int:
 	var n := 0
 	for d in dirs:
-		var p := pos + d
+		var p: Vector2i = pos + (d as Vector2i)
 		if _in_board(p, grid_size) and mine_set.has(p):
 			n += 1
 	return n
