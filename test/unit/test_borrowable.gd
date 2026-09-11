@@ -117,5 +117,6 @@ func test_r07_default_mines() -> void:
 	assert_eq(LevelSpec.default_mines_for_size(Vector2i(6, 6)), 14)
 	assert_eq(LevelSpec.default_mines_for_size(Vector2i(7, 7)), 20)
 	assert_eq(LevelSpec.default_mines_for_size(Vector2i(8, 8)), 26)
-	assert_eq(LevelSpec.default_mines_for_size(Vector2i(9, 9)), -1, "9×9 不在 R07 规格内")
+	assert_eq(LevelSpec.default_mines_for_size(Vector2i(9, 9)), 32, "9×9=32 雷（v2.9.3 扩展，40% 密度）")
+	assert_eq(LevelSpec.default_mines_for_size(Vector2i(10, 10)), -1, "10×10 不在 R07 规格内")
 	assert_eq(LevelSpec.default_mines_for_size(Vector2i(5, 4)), -1, "非正方形不在规格内")
