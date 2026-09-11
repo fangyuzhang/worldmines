@@ -77,6 +77,19 @@ func _build_ui() -> void:
     # 免费提示充能：开启后提示按钮按 120 秒周期充能
     _add_check_row(vbox, "提示充能（120 秒）", func(v: bool): SettingsManager.set_hint_charge(v), SettingsManager.hint_charge)
 
+    # 无猜模式（对标 doc10 §2）：关闭 / 专家（禁止猜测）
+    # 注：本作「禁止猜测」= 拒绝翻开推不出来的格（不移动雷位，兼容 R01 红线）
+    var ng_row := HBoxContainer.new()
+    ng_row.add_theme_constant_override("separation", 20)
+    _add_label(ng_row, "无猜模式")
+    var ng_opt := OptionButton.new()
+    ng_opt.add_item("关闭")
+    ng_opt.add_item("专家（禁止猜测）")
+    ng_opt.selected = SettingsManager.no_guess_mode
+    ng_opt.item_selected.connect(func(idx: int): SettingsManager.set_no_guess_mode(idx))
+    ng_row.add_child(ng_opt)
+    vbox.add_child(ng_row)
+
     # 绘画层透明度（0.5~1.0）
     var op_row := HBoxContainer.new()
     op_row.add_theme_constant_override("separation", 20)

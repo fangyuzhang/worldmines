@@ -80,6 +80,9 @@ func start_level(path: String) -> bool:
     _last_reveal_pos = Vector2i(-1, -1)
     hint_charge_left = 0.0
     hint_uncharged_used = false
+    _ng_safe_cache = {}
+    _ng_cache_step = -1
+    _ng_rejected = 0
     _last_save_ms = -100000  # 新对局首次翻格立即存
     pending_drawing = {}  # 新对局：绘画清空
     _connect_board_signals()
@@ -128,6 +131,12 @@ func reveal(pos: Vector2i) -> void:
     var cell := board.grid.get_cell(pos)
     if cell.state != Cell.State.HIDDEN:
         return  # 旗/? 格不响应左键（引擎虽会清标翻开，session 层拦截）
+    # 无猜模式：拒绝翻开「当前信息推不出来」的格（详见 no_guess_blocked 注释）
+    if SettingsManager.no_guess_mode != NO_GUESS_OFF and not is_deducible_safe(pos):
+        _ng_rejected += 1
+        guess_rejected.emit(pos)
+        AudioManager.play("flag")
+        return
     _last_reveal_pos = pos
     board.reveal(pos)
     # 判负由 game_lost 信号播爆炸声；此处只播普通翻开声
@@ -209,6 +218,76 @@ func hint_charged() -> bool:
     if not SettingsManager.hint_charge:
         return true
     return hint_charge_left >= HINT_CHARGE_SEC
+
+
+# ============ 无猜模式（对标游戏 doc10 §2；红线兼容实现） ============
+#
+# 对标游戏的「专家模式」用「猜错就重排剩余雷」实现，即**移动雷位**——
+# 但本作关卡雷位写死在 JSON，移动会破坏 R01 序贯可解验证与关卡数据（见 25_HANDOFF §13.2
+# 「无首次点击保护」条目里的同一矛盾）。
+#
+# 本实现给出**数学保证相同、但不移动雷位**的等价语义：**拒绝**翻开任何无法从当前
+# 玩家视角 100% 推导的格子。玩家同样无法靠猜测蒙混过关，且不碰任何关卡数据。
+# 口径差异：对标是「猜了会死」，本作是「根本不让猜」。
+
+## 无猜模式：0=关闭（默认，保持既有行为）/ 1=专家（禁止猜测）/ 2=终极（星号推理，规划中）
+const NO_GUESS_OFF := 0
+const NO_GUESS_EXPERT := 1
+
+## 猜测被拒绝时广播（UI 用于提示玩家「本模式不允许猜测」）
+signal guess_rejected(pos: Vector2i)
+
+## 推导结果缓存：Vector2i -> true（当前盘面下必然安全）
+var _ng_safe_cache: Dictionary = {}
+## 缓存对应的推理步总数（用于判断缓存是否过期；每步走一步直推计数）
+var _ng_cache_step: int = 0
+## 本局被拒次数（统计用）
+var _ng_rejected: int = 0
+
+
+## 该格在当前玩家视角下是否「必然安全」（可 100% 推导）。
+## 结果按「已推出的结论集大小」做缓存：盘面一变（翻格/插旗）结论集就变，缓存自然失效。
+## 注意：只读玩家视角约束（HintSolver 契约），不读真实雷位。
+func is_deducible_safe(pos: Vector2i) -> bool:
+    if board == null:
+        return false
+    if _ng_cache_step != _deduce_stamp():
+        _rebuild_ng_cache()
+    return _ng_safe_cache.has(pos)
+
+
+## 缓存有效性标记：全盘「位置 + 状态」滚动哈希（任一格状态变化即失效）。
+## 不用「计数」代替——一增一减的换位会让计数不变而约束已变，缓存会错误命中。
+func _deduce_stamp() -> int:
+    var h := 17
+    var sz: Vector2i = board.grid.size()
+    for y in sz.y:
+        for x in sz.x:
+            var c: Cell = board.grid.get_cell(Vector2i(x, y))
+            var st: int = c.state if c != null else -1
+            h = (h * 31 + st * 131 + x * 7 + y) % 2147483647
+    return h
+
+
+func _rebuild_ng_cache() -> void:
+    _ng_safe_cache = {}
+    var solver := HintSolver.new()
+    if board.def_engine != null:
+        solver.engine = board.def_engine
+    var steps: Array[ReasoningStep] = []
+    if board.clue_def_name != "":
+        steps = solver.hint_def(board, board.clue_def_name)
+    else:
+        steps = solver.hint(board)
+    for st in steps:
+        if st.state == "safe":
+            _ng_safe_cache[st.pos] = true
+    _ng_cache_step = _deduce_stamp()
+
+
+## 被拒绝的猜测次数（本局）。
+func rejected_guess_count() -> int:
+    return _ng_rejected
 
 
 # ============ 状态机转换（§10.7.8；非法组合忽略 + push_warning，不崩溃） ============

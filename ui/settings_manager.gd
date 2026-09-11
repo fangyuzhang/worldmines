@@ -27,6 +27,9 @@ var hint_mode: int = 0
 # 免费提示充能：开启后提示按钮按 120 秒周期充能；
 # 充满时用提示不影响「完美通关」，未充满即用则标记本局为非完美（对标 doc10 §3.2）。
 var hint_charge: bool = true
+# 无猜模式（对标 doc10 §2）：0=关闭 / 1=专家（禁止猜测：拒绝翻开推不出来的格）。
+# 红线兼容实现——不移动雷位，故不破坏 R01 与关卡数据；详见 GameSession 同名小节注释。
+var no_guess_mode: int = 0
 # 窗口模式：true = 独占全屏；false = 窗口模式（可调整大小）
 var fullscreen: bool = false
 
@@ -60,6 +63,7 @@ func load_cfg() -> void:
     hint_window_size = cfg.get_value("game", "hint_window_size", Vector2(320, 200))
     hint_mode = clampi(int(cfg.get_value("game", "hint_mode", 0)), 0, 2)
     hint_charge = _get_bool(cfg, "hint_charge", true)
+    no_guess_mode = clampi(int(cfg.get_value("game", "no_guess_mode", 0)), 0, 1)
     fullscreen = _get_bool(cfg, "fullscreen", false)
     AudioManager.enabled = sfx_enabled
 
@@ -89,6 +93,7 @@ func save() -> void:
     cfg.set_value("game", "hint_window_size", hint_window_size)
     cfg.set_value("game", "hint_mode", hint_mode)
     cfg.set_value("game", "hint_charge", hint_charge)
+    cfg.set_value("game", "no_guess_mode", no_guess_mode)
     cfg.set_value("game", "fullscreen", fullscreen)
     cfg.save(PATH)
 
@@ -166,6 +171,11 @@ func set_hint_mode(v: int) -> void:
 
 func set_hint_charge(v: bool) -> void:
     hint_charge = v
+    save()
+
+
+func set_no_guess_mode(v: int) -> void:
+    no_guess_mode = clampi(v, 0, 1)
     save()
 
 
