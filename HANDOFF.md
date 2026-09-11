@@ -1,6 +1,6 @@
 # 交接索引（精简版）
 
-> 完整交接文档见：**`D:\UserFolders\Desktop\世界扫雷_GDD_v2.0\25_HANDOFF交接文档.md`**（15 章 + 20 问自检清单）。
+> 完整交接文档见：**`C:\Users\zjh30\Desktop\世界扫雷_Agent交接文档_v2.9.3.md`**。
 > 本文档只放「新 Agent 上手前 30 分钟」必须知道的信息。
 
 ## 30 秒速览
@@ -10,8 +10,8 @@
 | 项目 | 世界扫雷（15 变体 + 绘画 + 自举式 Mod 平台） |
 | 引擎 | Godot 4.7.2 **.NET(mono)** + GDScript/C# 混合（OR-Tools 9.15 CP-SAT） |
 | 主场景 | `res://ui/main_menu.tscn` |
-| 版本控制 | **无 git**（版本以 GDD v2.9.2 为准） |
-| 测试 | GUT，**unit 193 用例全绿（0 失败）** + integration 8/8（2026-09 收敛后基线） |
+| 版本控制 | **git（`main`）+ 远端备份**（工程外裸仓库 `C:\Users\zjh30\worldmines_git_backup\worldmines.git`）。改完 `git push origin main` |
+| 测试 | GUT，**unit 255 用例全绿（254 通过 0 失败）**（2026-09-11 收敛后基线） |
 | Mod 平台 | 单一 ModAPI（Def 数据包 / GDScript 代码 Mod / wasm Mod 三条创作路径） |
 
 ## 跑起来（必须先装 .NET 版 Godot）
@@ -19,7 +19,7 @@
 ```powershell
 # 0) 路径
 $GODOT = "D:\Godot.NET\Godot_v4.7.2-stable_mono_win64\Godot_v4.7.2-stable_mono_win64_console.exe"
-cd "D:\Godot.NET\project\世界扫雷-(copy)"
+cd "C:\Users\zjh30\CodeBuddy\20260906184916"
 
 # 1) 构建 C#
 dotnet build

@@ -18,7 +18,7 @@
   .\tools\run_batch.ps1 -ScriptArgs @('classic','-','8x8','26','1','100','20','user://batch40') -TimeoutSec 900
 #>
 param(
-    [string]   $Project     = "D:\Godot.NET\project\世界扫雷-(copy)",
+    [string]   $Project     = "C:\Users\zjh30\CodeBuddy\20260906184916",
     [string]   $Godot       = "D:\Godot.NET\Godot_v4.7.2-stable_mono_win64\Godot_v4.7.2-stable_mono_win64_console.exe",
     [string]   $Script      = "res://tools/batch_generate.gd",
     [string[]] $ScriptArgs  = @('classic', '-', '5x5', '4', '1', '1', '1', 'user://batch_min_test'),
