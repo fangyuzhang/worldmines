@@ -298,62 +298,11 @@ func test_generate_knight_mx() -> void:
 
 ## 可解性复验（R01 真义）：初始线索下应「序贯纯逻辑可解」。
 ## 不用静态唯一：0 值格不作为初始线索后，静态多解是正常现象（v2.8.3 口径）。
+## 统一走 ProofLog.build（玩家视角序贯演绎 + 确证雷不动点），不再各自实现 forced-cell 循环。
 func _assert_solvable(clue_id: String, global_ids: Array, level: Dictionary) -> void:
-	var reg := RuleRegistry.default()
-	var clue: Object = reg.resolve(StringName(clue_id))
-	var globals: Array = []
-	for gid in global_ids:
-		globals.append(reg.resolve(StringName(gid)))
-	var size := Vector2i(int(level["size"]["cols"]), int(level["size"]["rows"]))
-	var total_mines := int(level["total_mines"])
-	var ms := {}
-	for m in level["mines"]:
-		ms[Vector2i(int(m["c"]), int(m["r"]))] = true
-	# values：全非雷格真实线索值（序贯演绎翻开安全格时读值）
-	var values := {}
-	for r in size.y:
-		for c in size.x:
-			var p := Vector2i(c, r)
-			if not ms.has(p):
-				values[p] = clue.compute_clue(ms, p, size)
-	# active（真实值）+ masked（遮蔽区间）
-	var active := {}
-	var masked := {}
-	for rc in level["revealed"]:
-		var p := Vector2i(int(rc["c"]), int(rc["r"]))
-		# 与 board.load_level 同口径：0 值格也进初始翻开集（board.gd 不再跳过）。
-		active[p] = values.get(p, null)
-		if rc.has("interval"):
-			masked[p] = Vector2i(int(rc["interval"][0]), int(rc["interval"][1]))
-	# 序贯演绎（同 PuzzleGenerator._solve_rules_stepwise）
-	var oracle := RuleOracle.new(clue, globals, size, total_mines)
-	var known_mines: Array[Vector2i] = []
-	var total_cells := size.x * size.y
-	var steps := 0
-	while active.size() + known_mines.size() < total_cells:
-		steps += 1
-		if steps > total_cells + 8:
-			assert_true(false, "%s+%s 序贯演绎步数超限（不可解）" % [clue_id, str(global_ids)])
-			return
-		var forced := RuleCpSat.find_forced_cells(oracle.build_spec(active, known_mines, masked))
-		if forced.is_empty():
-			assert_true(false, "%s+%s 序贯演绎中途无强制格（真二选一，不可解）" % [clue_id, str(global_ids)])
-			return
-		var progressed := false
-		for m in forced.get("mine", []):
-			var p := Vector2i(int(m[1]), int(m[0]))
-			if not known_mines.has(p):
-				known_mines.append(p)
-				progressed = true
-		for s in forced.get("safe", []):
-			var p := Vector2i(int(s[1]), int(s[0]))
-			if not active.has(p):
-				active[p] = values.get(p, null)
-				progressed = true
-		if not progressed:
-			assert_true(false, "%s+%s 序贯演绎无进展" % [clue_id, str(global_ids)])
-			return
-	assert_true(known_mines.size() == total_mines, "%s+%s 序贯演绎应确定全部雷" % [clue_id, str(global_ids)])
+	var log: Dictionary = ProofLog.build(level)
+	assert_true(bool(log.get("solved", false)),
+		"%s+%s 序贯演绎不可解：%s" % [clue_id, str(global_ids), log.get("reason", "")])
 
 
 func test_generate_all_clue_rules() -> void:

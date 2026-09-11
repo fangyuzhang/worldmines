@@ -52,59 +52,13 @@ class BrokenGlobalRule:
 		b.add_eq(b.sum(black), CPIR.sum(white + [b.const_expr(100)]))
 
 
-## 序贯可解复验（复用生成器同口径：forced-cell 检测推进到全盘确定）。
+## 序贯可解复验：统一走 ProofLog.build（玩家视角序贯演绎 + 确证雷不动点）。
 func _assert_solvable(clue_id: String, globals: Array, level: Dictionary) -> void:
 	if level.is_empty():
 		return
-	var size := Vector2i(int(level["size"]["cols"]), int(level["size"]["rows"]))
-	var total_mines := int(level["total_mines"])
-	var reg := RuleRegistry.default()
-	var clue: Object = reg.resolve(StringName(clue_id))
-	var gs: Array = []
-	for gid in globals:
-		gs.append(reg.resolve(StringName(str(gid))))
-	var oracle := RuleOracle.new(clue, gs, size, total_mines)
-	# 用真实雷分布正向算线索值
-	var mine_set := {}
-	for m in level["mines"]:
-		mine_set[Vector2i(int(m["c"]), int(m["r"]))] = true
-	var values := {}
-	for r in size.y:
-		for c in size.x:
-			var p := Vector2i(c, r)
-			if not mine_set.has(p):
-				values[p] = clue.compute_clue(mine_set, p, size)
-	var active := {}
-	for rc in level["revealed"]:
-		var p := Vector2i(int(rc["c"]), int(rc["r"]))
-		active[p] = values.get(p, null)
-	var known_mines: Array[Vector2i] = []
-	var total_cells := size.x * size.y
-	var steps := 0
-	while active.size() + known_mines.size() < total_cells:
-		steps += 1
-		if steps > total_cells + 8:
-			assert_true(false, "%s+%s 序贯演绎步数超限" % [clue_id, str(globals)])
-			return
-		var forced := RuleCpSat.find_forced_cells(oracle.build_spec(active, known_mines))
-		if forced.is_empty():
-			assert_true(false, "%s+%s 序贯演绎无强制格（不可解）" % [clue_id, str(globals)])
-			return
-		var progressed := false
-		for m in forced.get("mine", []):
-			var p := Vector2i(int(m[1]), int(m[0]))
-			if not known_mines.has(p):
-				known_mines.append(p)
-				progressed = true
-		for s in forced.get("safe", []):
-			var p := Vector2i(int(s[1]), int(s[0]))
-			if not active.has(p):
-				active[p] = values.get(p, null)
-				progressed = true
-		if not progressed:
-			assert_true(false, "%s+%s 序贯演绎无进展" % [clue_id, str(globals)])
-			return
-	assert_true(known_mines.size() == total_mines, "%s+%s 序贯演绎应确定全部雷" % [clue_id, str(globals)])
+	var log: Dictionary = ProofLog.build(level)
+	assert_true(bool(log.get("solved", false)),
+		"%s+%s 序贯演绎不可解：%s" % [clue_id, str(globals), log.get("reason", "")])
 
 
 func _setup() -> void:
