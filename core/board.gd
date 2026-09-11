@@ -14,6 +14,9 @@ signal cell_state_changed(pos: Vector2i)
 var grid: GridInterface = null
 var total_mines: int = 0
 var state: int = GameState.PLAYING
+## 胜负判定（P6 胜负原语化）。默认经典扫雷（GDD R10）；自定义模式可替换为其它实现。
+## 这是把硬编码判胜/判负抽出的策略对象——见 core/win_condition.gd。
+var win_condition: WinConditionPlugin = WinConditionPlugin.new()
 ## 关卡难度画像（生成关落盘的 difficulty_profile.difficulty；-1 = 无画像）。
 ## 供提示预算等「按难度调节」的能力消费，不参与任何胜负/线索逻辑。
 var difficulty: float = -1.0
@@ -258,8 +261,10 @@ func reveal(pos: Vector2i) -> void:
         if cell.is_mine:
                 cell.state = Cell.State.REVEALED
                 cell_state_changed.emit(pos)
-                state = GameState.LOST
-                game_lost.emit()
+                # 判负交给胜负策略（默认经典 = 翻雷即输；教学模式可覆盖为不判负）
+                if win_condition.on_reveal_mine(self):
+                        state = GameState.LOST
+                        game_lost.emit()
                 return
 
         var before := _revealed_snapshot() if hide_new_clues else {}
@@ -545,20 +550,9 @@ func _run_comps_flag(pos: Vector2i) -> void:
 func _check_win() -> void:
         if state != GameState.PLAYING:
                 return
-        # GDD R10：胜利 = 所有雷位被确定（插旗），不是「所有非雷格翻开」；安全格可保持未翻开。
-        # 判定①：正确插旗的雷数 == 总雷数；判定②：剩余未知格数 == 剩余雷数（全盘确定）。
-        var flagged_mines := 0
-        var unknown_cells := 0
-        for pos in grid.all_positions():
-                var cell: Cell = grid.get_cell(pos)
-                if cell == null:
-                        continue
-                if cell.is_mine and cell.state == Cell.State.FLAGGED:
-                        flagged_mines += 1
-                if cell.state == Cell.State.HIDDEN or cell.state == Cell.State.QUESTION:
-                        unknown_cells += 1
-        var remaining_mines: int = total_mines - flagged_mines
-        if flagged_mines == total_mines or unknown_cells == remaining_mines:
+        # GDD R10 胜负判定已抽到 win_condition（core/win_condition.gd）。
+        # 胜利 = 所有雷位被确定（插旗），不是「所有非雷格翻开」；安全格可保持未翻开。
+        if win_condition.is_won(self):
                 state = GameState.WON
                 game_won.emit()
 
