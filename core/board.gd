@@ -17,6 +17,10 @@ var state: int = GameState.PLAYING
 ## 关卡难度画像（生成关落盘的 difficulty_profile.difficulty；-1 = 无画像）。
 ## 供提示预算等「按难度调节」的能力消费，不参与任何胜负/线索逻辑。
 var difficulty: float = -1.0
+## 终极模式（对标 doc10 §2.4）：**玩家新翻开的线索格一律打星号**（值隐藏），
+## 直到玩家点提示且当前确实无可推格时才由 reveal_stars() 揭开。
+## 只影响「玩家视角」（get_player_constraint）与显示，不影响引擎真值/胜负/离线验证。
+var hide_new_clues: bool = false
 
 # 变体配置（默认经典）。clue 见 ClueEngine.Variant，constraint 见 ConstraintEngine.Variant（-1 = 无）。
 var clue_variant: int = ClueEngine.Variant.CLASSIC
@@ -227,9 +231,58 @@ func reveal(pos: Vector2i) -> void:
                 game_lost.emit()
                 return
 
+        var before := _revealed_snapshot() if hide_new_clues else {}
         _flood_reveal(pos)
         _run_comps_reveal(pos)
+        if hide_new_clues:
+                _star_new_revealed(before)
         _check_win()
+
+
+## 已翻开格快照（键为 pos），供星号打标做差集。
+func _revealed_snapshot() -> Dictionary:
+        var snap := {}
+        for p in grid.all_positions():
+                var c: Cell = grid.get_cell(p)
+                if c != null and c.state == Cell.State.REVEALED:
+                        snap[p] = true
+        return snap
+
+
+## 给「本次新翻开的非雷格」打星号（终极模式）。已带 ? 遮蔽的格不打星（? 本身即遮蔽语义）。
+func _star_new_revealed(before: Dictionary) -> void:
+        for p in grid.all_positions():
+                if before.has(p):
+                        continue
+                var c: Cell = grid.get_cell(p)
+                if c == null or c.state != Cell.State.REVEALED or c.is_mine:
+                        continue
+                if c.is_hidden_clue():
+                        continue
+                c.starred = true
+                cell_state_changed.emit(p)
+
+
+## 揭开全部星号（终极模式：玩家卡住时点提示，星号变回线索）。
+## 返回揭开的格数；0 表示当前没有星号格。
+func reveal_stars() -> int:
+        var n := 0
+        for p in grid.all_positions():
+                var c: Cell = grid.get_cell(p)
+                if c != null and c.starred:
+                        c.starred = false
+                        n += 1
+                        cell_state_changed.emit(p)
+        return n
+
+
+## 是否存在星号格（UI/逻辑查询用）。
+func has_stars() -> bool:
+        for p in grid.all_positions():
+                var c: Cell = grid.get_cell(p)
+                if c != null and c.starred:
+                        return true
+        return false
 
 
 ## 初始翻开（不连锁扩散）：仅翻开该格本身。

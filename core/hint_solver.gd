@@ -66,18 +66,32 @@ func hint_rule(board: Board) -> Array[ReasoningStep]:
 	# 异形拓扑（邻接表）：约束构造必须走拓扑邻域，否则方向型窗口在邻接表上无意义。
 	var topo: GridInterface = board.grid if board.grid is AdjacencyGrid else null
 	var oracle := RuleOracle.new(clue_rule, globals, size, board.total_mines, topo)
-	# 玩家视角：已翻开格 → 线索值；? 遮蔽格 → 区间约束（不读真实雷位）
+	# 玩家视角：**只经 get_player_constraint() 取约束**（不直读 cell.value）。
+	# 结构性意义：① 星号格（终极模式）在玩家视角无线索，自动被排除，不会泄露隐藏值；
+	# ② 与「求解器只准走玩家视角入口」的红线一致（25_HANDOFF §13.2「提示未走 PlayerView」）。
 	var active := {}
 	var masked := {}
 	for pos in board.grid.all_positions():
 		var cell: Cell = board.grid.get_cell(pos)
 		if cell == null or cell.state != Cell.State.REVEALED:
 			continue
-		if cell.is_hidden_clue():
-			masked[pos] = cell.hidden_interval
-			active[pos] = null
-		else:
-			active[pos] = cell.value
+		var con := board.get_player_constraint(pos)
+		match str(con.get("type", "")):
+			"interval":
+				masked[pos] = Vector2i(int(con["lo"]), int(con["hi"]))
+				active[pos] = null
+			"equality":
+				active[pos] = con["value"]
+			"equality_pair":
+				# HV 纵横分计：规则侧 build_clue_constraints 期望 [A, B] 数组（与 compute_clue 同形）
+				active[pos] = [int(con["a"]), int(con["b"])]
+			"equality_multi":
+				# E 类线索混合（一格双值）：规则关卡不产生该形态，防御性取首值（与旧行为一致）
+				var items: Array = con.get("items", [])
+				if not items.is_empty():
+					active[pos] = (items[0] as Dictionary).get("value", null)
+			_:
+				pass  # 星号格 / 无线索格：玩家视角无信息，不参与推理
 	if active.is_empty():
 		return steps
 	var forced: Dictionary = RuleCpSat.find_forced_cells(oracle.build_spec(active, [], masked))

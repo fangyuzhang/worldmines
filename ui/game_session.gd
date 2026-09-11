@@ -22,6 +22,11 @@ const HINT_DISABLED := 2  # 禁用：完全关闭提示
 ## 免费提示充能周期（秒；对标 FREE_HINT_TIME = 120f）
 const HINT_CHARGE_SEC := 120.0
 
+## 无猜模式三档（对标 doc10 §2）
+const NO_GUESS_OFF := 0      # 关闭（默认）
+const NO_GUESS_EXPERT := 1   # 专家：禁止猜测（拒绝翻开推不出来的格）
+const NO_GUESS_ULTIMATE := 2 # 终极：新翻开的线索格打星号（值隐藏），卡住时点提示揭开
+
 var level_path: String = ""
 var board: Board = null
 var elapsed: float = 0.0
@@ -78,6 +83,8 @@ func start_level(path: String) -> bool:
     cursor = Vector2i.ZERO
     exploded_pos = Vector2i(-1, -1)
     _last_reveal_pos = Vector2i(-1, -1)
+    # 终极模式：本次对局的「玩家新翻开线索格一律打星号」开关
+    board.hide_new_clues = SettingsManager.no_guess_mode == NO_GUESS_ULTIMATE
     hint_charge_left = 0.0
     hint_uncharged_used = false
     _ng_safe_cache = {}
@@ -131,8 +138,9 @@ func reveal(pos: Vector2i) -> void:
     var cell := board.grid.get_cell(pos)
     if cell.state != Cell.State.HIDDEN:
         return  # 旗/? 格不响应左键（引擎虽会清标翻开，session 层拦截）
-    # 无猜模式：拒绝翻开「当前信息推不出来」的格（详见 no_guess_blocked 注释）
-    if SettingsManager.no_guess_mode != NO_GUESS_OFF and not is_deducible_safe(pos):
+    # 无猜-专家档：拒绝翻开「当前信息推不出来」的格（红线兼容实现，见下方小节注释）。
+    # 终极档不禁止猜测（它的难度来自星号遮蔽，不是禁止操作）。
+    if SettingsManager.no_guess_mode == NO_GUESS_EXPERT and not is_deducible_safe(pos):
         _ng_rejected += 1
         guess_rejected.emit(pos)
         AudioManager.play("flag")
@@ -185,6 +193,18 @@ func request_hint() -> Array[ReasoningStep]:
             for s in steps:
                 (s as ReasoningStep).method = "weak"
         steps = _limit_hint_budget(steps)
+        # 终极模式（对标 doc10 §2.4）：星号格遮蔽着线索值。
+        # 当前若能推出安全格 → 正常给提示；若确实推不出任何安全格（卡住了）
+        # → 揭开全部星号让对局继续（这一步本身就消耗一次提示）。
+        if SettingsManager.no_guess_mode == NO_GUESS_ULTIMATE and board.has_stars():
+            var has_safe := false
+            for st in steps:
+                if (st as ReasoningStep).state == "safe":
+                    has_safe = true
+                    break
+            if not has_safe:
+                board.reveal_stars()
+                steps.clear()
     hint_ready.emit(steps)
     return steps
 
@@ -229,10 +249,6 @@ func hint_charged() -> bool:
 # 本实现给出**数学保证相同、但不移动雷位**的等价语义：**拒绝**翻开任何无法从当前
 # 玩家视角 100% 推导的格子。玩家同样无法靠猜测蒙混过关，且不碰任何关卡数据。
 # 口径差异：对标是「猜了会死」，本作是「根本不让猜」。
-
-## 无猜模式：0=关闭（默认，保持既有行为）/ 1=专家（禁止猜测）/ 2=终极（星号推理，规划中）
-const NO_GUESS_OFF := 0
-const NO_GUESS_EXPERT := 1
 
 ## 猜测被拒绝时广播（UI 用于提示玩家「本模式不允许猜测」）
 signal guess_rejected(pos: Vector2i)

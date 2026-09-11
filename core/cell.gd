@@ -12,6 +12,9 @@ var is_mine: bool = false
 var value: Variant = 0           # 引擎视角真实线索值（int / Array / "inf"）
 var value2: Variant = null       # 第二线索值（E 类线索混合；null = 无第二线索）
 var hidden_interval: Vector2i = Vector2i(-1, -1)  # ? 格遮蔽区间 [lo, hi]；(-1,-1) = 非 ? 格
+## 终极模式「星号格」（对标 doc10 §2.4）：已翻开但**线索值对玩家隐藏**。
+## 引擎仍持有真实 value（判负/胜负/离线验证不受影响），只是玩家视角无线索 → 不能拿它推理。
+var starred: bool = false
 var comps: Array[CellComp] = []   # 组件列表，P0 为空，P4 沙箱实装
 
 
@@ -28,6 +31,9 @@ func is_hidden_clue() -> bool:
 ##   { "type": "none" }                        未翻开
 func get_player_constraint() -> Dictionary:
 	if state != State.REVEALED:
+		return { "type": "none" }
+	# 星号格：值对玩家隐藏 → 玩家视角无线索（这正是终极模式的难度来源）
+	if starred:
 		return { "type": "none" }
 	if is_hidden_clue():
 		return { "type": "interval", "lo": hidden_interval.x, "hi": hidden_interval.y }

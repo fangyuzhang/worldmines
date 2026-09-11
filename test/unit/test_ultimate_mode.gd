@@ -1,0 +1,155 @@
+extends GutTest
+
+## 终极模式（对标 doc10 §2.4，v2.9.3）
+##
+## 机制：玩家**新翻开的线索格一律显示为星号**（值隐藏），直到玩家点提示且当前
+## 确实推不出任何安全格时，星号才变成线索、对局继续。
+##
+## 实现要点：星号只影响「玩家视角」——`Cell.get_player_constraint()` 对星号格返回
+## `{"type":"none"}`，于是提示/推理自动拿不到它的值；引擎真值、胜负、离线验证不受影响。
+
+const SIZE := Vector2i(5, 5)
+const MINES := 4
+
+
+func _try_generate(clue_id: String, globals: Array) -> Dictionary:
+	var gen := PuzzleGenerator.new()
+	for s in 10:
+		var level: Dictionary = gen.generate_with_rules(clue_id, globals, SIZE, MINES, 1000 + s * 7)
+		if not level.is_empty():
+			return level
+	return {}
+
+
+func _true_mine_set(level: Dictionary) -> Dictionary:
+	var s := {}
+	for m in level.get("mines", []):
+		s[Vector2i(int(m["c"]), int(m["r"]))] = true
+	return s
+
+
+## 星号格在玩家视角必须「无线索」——这是终极模式的难度来源，也是不能泄露真值的关键。
+func test_star_hides_clue_from_player_view() -> void:
+	var level := _try_generate("classic", [])
+	assert_false(level.is_empty(), "关卡应能生成")
+	if level.is_empty():
+		return
+	var b := Board.new()
+	b.load_level(level)
+	b.hide_new_clues = true
+	assert_false(b.has_stars(), "初始线索不打星（否则开局无法推理）")
+
+	# 翻开一个真值安全的隐藏格
+	var mines := _true_mine_set(level)
+	var target := Vector2i(-1, -1)
+	var sz: Vector2i = b.grid.size()
+	for y in sz.y:
+		for x in sz.x:
+			var p := Vector2i(x, y)
+			if b.grid.get_cell(p).state == Cell.State.HIDDEN and not mines.has(p):
+				target = p
+				break
+		if target.x >= 0:
+			break
+	assert_true(target.x >= 0, "应有可翻开的隐藏安全格")
+	b.reveal(target)
+
+	assert_true(b.has_stars(), "终极模式下新翻开的线索格应被打星号")
+	# 找任一星号格，断言玩家视角拿不到值
+	var star_pos := Vector2i(-1, -1)
+	for y in sz.y:
+		for x in sz.x:
+			var p := Vector2i(x, y)
+			if b.grid.get_cell(p).starred:
+				star_pos = p
+				break
+		if star_pos.x >= 0:
+			break
+	assert_true(star_pos.x >= 0, "应存在星号格")
+	assert_eq(str(b.get_player_constraint(star_pos).get("type", "")), "none",
+		"星号格在玩家视角必须无线索（值隐藏）")
+
+	# 揭开星号 → 恢复为正常线索
+	var n := b.reveal_stars()
+	assert_gt(n, 0, "reveal_stars 应揭开至少一格")
+	assert_false(b.has_stars(), "揭开后不应再有星号格")
+	assert_ne(str(b.get_player_constraint(star_pos).get("type", "")), "none",
+		"揭开后该格应恢复为正常线索")
+
+
+## 卡住时点提示 → 星号变线索（对标 doc10 §2.4）。
+## 构造：把全部已翻开格都打星，玩家视角就完全无线索 → 必然无可推格。
+func test_ultimate_hint_reveals_stars_when_stuck() -> void:
+	if not RuleCpSat.available():
+		pending("C# 后端不可用（跳过）")
+		return
+	var level := _try_generate("classic", [])
+	assert_false(level.is_empty(), "关卡应能生成")
+	if level.is_empty():
+		return
+	var b := Board.new()
+	b.load_level(level)
+	for p in b.grid.all_positions():
+		var c: Cell = b.grid.get_cell(p)
+		if c.state == Cell.State.REVEALED:
+			c.starred = true
+	assert_true(b.has_stars(), "前置：应存在星号格")
+
+	var saved_mode: int = SettingsManager.no_guess_mode
+	var saved_hint: int = SettingsManager.hint_mode
+	var saved_state: int = GameSession.state
+	var saved_board: Board = GameSession.board
+	GameSession.board = b
+	GameSession.state = GameSession.State.PLAYING
+	SettingsManager.no_guess_mode = 2  # 终极
+	SettingsManager.hint_mode = 0      # 标准提示（未禁用）
+
+	var steps: Array = GameSession.request_hint()
+	assert_false(b.has_stars(), "推不出安全格时点提示 → 星号应被揭开")
+	assert_eq(steps.size(), 0, "揭开星号这一步本身不返回推理结论")
+
+	SettingsManager.no_guess_mode = saved_mode
+	SettingsManager.hint_mode = saved_hint
+	GameSession.state = saved_state
+	GameSession.board = saved_board
+
+
+## 终极档不禁止猜测（难度来自星号遮蔽，不是禁止操作）——与专家档语义区分。
+func test_ultimate_does_not_block_guessing() -> void:
+	var level := _try_generate("classic", [])
+	assert_false(level.is_empty(), "关卡应能生成")
+	if level.is_empty():
+		return
+	var b := Board.new()
+	b.load_level(level)
+
+	var saved_mode: int = SettingsManager.no_guess_mode
+	var saved_state: int = GameSession.state
+	var saved_board: Board = GameSession.board
+	GameSession.board = b
+	GameSession.state = GameSession.State.PLAYING
+	SettingsManager.no_guess_mode = 2  # 终极
+
+	# 找一个「推不出来」的隐藏格：终极档下必须照常翻开（不拦截）
+	var guess_pos := Vector2i(-1, -1)
+	var sz: Vector2i = b.grid.size()
+	for y in sz.y:
+		for x in sz.x:
+			var p := Vector2i(x, y)
+			if b.grid.get_cell(p).state != Cell.State.HIDDEN:
+				continue
+			if not GameSession.is_deducible_safe(p):
+				guess_pos = p
+				break
+		if guess_pos.x >= 0:
+			break
+	if guess_pos.x < 0:
+		pending("未找到推不出来的隐藏格")
+		return
+	GameSession.reveal(guess_pos)
+	assert_ne(b.grid.get_cell(guess_pos).state, Cell.State.FLAGGED,
+		"终极档不该像专家档那样拦截猜测")
+
+	SettingsManager.no_guess_mode = saved_mode
+	GameSession.state = saved_state
+	GameSession.board = saved_board

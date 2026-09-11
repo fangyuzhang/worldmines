@@ -246,6 +246,15 @@ func _draw_cell(pos: Vector2i, cell: Cell, rect: Rect2, scale: float, font: Font
 
 ## 绘制翻开格的线索值（变体感知）：? 格 → "?"；HV 双值 → "A·B"；FR ∞ → "∞"；数字 1~12。
 func _draw_clue_value(cell: Cell, rect: Rect2, scale: float, font: Font) -> void:
+	# 终极模式星号格（对标 doc10 §2.4）：值对玩家隐藏，只画星号
+	if cell.starred:
+		var text := "*"
+		var fsize := int(26.0 * maxf(scale, 0.6))
+		var tw := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize)
+		draw_string(font,
+			rect.position + Vector2((rect.size.x - tw.x) * 0.5, rect.size.y * 0.5 + tw.y * 0.34),
+			text, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize, ThemeManager.accent())
+		return
 	# ? 遮蔽格（interval 约束）
 	if cell.is_hidden_clue():
 		_draw_question(rect, scale, font)

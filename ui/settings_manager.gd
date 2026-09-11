@@ -63,7 +63,7 @@ func load_cfg() -> void:
     hint_window_size = cfg.get_value("game", "hint_window_size", Vector2(320, 200))
     hint_mode = clampi(int(cfg.get_value("game", "hint_mode", 0)), 0, 2)
     hint_charge = _get_bool(cfg, "hint_charge", true)
-    no_guess_mode = clampi(int(cfg.get_value("game", "no_guess_mode", 0)), 0, 1)
+    no_guess_mode = clampi(int(cfg.get_value("game", "no_guess_mode", 0)), 0, 2)
     fullscreen = _get_bool(cfg, "fullscreen", false)
     AudioManager.enabled = sfx_enabled
 
@@ -175,7 +175,7 @@ func set_hint_charge(v: bool) -> void:
 
 
 func set_no_guess_mode(v: int) -> void:
-    no_guess_mode = clampi(v, 0, 1)
+    no_guess_mode = clampi(v, 0, 2)
     save()
 
 

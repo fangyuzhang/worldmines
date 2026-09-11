@@ -85,6 +85,7 @@ func _build_ui() -> void:
     var ng_opt := OptionButton.new()
     ng_opt.add_item("关闭")
     ng_opt.add_item("专家（禁止猜测）")
+    ng_opt.add_item("终极（新线索打星号）")
     ng_opt.selected = SettingsManager.no_guess_mode
     ng_opt.item_selected.connect(func(idx: int): SettingsManager.set_no_guess_mode(idx))
     ng_row.add_child(ng_opt)
