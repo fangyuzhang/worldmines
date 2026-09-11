@@ -14,6 +14,11 @@ var _rng := RandomNumberGenerator.new()
 ## 旧管线实例（2026-09 拆分：旧实现 + 旧布雷策略移入 PuzzleGeneratorLegacy）。
 var _legacy := PuzzleGeneratorLegacy.new()
 
+## C# CP-SAT 并行搜索 worker 数（0 = 用 C# 默认 4）。
+## 分片批跑时应设 1：进程数 × 1 worker = 物理核数，避免 8 进程 × 4 worker 超额订阅互相抢核。
+## 强制格结论与 worker 数无关（探测「假设反值不可行」与首解无关），降 worker 不改变任何质量/难度。
+var num_workers: int = 0
+
 
 ## 内置线索型枚举 → 规则 id（自举式底座：内置变体与内置规则同源、同 API）。
 func _clue_to_rule_id(clue: int) -> String:
@@ -333,6 +338,7 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 		# 若返回数量不符，用入参会让唯一解判定静默出错，输出与验证也会对不上。
 		var mine_total := mines.size()
 		var oracle := RuleOracle.new(clue_rule, globals, size, mine_total, topology)
+		oracle.num_workers = num_workers
 		var active := {}
 		for p in clue_cells:
 			active[p] = values[p]

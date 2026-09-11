@@ -17,6 +17,7 @@
 #   · 每个分片独立输出到 out_dir/shard_<idx>/，避免文件名冲突。
 #   · per_tier 是「每个分片」的每档目标数（总量 = per_tier × shard_total）。
 #   · 全部进程跑完后，用 batch_merge.gd 合并分片到 out_dir/ 顶层并全局编号。
+#   · 分片模式自动把每进程 CP-SAT 搜索 worker 降为 1（进程数 × 1 = 核数，避免超额订阅）。
 #
 # 参数默认值：classic / 无全局 / 8×8 / 26雷 / seed 1..100 / 每档 20 / user://batch_levels
 # globals 用逗号分隔（如 "mx,rl"），"-" 或 "none" = 无全局约束。
@@ -45,6 +46,9 @@ var _stats := {"total": 0, "ok": 0, "fail": 0, "dup": 0, "tiers": {"easy": 0, "n
 
 func _initialize() -> void:
 	_parse_args()
+	# 分片批跑：每进程单 worker。进程数 × 1 worker = 物理核数，避免默认 4 worker × 多进程
+	# 超额订阅互相抢核（墙钟不线性）。单进程模式保持 C# 默认 4 worker（单次 Solve 内并行）。
+	_gen.num_workers = 1 if _shard_idx >= 0 else 0
 	var t0 := Time.get_ticks_msec()
 
 	# seed 范围：分片模式下切出本进程的一段

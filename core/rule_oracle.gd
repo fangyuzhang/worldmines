@@ -17,6 +17,10 @@ var _total_mines: int = -1
 var _global_pkg: Dictionary = {}      # {"aux":[int..], "ir":[约束..]}
 var _clue_cache: Dictionary = {}      # "x,y=值" -> pkg
 
+## C# CP-SAT 并行搜索 worker 数（0 = 用 C# 默认 4）。由 PuzzleGenerator.num_workers 透传；
+## 分片批跑时设为 1，避免多进程各自开 4 worker 超额订阅。不影响强制格结论。
+var num_workers: int = 0
+
 
 func _init(p_clue_rule: Object = null, p_global_rules: Array = [], p_grid_size: Vector2i = Vector2i(0, 0), p_total_mines: int = -1, p_topology: GridInterface = null) -> void:
 	clue_rule = p_clue_rule
@@ -143,7 +147,7 @@ func build_spec(active: Dictionary, known_mines: Array = [], masked: Dictionary 
 	var mine_cells: Array = []
 	for m in known_mines:
 		mine_cells.append([m.y, m.x])
-	return {
+	var spec := {
 		"rows": rows,
 		"cols": cols,
 		"total_mines": _total_mines,
@@ -154,3 +158,6 @@ func build_spec(active: Dictionary, known_mines: Array = [], masked: Dictionary 
 		"aux": aux,
 		"timeout_ms": 8000,
 	}
+	if num_workers > 0:
+		spec["num_workers"] = num_workers
+	return spec
