@@ -244,7 +244,7 @@ func _draw_cell(pos: Vector2i, cell: Cell, rect: Rect2, scale: float, font: Font
 			_draw_clue_value(cell, rect, scale, font)
 
 
-## 绘制翻开格的线索值（变体感知）：? 格 → "?"；HV 双值 → "A·B"；FR ∞ → "∞"；数字 1~12。
+## 绘制翻开格的线索值（变体感知）：? 格 → "?"；HV 双值 → "A·B"；FR ∞ → "∞"；数字 0+（含 0 与大值，见 _draw_single_clue）。
 func _draw_clue_value(cell: Cell, rect: Rect2, scale: float, font: Font) -> void:
 	# 终极模式星号格（对标 doc10 §2.4）：值对玩家隐藏，只画星号
 	if cell.starred:
@@ -275,12 +275,17 @@ func _draw_single_clue(v: Variant, rect: Rect2, scale: float, font: Font) -> voi
 	var text := ""
 	var col := ThemeManager.text()
 	if v is Array:
-		text = "%d·%d" % [int(v[0]), int(v[1])]  # HV 纵横分计 [正交, 对角]
+		# HV 纵横分计 [正交, 对角]。防御：长度不足 2 时退化为单值，避免越界（mod 规则可能返回畸形）。
+		if (v as Array).size() >= 2:
+			text = "%d·%d" % [int(v[0]), int(v[1])]
+		else:
+			text = str(v)
 	elif v is String:
 		text = "∞" if v == "inf" else str(v)     # FR 首雷无雷哨兵
-	elif v is int and v >= 0 and v <= 12:
+	elif v is int and v >= 0:
 		text = str(v)
-		# number(n) 对 n<1 或 n>8 退化为主文本色，所以 0 自然用主文本色（可读但不抢眼）。
+		# number(n) 对 n<1 或 n>8 退化为主文本色，所以 0 与大值（异形拓扑 dist_sum / mod 规则）
+		# 都用主文本色（可读但不抢眼），不再因 v <= 12 硬上限而漏画（那会是又一种「空白格」）。
 		col = ThemeManager.number(v)
 	if text == "":
 		return
@@ -288,7 +293,7 @@ func _draw_single_clue(v: Variant, rect: Rect2, scale: float, font: Font) -> voi
 	if rect.size.y < rect.size.x * 0.75:
 		fs2 = int(round(16.0 * scale))           # 线索混合半格
 	elif text.length() > 1:
-		fs2 = int(round(20.0 * scale))           # 多字符（双值/∞）缩小字号
+		fs2 = int(round(20.0 * scale))           # 多字符（双值/∞/大数）缩小字号
 	var baseline: float = rect.size.y * 0.5 + fs2 * 0.35
 	draw_string(font, rect.position + Vector2(0, baseline), text, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, fs2, col)
 
