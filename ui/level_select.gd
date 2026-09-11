@@ -14,13 +14,16 @@ extends Control
 const LEVELS_PER_SET := 3       # 每套关卡数（每个变体/混合变体各生成 3 关）
 const PAGE_SIZE := 20           # 一页最多 20 关
 const GRID_COLS := 5            # 网格 5 列
-const SIZES: Array = [5, 6, 7, 8]
-## 每尺寸雷数（约 40% 密度：10/25=40%、14/36=38.9%、20/49=40.8%、26/64=40.6%）。
-const MINE_COUNTS := {5: 10, 6: 14, 7: 20, 8: 26}
-## 删线索阶段墙钟上限（ms）。实测：≤7×7 用 3s 即可删到最优（4~10 线索）；
-## 8×8 是瓶颈（3s→22 线索、4s→19、60s→9，收益递减）。3s 保证交互响应，
-## 8×8 线索略多（关卡稍简单但可接受）；离线批量可加大此值换取更少线索。
-const GEN_TIMEOUT_MS := 3000
+const SIZES: Array = [5, 6, 7, 8, 9]
+## 每尺寸雷数（约 40% 密度：10/25=40%、14/36=38.9%、20/49=40.8%、26/64=40.6%、32/81=39.5%）。
+const MINE_COUNTS := {5: 10, 6: 14, 7: 20, 8: 26, 9: 32}
+## 删线索阶段墙钟上限（ms），按尺寸分档。实测：≤7×7 用 3s 即可删到最优（4~10 线索）；
+## 8×8 是瓶颈（3s→22 线索、4s→19、60s→9，收益递减）——3s 保证交互响应，线索略多但可接受；
+## 9×9 单关 CP-SAT 约 6~12s（32 雷），3s 必超时失败，故单列 15s（GDD 03 号 8×8≤10s 之外）。
+func _gen_timeout(size: int) -> int:
+	if size >= 9:
+		return 15000
+	return 3000
 const MOCK_CLEARED := 1         # 模拟存档：首次进入预置已通关数（3 关中预置 1 关，定位到第 2 关）
 const SCROLL_THRESHOLD := 2.0   # 滚轮累积阈值（factor 单位）
 const ANIM := 0.22              # 统一过渡时长（0.2~0.25s）
@@ -668,7 +671,7 @@ func _ensure_level_file(idx: int) -> String:
 	var gen := PuzzleGenerator.new()
 	var level: Dictionary = gen.generate_with_rules(
 		String(m["clue"]), m["globals"], Vector2i(s, s), _mine_count(), _level_seed(idx),
-		0, 50, null, GEN_TIMEOUT_MS)
+		0, 50, null, _gen_timeout(s))
 	if level.is_empty():
 		return ""
 	# 记录生成参数，便于追溯复现

@@ -1,7 +1,8 @@
 extends SceneTree
 
 # 实测：各尺寸/各规则在大盘上的生成耗时与命中率。
-# 目的：验证「生成器被 MAX_COMBOS 钉死在 5×5」这一说法在当前代码上是否仍成立。
+# 目的：「生成器被 MAX_COMBOS 钉死在 5×5」的说法已证伪（生产路径走 CP-SAT，见坑表 #29）；
+# 本脚本留作各尺寸单关耗时的性能基准（含 9×9）。
 const CliShutdown := preload("res://tools/cli_shutdown.gd")
 
 
