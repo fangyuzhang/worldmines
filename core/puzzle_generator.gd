@@ -397,6 +397,21 @@ func _derive_seed(seed: int, attempt: int) -> int:
 
 
 func _place_mines_rules(clue_rule: Object, globals: Array, cols: int, rows: int, count: int) -> Array[Vector2i]:
+	# 多 G 叠加（G+G / 2G+1C / 3G）：布雷必须**同时满足所有 G**。
+	# 旧策略「只取第一个非空 G 的 place_mines」有两个致命缺陷：
+	#   ① 状态性 G（dt 骨牌划分）不生成 → build_global_constraints 用空/残留划分，约束静默丢失；
+	#   ② 布雷偏向第一个 G，其余 G 靠验证重试 → 接受率极低（mx+rl 实测 1.7s 都出不来）。
+	# 正解：用 CP-SAT 直接求满足全部 G + 总雷数的布局（find_solution 第一可行解）。
+	if globals.size() >= 2:
+		# 状态性 G（dt）必须先 place_mines 生成骨牌划分（约束构建依赖 _dominoes），
+		# 其布雷结果丢弃——find_solution 会重新采样满足该划分的布局。
+		for g in globals:
+			if g.get_rule_id() == &"dt":
+				g.place_mines(_rng, cols, rows, count)
+		var oracle := RuleOracle.new(clue_rule, globals, Vector2i(cols, rows), count, null)
+		var sol: Array[Vector2i] = RuleCpSat.find_solution(oracle.build_spec({}, [], {}))
+		return sol  # 空 = UNSAT/不可行，交给上层重试（不会产出坏关卡）
+	# 单 G：沿用构造式布雷（确定性、快）
 	for g in globals:
 		var m: Array[Vector2i] = g.place_mines(_rng, cols, rows, count)
 		if not m.is_empty():

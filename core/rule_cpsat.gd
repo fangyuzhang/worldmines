@@ -49,6 +49,22 @@ static func is_feasible(spec: Dictionary) -> bool:
 	return fallback_count(spec, 1) >= 1
 
 
+## 采样一个满足全部约束 + 总雷数的雷布局（第一可行解）。
+## 多 G 组合的构造式布雷用——替代「只取第一个 G 的 place_mines」的旧策略
+##（见 puzzle_generator._place_mines_rules），避免状态性 G（dt）丢失 / 接受率极低。
+## 返回 Array[Vector2i]（内部坐标 (c,r)）；无解 / C# 不可用时返回空数组。
+static func find_solution(spec: Dictionary) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	if not available():
+		return out
+	var raw: Array = _solver.FindSolution(spec)
+	for cell in raw:
+		var a: Array = cell
+		if a.size() >= 2:
+			out.append(Vector2i(int(a[1]), int(a[0])))  # C# 返回 [r,c] → 内部 Vector2i(c,r)
+	return out
+
+
 ## 单格强制探测（P0-难度量化）：判断 (r,c) 是否被当前约束集「强制」。
 ## 比 find_forced_cells 便宜（只做 2 次 assumption 探测，不遍历全部自由格），
 ## 用于「必要线索数」贪心移除——每移除一条线索就测一次 target 是否仍被强制。

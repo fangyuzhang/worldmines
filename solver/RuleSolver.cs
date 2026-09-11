@@ -169,6 +169,44 @@ namespace MinesweeperSolver
         }
 
         /// <summary>
+        /// 采样一个满足全部约束（线索 + 全局规则 + 总雷数）的雷布局（第一可行解）。
+        /// 多 G 组合的构造式布雷用——旧的「只取第一个 G 的 place_mines」会丢失状态性 G
+        ///（dt 骨牌划分）或接受率极低，改由 CP-SAT 直接求满足全部 G 的布局。
+        /// 返回 [[r,c]..]；无解（UNSAT/超时）返回空数组。
+        /// </summary>
+        public Godot.Collections.Array FindSolution(Godot.Collections.Dictionary spec)
+        {
+            try
+            {
+                BuildModel(spec);
+            }
+            catch (Exception e)
+            {
+                GD.PushError($"RuleSolver.FindSolution: {e.Message}");
+                return new Godot.Collections.Array();
+            }
+            var solver = MakeSolver(spec);
+            var status = solver.Solve(_model);
+            if (status != CpSolverStatus.Optimal && status != CpSolverStatus.Feasible)
+                return new Godot.Collections.Array(); // 无解（UNSAT 或超时）
+            var mines = new Godot.Collections.Array();
+            // 固定雷格（spec 的 mine_cells）
+            foreach (var kv in _fixedCells)
+                if (kv.Value == 1)
+                    mines.Add(MakeCell(kv.Key / _cols, kv.Key % _cols));
+            // 自由格中第一解为雷的
+            for (int i = 0; i < _freeVars.Count; i++)
+            {
+                if (solver.Value(_freeVars[i]) == 1)
+                {
+                    var (r, c) = _freeCells[i];
+                    mines.Add(MakeCell(r, c));
+                }
+            }
+            return mines;
+        }
+
+        /// <summary>
         /// 单格强制探测（P0-难度量化）：判断 (r,c) 是否被当前 spec 的全部约束「强制」——
         /// 在所有相容解中该格必为雷、或必为安全。
         /// 比 FindForcedCells 便宜：只做 2 次 assumption 探测，不遍历全部自由格。
