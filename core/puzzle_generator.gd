@@ -517,6 +517,10 @@ func _minimal_clue_count(oracle: RuleOracle, cur_active: Dictionary, known_mines
 ## stats（可选出参，P0-难度量化）：非空时收集每轮推出格数 → stats["rounds"] = Array[int]，
 ## 及每轮必要线索数 → stats["complexities"] = Array[int]（精确复杂度）。
 ## 成本近零（演绎本就要跑），是「4 组难度常量」体系的数据基础。
+##
+## 这是生成器**内部**的 CP-SAT 强制格循环（直调 find_forced_cells，带难度统计）。
+## 与 ProofLog.build（玩家视角 + HintSolver，canonical 落盘路径）同构但用途不同：
+## 本函数以「生成期校验 + 难度采集」为目的直接信任自己的 known_mines，不落盘、不产生证明链。
 func _solve_rules_stepwise(grid_size: Vector2i, active: Dictionary, masked: Dictionary, total_mines: int, oracle: RuleOracle, values: Dictionary, stats: Variant = null) -> bool:
 	var cur_active := active.duplicate()
 	var known_mines: Array[Vector2i] = []

@@ -1,6 +1,12 @@
 # solver_perfect_player.gd —— 完美玩家模拟器（文档 §4.4 test_levels_solvable 的种子）
 # 逐轮查 Oracle（带总雷数/剩余雷数计数器），每步必须存在可确定的必安全格或必雷格，
 # 卡死即关卡失败。供测试与生成器复用。
+#
+# ⚠️ 遗留路径：本类走 **BruteForceOracle 穷举回溯**（check 回调），供遗留生成器
+# （puzzle_generator_legacy.gd）使用。**规则关卡的序贯可解性已统一走 CP-SAT 路径**：
+#   - `ProofLog.build()`   —— 玩家视角 + HintSolver（CP-SAT）+ 确证雷不动点（canonical，落盘用）
+#   - `PuzzleGenerator._solve_rules_stepwise()` —— 生成器内部 CP-SAT 强制格循环（带难度统计）
+# 三处看似同构但**演绎源不同**（穷举回溯 vs CP-SAT），勿强行合并；改动须三处同步核对。
 class_name SolverPerfectPlayer
 extends RefCounted
 
