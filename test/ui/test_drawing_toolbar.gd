@@ -14,13 +14,15 @@ func before_each() -> void:
 	_tb.setup(_layer)
 
 
-## 在工具栏子树里按文本递归查找按钮
+## 在工具栏子树里按文本递归查找按钮。
+## 同时匹配文字与 tooltip：绘画开关按钮是「毛笔图标 + tooltip="绘画"」且 **text 为空**
+##（drawing_toolbar.gd 有意做成图标按钮），只看文字会永远找不到 → 测试与 UI 脱节。
 func _find_button(text: String) -> Button:
 	return _find_button_in(_tb, text)
 
 
 func _find_button_in(n: Node, text: String) -> Button:
-	if n is Button and n.text == text:
+	if n is Button and (n.text == text or n.tooltip_text == text):
 		return n
 	for c in n.get_children():
 		var r: Button = _find_button_in(c, text)

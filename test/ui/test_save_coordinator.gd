@@ -68,6 +68,8 @@ func test_t8_quarantine() -> void:
     f.close()
     var d: Dictionary = SaveCoordinator.load_save()
     assert_eq(d, {}, "坏档 load_save 返回空字典")
+    # 声明预期报错：解析坏 JSON 会触发引擎/脚本报错，不声明会被 GUT 判 Unexpected Errors
+    assert_engine_error_count(1)
 
     SaveCoordinator.quarantine()
     assert_true(FileAccess.file_exists(BAK), ".bak 应存在")

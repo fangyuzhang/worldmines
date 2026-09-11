@@ -26,6 +26,8 @@ func test_t9_state_machine() -> void:
     # IDLE + start_level 失败 → IDLE
     assert_false(GameSession.start_level("res://levels/classic_99.json"))
     assert_eq(GameSession.state, GameSession.State.IDLE)
+    # 声明预期报错（LevelLoader 解析/加载失败各一条），否则 GUT 判 Unexpected Errors
+    assert_push_error_count(2)
 
     # IDLE + start_level 成功 → PLAYING
     assert_true(GameSession.start_level(_first_level()))

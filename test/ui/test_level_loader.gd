@@ -47,6 +47,10 @@ func _load_json(path: String) -> Dictionary:
 func test_t6_missing_path_null() -> void:
     var b: Board = LevelLoader.load_level("res://levels/classic_99.json")
     assert_null(b)
+    # 显式声明「本次调用预期会 push_error 一条」。
+    # 不声明的话 GUT 会把预期内的报错判成 Unexpected Errors → 测试假失败；
+    # 声明后既消费掉错误，又顺带验证了「确实报了且只报了一条」。
+    assert_push_error_count(1)
 
 
 # 附加：显示名规则（JSON name 字段 / 文件名回退）

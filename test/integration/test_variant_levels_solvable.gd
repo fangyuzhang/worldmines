@@ -38,8 +38,10 @@ func test_all_variant_levels_load_and_solve() -> void:
 
 	# 当前 levels/ 下非 classic 关卡均为 rule_level（无内置 variant 关卡），variant_count 可为 0；
 	# 规则关卡的可解性由 test_rule_platform 的生成闭环保证，本测试仅作未来 variant 关卡回归护栏。
+	# 必须用 pending 显式跳过：只打印的话 GUT 会判「Did not assert」→ risky。
 	if variant_count == 0:
-		gut.p("  当前无内置 variant 关卡（generated_* 已迁移为 rule_level），跳过")
+		pending("当前无内置 variant 关卡（generated_* 已迁移为 rule_level），无可校验对象")
+		return
 
 
 func _load_json(path: String) -> Dictionary:
