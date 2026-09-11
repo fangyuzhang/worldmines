@@ -114,3 +114,48 @@ func test_verify_detects_tampering() -> void:
 	assert_false(bool(ProofLog.verify(dropped, level).get("ok", true)), "删步骤应被检出")
 	# 3) 空日志
 	assert_false(bool(ProofLog.verify({}, level).get("ok", true)), "空日志应被拒")
+
+
+func test_signature_is_deterministic() -> void:
+	var level := _try_generate()
+	assert_false(level.is_empty(), "关卡应能生成")
+	if level.is_empty():
+		return
+	var b := Board.new()
+	b.load_level(level)
+	var s1 := ProofLog.signature(b)
+	var s2 := ProofLog.signature(b)
+	assert_eq(s1, s2, "同盘面签名应稳定")
+	assert_ne(s1, "", "签名应非空（有初始翻开格）")
+
+
+func test_find_next_returns_first_stage_on_initial_board() -> void:
+	if not RuleCpSat.available():
+		pending("C# 后端不可用（跳过）")
+		return
+	var level := _try_generate()
+	assert_false(level.is_empty(), "关卡应能生成")
+	if level.is_empty():
+		return
+	var log: Dictionary = ProofLog.build(level)
+	assert_true(bool(log.get("solved", false)), "关卡应可解出完整链")
+	var b := Board.new()
+	b.load_level(level)
+	var stage: Array = ProofLog.find_next(log, b)
+	assert_gt(stage.size(), 0, "初始盘面应匹配到第一阶段")
+	for s in stage:
+		var d: Dictionary = s
+		var pos: Array = d["pos"]
+		var p := Vector2i(int(pos[0]), int(pos[1]))
+		assert_eq(b.grid.get_cell(p).state, Cell.State.HIDDEN, "阶段结论格应是隐藏格")
+
+
+func test_find_next_empty_on_no_match() -> void:
+	var b := Board.new()
+	var grid := RectGrid.new()
+	grid.setup(3, 3)
+	b.grid = grid
+	assert_eq(ProofLog.find_next({"steps": []}, b).size(), 0, "空链应返回空")
+	# 步骤缺少 precondition_signature 时不应被匹配
+	var no_sig := {"steps": [{"pos": [0, 0], "state": "safe"}]}
+	assert_eq(ProofLog.find_next(no_sig, b).size(), 0, "无签名步骤不应被匹配")

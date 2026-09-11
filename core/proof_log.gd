@@ -44,13 +44,17 @@ static func build(level: Dictionary, max_rounds: int = MAX_ROUNDS) -> Dictionary
 		if steps.is_empty():
 			out["reason"] = "推不动了（本关在该状态下无必然结论）"
 			break
+		# 本轮的玩家视角状态签名：这一批结论共享同一前提（GDD 13 号 precondition_signature）。
+		var sig := signature(b)
 		var applied := 0
 		for st in steps:
 			var step := st as ReasoningStep
 			var cell: Cell = b.grid.get_cell(step.pos)
 			if cell == null or cell.state != Cell.State.HIDDEN:
 				continue  # 本轮内被前面的结论连带翻开/标记过
-			all_steps.append(step.to_dict())
+			var sd := step.to_dict()
+			sd["precondition_signature"] = sig
+			all_steps.append(sd)
 			if step.state == "safe":
 				b.reveal(step.pos)
 			elif step.state == "mine":
@@ -154,3 +158,55 @@ static func _same_pos(a: Variant, b: Variant) -> bool:
 	if pa.size() != 2 or pb.size() != 2:
 		return false
 	return int(pa[0]) == int(pb[0]) and int(pa[1]) == int(pb[1])
+
+
+## 玩家视角棋盘状态的稳定签名（GDD 13 号 reasoning_chain 的 precondition_signature）。
+## 只含玩家可知的信息：已翻开格的线索值 + 已演绎确证的雷；玩家插的**错旗**不计入。
+## 用途：按盘面匹配证明链的「下一阶段」——玩家不按链操作（先翻别的格/插旗/撤销）时，
+## 仍能凭签名匹配到适用的下一步，而不是线性回放必然失效。
+static func signature(board: Board) -> String:
+	var items: Array = []
+	for pos in board.grid.all_positions():
+		var cell: Cell = board.grid.get_cell(pos)
+		if cell == null:
+			continue
+		if cell.state == Cell.State.REVEALED:
+			items.append("r%d,%d%s" % [pos.x, pos.y, _con_sig(board.get_player_constraint(pos))])
+		elif cell.state == Cell.State.FLAGGED and board.proven_mines.has(pos):
+			items.append("m%d,%d" % [pos.x, pos.y])
+	items.sort()
+	return "|".join(items).sha256_text()
+
+
+## 线索值 → 签名片段（确定性，不依赖字典字段顺序）。
+static func _con_sig(con: Dictionary) -> String:
+	match str(con.get("type", "")):
+		"equality":
+			return "=%s" % str(con.get("value", ""))
+		"interval":
+			return "[%s,%s]" % [str(con.get("lo", "")), str(con.get("hi", ""))]
+		"equality_pair":
+			return "{%s,%s}" % [str(con.get("a", "")), str(con.get("b", ""))]
+		_:
+			return "?"  # 星号格 / 无线索格：只知道「已翻开」，不知道值
+
+
+## 按盘面签名匹配证明链，返回「前提已满足且结论均未应用」的下一**阶段**的全部步骤（数组）。
+## 一个阶段 = 同一前提下推出的一批结论（GDD 13 号 stage 语义）；整批应用后再进入下一阶段。
+## 运行时回放离线链用；匹配不到返回空数组（调用方应退回运行时重算，如 CP-SAT 强制格检测）。
+static func find_next(log: Dictionary, board: Board) -> Array:
+	var sig := signature(board)
+	var out: Array = []
+	for s in log.get("steps", []):
+		var d: Dictionary = s
+		if str(d.get("precondition_signature", "")) != sig:
+			continue
+		var pos: Array = d.get("pos", [])
+		if pos.size() != 2:
+			continue
+		var p := Vector2i(int(pos[0]), int(pos[1]))
+		var cell: Cell = board.grid.get_cell(p)
+		if cell == null or cell.state != Cell.State.HIDDEN:
+			continue  # 该结论已被应用（或该格已翻开/标记）
+		out.append(d)
+	return out

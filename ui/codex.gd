@@ -26,6 +26,32 @@ const CONSTRAINT_DESC := {
     "4c": "按棋盘格黑白染色后，黑格与白格上的雷数相等。",
 }
 
+# 童趣化（GDD 26 号「方块格子岛」）：15 个小精灵的名字 + 大白话台词。
+# 台词口径以 26 号文档 §8「一句话教学」为准，与引擎规则语义一一对应。
+const SPRITES := {
+    "classic": "八方", "4n": "四方", "clock": "圈圈", "hv": "横竖",
+    "fr": "望望", "loopruns": "堆堆", "distsum": "沉沉", "sc": "亲亲",
+    "mx": "同同", "rl": "步步", "pf": "不行", "qd": "分分",
+    "dt": "双双", "ep": "平平", "4c": "花花",
+}
+const SPRITE_LINES := {
+    "classic": "上下左右加四个斜角，一共八方，藏几只我写几！",
+    "4n": "我只数上下左右，斜角的我不管～",
+    "clock": "从头顶开始顺时针数，第一只藏在几点钟方向？",
+    "hv": "我分两句说：横的几只，竖的几只。",
+    "fr": "我脖子只能朝右，右边第一只离我几步？",
+    "loopruns": "别数几只，数它们抱成了几堆！",
+    "distsum": "离我越远越压秤，把重量加起来是几？",
+    "sc": "我只数和我一样颜色的小伙伴哦！",
+    "mx": "我左右是一模一样的，看清左边，右边就知道啦！",
+    "rl": "每一排只比上一排多一只或少一只，像不像下台阶？",
+    "pf": "记住哦，这几种摆法是不允许出现的！",
+    "qd": "地分四块，每块藏几只我都写好了，看小黑板！",
+    "dt": "两块是一对，一对里最多藏一只，找到一只另一只就安全！",
+    "ep": "最左边和最右边一样多，天平不许歪！",
+    "4c": "黑格白格分开数，各有几只，心里有数！",
+}
+
 const _COMBO_LINES := [
     "布局 + 线索（如 mx+4n）：全局约束与线索规则同时生效。",
     "双布局（如 mx+rl）：两个全局约束同时生效，线索采用经典规则。",
@@ -114,8 +140,11 @@ func _def_entry(parent: Node, code: String, kind: String) -> void:
         return
     var d: Dictionary = defs[code]
     var desc: String = (CLUE_DESC if kind == "clue" else CONSTRAINT_DESC).get(code, "")
+    var text := "%s（%s）%s：%s" % [str(d["name"]), code, str(d["diff"]), desc]
+    if SPRITES.has(code):
+        text += "\n　 小精灵「%s」：%s" % [SPRITES[code], SPRITE_LINES[code]]
     var lb := Label.new()
-    lb.text = "%s（%s）%s：%s" % [str(d["name"]), code, str(d["diff"]), desc]
+    lb.text = text
     lb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     lb.add_theme_font_size_override("font_size", 16)
     parent.add_child(lb)
