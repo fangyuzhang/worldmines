@@ -1,0 +1,362 @@
+{
+  "cols": 5,
+  "entries": {
+    "1000": {
+      "difficulty": 0.34,
+      "h": "3c7f502e3b462e9848208e33f0770ba94af770a2ade362d45fcb602bb4be5ef9",
+      "mines": 4,
+      "ms": 183,
+      "revealed": 13
+    },
+    "1001": {
+      "difficulty": 0.8,
+      "h": "b06c8ef6eee779d70bf035348e52b56871fe45ef7dae4fabd81ae07a42acc214",
+      "mines": 4,
+      "ms": 209,
+      "revealed": 8
+    },
+    "1002": {
+      "difficulty": 0.68,
+      "h": "0dd653f706f1b4a12b84581e01af35b9b2c3db43a82d9d633e109aa6b39d9a82",
+      "mines": 4,
+      "ms": 179,
+      "revealed": 8
+    },
+    "1003": {
+      "difficulty": 0.5,
+      "h": "0bc2a3906abe58f1c60efd3038a38419bc586fcc4116fabc418f604ed0f6e3b3",
+      "mines": 4,
+      "ms": 262,
+      "revealed": 5
+    },
+    "1004": {
+      "difficulty": 0.61,
+      "h": "9d7146373d4c94c1ea517556a5531939e76f2c52318b56cc97ef626e99190645",
+      "mines": 4,
+      "ms": 305,
+      "revealed": 7
+    },
+    "1005": {
+      "difficulty": 0.35,
+      "h": "a76fc31f31232b423bd65e2221d0905877a7993a564b08c3cfdb87db60697bab",
+      "mines": 4,
+      "ms": 178,
+      "revealed": 11
+    },
+    "1006": {
+      "difficulty": 0.8,
+      "h": "a32f7f15ef76045773fe02bc88d88158245bb9cb3cf369ef171a72495044a9f3",
+      "mines": 4,
+      "ms": 288,
+      "revealed": 5
+    },
+    "1007": {
+      "difficulty": 0.79,
+      "h": "e2bb7fbd319b6b30b1ab37040882028404ca4d69f6778b0d0d15917022509c3a",
+      "mines": 4,
+      "ms": 205,
+      "revealed": 7
+    },
+    "1008": {
+      "difficulty": 0.71,
+      "h": "acb5787171bfcdce2ae796bf7d09b3cd82b4c72e34b9a90e62250679ec2643fc",
+      "mines": 4,
+      "ms": 202,
+      "revealed": 10
+    },
+    "1009": {
+      "difficulty": 0.78,
+      "h": "ee109b09567bc886837c9b52e75eb447c64f707a8e13d3611a3c6fca3ea695ba",
+      "mines": 4,
+      "ms": 252,
+      "revealed": 6
+    },
+    "1010": {
+      "difficulty": 0.24,
+      "h": "2b961cc7b638d0802da26d93a01510c36b066693ba6a35834599cc0933d2102d",
+      "mines": 4,
+      "ms": 175,
+      "revealed": 8
+    },
+    "1011": {
+      "difficulty": 0.26,
+      "h": "442f041ae1d68e139ab1897f4c6e82cd9edfe67380a582a7b5c246beedb8c7e0",
+      "mines": 4,
+      "ms": 158,
+      "revealed": 8
+    },
+    "1012": {
+      "difficulty": 0.77,
+      "h": "3bc574f8bb44b7441ec4ef6a8ed2ca410c142725db9f42a7bcee51d2a3207501",
+      "mines": 4,
+      "ms": 223,
+      "revealed": 7
+    },
+    "1013": {
+      "difficulty": 0.27,
+      "h": "b7cc2e848956323218405dedee900f96904398619e7110fc53e5a42ec2855b8c",
+      "mines": 4,
+      "ms": 159,
+      "revealed": 10
+    },
+    "1014": {
+      "difficulty": 0.65,
+      "h": "9a3b24fa71751e369a106f1bd9aa308977853bdfd3dea382e07d53d252f2e2f7",
+      "mines": 4,
+      "ms": 146,
+      "revealed": 11
+    },
+    "1015": {
+      "difficulty": 0.74,
+      "h": "80f3ad29fc183dadb1eb1a4d5cb9c76e4afa26c57bf055814a7d542b3230c9c3",
+      "mines": 4,
+      "ms": 257,
+      "revealed": 6
+    },
+    "1016": {
+      "difficulty": 0.26,
+      "h": "de32ddbca7374827bddb38a3ef16dfef150cb2ae374bf590f8249af1b5d85c44",
+      "mines": 4,
+      "ms": 171,
+      "revealed": 8
+    },
+    "1017": {
+      "difficulty": 0.27,
+      "h": "4c75a0cc67b02b82e3a35c960614d3d89371f874ee2221d036263dfc1b0dd9eb",
+      "mines": 4,
+      "ms": 174,
+      "revealed": 9
+    },
+    "1018": {
+      "difficulty": 1.28,
+      "h": "c100c4544b964bb34224817e3e61175b52f6dd8735a5c61463508733e17b4277",
+      "mines": 4,
+      "ms": 228,
+      "revealed": 6
+    },
+    "1019": {
+      "difficulty": 0.09,
+      "h": "27e3482ec59833054ec7d0e277b0e084492109b23d013b3b705dfa3231fb25d5",
+      "mines": 4,
+      "ms": 74,
+      "revealed": 14
+    },
+    "1020": {
+      "difficulty": 0.79,
+      "h": "e9082f79ff12febbb1d41c5172ce28b6346e7549de8972d1a320332d24589911",
+      "mines": 4,
+      "ms": 233,
+      "revealed": 7
+    },
+    "1021": {
+      "difficulty": 0.54,
+      "h": "7e987545c3086a55456fdf6229fcfeca30ed324384b2d97be293ea31e6a27515",
+      "mines": 4,
+      "ms": 219,
+      "revealed": 5
+    },
+    "1022": {
+      "difficulty": 0.74,
+      "h": "4a0460c716b4090de728f8df7e43639c677c3167584c7f433889c8f8e0c494d1",
+      "mines": 4,
+      "ms": 229,
+      "revealed": 6
+    },
+    "1023": {
+      "difficulty": 0.77,
+      "h": "9b7711de1d995080a6cd0977e8b607d50e5e397459d9288c758aa7b2708f979f",
+      "mines": 4,
+      "ms": 207,
+      "revealed": 7
+    },
+    "1024": {
+      "difficulty": 0.27,
+      "h": "bcd0b5988f670dd1bfb1885b53add8063c9ccde7614785005191cdcb5b35cad0",
+      "mines": 4,
+      "ms": 156,
+      "revealed": 10
+    },
+    "1025": {
+      "difficulty": 0.47,
+      "h": "df1145ed3303f1e80b7f364e9b993e5a71e5501957b90c91a3202e72b787973d",
+      "mines": 4,
+      "ms": 341,
+      "revealed": 5
+    },
+    "1026": {
+      "difficulty": 0.45,
+      "h": "c4188b7784e67f292587f2524f4203506bd839f5b927be028abb087096d53f98",
+      "mines": 4,
+      "ms": 309,
+      "revealed": 4
+    },
+    "1027": {
+      "difficulty": 0.29,
+      "h": "71ccdf563e24221ef1eb5193d5677147b6072e18ba3c75a18498442f8bde6a90",
+      "mines": 4,
+      "ms": 122,
+      "revealed": 11
+    },
+    "1028": {
+      "difficulty": 0.31,
+      "h": "31ec7076225567ce78d566488465be301f85c03c5c8530479c171a80a805505f",
+      "mines": 4,
+      "ms": 95,
+      "revealed": 12
+    },
+    "1029": {
+      "difficulty": 0.75,
+      "h": "25d5b91764dac079e110d30950b89a2705917d6966aa1049cbe1e960760688c2",
+      "mines": 4,
+      "ms": 195,
+      "revealed": 7
+    },
+    "1030": {
+      "difficulty": 0.49,
+      "h": "4b012ae9ce39190e2fe763069f95fad1c37fb322a83728ddfebd883b56c95644",
+      "mines": 4,
+      "ms": 298,
+      "revealed": 4
+    },
+    "1031": {
+      "difficulty": 0.74,
+      "h": "01c2f9fc7adbf5eda3c1f5bc746ed32d0d3f45a0eba617c4a29d01736f34e2a3",
+      "mines": 4,
+      "ms": 211,
+      "revealed": 6
+    },
+    "1032": {
+      "difficulty": 0.86,
+      "h": "225f785f342018807a4cc57c54f2a95ba2e9a4333d6605d2bed733902ff08daa",
+      "mines": 4,
+      "ms": 562,
+      "revealed": 3
+    },
+    "1033": {
+      "difficulty": 0.7,
+      "h": "86091df0760ad2d4d7e614136bb378238957b522e3d8a1f584a0e758af25fb12",
+      "mines": 4,
+      "ms": 165,
+      "revealed": 11
+    },
+    "1034": {
+      "difficulty": 0.28,
+      "h": "92ff84e41afef180500224943c5ff9aece1b277e45115c2c0ad59633b8a8b8e9",
+      "mines": 4,
+      "ms": 132,
+      "revealed": 7
+    },
+    "1035": {
+      "difficulty": 0.43,
+      "h": "4d80093e3d3281ef41a59a4bc6fd9d1edacb813aacd689f89d48e48ddc4ef9b0",
+      "mines": 4,
+      "ms": 279,
+      "revealed": 4
+    },
+    "1036": {
+      "difficulty": 0.79,
+      "h": "0cd69a1b10c9730f2020a570a8e7929857f55118efa125851436d4aab44b7407",
+      "mines": 4,
+      "ms": 141,
+      "revealed": 9
+    },
+    "1037": {
+      "difficulty": 0.83,
+      "h": "313d4f3907f994f74ee61c77466d88ceb7ec519d0fde54538ec02dd6f4d8eae3",
+      "mines": 4,
+      "ms": 204,
+      "revealed": 7
+    },
+    "1038": {
+      "difficulty": 0.49,
+      "h": "acd91b689610a579f122ea771025e2097175b324992f44f663324a31f925806f",
+      "mines": 4,
+      "ms": 241,
+      "revealed": 6
+    },
+    "1039": {
+      "difficulty": 0.78,
+      "h": "c49afa996b22e044bc1fd0bad29baa3944444005e30f7848e68208bdbf2a6236",
+      "mines": 4,
+      "ms": 207,
+      "revealed": 8
+    },
+    "1040": {
+      "difficulty": 0.73,
+      "h": "d3cf09a400e1c9f058ba04b5443e46af0cdd46dad24d3ac6eef5ac981516f280",
+      "mines": 4,
+      "ms": 235,
+      "revealed": 4
+    },
+    "1041": {
+      "difficulty": 0.29,
+      "h": "a1a2d4ab0348c13eb413395055befe4e438ce85f2f09fe2a9c51113e86a6a806",
+      "mines": 4,
+      "ms": 149,
+      "revealed": 9
+    },
+    "1042": {
+      "difficulty": 0.25,
+      "h": "e1d06c91ce9c5c2b069fd93ad88d35a3e6ee3dbe2261d95520112090df4889fa",
+      "mines": 4,
+      "ms": 142,
+      "revealed": 9
+    },
+    "1043": {
+      "difficulty": 0.48,
+      "h": "dd9eca6d3e3468e239b0616c05a8fcd7b0c6c898b949ce9a6a37d6c0e70db739",
+      "mines": 4,
+      "ms": 232,
+      "revealed": 5
+    },
+    "1044": {
+      "difficulty": 0.54,
+      "h": "d604c04dfee5936af55fc3d6c5ca10ee0260c164d8b74ac040de8d69aa346e8f",
+      "mines": 4,
+      "ms": 260,
+      "revealed": 7
+    },
+    "1045": {
+      "difficulty": 0.31,
+      "h": "4f1b7de52e8ae5ea2917662d5e58add7b0ae2588a25c6dfe759fd263abf782c9",
+      "mines": 4,
+      "ms": 116,
+      "revealed": 11
+    },
+    "1046": {
+      "difficulty": 0.26,
+      "h": "b73beb6c63171f31e38acf5c95b711d623ee152473ca640ac9680ede54e7f820",
+      "mines": 4,
+      "ms": 201,
+      "revealed": 8
+    },
+    "1047": {
+      "difficulty": 0.85,
+      "h": "108f27df3e145e90d25b2d26bc76b2a83eb3653d00efb679c13cb85d944b986d",
+      "mines": 4,
+      "ms": 284,
+      "revealed": 6
+    },
+    "1048": {
+      "difficulty": 0.4,
+      "h": "6bcd9c5a20c6894f2c974bbfa25bc446c97729b79c09f7348443f9984cb84ba8",
+      "mines": 4,
+      "ms": 329,
+      "revealed": 2
+    },
+    "1049": {
+      "difficulty": 0.28,
+      "h": "df7b7f55893815307436fe2d6b9e55c347406a8ba13341c3154cc0b1c3e83b30",
+      "mines": 4,
+      "ms": 146,
+      "revealed": 10
+    }
+  },
+  "globals": [],
+  "mines": 4,
+  "note": "验证资产④：固定 seed 回归黄金快照。由已核实的生成器一次性产出；提交后不得随意改动，改动前必须确认是有意的行为变更（并用 tools/gen_seed_golden.gd 重建）。",
+  "rows": 5,
+  "rule": "classic",
+  "seed_base": 1000,
+  "seed_count": 50
+}
