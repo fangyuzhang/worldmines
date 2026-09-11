@@ -35,11 +35,25 @@ $err   = Join-Path $env:TEMP "runbatch_$stamp.err"
 if (-not (Test-Path $Godot))   { Write-Host "Godot not found: $Godot" -ForegroundColor Red;   exit 2 }
 if (-not (Test-Path $Project)) { Write-Host "Project not found: $Project" -ForegroundColor Red; exit 2 }
 
-# Optional: sweep leftover Godot CLI processes from previous stuck runs.
-# The GUI editor is never touched (different image name).
-if ($KillStale) {
-    Get-Process -Name 'Godot_v4.7.2-stable_mono_win64_console' -ErrorAction SilentlyContinue |
-        ForEach-Object { Write-Host "killing stale PID $($_.Id)"; taskkill /pid $_.Id /t /f | Out-Null }
+# Detect / sweep leftover HEADLESS Godot processes from previous stuck runs.
+#
+# 关键：不能按进程名过滤！实测卡死的僵尸是 **Godot_v4.7.2-stable_mono_win64.exe（非 console 版）
+# 以 --headless 启动** 的，按 '..._console' 名字过滤会漏掉它 → 僵尸继续占 .godot 锁 →
+# 后续命令连锁假死。正确的判别依据是**命令行里有没有 --headless**：
+# 交互用的 GUI 编辑器不会有 --headless，因此永远不会被误杀。
+$godots = @(Get-CimInstance Win32_Process -Filter "Name = 'Godot_v4.7.2-stable_mono_win64_console.exe' OR Name = 'Godot_v4.7.2-stable_mono_win64.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -like '*--headless*' })
+
+if ($godots.Count -gt 0) {
+    Write-Host "  warning: $($godots.Count) stale headless Godot process(es) running (PIDs: $($godots.ProcessId -join ',')) - they may hold the .godot lock and cause hangs" -ForegroundColor Yellow
+}
+
+if ($KillStale -and $godots.Count -gt 0) {
+    foreach ($g in $godots) {
+        Write-Host "killing stale headless PID $($g.ProcessId)" -ForegroundColor DarkYellow
+        taskkill /pid $g.ProcessId /t /f 2>&1 | Out-Null
+    }
+    Start-Sleep -Milliseconds 500
 }
 
 $argv = @('--headless', '--path', $Project, '-s', $Script, '--') + $ScriptArgs
