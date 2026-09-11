@@ -91,6 +91,11 @@ func _build_ui() -> void:
     ng_row.add_child(ng_opt)
     vbox.add_child(ng_row)
 
+    # 终极模式附加开关（对标 doc10 §2.3；仅在终极档下生效）
+    _add_check_row(vbox, "终极：隐藏剩余雷数", func(v: bool): SettingsManager.set_ult_hide_mines(v), SettingsManager.ult_hide_mines)
+    _add_check_row(vbox, "终极：隐藏可断定格数", func(v: bool): SettingsManager.set_ult_hide_deducible(v), SettingsManager.ult_hide_deducible)
+    _add_check_row(vbox, "终极：卡住时自动揭星", func(v: bool): SettingsManager.set_ult_auto_reveal(v), SettingsManager.ult_auto_reveal)
+
     # 绘画层透明度（0.5~1.0）
     var op_row := HBoxContainer.new()
     op_row.add_theme_constant_override("separation", 20)

@@ -154,6 +154,9 @@ func reveal(pos: Vector2i) -> void:
     if state == State.PLAYING and board.state == Board.GameState.PLAYING and not timer_started:
         timer_started = true
     _maybe_autosave()
+    # 翻完这一格可能已经推不动了 → 终极档自动揭星（若开启）
+    if board.state == Board.GameState.PLAYING:
+        _maybe_auto_ultimate_hint()
 
 
 func toggle_flag(pos: Vector2i) -> void:
@@ -272,16 +275,21 @@ func is_deducible_safe(pos: Vector2i) -> bool:
     return _ng_safe_cache.has(pos)
 
 
-## 缓存有效性标记：全盘「位置 + 状态」滚动哈希（任一格状态变化即失效）。
-## 不用「计数」代替——一增一减的换位会让计数不变而约束已变，缓存会错误命中。
+## 缓存有效性标记。必须同时覆盖三件事，否则会误命中过期缓存：
+##   ① 盘面实例（同关卡重开得到的新 Board 状态图案可能完全相同）；
+##   ② 每格的 状态 + 星号位（星号改变玩家可见信息，但不改 state）；
+##   ③ 位置（防止「状态计数相同但换位」的情况）。
+## 历史 bug：只用「位置 + 状态」哈希 → 星号变化与换 Board 都不失效，
+## 实测表现为「新盘面复用了上一局的可断定结论」。
 func _deduce_stamp() -> int:
-    var h := 17
+    var h := int(board.get_instance_id()) % 2147483647
     var sz: Vector2i = board.grid.size()
     for y in sz.y:
         for x in sz.x:
             var c: Cell = board.grid.get_cell(Vector2i(x, y))
             var st: int = c.state if c != null else -1
-            h = (h * 31 + st * 131 + x * 7 + y) % 2147483647
+            var star: int = 1 if (c != null and c.starred) else 0
+            h = (h * 31 + st * 131 + star * 17 + x * 7 + y) % 2147483647
     return h
 
 
@@ -304,6 +312,31 @@ func _rebuild_ng_cache() -> void:
 ## 被拒绝的猜测次数（本局）。
 func rejected_guess_count() -> int:
     return _ng_rejected
+
+
+## 当前盘面下「可无猜推出的安全格数」（终极模式附加信息用）。
+## 复用同一份推导缓存，不额外触发一次求解。
+func deducible_safe_count() -> int:
+    if board == null:
+        return 0
+    if _ng_cache_step != _deduce_stamp():
+        _rebuild_ng_cache()
+    return _ng_safe_cache.size()
+
+
+## 终极模式附加开关（doc10 §2.3 AddOnAutoReveal）：可推格数为 0 时自动按下提示
+## ——即自动揭开星号让对局继续，免去玩家手动点提示。
+## 注意：提示被设为「禁用」时不做自动化（尊重玩家的显式关闭）。
+func _maybe_auto_ultimate_hint() -> void:
+    if SettingsManager.no_guess_mode != NO_GUESS_ULTIMATE:
+        return
+    if not SettingsManager.ult_auto_reveal:
+        return
+    if board == null or not board.has_stars():
+        return
+    if deducible_safe_count() > 0:
+        return
+    request_hint()
 
 
 # ============ 状态机转换（§10.7.8；非法组合忽略 + push_warning，不崩溃） ============

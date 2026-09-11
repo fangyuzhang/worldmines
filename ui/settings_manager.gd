@@ -30,6 +30,15 @@ var hint_charge: bool = true
 # 无猜模式（对标 doc10 §2）：0=关闭 / 1=专家（禁止猜测：拒绝翻开推不出来的格）。
 # 红线兼容实现——不移动雷位，故不破坏 R01 与关卡数据；详见 GameSession 同名小节注释。
 var no_guess_mode: int = 0
+# ---- 终极模式附加开关（对标 doc10 §2.3）----
+# 终极模式下默认「游戏前期隐藏总雷数」（doc 原文），故默认隐藏。
+var ult_hide_mines: bool = true
+# 勾选则不给「剩余可断定格数」信息（doc: AddOnEarlyMineCount）；默认隐藏。
+var ult_hide_deducible: bool = true
+# 勾选则「剩余可推格数为 0 时自动按下提示按钮」（doc: AddOnAutoReveal）。
+var ult_auto_reveal: bool = false
+# 注：doc 的 AddOnSecondary（必须标出副板格）在本作**不适用**——本作无「主板/副板」双板概念，
+# 教程格式里的空列只是视觉分隔，不是需要标记的副盘面。
 # 窗口模式：true = 独占全屏；false = 窗口模式（可调整大小）
 var fullscreen: bool = false
 
@@ -64,6 +73,9 @@ func load_cfg() -> void:
     hint_mode = clampi(int(cfg.get_value("game", "hint_mode", 0)), 0, 2)
     hint_charge = _get_bool(cfg, "hint_charge", true)
     no_guess_mode = clampi(int(cfg.get_value("game", "no_guess_mode", 0)), 0, 2)
+    ult_hide_mines = _get_bool(cfg, "ult_hide_mines", true)
+    ult_hide_deducible = _get_bool(cfg, "ult_hide_deducible", true)
+    ult_auto_reveal = _get_bool(cfg, "ult_auto_reveal", false)
     fullscreen = _get_bool(cfg, "fullscreen", false)
     AudioManager.enabled = sfx_enabled
 
@@ -94,6 +106,9 @@ func save() -> void:
     cfg.set_value("game", "hint_mode", hint_mode)
     cfg.set_value("game", "hint_charge", hint_charge)
     cfg.set_value("game", "no_guess_mode", no_guess_mode)
+    cfg.set_value("game", "ult_hide_mines", ult_hide_mines)
+    cfg.set_value("game", "ult_hide_deducible", ult_hide_deducible)
+    cfg.set_value("game", "ult_auto_reveal", ult_auto_reveal)
     cfg.set_value("game", "fullscreen", fullscreen)
     cfg.save(PATH)
 
@@ -176,6 +191,21 @@ func set_hint_charge(v: bool) -> void:
 
 func set_no_guess_mode(v: int) -> void:
     no_guess_mode = clampi(v, 0, 2)
+    save()
+
+
+func set_ult_hide_mines(v: bool) -> void:
+    ult_hide_mines = v
+    save()
+
+
+func set_ult_hide_deducible(v: bool) -> void:
+    ult_hide_deducible = v
+    save()
+
+
+func set_ult_auto_reveal(v: bool) -> void:
+    ult_auto_reveal = v
     save()
 
 

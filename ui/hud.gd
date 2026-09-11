@@ -84,7 +84,17 @@ func _process(_delta: float) -> void:
         _mines_label.text = "雷数 0"
         _time_label.text = "时间 00:00"
         return
-    _mines_label.text = "雷数 %d" % (board.total_mines - _flag_count(board))
+    # 终极模式附加开关（doc10 §2.3 AddOnMines / AddOnHideCount）：
+    # 勾选「隐藏剩余雷数」时只显示符号，不泄露计数。
+    var ult: bool = SettingsManager.no_guess_mode == GameSession.NO_GUESS_ULTIMATE
+    if ult and SettingsManager.ult_hide_mines:
+        _mines_label.text = "雷数 ?"
+    else:
+        _mines_label.text = "雷数 %d" % (board.total_mines - _flag_count(board))
+    # AddOnEarlyMineCount 的反面：默认隐藏「剩余可断定格数」；开启时才显示。
+    # 只在显示时才算（推导含 CP-SAT，避免默认路径白付性能）。
+    if ult and not SettingsManager.ult_hide_deducible:
+        _mines_label.text += "　可断定 %d" % GameSession.deducible_safe_count()
     var total: int = int(GameSession.elapsed)
     var m: int = total / 60
     var s: int = total % 60

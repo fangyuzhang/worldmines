@@ -114,6 +114,123 @@ func test_ultimate_hint_reveals_stars_when_stuck() -> void:
 	GameSession.board = saved_board
 
 
+## 附加开关 AddOnAutoReveal：卡住时自动揭星，免手动点提示。
+func test_auto_reveal_when_stuck() -> void:
+	if not RuleCpSat.available():
+		pending("C# 后端不可用（跳过）")
+		return
+	var level := _try_generate("classic", [])
+	assert_false(level.is_empty(), "关卡应能生成")
+	if level.is_empty():
+		return
+	var b := Board.new()
+	b.load_level(level)
+	# 把全部已翻开格打星 + 让本次新翻开的格也打星 → 玩家视角完全无线索 → 必然推不动
+	b.hide_new_clues = true
+	for p in b.grid.all_positions():
+		var c: Cell = b.grid.get_cell(p)
+		if c.state == Cell.State.REVEALED:
+			c.starred = true
+
+	var saved_mode: int = SettingsManager.no_guess_mode
+	var saved_hint: int = SettingsManager.hint_mode
+	var saved_auto: bool = SettingsManager.ult_auto_reveal
+	var saved_state: int = GameSession.state
+	var saved_board: Board = GameSession.board
+	GameSession.board = b
+	GameSession.state = GameSession.State.PLAYING
+	SettingsManager.no_guess_mode = 2
+	SettingsManager.hint_mode = 0
+	SettingsManager.ult_auto_reveal = true
+
+	# 翻一个真值安全的隐藏格 → 翻完自动判定「推不动」→ 自动揭星
+	var mines := _true_mine_set(level)
+	var target := Vector2i(-1, -1)
+	var sz: Vector2i = b.grid.size()
+	for y in sz.y:
+		for x in sz.x:
+			var p := Vector2i(x, y)
+			if b.grid.get_cell(p).state == Cell.State.HIDDEN and not mines.has(p):
+				target = p
+				break
+		if target.x >= 0:
+			break
+	if target.x < 0:
+		pending("未找到可翻开的隐藏安全格")
+		return
+	# 直接驱动「卡住自动揭星」的判定（不经 reveal，避免一翻即终局时按设计跳过自动揭星）
+	GameSession._maybe_auto_ultimate_hint()
+	assert_false(b.has_stars(), "开启自动揭星后，卡住时应自动揭开星号")
+
+	SettingsManager.no_guess_mode = saved_mode
+	SettingsManager.hint_mode = saved_hint
+	SettingsManager.ult_auto_reveal = saved_auto
+	GameSession.state = saved_state
+	GameSession.board = saved_board
+
+
+## 反向对照：未开启「卡住自动揭星」时，星号必须原样保留（不许自作主张替玩家揭）。
+func test_auto_reveal_off_keeps_stars() -> void:
+	if not RuleCpSat.available():
+		pending("C# 后端不可用（跳过）")
+		return
+	var level := _try_generate("classic", [])
+	assert_false(level.is_empty(), "关卡应能生成")
+	if level.is_empty():
+		return
+	var b := Board.new()
+	b.load_level(level)
+	for p in b.grid.all_positions():
+		var c: Cell = b.grid.get_cell(p)
+		if c.state == Cell.State.REVEALED:
+			c.starred = true
+
+	var saved_mode: int = SettingsManager.no_guess_mode
+	var saved_auto: bool = SettingsManager.ult_auto_reveal
+	var saved_state: int = GameSession.state
+	var saved_board: Board = GameSession.board
+	GameSession.board = b
+	GameSession.state = GameSession.State.PLAYING
+	SettingsManager.no_guess_mode = 2
+	SettingsManager.ult_auto_reveal = false  # 关闭
+
+	GameSession._maybe_auto_ultimate_hint()
+	assert_true(b.has_stars(), "未开启自动揭星时星号必须保留")
+
+	SettingsManager.no_guess_mode = saved_mode
+	SettingsManager.ult_auto_reveal = saved_auto
+	GameSession.state = saved_state
+	GameSession.board = saved_board
+
+
+## 可断定格数查询：与提示里的 safe 结论数必须一致（不变量）。
+## 注意：某阶段「只有必雷结论、没有必安结论」是合法情形，故不假设它一定 > 0。
+func test_deducible_safe_count_positive() -> void:
+	if not RuleCpSat.available():
+		pending("C# 后端不可用（跳过）")
+		return
+	var level := _try_generate("classic", [])
+	assert_false(level.is_empty(), "关卡应能生成")
+	if level.is_empty():
+		return
+	var b := Board.new()
+	b.load_level(level)
+	var saved_state: int = GameSession.state
+	var saved_board: Board = GameSession.board
+	GameSession.board = b
+	GameSession.state = GameSession.State.PLAYING
+	var steps: Array = HintSolver.new().hint(b)
+	assert_gt(steps.size(), 0, "序贯可解关卡的初始盘面应有可推出的结论")
+	var expect := 0
+	for st in steps:
+		if (st as ReasoningStep).state == "safe":
+			expect += 1
+	assert_eq(GameSession.deducible_safe_count(), expect,
+		"可断定安全格数应与提示中的 safe 结论数一致")
+	GameSession.state = saved_state
+	GameSession.board = saved_board
+
+
 ## 终极档不禁止猜测（难度来自星号遮蔽，不是禁止操作）——与专家档语义区分。
 func test_ultimate_does_not_block_guessing() -> void:
 	var level := _try_generate("classic", [])
