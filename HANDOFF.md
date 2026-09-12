@@ -102,6 +102,13 @@ dotnet build
 3. **生成后门禁**：`verify_batch`（Board 构造 + 序贯可解）+ `batch_audit_r07`（R07 雷数契约）+ ProofLog 复核。
 **Mod 作者工具**：`tools/mod_selfcheck.gd -- <clue_id> [globals]`——全尺寸体检（可行性/试生成/复核/难度分档），作者上架前自跑。契约与防线详见 GDD 23 号 §3.1.x。
 
+**生成质量优化批（v2.9.3）**：
+- **多解取优**：`_find_solution_best` 对同约束采样 3 解（确定性 random_seed），按 2×2 窗口雷数方差选最均匀——堆簇解结构差是序贯验证低产的通用根因（rl_ep 9×9 实测 4/4）。
+- **多样性门**：批量生成时新关与组内已有盘峰值 Jaccard > 0.85 拒收（强约束小盘如 dt_4c 5×5 可行空间小、不同 seed 撞相似盘；随机独立盘期望 J≈0.25，0.85 只拦几乎同盘）。审计工具 `tools/diversity_report.gd`。
+- **目标难度**：批量工具第 8/12 参 `target_difficulty`（>0 删到达标即停，可定向产 hard 档）。
+- **报告汇总**：`tools/report_merge.gd`（多分片报告合并；全库权威统计仍用 `batch_audit_r07.gd`）。
+- **UI**：不可行尺寸 tooltip 说明原因；生成中文案带按尺寸耗时预估。
+
 ### 能 / 不能
 
 | 能 | 不能 / 受限 |
