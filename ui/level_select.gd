@@ -24,6 +24,15 @@ func _gen_timeout(size: int) -> int:
 	if size >= 9:
 		return 15000
 	return 3000
+
+
+## 生成耗时预览（按钮文案用）：按尺寸的实测经验值（classic 线索，自由模式口径）。
+func _estimate_gen_seconds(size: int) -> int:
+	if size >= 9:
+		return 12
+	if size >= 8:
+		return 4
+	return 1
 const MOCK_CLEARED := 1         # 模拟存档：首次进入预置已通关数（3 关中预置 1 关，定位到第 2 关）
 const SCROLL_THRESHOLD := 2.0   # 滚轮累积阈值（factor 单位）
 const ANIM := 0.22              # 统一过渡时长（0.2~0.25s）
@@ -473,10 +482,13 @@ func _refresh_popup() -> void:
 				break
 	_title_label.text = "%s · %d×%d" % [m["name"], SIZES[_size_idx], SIZES[_size_idx]]
 
-	# 尺寸按钮高亮 + 可行性禁用（不可行组合按钮置灰，鼠标悬停可见但点不了）
+	# 尺寸按钮高亮 + 可行性禁用（不可行组合按钮置灰 + tooltip 说明原因，点不了）
 	for i in _size_btns.size():
 		_style_choice(_size_btns[i], i == _size_idx)
-		_size_btns[i].disabled = not _mode_feasible(m, SIZES[i])
+		var ok := _mode_feasible(m, SIZES[i])
+		_size_btns[i].disabled = not ok
+		_size_btns[i].tooltip_text = "" if ok else \
+			"该变体在 %d×%d（%d 雷）下数学上无解——请换尺寸或换变体" % [SIZES[i], SIZES[i], int(MINE_COUNTS.get(SIZES[i], 0))]
 	_style_frame()
 
 	# 分页：定位到「最新解锁关卡」所在页（切换尺寸时重置）
@@ -659,8 +671,10 @@ func _on_play() -> void:
 		_refresh_stat()
 		_toast(str(pre["reason"]))
 		return
-	# 2) 组合可行，进入生成（仍可能换 seed 尝试，但不会对 UNSAT 组合白跑）
-	_play_btn.text = "生成中…"
+	# 2) 组合可行，进入生成（仍可能换 seed 尝试，但不会对 UNSAT 组合白跑）。
+	#    生成是同步阻塞的单次调用（CP-SAT 全管线），无法中途刷新进度——给出按尺寸的
+	#    诚实预估，避免玩家以为卡死（9×9 单关实测 ~9~15s）。
+	_play_btn.text = "生成中…（预计约 %d 秒）" % _estimate_gen_seconds(s)
 	await get_tree().process_frame
 	var path := _ensure_level_file(_selected)
 	if path == "":

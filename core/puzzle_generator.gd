@@ -247,8 +247,14 @@ static func precheck_rules(clue_rule_id: String, global_rule_ids: Array, size: V
 	var rows := size.y
 	var n := topology.cell_count() if topology != null else cols * rows
 	var mc := clampi(mine_count, 1, n - 1)
-	# 构建「最小 spec」：只含全局约束 + 总雷数，不含任何具体线索。
-	# is_feasible 只求「存在满足约束的雷分布」，单次 CP-SAT 求解，毫秒级。
+	# 矩形盘：统一走 RuleFeasibility 真值查询（CP-SAT + 缓存 + dt 骨牌重采样）——
+	# 与 UI 尺寸选择器、批量预筛共用唯一入口，避免两份 is_feasible 逻辑各自演化。
+	# 已知规则已解析完毕（未知规则上面已明确拒绝）→ 此处 query 只回真值。
+	if topology == null:
+		if RuleFeasibility.query(clue_rule_id, global_rule_ids, cols, mc):
+			return {"ok": true, "reason": ""}
+		return {"ok": false, "reason": "该变体组合在 %d×%d 棋盘、%d 雷下无可行布局（规则约束矛盾或雷数不可达）" % [cols, rows, mc]}
+	# 异形拓扑（RuleFeasibility 不覆盖）：保持 CP-SAT 直查。
 	var oracle := RuleOracle.new(clue_rule, globals, size, mc, topology)
 	var spec := oracle.build_spec({}, [], {})
 	if not RuleCpSat.is_feasible(spec):
@@ -396,6 +402,61 @@ func _derive_seed(seed: int, attempt: int) -> int:
 	return seed * 1000003 + attempt
 
 
+## 多解采样取优（v2.9.3）：对同一约束采样 SOLUTION_SAMPLES 个候选解
+##（random_seed 由确定性 RNG 派生——可复现性保持；C# 侧 FindSolution 单 worker + 固定种子），
+## 按「2×2 窗口雷数方差」选最均匀的解。均匀结构 → 线索信息分布好 → 序贯验证通过率高。
+## 全部采样失败（UNSAT/超时）→ 返回空，交上层重试（与单次 find_solution 同语义）。
+const SOLUTION_SAMPLES := 3
+
+func _find_solution_best(oracle: RuleOracle, cols: int, rows: int) -> Array[Vector2i]:
+	var best: Array[Vector2i] = []
+	var best_score := INF
+	for _i in SOLUTION_SAMPLES:
+		var spec := oracle.build_spec({}, [], {})
+		# random_seed 从本实例确定性 RNG 派生（_rng 已按 _derive_seed(seed,attempt) 设置）
+		# → 同 seed 重放走同一条采样路径得同盘。
+		spec["random_seed"] = _rng.randi()
+		var sol: Array[Vector2i] = RuleCpSat.find_solution(spec)
+		if sol.is_empty():
+			continue
+		var score := _uniformity_score(sol, cols, rows)
+		if score < best_score:
+			best_score = score
+			best = sol
+	return best
+
+
+## 结构均匀度评分：全部 2×2 窗口雷数的方差（越小越均匀）。堆簇解方差大、均匀解接近 0。
+static func _uniformity_score(mines: Array[Vector2i], cols: int, rows: int) -> float:
+	if mines.is_empty() or cols < 2 or rows < 2:
+		return 0.0
+	var ms := {}
+	for m in mines:
+		ms[m] = true
+	var vals: Array[float] = []
+	var sum := 0.0
+	for r in rows - 1:
+		for c in cols - 1:
+			var k := 0
+			if ms.has(Vector2i(c, r)):
+				k += 1
+			if ms.has(Vector2i(c + 1, r)):
+				k += 1
+			if ms.has(Vector2i(c, r + 1)):
+				k += 1
+			if ms.has(Vector2i(c + 1, r + 1)):
+				k += 1
+			vals.append(float(k))
+			sum += k
+	if vals.is_empty():
+		return 0.0
+	var mean := sum / float(vals.size())
+	var acc := 0.0
+	for v in vals:
+		acc += (v - mean) * (v - mean)
+	return acc / float(vals.size())
+
+
 ## 布雷出口硬校验（机制防线，v2.9.3）：不信任任何布雷器（内置或 Mod 插件）的返回。
 ## 历史 bug：QD 偶数盘 place_mines 私自 count-=count%4 调平，生成器原样采信 →
 ## 产出「6×6 只有 12 雷」的违约关（违反 R07 固定雷数红线）。Mod 变体无法逐一修，
@@ -433,12 +494,9 @@ func _place_mines_rules_raw(clue_rule: Object, globals: Array, cols: int, rows: 
 					if not mirrored.is_empty():
 						return mirrored
 		var oracle := RuleOracle.new(clue_rule, globals, Vector2i(cols, rows), count, null)
-		var spec := oracle.build_spec({}, [], {})
-		# 可复现性：random_seed 从本实例确定性 RNG 派生（_rng 已按 _derive_seed(seed,attempt) 设置）
-		# → 同 seed 重放走同一条 find_solution 路径得同盘（C# 侧配合强制单 worker）。
-		spec["random_seed"] = _rng.randi()
-		var sol: Array[Vector2i] = RuleCpSat.find_solution(spec)
-		return sol  # 空 = UNSAT/不可行，交给上层重试（不会产出坏关卡）
+		# 多解取优（v2.9.3）：find_solution 第一可行解结构差（堆簇）→ 删线索/序贯验证
+		# 通过率低（PF/mx+pf 已用专用采样救活，其余多 G——如 rl+ep 9×9——仍受此影响）。
+		return _find_solution_best(oracle, cols, rows)
 	# 单 G：沿用构造式布雷（确定性、快）
 	for g in globals:
 		var m: Array[Vector2i] = g.place_mines(_rng, cols, rows, count)
@@ -450,11 +508,9 @@ func _place_mines_rules_raw(clue_rule: Object, globals: Array, cols: int, rows: 
 	# 约束数学可行（is_feasible=Y）时 find_solution 必有解。
 	if not globals.is_empty():
 		var oracle_fb := RuleOracle.new(clue_rule, globals, Vector2i(cols, rows), count, null)
-		var spec_fb := oracle_fb.build_spec({}, [], {})
-		spec_fb["random_seed"] = _rng.randi()
-		var sol: Array[Vector2i] = RuleCpSat.find_solution(spec_fb)
-		if not sol.is_empty():
-			return sol
+		var sol_fb := _find_solution_best(oracle_fb, cols, rows)
+		if not sol_fb.is_empty():
+			return sol_fb
 	var m2: Array[Vector2i] = clue_rule.place_mines(_rng, cols, rows, count)
 	if not m2.is_empty():
 		return m2

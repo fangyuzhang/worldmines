@@ -47,6 +47,7 @@ var _out_dir := "user://batch_levels"
 var _shard_idx := -1    # -1 = 单进程（不分片）
 var _shard_total := 1
 var _timeout_ms := 0    # 0 = 按尺寸自动放大（见下）；>0 = 显式覆盖（毫秒）
+var _target_difficulty := 0.0  # >0 = 按目标难度生成（第 12 参，删到达标即停）
 
 var _stats := {"total": 0, "ok": 0, "fail": 0, "dup": 0, "tiers": {"easy": 0, "normal": 0, "hard": 0}}
 
@@ -78,7 +79,7 @@ func _initialize() -> void:
 		# 进度打印：每个 seed 前后各一行，卡死时能立即定位到哪个 seed（可观测性）。
 		print("[seed %d] 开始..." % seed)
 		var t_seed := Time.get_ticks_msec()
-		var level := _gen.generate_with_rules(_clue, _globals, _size, _mines, seed, 0, 50, null, timeout_ms)
+		var level := _gen.generate_with_rules(_clue, _globals, _size, _mines, seed, 0, 50, null, timeout_ms, _target_difficulty)
 		var dt := float(Time.get_ticks_msec() - t_seed) / 1000.0
 		_stats["total"] += 1
 		if level.is_empty():
@@ -151,6 +152,8 @@ func _parse_args() -> void:
 		_shard_total = int(args[9])
 	if args.size() >= 11 and args[10] != "":
 		_timeout_ms = int(args[10]) * 1000  # 秒 → 毫秒
+	if args.size() >= 12 and args[11] != "":
+		_target_difficulty = float(args[11])  # 目标难度（0=不限；如定向 hard 用 2.5）
 	# 分片模式：输出到独立子目录，避免多进程写同一批文件冲突
 	if _shard_idx >= 0:
 		_out_dir = "%s/shard_%02d" % [_out_dir, _shard_idx]

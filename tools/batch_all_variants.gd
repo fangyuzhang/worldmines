@@ -17,6 +17,8 @@ extends SceneTree
 #   · seed_start 续跑起始 seed（默认 1）。补跑未满单元时设为上次 seed_max+1，
 #     避免从 1 重扫——已成功 seed 的重放虽然会被指纹去重跳过，但生成时间照付
 #     （9×9 重线索单关 ~175s，重放 9 个就是半小时白花）。
+#   · target_difficulty 目标难度（默认 0=不限）。>0 时删线索「达标即停」（早停提速），
+#     并按目标难度分层生产——例如定向补 hard 关：target=2.5（hard 区间 2.2+）。
 #
 # 关键设计（防废品/防复工）：
 #   1. is_feasible 预筛：不含 dt 的组合在生成前判数学可行性，UNSAT（如 RL 6×6 奇偶矛盾、
@@ -99,9 +101,9 @@ func _fingerprint(level: Dictionary) -> String:
 	return "|".join(parts)
 
 
-## 断点续跑：扫描单元目录已有关卡（总数 / 各档最大编号 / 指纹集）。
+## 断点续跑：扫描单元目录已有关卡（总数 / 各档最大编号 / 指纹集 / 雷位集用于相似度门）。
 func _scan_unit(combo_dir: String) -> Dictionary:
-	var out := {"count": 0, "max_idx": {}, "fps": {}}
+	var out := {"count": 0, "max_idx": {}, "fps": {}, "mine_sets": []}
 	var d := DirAccess.open(combo_dir)
 	if d == null:
 		return out
@@ -112,6 +114,10 @@ func _scan_unit(combo_dir: String) -> Dictionary:
 		var level := _load_json("%s/%s" % [combo_dir, f])
 		if not level.is_empty():
 			out["fps"][_fingerprint(level)] = true
+			var ms := {}
+			for m in level.get("mines", []):
+				ms[Vector2i(int(m["c"]), int(m["r"]))] = true
+			(out["mine_sets"] as Array).append(ms)
 		var parts := str(f.get_basename()).split("_", false)
 		if parts.size() == 2:
 			var tier := str(parts[0])
@@ -119,6 +125,25 @@ func _scan_unit(combo_dir: String) -> Dictionary:
 			if int(out["max_idx"].get(tier, 0)) < idx:
 				out["max_idx"][tier] = idx
 	return out
+
+
+## 与组内已有盘的峰值 Jaccard 相似度（雷位集 交/并）。> SIMILARITY_MAX 时拒收新关——
+## 强约束小盘（如 dt_4c 5×5：骨牌恰1雷+黑白相等压可行空间）不同 seed 会撞出高度
+## 相似的盘（多样性审计实测峰值 J=0.905、640 对 >0.6）。随机独立盘期望 J≈0.25，
+## 阈值 0.85 只拦「几乎同盘」不误伤正常多样性。
+const SIMILARITY_MAX := 0.85
+
+func _max_similarity(mine_sets: Array, new_set: Dictionary) -> float:
+	var worst := 0.0
+	for ms in mine_sets:
+		var inter := 0
+		for p in new_set:
+			if ms.has(p):
+				inter += 1
+		var union := new_set.size() + ms.size() - inter
+		if union > 0:
+			worst = maxf(worst, float(inter) / float(union))
+	return worst
 
 
 func _initialize() -> void:
@@ -136,6 +161,8 @@ func _initialize() -> void:
 		_shard_total = int(args[5])
 	if args.size() >= 7 and args[6] != "":
 		_seed_start = int(args[6])
+	if args.size() >= 8 and args[7] != "":
+		_target_difficulty = float(args[7])
 	DirAccess.make_dir_recursive_absolute(_out_dir)
 
 	var combos := _build_combos()
@@ -153,7 +180,7 @@ func _initialize() -> void:
 	gen.num_workers = 1 if _shard_total > 1 else 0
 	var t0 := Time.get_ticks_msec()
 	var stats := {"units": 0, "ok": 0, "partial": 0, "skipped": 0, "design_skip": 0, "resumed": 0, "fail": 0,
-		"tiers": {"easy": 0, "normal": 0, "hard": 0}}
+		"similar_skipped": 0, "tiers": {"easy": 0, "normal": 0, "hard": 0}}
 	var skipped: Array = []
 	var design_skip: Array = []
 	var partial: Array = []
@@ -189,10 +216,11 @@ func _initialize() -> void:
 			var made := int(existing["count"])
 			var next_idx: Dictionary = existing["max_idx"]
 			var fps: Dictionary = existing["fps"]
+			var mine_sets: Array = existing["mine_sets"]
 			for seed in range(_seed_start, _seed_max + 1):
 				var level: Dictionary = gen.generate_with_rules(
 					combo["clue"], combo["globals"], Vector2i(side, side), mines, seed,
-					0, 50, null, _timeout_for(side))
+					0, 50, null, _timeout_for(side), _target_difficulty)
 				if level.is_empty():
 					continue
 				var dp: Dictionary = level.get("difficulty_profile", {})
@@ -208,6 +236,14 @@ func _initialize() -> void:
 				if fps.has(fp):
 					continue
 				fps[fp] = true
+				# 多样性门：与组内已有盘峰值 J > 0.85（几乎同盘）→ 拒收换 seed
+				var new_set := {}
+				for m in level.get("mines", []):
+					new_set[Vector2i(int(m["c"]), int(m["r"]))] = true
+				if _max_similarity(mine_sets, new_set) > SIMILARITY_MAX:
+					stats["similar_skipped"] = int(stats.get("similar_skipped", 0)) + 1
+					continue
+				mine_sets.append(new_set)
 				var idx := int(next_idx.get(tier, 0)) + 1
 				next_idx[tier] = idx
 				level["name"] = "%s_%02d" % [tier, idx]
@@ -224,8 +260,9 @@ func _initialize() -> void:
 
 	var elapsed := float(Time.get_ticks_msec() - t0) / 1000.0
 	print("=== 完成（%.1fs）===" % elapsed)
-	print("  单元(组合×尺寸): %d | 入库总关数 %d | 设计跳过(FR难度) %d | 跳过(数学UNSAT) %d | 续跑满额跳过 %d | 部分成功 %d" % [
-		stats["units"], stats["ok"], stats["design_skip"], stats["skipped"], stats.get("resumed", 0), stats["partial"]])
+	print("  单元(组合×尺寸): %d | 入库总关数 %d | 设计跳过(FR难度) %d | 跳过(数学UNSAT) %d | 续跑满额跳过 %d | 相似拒收 %d | 部分成功 %d" % [
+		stats["units"], stats["ok"], stats["design_skip"], stats["skipped"], stats.get("resumed", 0),
+		stats.get("similar_skipped", 0), stats["partial"]])
 	print("  难度分布: easy=%d normal=%d hard=%d" % [
 		stats["tiers"]["easy"], stats["tiers"]["normal"], stats["tiers"]["hard"]])
 	if design_skip.size() > 0:
