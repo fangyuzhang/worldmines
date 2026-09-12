@@ -91,10 +91,10 @@ func _is_feasible(clue: String, globals: Array, side: int, mines: int) -> bool:
 
 
 func _timeout_for(side: int) -> int:
-	# 系数 1500（原 600）：实测 9×9 重线索组合单关 68~74s（rl_loopruns 74.2s、rl_pf 68.1s），
-	# 600 系数（9×9=48.6s）会把它们超时杀掉。1500 → 9×9=121s、16×16=384s，留足余量。
+	# 系数 3000（600 → 1500 → 3000）：9×9 重线索组合单关实测 68~193s（本地），
+	# 服务器 CPU 更慢，1500 系数（9×9=121s）会把好关超时杀掉。3000 → 9×9=243s。
 	# 代价仅是失败关多等一会（成功关不受影响）。
-	return maxi(30_000, side * side * 1500)
+	return maxi(30_000, side * side * 3000)
 
 
 func _write(path: String, data: Dictionary) -> void:
