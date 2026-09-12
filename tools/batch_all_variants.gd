@@ -7,13 +7,16 @@ extends SceneTree
 # 尺寸：5×5~9×9（R07 雷数 10/14/20/26/32）。
 #
 # 用法：
-#   godot --headless --path . -s res://tools/batch_all_variants.gd -- [out_dir] [per_type] [seed_max] [limit_combos] [shard_idx shard_total]
+#   godot --headless --path . -s res://tools/batch_all_variants.gd -- [out_dir] [per_type] [seed_max] [limit_combos] [shard_idx shard_total] [seed_start]
 #   · out_dir  默认 user://batch_all
 #   · per_type 每 (组合×尺寸) 目标关卡数，默认 10
 #   · seed_max 每个单元尝试的 seed 上限（概率性进档组合需更大），默认 40
 #   · limit_combos 只跑前 N 组合（冒烟用，0=全部）
 #   · shard_idx/shard_total 分片并行（按组合取模切分；9×9 重线索单关可达 ~200s，
 #     全量单进程 5~10h，8 进程分片约 1~1.5h）。断点续跑：同命令重跑即自动跳过满额单元。
+#   · seed_start 续跑起始 seed（默认 1）。补跑未满单元时设为上次 seed_max+1，
+#     避免从 1 重扫——已成功 seed 的重放虽然会被指纹去重跳过，但生成时间照付
+#     （9×9 重线索单关 ~175s，重放 9 个就是半小时白花）。
 #
 # 关键设计（防废品/防复工）：
 #   1. is_feasible 预筛：不含 dt 的组合在生成前判数学可行性，UNSAT（如 RL 6×6 奇偶矛盾、
@@ -32,6 +35,7 @@ var _seed_max := 40
 var _limit_combos := 0  # 0 = 全部；>0 = 只跑前 N 组合（冒烟用）
 var _shard_idx := 0
 var _shard_total := 1  # >1 = 分片并行（第 5/6 参数）
+var _seed_start := 1   # 补跑起始 seed（第 7 参数；避免重扫已成功 seed 白花生成时间）
 
 
 ## 组合清单：92 项 {id, clue, globals}。
@@ -138,6 +142,8 @@ func _initialize() -> void:
 	if args.size() >= 6 and args[4] != "" and args[5] != "":
 		_shard_idx = int(args[4])
 		_shard_total = int(args[5])
+	if args.size() >= 7 and args[6] != "":
+		_seed_start = int(args[6])
 	DirAccess.make_dir_recursive_absolute(_out_dir)
 
 	var combos := _build_combos()
@@ -191,7 +197,7 @@ func _initialize() -> void:
 			var made := int(existing["count"])
 			var next_idx: Dictionary = existing["max_idx"]
 			var fps: Dictionary = existing["fps"]
-			for seed in range(1, _seed_max + 1):
+			for seed in range(_seed_start, _seed_max + 1):
 				var level: Dictionary = gen.generate_with_rules(
 					combo["clue"], combo["globals"], Vector2i(side, side), mines, seed,
 					0, 50, null, _timeout_for(side))
