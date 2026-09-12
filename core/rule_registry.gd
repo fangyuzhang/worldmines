@@ -738,7 +738,10 @@ class QdRule:
 		b.add_eq(b.sum(q[2]), b.sum(q[3]))
 
 	## 构造式布雷：四象限各 k 雷 + 中央行列随机补齐。
-	## 全偶盘（无中轴）雷数须为 4 的倍数，否则调平（对齐 FourColorRule 的偶数调平精神）。
+	## 全偶盘（无中央行列）：四象限各 k 雷，总雷数 = 4k，**必须是 4 的倍数**。
+	## R07 固定雷数 6×6=14 / 8×8=26 不是 4 的倍数 → 数学上 UNSAT。
+	## 旧代码 count -= count % 4 偷偷调平（14→12、26→24），会产出「雷数不符」的关（实测 6×6 出 12 雷），
+	## 直接违反 R07 固定雷数红线。改为显式判不可行（返回空，交给上层重试/跳过该尺寸）。
 	func place_mines(rng: RandomNumberGenerator, cols: int, rows: int, count: int) -> Array[Vector2i]:
 		var q: Array = [[], [], [], []]
 		var cross: Array[Vector2i] = []
@@ -749,10 +752,8 @@ class QdRule:
 					cross.append(Vector2i(c, r))
 				else:
 					q[qi].append(Vector2i(c, r))
-		if (rows % 2 == 0) and (cols % 2 == 0):
-			count -= count % 4
-			if count <= 0:
-				return []
+		if (rows % 2 == 0) and (cols % 2 == 0) and count % 4 != 0:
+			return []
 		var q_max: int = mini(mini(q[0].size(), q[1].size()), mini(q[2].size(), q[3].size()))
 		# 收集「全部」合法 k 再随机取一个（与 G1 镜像 _place_mx 同策略）。
 		# 历史 bug：取第一个可行 k（恒为最小值）→ 雷几乎全堆在中央十字/中轴，

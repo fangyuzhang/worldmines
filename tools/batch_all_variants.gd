@@ -1,0 +1,151 @@
+extends SceneTree
+
+# 全变体 + 混合 × 5 尺寸 × 每类 N 关 批量生成驱动。
+#
+# 组合清单（GDD 01 号 3.1.1 / 3.2）：
+#   单 C（8）+ 单 G（7）+ G+C（7×8=56）+ G+G（C(7,2)=21）= 92 组合
+# 尺寸：5×5~9×9（R07 雷数 10/14/20/26/32）。
+#
+# 用法：
+#   godot --headless --path . -s res://tools/batch_all_variants.gd -- [out_dir] [per_type] [seed_max]
+#   · out_dir  默认 user://batch_all
+#   · per_type 每 (组合×尺寸) 目标关卡数，默认 10
+#   · seed_max 每个单元尝试的 seed 上限（概率性组合需更大），默认 40
+#
+# 关键设计（防废品/防复工）：
+#   1. is_feasible 预筛：不含 dt 的组合在生成前判数学可行性，UNSAT（如 RL 6×6 奇偶矛盾、
+#      QD 6×6/8×8 雷数非 4 倍数）直接跳过，不进入「换 seed 白跑几十秒」。
+#   2. 含 dt 的组合不预筛（骨牌划分随机、is_feasible 单次采样不可靠），交给生成器多 attempt 重试。
+#   3. 生成后用 ProofLog.build 复核序贯可解（与 verify_batch 同口径），不过即拒。
+const CliShutdown := preload("res://tools/cli_shutdown.gd")
+
+const CLUES := ["classic", "4n", "clock", "hv", "fr", "loopruns", "distsum", "sc"]
+const GLOBALS := ["mx", "rl", "pf", "qd", "dt", "ep", "4c"]
+const SIZES := {5: 10, 6: 14, 7: 20, 8: 26, 9: 32}
+
+var _out_dir := "user://batch_all"
+var _per_type := 10
+var _seed_max := 40
+var _limit_combos := 0  # 0 = 全部；>0 = 只跑前 N 组合（冒烟用）
+
+
+## 组合清单：92 项 {id, clue, globals}。
+func _build_combos() -> Array:
+	var combos: Array = []
+	for c in CLUES:
+		combos.append({"id": "c_%s" % c, "clue": c, "globals": []})
+	for g in GLOBALS:
+		combos.append({"id": "g_%s" % g, "clue": "classic", "globals": [g]})
+	for g in GLOBALS:
+		for c in CLUES:
+			combos.append({"id": "%s_%s" % [g, c], "clue": c, "globals": [g]})
+	for i in GLOBALS.size():
+		for j in range(i + 1, GLOBALS.size()):
+			combos.append({"id": "%s_%s" % [GLOBALS[i], GLOBALS[j]], "clue": "classic", "globals": [GLOBALS[i], GLOBALS[j]]})
+	return combos
+
+
+## 数学可行性预筛（不含 dt；dt 骨牌划分随机，单次采样不可靠，跳过预筛）。
+func _is_feasible(clue: String, globals: Array, side: int, mines: int) -> bool:
+	if globals.has("dt"):
+		return true
+	var reg := RuleRegistry.default()
+	var clue_rule: Object = reg.resolve(StringName(clue))
+	var gs: Array = []
+	for gid in globals:
+		var g: Object = reg.resolve(StringName(gid))
+		if g != null and g.get_kind() == RulePlugin.KIND_GLOBAL:
+			gs.append(g)
+	var oracle := RuleOracle.new(clue_rule, gs, Vector2i(side, side), mines, null)
+	return RuleCpSat.is_feasible(oracle.build_spec({}, [], {}))
+
+
+func _timeout_for(side: int) -> int:
+	return maxi(30_000, side * side * 600)
+
+
+func _write(path: String, data: Dictionary) -> void:
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		push_error("无法写入: " + path)
+		return
+	f.store_string(JSON.stringify(data, "  "))
+	f.close()
+
+
+func _initialize() -> void:
+	var args := OS.get_cmdline_user_args()
+	if args.size() >= 1 and args[0] != "":
+		_out_dir = args[0]
+	if args.size() >= 2 and args[1] != "":
+		_per_type = int(args[1])
+	if args.size() >= 3 and args[2] != "":
+		_seed_max = int(args[2])
+	if args.size() >= 4 and args[3] != "":
+		_limit_combos = int(args[3])
+	DirAccess.make_dir_recursive_absolute(_out_dir)
+
+	var combos := _build_combos()
+	if _limit_combos > 0 and _limit_combos < combos.size():
+		combos.resize(_limit_combos)
+	var t0 := Time.get_ticks_msec()
+	var stats := {"units": 0, "ok": 0, "partial": 0, "skipped": 0, "fail": 0}
+	var skipped: Array = []
+	var partial: Array = []
+
+	print("=== 全变体+混合批量生成（%d 组合 × 5 尺寸 × 每类 %d 关）===" % [combos.size(), _per_type])
+	for combo in combos:
+		for side in SIZES:
+			var mines: int = SIZES[side]
+			stats["units"] += 1
+			var combo_dir := "%s/%s/%dx%d" % [_out_dir, combo["id"], side, side]
+			if not _is_feasible(combo["clue"], combo["globals"], side, mines):
+				stats["skipped"] += 1
+				skipped.append("%s %dx%d" % [combo["id"], side, side])
+				continue
+			DirAccess.make_dir_recursive_absolute(combo_dir)
+			var made := 0
+			for seed in range(1, _seed_max + 1):
+				var level: Dictionary = PuzzleGenerator.new().generate_with_rules(
+					combo["clue"], combo["globals"], Vector2i(side, side), mines, seed,
+					0, 50, null, _timeout_for(side))
+				if level.is_empty():
+					continue
+				var dp: Dictionary = level.get("difficulty_profile", {})
+				var diff := float(dp.get("difficulty", 0.0))
+				var tier := Difficulty.tier_of(diff)
+				if tier == "":
+					continue
+				# 生成后复核：可加载 + 序贯可解（与 verify_batch 同口径，杜绝废品入库）
+				var log: Dictionary = ProofLog.build(level)
+				if not bool(log.get("solved", false)):
+					continue
+				var idx := made + 1
+				level["name"] = "%s_%02d" % [tier, idx]
+				level["difficulty"] = diff
+				_write("%s/%s_%02d.json" % [combo_dir, tier, idx], level)
+				made += 1
+				if made >= _per_type:
+					break
+			stats["ok"] += made
+			if made < _per_type:
+				stats["partial"] += 1
+				partial.append("%s %dx%d (%d/%d)" % [combo["id"], side, side, made, _per_type])
+
+	var elapsed := float(Time.get_ticks_msec() - t0) / 1000.0
+	print("=== 完成（%.1fs）===" % elapsed)
+	print("  单元(组合×尺寸): %d | 满额成功 %d 关 | 跳过(数学UNSAT) %d | 部分成功 %d | 全失败 %d" % [
+		stats["units"], stats["ok"], stats["skipped"], stats["partial"], stats["fail"]])
+	if skipped.size() > 0:
+		print("  跳过清单(%d): %s" % [skipped.size(), ", ".join(skipped)])
+	if partial.size() > 0:
+		print("  部分成功清单(%d): %s" % [partial.size(), ", ".join(partial)])
+	_write("%s/all_report.json" % _out_dir, {
+		"elapsed_s": elapsed, "stats": stats,
+		"skipped": skipped, "partial": partial,
+	})
+	CliShutdown.request_exit(0)
+
+
+func _process(_delta: float) -> bool:
+	return CliShutdown.poll(self)
