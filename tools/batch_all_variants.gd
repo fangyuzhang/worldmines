@@ -54,19 +54,11 @@ func _build_combos() -> Array:
 	return combos
 
 
-## 数学可行性预筛（不含 dt；dt 骨牌划分随机，单次采样不可靠，跳过预筛）。
+## 数学可行性预筛：统一走 RuleFeasibility 真值查询（CP-SAT + 缓存 + dt 骨牌重采样）。
+## 曾经此处与 UI 各写一套预筛逻辑（UI 手写规则表、这里跳过 dt）——知识重复是 bug 温床，
+## v2.9.3 收敛为唯一真值入口，新增/Mod 变体自动正确。
 func _is_feasible(clue: String, globals: Array, side: int, mines: int) -> bool:
-	if globals.has("dt"):
-		return true
-	var reg := RuleRegistry.default()
-	var clue_rule: Object = reg.resolve(StringName(clue))
-	var gs: Array = []
-	for gid in globals:
-		var g: Object = reg.resolve(StringName(gid))
-		if g != null and g.get_kind() == RulePlugin.KIND_GLOBAL:
-			gs.append(g)
-	var oracle := RuleOracle.new(clue_rule, gs, Vector2i(side, side), mines, null)
-	return RuleCpSat.is_feasible(oracle.build_spec({}, [], {}))
+	return RuleFeasibility.query(clue, globals, side, mines)
 
 
 func _timeout_for(side: int) -> int:

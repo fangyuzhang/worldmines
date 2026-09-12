@@ -451,21 +451,13 @@ func _close_popup() -> void:
 
 # ==================== 弹窗内容刷新 ====================
 
-## 该变体在该尺寸下是否可生成（R07 固定雷数下的数学可行性，v2.9.3 可行性矩阵实测）。
-## UNSAT 清单（全部可数学论证，非性能问题——重试永远失败）：
-##   含 rl（相邻行锁）的组合在 6×6：6 项 ±1 序列总和恒奇，14 为偶 → 矛盾；
-##   含 qd（四象）的组合在 6×6/8×8：四象限雷数须为 4 的倍数，14/26 不是；
-##   rl+qd 在 5×5：上下半盘差 1 与四象限相等双重叠加矛盾（6×6/8×8 已被前两条覆盖）。
-## 未过滤的后果：玩家选中该组合后生成器永远返回空（UI 转圈无结果）。
+## 该变体在该尺寸下是否可生成（R07 固定雷数下的数学可行性）。
+## v2.9.3 起走 RuleFeasibility 真值查询（CP-SAT is_feasible + 缓存）——不再手写
+## UNSAT 规则表（手写表曾漏掉 rl 6×6 / qd 6×6、8×8 导致玩家选中后永远转圈；
+## 且新增/Mod 变体都需要同步手改，必然再漏）。真值查询对任何变体自动正确。
 func _mode_feasible(mode: Dictionary, size: int) -> bool:
-	var globals: Array = mode.get("globals", [])
-	if globals.has("rl") and size == 6:
-		return false
-	if globals.has("qd") and (size == 6 or size == 8):
-		return false
-	if globals.has("rl") and globals.has("qd") and size == 5:
-		return false
-	return true
+	var mines: int = maxi(1, int(MINE_COUNTS.get(size, int(float(size * size) * 0.4))))
+	return RuleFeasibility.query(str(mode["clue"]), mode.get("globals", []), size, mines)
 
 
 func _refresh_popup() -> void:

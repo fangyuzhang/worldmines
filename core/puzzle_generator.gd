@@ -396,7 +396,20 @@ func _derive_seed(seed: int, attempt: int) -> int:
 	return seed * 1000003 + attempt
 
 
+## 布雷出口硬校验（机制防线，v2.9.3）：不信任任何布雷器（内置或 Mod 插件）的返回。
+## 历史 bug：QD 偶数盘 place_mines 私自 count-=count%4 调平，生成器原样采信 →
+## 产出「6×6 只有 12 雷」的违约关（违反 R07 固定雷数红线）。Mod 变体无法逐一修，
+## 故在此统一校验：返回非空时雷数必须精确等于请求值，否则判失败（上层重试/换尺寸），
+## 违规插件只会导致「该组合生成失败」（可提示），永远不会产出坏关。
 func _place_mines_rules(clue_rule: Object, globals: Array, cols: int, rows: int, count: int) -> Array[Vector2i]:
+	var m := _place_mines_rules_raw(clue_rule, globals, cols, rows, count)
+	if not m.is_empty() and m.size() != count:
+		push_warning("PuzzleGenerator: 布雷器返回 %d 雷 ≠ 请求 %d（插件违约，已拒绝该布雷）" % [m.size(), count])
+		return []
+	return m
+
+
+func _place_mines_rules_raw(clue_rule: Object, globals: Array, cols: int, rows: int, count: int) -> Array[Vector2i]:
 	# 多 G 叠加（G+G / 2G+1C / 3G）：布雷必须**同时满足所有 G**。
 	# 旧策略「只取第一个非空 G 的 place_mines」有两个致命缺陷：
 	#   ① 状态性 G（dt 骨牌划分）不生成 → build_global_constraints 用空/残留划分，约束静默丢失；

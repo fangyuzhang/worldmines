@@ -96,6 +96,12 @@ dotnet build
 
 **生成器删线索/布雷修复（v2.9.3）**：① `_prune_sequential` 保底至少留 1 条线索——全局约束自带开局信息的组合会把线索删光而被 `active.is_empty()` 拒绝整个 attempt（曾致 mx+dt 全灭）；② 单 G 构造式布雷失败后改用 CP-SAT `find_solution` 兜底（原 fallback 随机布雷违反全局约束，曾致 pf 9×9 接受率 0/12，修复后 12/12 且全 normal 档）。
 
+**三道机制防线（v2.9.3，对内置与 Mod 变体一致生效——治本，防 bug 复发）**：
+1. **生成器硬校验**：`_place_mines_rules` 出口统一校验「雷数 == 请求 count」，插件违规（如 QD 偷调平）拒收——违规只会导致「该组合生成失败」，永不产出坏关；
+2. **唯一可行性真值**：`core/rule_feasibility.gd`（`RuleFeasibility.query`，CP-SAT is_feasible + 缓存 + dt 骨牌重采样）——UI 尺寸选择器 / 批量预筛 / Mod 自检三处共用的唯一入口，**不维护任何手写 UNSAT 规则表**（手写表曾漏 rl 6×6 / qd 6×6、8×8 致 UI 转圈）；
+3. **生成后门禁**：`verify_batch`（Board 构造 + 序贯可解）+ `batch_audit_r07`（R07 雷数契约）+ ProofLog 复核。
+**Mod 作者工具**：`tools/mod_selfcheck.gd -- <clue_id> [globals]`——全尺寸体检（可行性/试生成/复核/难度分档），作者上架前自跑。契约与防线详见 GDD 23 号 §3.1.x。
+
 ### 能 / 不能
 
 | 能 | 不能 / 受限 |
