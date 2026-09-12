@@ -20,9 +20,14 @@ addons/.godot_ai_update/
 /_*.ps1
 /_*.gd
 /_*.gd.uid
+/_*.py
+/_*.sh
 /tools/_*.gd
 /tools/_*.gd.uid
 /tools/_*.ps1
+/tools/_*.py
+/tools/_*.sh
+/tools/_*.txt
 
 # 批量生成运行日志目录（_probe_logs/_batch_logs/_fill*_logs 等）
 /_*_logs/
