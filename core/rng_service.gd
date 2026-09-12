@@ -39,6 +39,9 @@ func self_check() -> bool:
 
 	if not FileAccess.file_exists(SNAPSHOT_PATH):
 		var f := FileAccess.open(SNAPSHOT_PATH, FileAccess.WRITE)
+		if f == null:
+			push_warning("RNG 快照写入失败（自检基线未建立）: %s" % SNAPSHOT_PATH)
+			return false
 		f.store_string(digest)
 		f.close()
 		return true

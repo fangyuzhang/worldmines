@@ -88,11 +88,10 @@ func solve(board: Board, check: Callable, timeout_ms: int = 0) -> Array:
 ## 收集当前玩家视角约束集：已翻开格 -> constraint_dict。
 func _collect_revealed(board: Board) -> Dictionary:
 	var revealed := {}
-	var gsize := board.grid.size()
-	for r in gsize.y:
-		for c in gsize.x:
-			var pos := Vector2i(c, r)
-			var cell := board.grid.get_cell(pos)
-			if cell.state == Cell.State.REVEALED:
-				revealed[pos] = board.get_player_constraint(pos)
+	# 用 all_positions()（v2.9.3）：AdjacencyGrid.size() 是包围盒，
+	# 按 size 双重循环会把洞格 get_cell()==null 当 Cell 用而报错（异形生成路径）。
+	for pos in board.grid.all_positions():
+		var cell := board.grid.get_cell(pos)
+		if cell != null and cell.state == Cell.State.REVEALED:
+			revealed[pos] = board.get_player_constraint(pos)
 	return revealed

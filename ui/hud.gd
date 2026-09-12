@@ -106,11 +106,12 @@ func _flag_count(board: Board) -> int:
     var count := 0
     if board.grid == null:
         return 0
-    var size := board.grid.size()
-    for r in size.y:
-        for c in size.x:
-            if board.grid.get_cell(Vector2i(c, r)).state == Cell.State.FLAGGED:
-                count += 1
+    # 用 all_positions()（v2.9.3）：AdjacencyGrid.size() 是包围盒，
+    # 按 size 双重循环会把洞格 get_cell()==null 当 Cell 用而报错。
+    for pos in board.grid.all_positions():
+        var cell: Cell = board.grid.get_cell(pos)
+        if cell != null and cell.state == Cell.State.FLAGGED:
+            count += 1
     return count
 
 

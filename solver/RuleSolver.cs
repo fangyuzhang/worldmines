@@ -27,6 +27,7 @@ namespace MinesweeperSolver
         private CpModel _model;
         private BoolVar[,] _cellVars;
         private int _cols;
+        private int _rows; // 越界守卫用（与 RuleBuilder.cell_var「越界 → const 0」同语义）
         private BoolVar _constTrue; // 恒真 literal（固定格替换用）
         // 模型瘦身：safe/mine 格不建 BoolVar，用常量替换（key=r*_cols+c -> 0/1）。
         private readonly Dictionary<int, long> _fixedCells = new Dictionary<int, long>();
@@ -152,7 +153,9 @@ namespace MinesweeperSolver
                     _model.AddAssumptions(new ILiteral[] { v.Not() });
                     var st = solver.Solve(_model);
                     _model.ClearAssumptions();
-                    if (st != CpSolverStatus.Optimal && st != CpSolverStatus.Feasible)
+                    // 只认 Infeasible（明确不可行）——Unknown（超时）绝不当「不可行」：
+                    // 把不确定当确定会误报强制格 → 错误推理链/错误提示（R02「提示永不害死玩家」）。
+                    if (st == CpSolverStatus.Infeasible)
                         mine.Add(MakeCell(r, c));
                 }
                 else
@@ -161,7 +164,7 @@ namespace MinesweeperSolver
                     _model.AddAssumptions(new ILiteral[] { v });
                     var st = solver.Solve(_model);
                     _model.ClearAssumptions();
-                    if (st != CpSolverStatus.Optimal && st != CpSolverStatus.Feasible)
+                    if (st == CpSolverStatus.Infeasible)
                         safe.Add(MakeCell(r, c));
                 }
             }
@@ -233,6 +236,10 @@ namespace MinesweeperSolver
                 return false;
             }
 
+            int rows = spec["rows"].AsInt32();
+            int cols = spec["cols"].AsInt32();
+            if (r < 0 || r >= rows || c < 0 || c >= cols)
+                return false; // 越界坐标：防御（此前 _cellVars[r,c] 越界会抛异常穿过 try 边界）
             var v = _cellVars[r, c];
             if (v == null)
                 return true; // 目标格是固定格（safe/mine），已确定 → 必然强制
@@ -242,17 +249,18 @@ namespace MinesweeperSolver
             var status = solver.Solve(_model);
             if (status != CpSolverStatus.Optimal && status != CpSolverStatus.Feasible)
                 return false;
-            // 假设 v 安全（v==0）不可行 → v 必雷
+            // 假设 v 安全（v==0）不可行 → v 必雷。只认 Infeasible：
+            // Unknown（超时）不当「不可行」，避免把不确定误报为强制（与 FindForcedCells 同口径）。
             _model.AddAssumptions(new ILiteral[] { v.Not() });
             var stSafe = solver.Solve(_model);
             _model.ClearAssumptions();
-            if (stSafe != CpSolverStatus.Optimal && stSafe != CpSolverStatus.Feasible)
+            if (stSafe == CpSolverStatus.Infeasible)
                 return true;
             // 假设 v 雷（v==1）不可行 → v 必安全
             _model.AddAssumptions(new ILiteral[] { v });
             var stMine = solver.Solve(_model);
             _model.ClearAssumptions();
-            return stMine != CpSolverStatus.Optimal && stMine != CpSolverStatus.Feasible;
+            return stMine == CpSolverStatus.Infeasible;
         }
 
         /// <summary>
@@ -353,6 +361,13 @@ namespace MinesweeperSolver
                     // 第一轮就有解 → 该方向不被强制（-1）；后续轮有解 → 上一轮 core 是最终答案。
                     return iter == 0 ? -1 : lastSize;
                 }
+                if (status == CpSolverStatus.Unknown)
+                {
+                    // 超时：无法判定矛盾（SufficientAssumptionsForInfeasibility 在未证明
+                    // 不可行时不可用）→ 按「未被强制」返回（-1），绝不误报 core 大小
+                    //（曾会把超时当不可行、core 空 → 误报「0 条线索推出」= 难度画像畸高）。
+                    return -1;
+                }
 
                 var core = solver.SufficientAssumptionsForInfeasibility();
                 var next = new HashSet<int>();
@@ -384,6 +399,7 @@ namespace MinesweeperSolver
 
             _model = new CpModel();
             _cols = cols;
+            _rows = rows;
             _constTrue = _model.NewBoolVar("_const_true");
             _model.Add(_constTrue == 1);
             _auxIntVars.Clear();
@@ -486,6 +502,8 @@ namespace MinesweeperSolver
                 case "cell":
                     {
                         int cr = e["r"].AsInt32(), cc = e["c"].AsInt32();
+                        if (cr < 0 || cr >= _rows || cc < 0 || cc >= _cols)
+                            return LinearExpr.Constant(0); // 越界 = const 0（与 RuleBuilder.cell_var 同语义；Mod IR 健壮性）
                         if (_fixedCells.TryGetValue(cr * _cols + cc, out long fv))
                             return LinearExpr.Constant(fv);
                         _referencedCells.Add(cr * _cols + cc);
@@ -545,6 +563,8 @@ namespace MinesweeperSolver
                 case "cell":
                     {
                         int cr = v["r"].AsInt32(), cc = v["c"].AsInt32();
+                        if (cr < 0 || cr >= _rows || cc < 0 || cc >= _cols)
+                            return _model.NewConstant(0); // 越界 = const 0（同 RuleBuilder.cell_var）
                         if (_fixedCells.TryGetValue(cr * _cols + cc, out long fv))
                             return _model.NewConstant(fv);
                         _referencedCells.Add(cr * _cols + cc);
@@ -567,6 +587,8 @@ namespace MinesweeperSolver
                 case "cell":
                     {
                         int cr = l["r"].AsInt32(), cc = l["c"].AsInt32();
+                        if (cr < 0 || cr >= _rows || cc < 0 || cc >= _cols)
+                            return _constTrue.Not(); // 越界 = const 0 → false 字面量（同 RuleBuilder.cell_var）
                         if (_fixedCells.TryGetValue(cr * _cols + cc, out long fv))
                             return fv == 1 ? _constTrue : _constTrue.Not();
                         _referencedCells.Add(cr * _cols + cc);

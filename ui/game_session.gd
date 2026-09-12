@@ -376,11 +376,13 @@ func restore_from_save() -> bool:
         return false
 
     # 雷位以关卡文件为准（同文件同雷位）；盘面状态 = 存档快照覆盖
-    var size := fresh.grid.size()  # Vector2i(cols, rows)
+    var size := fresh.grid.size()  # 包围盒（矩形棋盘 == 棋盘；异形含洞格）
     for r in size.y:
         for c in size.x:
             var pos := Vector2i(c, r)
             var cell := fresh.grid.get_cell(pos)
+            if cell == null:
+                continue  # 异形洞格（v2.9.3 守卫：此前 null.state 会报错）
             cell.state = Cell.State.HIDDEN
     for p in d.get("revealed_cells", []):
         if p is Array and p.size() == 2:

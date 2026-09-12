@@ -108,6 +108,8 @@ func load_mod(dir_path: String) -> Dictionary:
 	var manifest_text: String
 	if FileAccess.file_exists(manifest_path):
 		var f := FileAccess.open(manifest_path, FileAccess.READ)
+		if f == null:
+			return {"ok": false, "reason": "manifest.json 无法读取: %s" % manifest_path}
 		manifest_text = f.get_as_text()
 		f.close()
 	else:

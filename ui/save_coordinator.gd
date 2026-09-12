@@ -23,15 +23,18 @@ static func save(board: Board, elapsed: float, level_path: String = "", drawing:
     var flagged: Array[Vector2i] = []
     var mines: Array[Vector2i] = []
     if board != null and board.grid != null:
-        var size := board.grid.size()  # Vector2i(cols, rows)
-        for r in size.y:
-            for c in size.x:
-                var cell := board.grid.get_cell(Vector2i(c, r))
-                match cell.state:
-                    Cell.State.REVEALED:
-                        revealed.append(Vector2i(c, r))
-                    Cell.State.FLAGGED:
-                        flagged.append(Vector2i(c, r))
+        # 遍历用 all_positions()（v2.9.3 修复）：AdjacencyGrid.size() 是包围盒、坐标不连续，
+        # 直接按 size 双重循环会把洞格的 get_cell()==null 当 Cell 用 → 空引用错误
+        #（异形关卡自动存档必崩）。矩形棋盘下两者等价。与 board.get_stats() 同模式。
+        for pos in board.grid.all_positions():
+            var cell := board.grid.get_cell(pos)
+            if cell == null:
+                continue
+            match cell.state:
+                Cell.State.REVEALED:
+                    revealed.append(pos)
+                Cell.State.FLAGGED:
+                    flagged.append(pos)
         mines = board.get_mine_positions()
     sd.revealed_cells = revealed
     sd.flagged_cells = flagged

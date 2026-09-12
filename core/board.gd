@@ -72,8 +72,9 @@ var _static_mines: Array[Vector2i] = []
 ##   · revealed[].value 为**历史遗留可选字段**，引擎一律用 _compute_clues 的计算值，
 ##     不读它；若存在且与计算值不符会 push_warning（仅作校验，不影响运行）。
 ##     → 生成关（generated_*.json）不写 value；手工关写了也只当注释。
-##   · value=0 的 revealed 条目不会被翻开（0 格显示深色空白且锁死点击），
-##     见下方 revealed 循环。
+##   · value=0 的 revealed 条目**会被正常翻开并连锁扩散**（v2.9.3 修复：
+##     历史上跳过 0 值格导致「孤立空白可点击格」用户 bug；生成器亦不再排除 0 值格）。
+##     见下方 revealed 循环（统一走 reveal_initial）。
 ##   · known_answers 仅为测试锚点（test_classic_known.gd 直接读 JSON），
 ##     load_level 不读、运行时不使用。
 ## 内部坐标 Vector2i(col, row) = Vector2i(c, r)。
@@ -163,6 +164,11 @@ func load_level(level: Dictionary) -> void:
         # 0 值格不再跳过——历史上「跳过 0 值格」正是残局关孤立空白可点击格的根源。
         for r in level.get("revealed", []):
                 var pos := Vector2i(r["c"], r["r"])
+                # 防御纵深（v2.9.3）：越界条目直接跳过——LevelLoader 已前置拦截 UI 路径，
+                # 此处兜底直调 board.load_level 的路径（get_cell 返回 null 会造成空引用错误）。
+                if not grid.in_board(pos):
+                        push_warning("关卡 revealed 越界条目已跳过: (%d,%d)" % [pos.x, pos.y])
+                        continue
                 # 手工关 revealed 带的 value 字段引擎并不采用（真值一律来自 _compute_clues），
                 # 此处仅做一致性校验：关卡作者手写错值时能立刻发现，而不是静默按计算值跑。
                 if r.has("value"):
@@ -172,6 +178,13 @@ func load_level(level: Dictionary) -> void:
                                 push_warning("关卡 revealed 声明值 %d 与计算值 %d 不符 @(%d,%d)" % [declared, int(actual), pos.x, pos.y])
                 if r.has("interval"):
                         var iv: Array = r["interval"]
+                        # 防御纵深：畸形 interval（长度 < 2）忽略设置但格照常翻开——
+                        # LevelLoader 已前置拦截携带畸形 interval 的文件（返回 null），
+                        # 此处兜底直调路径（iv[0]/iv[1] 直接下标会越界中止脚本）。
+                        if iv.size() < 2:
+                                push_warning("关卡 ? 格 (%d,%d) interval 畸形已忽略: %s" % [pos.x, pos.y, str(iv)])
+                                reveal_initial(pos)
+                                continue
                         var cell: Cell = grid.get_cell(pos)
                         var iv_lo: int = int(iv[0])
                         var iv_hi: int = int(iv[1])
