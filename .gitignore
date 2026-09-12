@@ -19,7 +19,9 @@ addons/.godot_ai_update/
 # 临时诊断脚本（下划线开头，勿提交；tools/ 下同样适用）
 /_*.ps1
 /_*.gd
+/_*.gd.uid
 /tools/_*.gd
+/tools/_*.gd.uid
 /tools/_*.ps1
 
 # 批量生成运行日志目录（_probe_logs/_batch_logs/_fill*_logs 等）
