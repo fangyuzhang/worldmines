@@ -38,6 +38,7 @@ var _limit_combos := 0  # 0 = 全部；>0 = 只跑前 N 组合（冒烟用）
 var _shard_idx := 0
 var _shard_total := 1  # >1 = 分片并行（第 5/6 参数）
 var _seed_start := 1   # 补跑起始 seed（第 7 参数；避免重扫已成功 seed 白花生成时间）
+var _target_difficulty := 0.0  # >0 = 按目标难度生成（第 8 参数，删到达标即停）
 
 
 ## 组合清单：92 项 {id, clue, globals}。
@@ -140,7 +141,7 @@ func _max_similarity(mine_sets: Array, new_set: Dictionary) -> float:
 		for p in new_set:
 			if ms.has(p):
 				inter += 1
-		var union := new_set.size() + ms.size() - inter
+		var union: int = new_set.size() + int(ms.size()) - inter
 		if union > 0:
 			worst = maxf(worst, float(inter) / float(union))
 	return worst
