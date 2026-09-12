@@ -89,8 +89,9 @@ func _initialize() -> void:
 	if _limit_combos > 0 and _limit_combos < combos.size():
 		combos.resize(_limit_combos)
 	var t0 := Time.get_ticks_msec()
-	var stats := {"units": 0, "ok": 0, "partial": 0, "skipped": 0, "fail": 0}
+	var stats := {"units": 0, "ok": 0, "partial": 0, "skipped": 0, "design_skip": 0, "fail": 0}
 	var skipped: Array = []
+	var design_skip: Array = []
 	var partial: Array = []
 
 	print("=== 全变体+混合批量生成（%d 组合 × 5 尺寸 × 每类 %d 关）===" % [combos.size(), _per_type])
@@ -99,6 +100,13 @@ func _initialize() -> void:
 			var mines: int = SIZES[side]
 			stats["units"] += 1
 			var combo_dir := "%s/%s/%dx%d" % [_out_dir, combo["id"], side, side]
+			# FR（首雷）设计跳过（v2.9.3 决策）：FR 线索「向右首雷距离」直接锁定雷位、
+			# 无弱信息值（GDD 3.3 原话），difficulty 恒 <0.3（实测 0.06~0.28，含 G+FR 混合），
+			# 进不了最低 easy 档，无法作为标准三档关卡生成——这是变体特性，非代码 bug。
+			if combo["clue"] == "fr":
+				stats["design_skip"] += 1
+				design_skip.append("%s %dx%d" % [combo["id"], side, side])
+				continue
 			if not _is_feasible(combo["clue"], combo["globals"], side, mines):
 				stats["skipped"] += 1
 				skipped.append("%s %dx%d" % [combo["id"], side, side])
@@ -134,15 +142,17 @@ func _initialize() -> void:
 
 	var elapsed := float(Time.get_ticks_msec() - t0) / 1000.0
 	print("=== 完成（%.1fs）===" % elapsed)
-	print("  单元(组合×尺寸): %d | 满额成功 %d 关 | 跳过(数学UNSAT) %d | 部分成功 %d | 全失败 %d" % [
-		stats["units"], stats["ok"], stats["skipped"], stats["partial"], stats["fail"]])
+	print("  单元(组合×尺寸): %d | 满额成功 %d 关 | 设计跳过(FR难度) %d | 跳过(数学UNSAT) %d | 部分成功 %d" % [
+		stats["units"], stats["ok"], stats["design_skip"], stats["skipped"], stats["partial"]])
+	if design_skip.size() > 0:
+		print("  设计跳过清单(%d，FR难度天然<0.3，见GDD 3.3): %s" % [design_skip.size(), ", ".join(design_skip)])
 	if skipped.size() > 0:
 		print("  跳过清单(%d): %s" % [skipped.size(), ", ".join(skipped)])
 	if partial.size() > 0:
 		print("  部分成功清单(%d): %s" % [partial.size(), ", ".join(partial)])
 	_write("%s/all_report.json" % _out_dir, {
 		"elapsed_s": elapsed, "stats": stats,
-		"skipped": skipped, "partial": partial,
+		"design_skip": design_skip, "skipped": skipped, "partial": partial,
 	})
 	CliShutdown.request_exit(0)
 
