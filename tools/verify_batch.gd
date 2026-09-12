@@ -72,15 +72,19 @@ func _process(_delta: float) -> bool:
 
 
 func _list_level_json(dir_path: String) -> Array[String]:
+	# 递归扫描：batch_all_variants 的产出为 <out_dir>/<组合>/<尺寸>/x.json 两层结构，
+	# 旧实现只扫顶层——对层级题库完全失效（probe 实测只抓到 all_report.json 还把它误当关卡）。
 	var out: Array[String] = []
+	var skip := ["report.json", "merged_report.json", "all_report.json"]
 	var dir := DirAccess.open(dir_path)
 	if dir == null:
 		return out
 	dir.list_dir_begin()
 	var n := dir.get_next()
 	while n != "":
-		if not dir.current_is_dir() and n.ends_with(".json") \
-				and n != "report.json" and n != "merged_report.json":
+		if dir.current_is_dir():
+			out.append_array(_list_level_json(dir_path.path_join(n)))
+		elif n.ends_with(".json") and not skip.has(n) and not n.begins_with("all_report"):
 			out.append(dir_path.path_join(n))
 		n = dir.get_next()
 	dir.list_dir_end()

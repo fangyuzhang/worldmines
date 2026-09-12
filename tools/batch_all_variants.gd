@@ -236,7 +236,9 @@ func _initialize() -> void:
 		print("  跳过清单(%d): %s" % [skipped.size(), ", ".join(skipped)])
 	if partial.size() > 0:
 		print("  部分成功清单(%d): %s" % [partial.size(), ", ".join(partial)])
-	_write("%s/all_report.json" % _out_dir, {
+	# 报告文件按分片命名：8 个分片进程写同一路径会互相覆盖（实测 probe40 丢了 7 片的 partial 清单）。
+	var report_name := "all_report_shard_%02d.json" % _shard_idx if _shard_total > 1 else "all_report.json"
+	_write("%s/%s" % [_out_dir, report_name], {
 		"elapsed_s": elapsed, "stats": stats,
 		"design_skip": design_skip, "skipped": skipped, "partial": partial,
 	})
