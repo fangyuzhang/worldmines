@@ -409,7 +409,11 @@ func _place_mines_rules(clue_rule: Object, globals: Array, cols: int, rows: int,
 			if g.get_rule_id() == &"dt":
 				g.place_mines(_rng, cols, rows, count)
 		var oracle := RuleOracle.new(clue_rule, globals, Vector2i(cols, rows), count, null)
-		var sol: Array[Vector2i] = RuleCpSat.find_solution(oracle.build_spec({}, [], {}))
+		var spec := oracle.build_spec({}, [], {})
+		# 可复现性：random_seed 从本实例确定性 RNG 派生（_rng 已按 _derive_seed(seed,attempt) 设置）
+		# → 同 seed 重放走同一条 find_solution 路径得同盘（C# 侧配合强制单 worker）。
+		spec["random_seed"] = _rng.randi()
+		var sol: Array[Vector2i] = RuleCpSat.find_solution(spec)
 		return sol  # 空 = UNSAT/不可行，交给上层重试（不会产出坏关卡）
 	# 单 G：沿用构造式布雷（确定性、快）
 	for g in globals:
@@ -422,7 +426,9 @@ func _place_mines_rules(clue_rule: Object, globals: Array, cols: int, rows: int,
 	# 约束数学可行（is_feasible=Y）时 find_solution 必有解。
 	if not globals.is_empty():
 		var oracle_fb := RuleOracle.new(clue_rule, globals, Vector2i(cols, rows), count, null)
-		var sol: Array[Vector2i] = RuleCpSat.find_solution(oracle_fb.build_spec({}, [], {}))
+		var spec_fb := oracle_fb.build_spec({}, [], {})
+		spec_fb["random_seed"] = _rng.randi()
+		var sol: Array[Vector2i] = RuleCpSat.find_solution(spec_fb)
 		if not sol.is_empty():
 			return sol
 	var m2: Array[Vector2i] = clue_rule.place_mines(_rng, cols, rows, count)

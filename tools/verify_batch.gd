@@ -36,7 +36,15 @@ func _initialize() -> void:
 		if level.is_empty():
 			failed.append("%s (JSON 无法解析)" % path)
 			continue
-		# 核心门禁：可加载 + 序贯可解（ProofLog.build 从玩家视角逐轮推必然结论直到全定）。
+		# 门禁 ①：Board 引擎真实构造加载（旧实现注释声称「Board 可加载」但从未调用——
+		# probe40 探测发现该承诺落空；LevelLoader 依赖 ModAPI autoload 在 -s 环境不可用，
+		# Board 直接构造是同引擎路径的可用等价检查：grid 重建 + 雷数一致性）。
+		var board := Board.new()
+		board.load_level(level)
+		if board.grid == null or board.total_mines != int(level.get("total_mines", -1)):
+			failed.append("%s (Board 构造加载失败)" % path)
+			continue
+		# 门禁 ②：序贯可解（ProofLog.build 从玩家视角逐轮推必然结论直到全定）。
 		var log: Dictionary = ProofLog.build(level)
 		if bool(log.get("solved", false)):
 			ok += 1

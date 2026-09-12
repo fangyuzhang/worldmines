@@ -186,6 +186,15 @@ namespace MinesweeperSolver
                 return new Godot.Collections.Array();
             }
             var solver = MakeSolver(spec);
+            // 可复现性：FindSolution 的解必须确定（同 spec 同解），否则「落盘 seed 重放」会得到
+            // 不同盘（probe40 实测 pf_classic/9x9 seed=4 重放不一致）。两个非确定源都要钉死：
+            //   ① 多 worker 并行 → 线程调度决定先找到哪个可行解 → 强制单 worker；
+            //   ② CP-SAT 内部随机 → 显式 random_seed（由生成器确定性 RNG 派生，spec 传入）。
+            // 可行性/强制格探测（IsFeasible/ForcedCells）不受影响——布尔结论是数学事实。
+            int seed = spec.ContainsKey("random_seed") ? spec["random_seed"].AsInt32() : 0;
+            int timeoutMs = spec.ContainsKey("timeout_ms") ? spec["timeout_ms"].AsInt32() : 8000;
+            solver.StringParameters =
+                $"max_time_in_seconds:{timeoutMs / 1000.0} num_search_workers:1 random_seed:{seed}";
             var status = solver.Solve(_model);
             if (status != CpSolverStatus.Optimal && status != CpSolverStatus.Feasible)
                 return new Godot.Collections.Array(); // 无解（UNSAT 或超时）
