@@ -103,11 +103,41 @@ dotnet build
 **Mod 作者工具**：`tools/mod_selfcheck.gd -- <clue_id> [globals]`——全尺寸体检（可行性/试生成/复核/难度分档），作者上架前自跑。契约与防线详见 GDD 23 号 §3.1.x。
 
 **生成质量优化批（v2.9.3）**：
-- **多解取优**：`_find_solution_best` 对同约束采样 3 解（确定性 random_seed），按 2×2 窗口雷数方差选最均匀——堆簇解结构差是序贯验证低产的通用根因（rl_ep 9×9 实测 4/4）。
+- **多解采样（mod 试验修正版）**：`_find_solution_best` 对同约束采样 5 解——每次采样**随机把 1 个自由格固定为雷/安全**（解空间切片；CP-SAT 对简单模型「不同 random_seed 同一解」，hpair mod 试验实锤 5 seed 只出 1 种解），随后**淘汰最差（方差最大）解 + 候选集内确定性随机选**（原「取最均匀」会让「最均匀结构唯一」的约束全 seed 收敛同盘——多样性被压缩）。堆簇解结构差仍是序贯低产的根因（保留淘汰收益，rl_ep 9×9 实测 3/3 盘全不同）。回归测试 `test/unit/test_cross_seed_diversity.gd`。
 - **多样性门**：批量生成时新关与组内已有盘峰值 Jaccard > 0.85 拒收（强约束小盘如 dt_4c 5×5 可行空间小、不同 seed 撞相似盘；随机独立盘期望 J≈0.25，0.85 只拦几乎同盘）。审计工具 `tools/diversity_report.gd`。
 - **目标难度**：批量工具第 8/12 参 `target_difficulty`（>0 删到达标即停，可定向产 hard 档）。
 - **报告汇总**：`tools/report_merge.gd`（多分片报告合并；全库权威统计仍用 `batch_audit_r07.gd`）。
 - **UI**：不可行尺寸 tooltip 说明原因；生成中文案带按尺寸耗时预估。
+
+### 服务器全量生成（2026-09-13 启动，无人值守）
+
+**背景**：本地全量 5~10h 太慢，转腾讯云 CVM 跑（ins-0fwm81qf · 上海 · 2核2G · TencentOS 4 · 到期 2026-10-12）。
+本地可安全关机——服务器侧全部「发射后不管」（nohup/setsid/systemd）。
+
+**运维脚本**（`tools/` 下划线开头，**不入 git 但磁盘常驻**；Python 用 `C:\Users\zjh30\.workbuddy\binaries\python\envs\default\Scripts\python.exe`）：
+```
+python tools\_cvm_tat.py runfile tools\_remote_progress.sh 120   # 查进度（产关数/心跳/进程）
+python tools\_cvm_tat.py runfile tools\_remote_collect.sh 180    # 打包产物 → /root/wm_results.tar.gz
+python tools\_cvm_pull.py <远程文件> <本地文件>                   # 拉回（分片+md5 校验）
+python tools\_cvm_push.py <本地文件> <远程文件>                   # 推送（改代码后单文件推）
+powershell -File tools\_analyze_issues.ps1                        # 本地分析拉回的 issues jsonl
+```
+凭证自动读 `~/.workbuddy/mcp.json`（tencent-cvm.env）。TAT 已知坑：字段在 `InvocationTaskSet` / `TaskResult.ExitCode`，传参必须 from_json_string（已在脚本封装）。
+
+**服务器环境**：
+- 代码 `/root/minesweeper`（精简包；**godot-wasm 插件被剔除** → 启动时 mod_api/wasm_sandbox 报解析错，**无害**——生成链路不碰 mod 系统，冒烟已证）；
+- Godot 4.7.2 mono `/opt/godot/Godot_v4.7.2-stable_mono_linux_x86_64/…`；.NET SDK 9（dnf 装）；
+- 该项目名已改 ASCII `wm_server`（user:// = `~/.local/share/godot/app_userdata/wm_server/`）；csproj 改名 `wm_server.csproj` + assembly_name 同步（原中文名被 tar 打包链双重编码损坏）；
+- **生成**：2 分片 nohup 跑 `batch_all_variants`（`user://batch_all 10 40 0 <i> 2`，超时系数 3000）；2G swap 已挂；
+- **守护**：systemd 服务 `wm-gen-watchdog`（10 分钟巡检：状态摘要写 /root/watchdog.log、分片异常退出自动重启续跑、服务器重启后自动拉起）；
+- **记录**：`issues_shard_0X.jsonl`（empty / empty_timeout / tier_empty / proof_fail / dup_fp / similar 逐事件 + unit_done 心跳含 tried/made/耗时）。
+
+**当前状态**：2026-09-13 03:05 启动，预计 4~6 小时（约 07:00~09:00 完成）。产物在服务器 `user://batch_all`（372 单元 × 10 关）。
+
+**恢复流程（明天/新会话照此执行）**：
+1. **查完成**：`runfile _remote_progress.sh`——看两分片 `all_report_shard_0X.json` 是否都已生成、进程是否已退出、watchdog.log 尾部；若分片消失且未完成 → watchdog 应已重启（查日志）；若 watchdog 也死 → 重发 `_remote_launch_full.sh` 续跑。
+2. **收集**：`_remote_collect.sh` → `_cvm_pull.py /root/wm_results.tar.gz <本地>` → 解包 → 关卡 json 合入本地题库评估；
+3. **分析 + 修复**：`_analyze_issues.ps1` 分析事件分布（tier_empty 0.04~0.28 属正常概率性进档；proof_fail/empty_timeout/similar 需逐个查）→ 定位 bug → 本地修复（模式参照 commit 3fabba6/fa5f6d0）→ `verify_all` → 提交 → 单文件推服务器重跑受影响单元。
 
 ### 能 / 不能
 
