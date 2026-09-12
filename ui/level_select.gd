@@ -451,15 +451,40 @@ func _close_popup() -> void:
 
 # ==================== 弹窗内容刷新 ====================
 
+## 该变体在该尺寸下是否可生成（R07 固定雷数下的数学可行性，v2.9.3 可行性矩阵实测）。
+## UNSAT 清单（全部可数学论证，非性能问题——重试永远失败）：
+##   含 rl（相邻行锁）的组合在 6×6：6 项 ±1 序列总和恒奇，14 为偶 → 矛盾；
+##   含 qd（四象）的组合在 6×6/8×8：四象限雷数须为 4 的倍数，14/26 不是；
+##   rl+qd 在 5×5：上下半盘差 1 与四象限相等双重叠加矛盾（6×6/8×8 已被前两条覆盖）。
+## 未过滤的后果：玩家选中该组合后生成器永远返回空（UI 转圈无结果）。
+func _mode_feasible(mode: Dictionary, size: int) -> bool:
+	var globals: Array = mode.get("globals", [])
+	if globals.has("rl") and size == 6:
+		return false
+	if globals.has("qd") and (size == 6 or size == 8):
+		return false
+	if globals.has("rl") and globals.has("qd") and size == 5:
+		return false
+	return true
+
+
 func _refresh_popup() -> void:
 	if _mode_idx < 0 or _grid == null:
 		return
 	var m: Dictionary = MODES[_mode_idx]
+	# 当前尺寸对该变体不可行 → 自动切到最近的可行尺寸（避免「选中即必失败」状态）
+	if not _mode_feasible(m, SIZES[_size_idx]):
+		for i in SIZES.size():
+			var cand: int = ( _size_idx + i ) % SIZES.size()
+			if _mode_feasible(m, SIZES[cand]):
+				_size_idx = cand
+				break
 	_title_label.text = "%s · %d×%d" % [m["name"], SIZES[_size_idx], SIZES[_size_idx]]
 
-	# 尺寸按钮高亮
+	# 尺寸按钮高亮 + 可行性禁用（不可行组合按钮置灰，鼠标悬停可见但点不了）
 	for i in _size_btns.size():
 		_style_choice(_size_btns[i], i == _size_idx)
+		_size_btns[i].disabled = not _mode_feasible(m, SIZES[i])
 	_style_frame()
 
 	# 分页：定位到「最新解锁关卡」所在页（切换尺寸时重置）
@@ -664,6 +689,12 @@ func _ensure_level_file(idx: int) -> String:
 	var dir := "user://gen_levels"
 	DirAccess.make_dir_recursive_absolute(dir)
 	var m: Dictionary = MODES[_mode_idx]
+	# 兜底防御（正常已被 _refresh_popup 的尺寸禁用拦下）：数学不可行组合直接拦截，
+	# 不进入生成器白耗 50 次 attempt（每次都会 UNSAT 返回空）。
+	if not _mode_feasible(m, SIZES[_size_idx]):
+		push_warning("关卡选择：变体 %s 在 %d×%d（R07 雷数）下数学不可行，已拦截生成" % [
+			str(m["id"]), SIZES[_size_idx], SIZES[_size_idx]])
+		return ""
 	var path := "%s/%s_%d_%d.json" % [dir, m["id"], SIZES[_size_idx], idx]
 	if FileAccess.file_exists(path):
 		return path
