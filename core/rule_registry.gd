@@ -363,13 +363,84 @@ class PfRule:
 				]
 				b.add_le(b.sum(quad), 2)
 
-	## 随机 + 过滤布雷。
+	## 布雷：分层采样优先（v2.9.3），纯随机+过滤兜底。
+	## 大密度（8×8/26 雷 = 40.6%）下纯随机单次全窗口过滤通过率极低（首轮量产实测
+	## g_pf/8x8、pf_classic/8x8 等 110 seed 仅 2~3 关，接受率 ~2.5%），根因是随机布雷
+	## 雷团簇 → 某 2×2 窗口 3+ 雷概率高。分层采样按对齐 2×2 块均衡分配（每块 ≤2 雷
+	## → 对齐窗口必过，仅跨界窗口可能违约需过滤），通过率高一个量级。
+	## 约束语义不变：两种采样都经 _ok 全窗口校验；确定性不受影响（全部走 _rng）。
 	func place_mines(rng: RandomNumberGenerator, cols: int, rows: int, count: int) -> Array[Vector2i]:
+		for _attempt in 200:
+			var mines := _stratified_mines(rng, cols, rows, count)
+			if not mines.is_empty() and _ok(mines, cols, rows):
+				return mines
 		for _attempt in 300:
 			var mines := _random_mines(rng, cols, rows, count)
 			if _ok(mines, cols, rows):
 				return mines
 		return []
+
+	## 分层采样：雷按对齐 2×2 块均衡分配（每块 ≤ min(2, 块容量)），块内随机取位。
+	## count 超过总容量（块数×2）时返回空（该密度下约束本就不可满足，交上层兜底）。
+	static func _stratified_mines(rng: RandomNumberGenerator, cols: int, rows: int, count: int) -> Array[Vector2i]:
+		var nby := ceili(rows / 2.0)
+		var nbx := ceili(cols / 2.0)
+		var blocks: Array = []
+		var caps: Array[int] = []
+		for by in nby:
+			for bx in nbx:
+				var cells: Array = []
+				for r in range(by * 2, mini(by * 2 + 2, rows)):
+					for c in range(bx * 2, mini(bx * 2 + 2, cols)):
+						cells.append(Vector2i(c, r))
+				blocks.append(cells)
+				# 容量：满 2×2 块 2 雷；边缘残块（1×2/2×1/1×1）只给 1——残块满填（两格全雷）
+				# 会与相邻块边界组成 3+ 雷窗口（9×9 实测通过率仅 3% 的根因）。
+				var is_full_block: bool = (cells.size() == 4)
+				caps.append(2 if is_full_block else 1)
+		var total_cap := 0
+		for cap in caps:
+			total_cap += cap
+		if count > total_cap:
+			return []
+		# 随机块序轮流分配（每轮每块 +1、到 cap 为止）→ 块间均衡且带随机性
+		var order: Array[int] = []
+		for i in blocks.size():
+			order.append(i)
+		for i in range(order.size() - 1, 0, -1):
+			var j := rng.randi_range(0, i)
+			var t := order[i]
+			order[i] = order[j]
+			order[j] = t
+		var alloc: Array[int] = []
+		for i in blocks.size():
+			alloc.append(0)
+		var remaining := count
+		while remaining > 0:
+			var progressed := false
+			for bi in order:
+				if remaining <= 0:
+					break
+				if alloc[bi] < caps[bi]:
+					alloc[bi] += 1
+					remaining -= 1
+					progressed = true
+			if not progressed:
+				return []
+		# 块内随机取位
+		var out: Array[Vector2i] = []
+		for bi in blocks.size():
+			if alloc[bi] <= 0:
+				continue
+			var pool: Array = blocks[bi].duplicate()
+			for i in range(pool.size() - 1, 0, -1):
+				var j := rng.randi_range(0, i)
+				var t = pool[i]
+				pool[i] = pool[j]
+				pool[j] = t
+			for i in alloc[bi]:
+				out.append(pool[i])
+		return out
 
 	static func _random_mines(rng: RandomNumberGenerator, cols: int, rows: int, count: int) -> Array[Vector2i]:
 		var cells: Array[Vector2i] = []
