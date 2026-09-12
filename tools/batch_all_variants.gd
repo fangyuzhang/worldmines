@@ -25,6 +25,13 @@ extends SceneTree
 #      QD 6×6/8×8 雷数非 4 倍数）直接跳过，不进入「换 seed 白跑几十秒」。
 #   2. 含 dt 的组合不预筛（骨牌划分随机、is_feasible 单次采样不可靠），交给生成器多 attempt 重试。
 #   3. 生成后用 ProofLog.build 复核序贯可解（与 verify_batch 同口径），不过即拒。
+#
+# 记录功能（服务器长跑/远程分析用）：
+#   · issues_shard_XX.jsonl：逐事件记录（empty / empty_timeout / tier_empty / proof_fail /
+#     dup_fp / similar）+ 每单元完成行（unit_done：尝试数/产出/各分类计数/耗时）——
+#     一行一个 JSON，追加写、单元粒度落盘（进程被杀也不丢已完成单元的事件）。
+#   · unit_done 行兼作心跳：远程 getfile 拉最后几行即可看进度。
+#   · 分析入口：跑完后 collect_report.py（本地）拉回汇总。
 const CliShutdown := preload("res://tools/cli_shutdown.gd")
 
 const CLUES := ["classic", "4n", "clock", "hv", "fr", "loopruns", "distsum", "sc"]
@@ -39,6 +46,25 @@ var _shard_idx := 0
 var _shard_total := 1  # >1 = 分片并行（第 5/6 参数）
 var _seed_start := 1   # 补跑起始 seed（第 7 参数；避免重扫已成功 seed 白花生成时间）
 var _target_difficulty := 0.0  # >0 = 按目标难度生成（第 8 参数，删到达标即停）
+var _issues_path := ""  # issues jsonl 路径（记录功能，分片命名）
+
+
+func _append_issues(lines: Array) -> void:
+	if lines.is_empty() or _issues_path == "":
+		return
+	var f := FileAccess.open(_issues_path, FileAccess.READ_WRITE)
+	if f == null:
+		f = FileAccess.open(_issues_path, FileAccess.WRITE)
+	if f == null:
+		return
+	f.seek_end()
+	for ln in lines:
+		f.store_line(str(ln))
+	f.close()
+
+
+static func _ev(d: Dictionary) -> String:
+	return JSON.stringify(d)
 
 
 ## 组合清单：92 项 {id, clue, globals}。
@@ -165,6 +191,9 @@ func _initialize() -> void:
 	if args.size() >= 8 and args[7] != "":
 		_target_difficulty = float(args[7])
 	DirAccess.make_dir_recursive_absolute(_out_dir)
+	# 记录文件路径（分片命名——多进程写同一文件会互相覆盖，v2.9.3 probe 实测教训）
+	_issues_path = "%s/%s" % [_out_dir,
+		"issues_shard_%02d.jsonl" % _shard_idx if _shard_total > 1 else "issues.jsonl"]
 
 	var combos := _build_combos()
 	if _limit_combos > 0 and _limit_combos < combos.size():
@@ -213,36 +242,70 @@ func _initialize() -> void:
 			if int(existing["count"]) >= _per_type:
 				stats["resumed"] = int(stats.get("resumed", 0)) + 1
 				stats["ok"] += int(existing["count"])
+				_append_issues([_ev({"t": "unit_done", "combo": combo["id"], "side": side,
+					"made": int(existing["count"]), "tried": 0, "empty": 0, "tier_empty": 0,
+					"proof_fail": 0, "dup": 0, "similar": 0, "cost_s": 0.0, "resumed": true})])
 				continue
 			var made := int(existing["count"])
 			var next_idx: Dictionary = existing["max_idx"]
 			var fps: Dictionary = existing["fps"]
 			var mine_sets: Array = existing["mine_sets"]
+			# 单元级事件收集（单元粒度落盘：进程被杀也不丢已完成单元的事件）
+			var unit_lines: Array = []
+			var u_tried := 0
+			var u_empty := 0
+			var u_tier := 0
+			var u_proof := 0
+			var u_dup := 0
+			var u_sim := 0
+			var u_t0 := Time.get_ticks_msec()
 			for seed in range(_seed_start, _seed_max + 1):
+				var t_seed := Time.get_ticks_msec()
 				var level: Dictionary = gen.generate_with_rules(
 					combo["clue"], combo["globals"], Vector2i(side, side), mines, seed,
 					0, 50, null, _timeout_for(side), _target_difficulty)
+				var cost_ms := Time.get_ticks_msec() - t_seed
+				u_tried += 1
 				if level.is_empty():
+					u_empty += 1
+					# 超时启发式：耗时贴到超时上限 → 大概率是删线索/CP-SAT 超时被杀（非真无解）
+					var to_ms := _timeout_for(side)
+					var kind := "empty_timeout" if cost_ms >= to_ms * 95 / 100 else "empty"
+					unit_lines.append(_ev({"t": kind, "combo": combo["id"], "side": side,
+						"seed": seed, "cost_s": cost_ms / 1000.0}))
 					continue
 				var dp: Dictionary = level.get("difficulty_profile", {})
 				var diff := float(dp.get("difficulty", 0.0))
 				var tier := Difficulty.tier_of(diff)
 				if tier == "":
+					u_tier += 1
+					unit_lines.append(_ev({"t": "tier_empty", "combo": combo["id"], "side": side,
+						"seed": seed, "diff": diff, "cost_s": cost_ms / 1000.0}))
 					continue
 				# 生成后复核：可加载 + 序贯可解（与 verify_batch 同口径，杜绝废品入库）
 				var log: Dictionary = ProofLog.build(level)
 				if not bool(log.get("solved", false)):
+					u_proof += 1
+					unit_lines.append(_ev({"t": "proof_fail", "combo": combo["id"], "side": side,
+						"seed": seed, "reason": str(log.get("reason", "")), "cost_s": cost_ms / 1000.0}))
 					continue
 				var fp := _fingerprint(level)
 				if fps.has(fp):
+					u_dup += 1
+					unit_lines.append(_ev({"t": "dup_fp", "combo": combo["id"], "side": side,
+						"seed": seed, "cost_s": cost_ms / 1000.0}))
 					continue
 				fps[fp] = true
 				# 多样性门：与组内已有盘峰值 J > 0.85（几乎同盘）→ 拒收换 seed
 				var new_set := {}
 				for m in level.get("mines", []):
 					new_set[Vector2i(int(m["c"]), int(m["r"]))] = true
-				if _max_similarity(mine_sets, new_set) > SIMILARITY_MAX:
+				var peak_j := _max_similarity(mine_sets, new_set)
+				if peak_j > SIMILARITY_MAX:
+					u_sim += 1
 					stats["similar_skipped"] = int(stats.get("similar_skipped", 0)) + 1
+					unit_lines.append(_ev({"t": "similar", "combo": combo["id"], "side": side,
+						"seed": seed, "j": peak_j, "cost_s": cost_ms / 1000.0}))
 					continue
 				mine_sets.append(new_set)
 				var idx := int(next_idx.get(tier, 0)) + 1
@@ -255,6 +318,12 @@ func _initialize() -> void:
 				if made >= _per_type:
 					break
 			stats["ok"] += made
+			# 单元完成行（兼心跳：远程 getfile 拉最后几行即可看进度）
+			unit_lines.append(_ev({"t": "unit_done", "combo": combo["id"], "side": side,
+				"made": made, "tried": u_tried, "empty": u_empty, "tier_empty": u_tier,
+				"proof_fail": u_proof, "dup": u_dup, "similar": u_sim,
+				"cost_s": (Time.get_ticks_msec() - u_t0) / 1000.0}))
+			_append_issues(unit_lines)
 			if made < _per_type:
 				stats["partial"] += 1
 				partial.append("%s %dx%d (%d/%d)" % [combo["id"], side, side, made, _per_type])
@@ -277,7 +346,9 @@ func _initialize() -> void:
 	_write("%s/%s" % [_out_dir, report_name], {
 		"elapsed_s": elapsed, "stats": stats,
 		"design_skip": design_skip, "skipped": skipped, "partial": partial,
+		"issues_file": _issues_path.get_file(),
 	})
+	print("  事件记录: %s（%d 单元行 + 全量失败事件，可远程拉回分析）" % [_issues_path, stats["units"]])
 	CliShutdown.request_exit(0)
 
 
