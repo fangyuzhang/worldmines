@@ -416,6 +416,15 @@ func _place_mines_rules(clue_rule: Object, globals: Array, cols: int, rows: int,
 		var m: Array[Vector2i] = g.place_mines(_rng, cols, rows, count)
 		if not m.is_empty():
 			return m
+	# 构造式失败兜底：CP-SAT 直接求满足全局约束的布局。旧代码 fallback 到随机布雷，
+	# 而随机布雷违反全局约束（如 PF 9×9=32雷，place_mines 300 次随机+过滤碰不到可行布局）
+	# → 后续唯一解/序贯验证必失败，整个 attempt 白跑（实测 pf 9×9 接受率 0/12）。
+	# 约束数学可行（is_feasible=Y）时 find_solution 必有解。
+	if not globals.is_empty():
+		var oracle_fb := RuleOracle.new(clue_rule, globals, Vector2i(cols, rows), count, null)
+		var sol: Array[Vector2i] = RuleCpSat.find_solution(oracle_fb.build_spec({}, [], {}))
+		if not sol.is_empty():
+			return sol
 	var m2: Array[Vector2i] = clue_rule.place_mines(_rng, cols, rows, count)
 	if not m2.is_empty():
 		return m2
@@ -507,6 +516,11 @@ func _prune_sequential(oracle: RuleOracle, active: Dictionary, keys: Array, dead
 		grid_size: Vector2i, total_mines: int, values: Dictionary, state: Dictionary) -> void:
 	for p in keys:
 		if bool(state["reached"]) or Time.get_ticks_msec() > deadline:
+			return
+		# 保底：至少保留 1 条线索。全局约束自带开局信息的组合（如 mx+dt：骨牌外强制非雷
+		# + 镜像锁死骨牌内选择 → 无线索即可序贯推完）会把线索全部删光，被上层
+		# active.is_empty() 拒绝整个 attempt，白白浪费可行盘（实测 mx_dt 5×5 0/12 全灭于此）。
+		if active.size() <= 1:
 			return
 		var backup: Variant = active[p]
 		active.erase(p)

@@ -89,7 +89,8 @@ func _initialize() -> void:
 	if _limit_combos > 0 and _limit_combos < combos.size():
 		combos.resize(_limit_combos)
 	var t0 := Time.get_ticks_msec()
-	var stats := {"units": 0, "ok": 0, "partial": 0, "skipped": 0, "design_skip": 0, "fail": 0}
+	var stats := {"units": 0, "ok": 0, "partial": 0, "skipped": 0, "design_skip": 0, "fail": 0,
+		"tiers": {"easy": 0, "normal": 0, "hard": 0}}
 	var skipped: Array = []
 	var design_skip: Array = []
 	var partial: Array = []
@@ -103,7 +104,9 @@ func _initialize() -> void:
 			# FR（首雷）设计跳过（v2.9.3 决策）：FR 线索「向右首雷距离」直接锁定雷位、
 			# 无弱信息值（GDD 3.3 原话），difficulty 恒 <0.3（实测 0.06~0.28，含 G+FR 混合），
 			# 进不了最低 easy 档，无法作为标准三档关卡生成——这是变体特性，非代码 bug。
-			if combo["clue"] == "fr":
+			# mx_dt（G+G）同理：镜像+骨牌全局约束自带全部开局信息（骨牌外强制非雷 + 镜像
+			# 锁死骨牌内选择），0 条线索即可序贯推完 → 生成关难度恒 <0.3（实测 0.04~0.17）。
+			if combo["clue"] == "fr" or (combo["clue"] == "classic" and combo["globals"] == ["mx", "dt"]):
 				stats["design_skip"] += 1
 				design_skip.append("%s %dx%d" % [combo["id"], side, side])
 				continue
@@ -133,6 +136,7 @@ func _initialize() -> void:
 				level["difficulty"] = diff
 				_write("%s/%s_%02d.json" % [combo_dir, tier, idx], level)
 				made += 1
+				stats["tiers"][tier] = int(stats["tiers"].get(tier, 0)) + 1
 				if made >= _per_type:
 					break
 			stats["ok"] += made
@@ -144,6 +148,8 @@ func _initialize() -> void:
 	print("=== 完成（%.1fs）===" % elapsed)
 	print("  单元(组合×尺寸): %d | 满额成功 %d 关 | 设计跳过(FR难度) %d | 跳过(数学UNSAT) %d | 部分成功 %d" % [
 		stats["units"], stats["ok"], stats["design_skip"], stats["skipped"], stats["partial"]])
+	print("  难度分布: easy=%d normal=%d hard=%d" % [
+		stats["tiers"]["easy"], stats["tiers"]["normal"], stats["tiers"]["hard"]])
 	if design_skip.size() > 0:
 		print("  设计跳过清单(%d，FR难度天然<0.3，见GDD 3.3): %s" % [design_skip.size(), ", ".join(design_skip)])
 	if skipped.size() > 0:
