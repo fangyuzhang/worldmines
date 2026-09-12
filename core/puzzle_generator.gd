@@ -408,6 +408,17 @@ func _place_mines_rules(clue_rule: Object, globals: Array, cols: int, rows: int,
 		for g in globals:
 			if g.get_rule_id() == &"dt":
 				g.place_mines(_rng, cols, rows, count)
+		# mx+pf 专用前置（v2.9.3）：镜像分层采样——镜像自动满足 mx、PF 窗口镜像封闭，
+		# 一次采样同时过两约束。find_solution 第一可行解结构差 → mx_pf/5x5、6x6、8x8
+		# 量产接受率趋零（110 seed 零新增）。采样失败（返回空）回落 find_solution，不破坏现路径。
+		if not globals.any(func(g): return g.get_rule_id() == &"dt") \
+				and globals.any(func(g): return g.get_rule_id() == &"mx") \
+				and globals.any(func(g): return g.get_rule_id() == &"pf"):
+			for g in globals:
+				if g.get_rule_id() == &"pf":
+					var mirrored: Array[Vector2i] = g.call("place_mines_mirrored", _rng, cols, rows, count)
+					if not mirrored.is_empty():
+						return mirrored
 		var oracle := RuleOracle.new(clue_rule, globals, Vector2i(cols, rows), count, null)
 		var spec := oracle.build_spec({}, [], {})
 		# 可复现性：random_seed 从本实例确定性 RNG 派生（_rng 已按 _derive_seed(seed,attempt) 设置）

@@ -442,6 +442,64 @@ class PfRule:
 				out.append(pool[i])
 		return out
 
+	## 镜像分层采样（v2.9.3）：mx+pf 组合专用。多 G 布雷走 find_solution 的第一可行解
+	## 结构差 → mx_pf/5x5、6x6、8x8 量产接受率趋零（110 seed 零新增）。本方法左半区
+	## 2×2 块分层布雷 + 中轴列补雷 + 右半镜像——镜像自动满足 mx；PF 窗口在镜像下封闭
+	## （原窗口过 ⇒ 镜像窗口过），跨中轴窗口由 _ok 过滤。雷数结构 count = 2k + j
+	## （j = 中轴列雷数，与 count 同奇偶；偶数列 j=0）。
+	func place_mines_mirrored(rng: RandomNumberGenerator, cols: int, rows: int, count: int) -> Array[Vector2i]:
+		for _attempt in 200:
+			var mines := _mirrored_stratified(rng, cols, rows, count)
+			if not mines.is_empty() and _ok(mines, cols, rows):
+				return mines
+		return []
+
+	static func _mirrored_stratified(rng: RandomNumberGenerator, cols: int, rows: int, count: int) -> Array[Vector2i]:
+		var half := int(cols / 2)
+		var has_axis := (cols % 2 == 1)
+		var axis_cells: Array[Vector2i] = []
+		if has_axis:
+			for r in rows:
+				axis_cells.append(Vector2i(half, r))
+		# j（中轴雷数）与 count 同奇偶，且 0 ≤ j ≤ min(count, 中轴格数)
+		var j_options: Array[int] = []
+		var j0 := count % 2
+		if not has_axis:
+			j0 = 0
+		var jj := j0
+		while jj <= mini(count, axis_cells.size()):
+			j_options.append(jj)
+			jj += 2
+		if j_options.is_empty() or (not has_axis and count % 2 != 0):
+			return []
+		var j_pick: int = j_options[rng.randi_range(0, j_options.size() - 1)]
+		var k := (count - j_pick) / 2
+		if k < 0:
+			return []
+		# 左半区分层采样 k 雷（_stratified_mines 的 cols=half；k=0 时直接空盘）
+		var left_mines: Array[Vector2i] = []
+		if k > 0:
+			left_mines = _stratified_mines(rng, half, rows, k)
+			if left_mines.is_empty():
+				return []
+		# 中轴列随机 j_pick 雷
+		var axis_pool: Array = axis_cells.duplicate()
+		for i in range(axis_pool.size() - 1, 0, -1):
+			var ja := rng.randi_range(0, i)
+			var ta = axis_pool[i]
+			axis_pool[i] = axis_pool[ja]
+			axis_pool[ja] = ta
+		var mines := {}
+		for m in left_mines:
+			mines[m] = true
+			mines[Vector2i(cols - 1 - m.x, m.y)] = true
+		for i in j_pick:
+			mines[axis_pool[i]] = true
+		var out: Array[Vector2i] = []
+		for m in mines:
+			out.append(m)
+		return out
+
 	static func _random_mines(rng: RandomNumberGenerator, cols: int, rows: int, count: int) -> Array[Vector2i]:
 		var cells: Array[Vector2i] = []
 		for r in rows:
