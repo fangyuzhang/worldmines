@@ -402,28 +402,46 @@ func _derive_seed(seed: int, attempt: int) -> int:
 	return seed * 1000003 + attempt
 
 
-## 多解采样取优（v2.9.3）：对同一约束采样 SOLUTION_SAMPLES 个候选解
+## 多解采样（v2.9.3，mod 试验修正版）：对同一约束采样 SOLUTION_SAMPLES 个候选解
 ##（random_seed 由确定性 RNG 派生——可复现性保持；C# 侧 FindSolution 单 worker + 固定种子），
-## 按「2×2 窗口雷数方差」选最均匀的解。均匀结构 → 线索信息分布好 → 序贯验证通过率高。
+## 按「2×2 窗口雷数方差」排序后**淘汰最差一个**，在剩余候选里用确定性 RNG 随机选。
+##
+## 为什么不「取方差最小」：hpair（水平配对）试验 Mod 实锤——当可行解空间的「最均匀结构」
+## 唯一时，全部 seed 收敛到同一盘（每尺寸 3 关同盘、指纹校验不同盘面=1，难度也恒定）。
+## 「淘汰最差」保留「避开烂结构」的收益（rl_ep 9×9 曾 0/12 靠它救活），
+## 又通过候选集内随机恢复跨 seed 多样性（同 seed 仍确定）。
 ## 全部采样失败（UNSAT/超时）→ 返回空，交上层重试（与单次 find_solution 同语义）。
-const SOLUTION_SAMPLES := 3
+const SOLUTION_SAMPLES := 5
 
 func _find_solution_best(oracle: RuleOracle, cols: int, rows: int) -> Array[Vector2i]:
-	var best: Array[Vector2i] = []
-	var best_score := INF
+	var sols: Array = []
 	for _i in SOLUTION_SAMPLES:
 		var spec := oracle.build_spec({}, [], {})
 		# random_seed 从本实例确定性 RNG 派生（_rng 已按 _derive_seed(seed,attempt) 设置）
 		# → 同 seed 重放走同一条采样路径得同盘。
 		spec["random_seed"] = _rng.randi()
+		# 多样性扰动（v2.9.3 mod 试验修正）：CP-SAT 的「第一可行解」对简单模型往往
+		# 与 random_seed 无关（presolve 定解——hpair/qd_sc 实测 5 个不同 seed 只出 1 种解，
+		# 导致这些单元批量生成只能出同一张盘）。随机把 1 个自由格固定为雷/安全，
+		# 从解空间切片引导出不同解；不可行的切片（返回空）自然淘汰。
+		var pr := _rng.randi_range(0, rows - 1)
+		var pc := _rng.randi_range(0, cols - 1)
+		if _rng.randi() % 2 == 0:
+			(spec["mine_cells"] as Array).append([pr, pc])
+		else:
+			(spec["safe_cells"] as Array).append([pr, pc])
 		var sol: Array[Vector2i] = RuleCpSat.find_solution(spec)
-		if sol.is_empty():
-			continue
-		var score := _uniformity_score(sol, cols, rows)
-		if score < best_score:
-			best_score = score
-			best = sol
-	return best
+		if not sol.is_empty():
+			sols.append(sol)
+	if sols.is_empty():
+		return []
+	if sols.size() == 1:
+		return sols[0]
+	sols.sort_custom(func(a: Array, b: Array) -> bool:
+		return _uniformity_score(a, cols, rows) < _uniformity_score(b, cols, rows))
+	var pick := _rng.randi_range(0, sols.size() - 2)  # 排除末位（方差最大）
+	var out: Array[Vector2i] = sols[pick]
+	return out
 
 
 ## 结构均匀度评分：全部 2×2 窗口雷数的方差（越小越均匀）。堆簇解方差大、均匀解接近 0。

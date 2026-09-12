@@ -598,6 +598,11 @@ namespace MinesweeperSolver
                     if (_auxBoolVars.TryGetValue(l["i"].AsInt32(), out var bv))
                         return bv;
                     throw new Exception("int aux 变量不能作布尔字面量");
+                case "const":
+                    // const 字面量（0=false / 非 0=true）：RuleBuilder.cell_var 越界返回
+                    // const 0 并承诺「方便写开窗口规则」——支持它才能让越界格直接入
+                    // 或门/蕴含（此前抛「未知字面量节点: const」炸整个 spec，mod 试验抓出）。
+                    return l["v"].AsInt64() != 0 ? _constTrue : _constTrue.Not();
             }
             throw new Exception($"未知字面量节点: {l["t"].AsString()}");
         }

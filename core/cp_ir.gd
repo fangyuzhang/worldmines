@@ -160,7 +160,10 @@ static func eval_lit(lit: Dictionary, asg: Dictionary) -> bool:
 	match lit.get("t", ""):
 		T_NOT:
 			return not eval_lit(lit["x"], asg)
-		T_CELL, T_AUX:
+		T_CELL, T_AUX, T_CONST:
+			# T_CONST：const 0 = false / 非 0 = true。支持它使「越界 cell_var（const 0）
+			# 直接入或门」可用——RuleBuilder.cell_var 注释承诺的越界语义
+			#（「方便写射线/环序等开窗口规则」）此前在字面量位置不成立（mod 试验抓出）。
 			return eval_expr(lit, asg) != 0
 	push_error("CPIR: 未知字面量节点 %s" % str(lit.get("t", "")))
 	return false
