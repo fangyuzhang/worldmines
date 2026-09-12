@@ -58,10 +58,11 @@ func _initialize() -> void:
 	_gen.num_workers = 1 if _shard_idx >= 0 else 0
 	# 删线索超时：**不能**用 15s 默认——大棋盘（≥12×12）15s 删不完，会静默产出
 	# 线索超多（clue_ratio ~0.57）的「假 easy」关，normal/hard 档永远为空（实测 16×16 完整 ~100s）。
-	# 按 ~0.6s/格 估上界（16×16 → 154s），地板 30s；显式 -timeout 可覆盖。
+	# 系数 1500（原 600）：实测 9×9 重线索组合单关 68~74s，600 系数会超时杀掉好关
+	#（16×16 → 384s，地板 30s）；显式 -timeout 可覆盖。
 	var timeout_ms := _timeout_ms
 	if timeout_ms <= 0:
-		timeout_ms = maxi(30_000, _size.x * _size.y * 600)
+		timeout_ms = maxi(30_000, _size.x * _size.y * 1500)
 	_timeout_ms = timeout_ms  # 回写有效值，供报告打印/落盘
 	var t0 := Time.get_ticks_msec()
 

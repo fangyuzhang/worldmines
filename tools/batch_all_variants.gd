@@ -7,10 +7,13 @@ extends SceneTree
 # 尺寸：5×5~9×9（R07 雷数 10/14/20/26/32）。
 #
 # 用法：
-#   godot --headless --path . -s res://tools/batch_all_variants.gd -- [out_dir] [per_type] [seed_max]
+#   godot --headless --path . -s res://tools/batch_all_variants.gd -- [out_dir] [per_type] [seed_max] [limit_combos] [shard_idx shard_total]
 #   · out_dir  默认 user://batch_all
 #   · per_type 每 (组合×尺寸) 目标关卡数，默认 10
-#   · seed_max 每个单元尝试的 seed 上限（概率性组合需更大），默认 40
+#   · seed_max 每个单元尝试的 seed 上限（概率性进档组合需更大），默认 40
+#   · limit_combos 只跑前 N 组合（冒烟用，0=全部）
+#   · shard_idx/shard_total 分片并行（按组合取模切分；9×9 重线索单关可达 ~200s，
+#     全量单进程 5~10h，8 进程分片约 1~1.5h）。断点续跑：同命令重跑即自动跳过满额单元。
 #
 # 关键设计（防废品/防复工）：
 #   1. is_feasible 预筛：不含 dt 的组合在生成前判数学可行性，UNSAT（如 RL 6×6 奇偶矛盾、
@@ -27,6 +30,8 @@ var _out_dir := "user://batch_all"
 var _per_type := 10
 var _seed_max := 40
 var _limit_combos := 0  # 0 = 全部；>0 = 只跑前 N 组合（冒烟用）
+var _shard_idx := 0
+var _shard_total := 1  # >1 = 分片并行（第 5/6 参数）
 
 
 ## 组合清单：92 项 {id, clue, globals}。
@@ -61,7 +66,10 @@ func _is_feasible(clue: String, globals: Array, side: int, mines: int) -> bool:
 
 
 func _timeout_for(side: int) -> int:
-	return maxi(30_000, side * side * 600)
+	# 系数 1500（原 600）：实测 9×9 重线索组合单关 68~74s（rl_loopruns 74.2s、rl_pf 68.1s），
+	# 600 系数（9×9=48.6s）会把它们超时杀掉。1500 → 9×9=121s、16×16=384s，留足余量。
+	# 代价仅是失败关多等一会（成功关不受影响）。
+	return maxi(30_000, side * side * 1500)
 
 
 func _write(path: String, data: Dictionary) -> void:
@@ -71,6 +79,50 @@ func _write(path: String, data: Dictionary) -> void:
 		return
 	f.store_string(JSON.stringify(data, "  "))
 	f.close()
+
+
+func _load_json(path: String) -> Dictionary:
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return {}
+	var data: Variant = JSON.parse_string(f.get_as_text())
+	f.close()
+	return data if data is Dictionary else {}
+
+
+## 关卡指纹（与 batch_merge 同口径）：尺寸+雷数+雷坐标集。
+func _fingerprint(level: Dictionary) -> String:
+	var parts: Array = []
+	var sz: Dictionary = level.get("size", {})
+	parts.append("%dx%d-%d" % [int(sz.get("cols", 0)), int(sz.get("rows", 0)), int(level.get("total_mines", -1))])
+	var ms: Array = []
+	for m in level.get("mines", []):
+		ms.append("%d,%d" % [int(m["c"]), int(m["r"])])
+	ms.sort()
+	parts.append("|".join(ms))
+	return "|".join(parts)
+
+
+## 断点续跑：扫描单元目录已有关卡（总数 / 各档最大编号 / 指纹集）。
+func _scan_unit(combo_dir: String) -> Dictionary:
+	var out := {"count": 0, "max_idx": {}, "fps": {}}
+	var d := DirAccess.open(combo_dir)
+	if d == null:
+		return out
+	for f in d.get_files():
+		if not str(f).ends_with(".json"):
+			continue
+		out["count"] = int(out["count"]) + 1
+		var level := _load_json("%s/%s" % [combo_dir, f])
+		if not level.is_empty():
+			out["fps"][_fingerprint(level)] = true
+		var parts := str(f.get_basename()).split("_", false)
+		if parts.size() == 2:
+			var tier := str(parts[0])
+			var idx := int(parts[1])
+			if int(out["max_idx"].get(tier, 0)) < idx:
+				out["max_idx"][tier] = idx
+	return out
 
 
 func _initialize() -> void:
@@ -83,19 +135,33 @@ func _initialize() -> void:
 		_seed_max = int(args[2])
 	if args.size() >= 4 and args[3] != "":
 		_limit_combos = int(args[3])
+	if args.size() >= 6 and args[4] != "" and args[5] != "":
+		_shard_idx = int(args[4])
+		_shard_total = int(args[5])
 	DirAccess.make_dir_recursive_absolute(_out_dir)
 
 	var combos := _build_combos()
 	if _limit_combos > 0 and _limit_combos < combos.size():
 		combos.resize(_limit_combos)
+	# 分片并行：按组合下标取模切分（i % total == idx 归本进程），各进程写各自单元目录互不冲突。
+	# 分片时每进程生成器单 worker（进程数 × 1 = 核数，避免 CP-SAT 4 worker 超额订阅抢核）。
+	if _shard_total > 1:
+		var sharded: Array = []
+		for i in combos.size():
+			if i % _shard_total == _shard_idx:
+				sharded.append(combos[i])
+		combos = sharded
+	var gen := PuzzleGenerator.new()
+	gen.num_workers = 1 if _shard_total > 1 else 0
 	var t0 := Time.get_ticks_msec()
-	var stats := {"units": 0, "ok": 0, "partial": 0, "skipped": 0, "design_skip": 0, "fail": 0,
+	var stats := {"units": 0, "ok": 0, "partial": 0, "skipped": 0, "design_skip": 0, "resumed": 0, "fail": 0,
 		"tiers": {"easy": 0, "normal": 0, "hard": 0}}
 	var skipped: Array = []
 	var design_skip: Array = []
 	var partial: Array = []
 
-	print("=== 全变体+混合批量生成（%d 组合 × 5 尺寸 × 每类 %d 关）===" % [combos.size(), _per_type])
+	print("=== 全变体+混合批量生成（%d 组合 × 5 尺寸 × 每类 %d 关）[shard %d/%d]===" % [
+		combos.size(), _per_type, _shard_idx, _shard_total])
 	for combo in combos:
 		for side in SIZES:
 			var mines: int = SIZES[side]
@@ -115,9 +181,18 @@ func _initialize() -> void:
 				skipped.append("%s %dx%d" % [combo["id"], side, side])
 				continue
 			DirAccess.make_dir_recursive_absolute(combo_dir)
-			var made := 0
+			# 断点续跑：扫描已有产出。满额单元直接跳过（重跑安全、不重复生成）；
+			# 未满单元编号接续 + 指纹去重（同 seed 重跑撞已有盘时跳过，不产生冗余文件）。
+			var existing := _scan_unit(combo_dir)
+			if int(existing["count"]) >= _per_type:
+				stats["resumed"] = int(stats.get("resumed", 0)) + 1
+				stats["ok"] += int(existing["count"])
+				continue
+			var made := int(existing["count"])
+			var next_idx: Dictionary = existing["max_idx"]
+			var fps: Dictionary = existing["fps"]
 			for seed in range(1, _seed_max + 1):
-				var level: Dictionary = PuzzleGenerator.new().generate_with_rules(
+				var level: Dictionary = gen.generate_with_rules(
 					combo["clue"], combo["globals"], Vector2i(side, side), mines, seed,
 					0, 50, null, _timeout_for(side))
 				if level.is_empty():
@@ -131,7 +206,12 @@ func _initialize() -> void:
 				var log: Dictionary = ProofLog.build(level)
 				if not bool(log.get("solved", false)):
 					continue
-				var idx := made + 1
+				var fp := _fingerprint(level)
+				if fps.has(fp):
+					continue
+				fps[fp] = true
+				var idx := int(next_idx.get(tier, 0)) + 1
+				next_idx[tier] = idx
 				level["name"] = "%s_%02d" % [tier, idx]
 				level["difficulty"] = diff
 				_write("%s/%s_%02d.json" % [combo_dir, tier, idx], level)
@@ -146,8 +226,8 @@ func _initialize() -> void:
 
 	var elapsed := float(Time.get_ticks_msec() - t0) / 1000.0
 	print("=== 完成（%.1fs）===" % elapsed)
-	print("  单元(组合×尺寸): %d | 满额成功 %d 关 | 设计跳过(FR难度) %d | 跳过(数学UNSAT) %d | 部分成功 %d" % [
-		stats["units"], stats["ok"], stats["design_skip"], stats["skipped"], stats["partial"]])
+	print("  单元(组合×尺寸): %d | 入库总关数 %d | 设计跳过(FR难度) %d | 跳过(数学UNSAT) %d | 续跑满额跳过 %d | 部分成功 %d" % [
+		stats["units"], stats["ok"], stats["design_skip"], stats["skipped"], stats.get("resumed", 0), stats["partial"]])
 	print("  难度分布: easy=%d normal=%d hard=%d" % [
 		stats["tiers"]["easy"], stats["tiers"]["normal"], stats["tiers"]["hard"]])
 	if design_skip.size() > 0:
