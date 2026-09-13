@@ -160,6 +160,15 @@ func _scan_unit(combo_dir: String) -> Dictionary:
 ## 阈值 0.85 只拦「几乎同盘」不误伤正常多样性。
 const SIMILARITY_MAX := 0.85
 
+## 难度可达性预筛（v2.9.3 服务器实测修复）：前 DIFF_PRECHECK 次尝试全部「生成成功但进不了档」
+## 且难度上限远低于 easy 门槛 → 判定该「组合×尺寸」**在难度维不可达**（与数学 UNSAT 同类，
+## 只是维度不同：不是无解，而是不存在「够难」的解）→ 停止白白耗尽 seed_max。
+## 实测依据：mx_ep/8x8、mx_4c/8x8 跑满 40 seed 产出 0 关（tier_empty 100%）；
+## mx_ep 全局 195 次尝试仅 17 关（8.7%）、dt_4c 169 次 42 关（24.9%）。
+## 阈值取 easy 门槛（0.3）的一半留足余量——只截「永远够不到」的单元，不误杀波动组合。
+const DIFF_PRECHECK := 4
+const DIFF_UNREACHABLE_MAX := 0.15
+
 func _max_similarity(mine_sets: Array, new_set: Dictionary) -> float:
 	var worst := 0.0
 	for ms in mine_sets:
@@ -214,6 +223,7 @@ func _initialize() -> void:
 	var skipped: Array = []
 	var design_skip: Array = []
 	var partial: Array = []
+	var diff_unreach: Array = []
 
 	print("=== 全变体+混合批量生成（%d 组合 × 5 尺寸 × 每类 %d 关）[shard %d/%d]===" % [
 		combos.size(), _per_type, _shard_idx, _shard_total])
@@ -265,7 +275,18 @@ func _initialize() -> void:
 			var u_verify_fail := 0
 			var u_timeout := 0
 			var u_t0 := Time.get_ticks_msec()
+			var max_diff_seen := -1.0
+			var unreachable := false
 			for seed in range(_seed_start, _seed_max + 1):
+				# 难度可达性预筛（放循环开头：失败分支会 continue，只有迭代开始处才必然执行到）—
+				# 前若干次尝试全「进不了档」且难度上限远低于门槛 → 该单元在难度维不可达，
+				# 停止耗尽 seed_max（mx_ep/8x8 等实测 40 seed 全废，省下 90% 白跑）。
+				if made == 0 and u_tried >= DIFF_PRECHECK and u_tier == u_tried \
+						and max_diff_seen < DIFF_UNREACHABLE_MAX:
+					unreachable = true
+					unit_lines.append(_ev({"t": "diff_unreachable", "combo": combo["id"], "side": side,
+						"max_diff": max_diff_seen, "tried": u_tried}))
+					break
 				var t_seed := Time.get_ticks_msec()
 				var level: Dictionary = gen.generate_with_rules(
 					combo["clue"], combo["globals"], Vector2i(side, side), mines, seed,
@@ -292,6 +313,7 @@ func _initialize() -> void:
 				var tier := Difficulty.tier_of(diff)
 				if tier == "":
 					u_tier += 1
+					max_diff_seen = maxf(max_diff_seen, diff)
 					unit_lines.append(_ev({"t": "tier_empty", "combo": combo["id"], "side": side,
 						"seed": seed, "diff": diff, "cost_s": cost_ms / 1000.0}))
 					continue
@@ -341,7 +363,11 @@ func _initialize() -> void:
 				"verify_fail": u_verify_fail, "timeout": u_timeout,
 				"cost_s": (Time.get_ticks_msec() - u_t0) / 1000.0}))
 			_append_issues(unit_lines)
-			if made < _per_type:
+			if unreachable:
+				# 单独归类：不可达单元补跑也没用（与数学 UNSAT 同口径），不计入 partial。
+				stats["diff_unreachable"] = int(stats.get("diff_unreachable", 0)) + 1
+				diff_unreach.append("%s %dx%d (max_diff=%.2f)" % [combo["id"], side, side, max_diff_seen])
+			elif made < _per_type:
 				stats["partial"] += 1
 				partial.append("%s %dx%d (%d/%d)" % [combo["id"], side, side, made, _per_type])
 
@@ -358,11 +384,15 @@ func _initialize() -> void:
 		print("  跳过清单(%d): %s" % [skipped.size(), ", ".join(skipped)])
 	if partial.size() > 0:
 		print("  部分成功清单(%d): %s" % [partial.size(), ", ".join(partial)])
+	if diff_unreach.size() > 0:
+		print("  难度不可达单元(%d，不存在够难的关卡——非 bug，补跑无效): %s" % [
+			diff_unreach.size(), ", ".join(diff_unreach)])
 	# 报告文件按分片命名：8 个分片进程写同一路径会互相覆盖（实测 probe40 丢了 7 片的 partial 清单）。
 	var report_name := "all_report_shard_%02d.json" % _shard_idx if _shard_total > 1 else "all_report.json"
 	_write("%s/%s" % [_out_dir, report_name], {
 		"elapsed_s": elapsed, "stats": stats,
 		"design_skip": design_skip, "skipped": skipped, "partial": partial,
+		"diff_unreachable": diff_unreach,
 		"issues_file": _issues_path.get_file(),
 	})
 	print("  事件记录: %s（%d 单元行 + 全量失败事件，可远程拉回分析）" % [_issues_path, stats["units"]])
