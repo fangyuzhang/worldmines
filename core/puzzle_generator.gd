@@ -428,7 +428,7 @@ func _derive_seed(seed: int, attempt: int) -> int:
 ## 「淘汰最差」保留「避开烂结构」的收益（rl_ep 9×9 曾 0/12 靠它救活），
 ## 又通过候选集内随机恢复跨 seed 多样性（同 seed 仍确定）。
 ## 全部采样失败（UNSAT/超时）→ 返回空，交上层重试（与单次 find_solution 同语义）。
-const SOLUTION_SAMPLES := 5
+const SOLUTION_SAMPLES := 7
 
 func _find_solution_best(oracle: RuleOracle, cols: int, rows: int) -> Array[Vector2i]:
 	var sols: Array = []

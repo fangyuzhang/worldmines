@@ -93,6 +93,7 @@ dotnet build
 每个生成的关都过 `ProofLog.build` 序贯可解复核，不过即拒；单关批量入口（指定变体）用 `batch_pipeline.ps1`。
 
 **dt 系列组合的难度特征**：dt 全局约束强（选中骨牌恰 1 雷 = 骨牌外全部禁雷），生成关以 easy 档为主（实测 dt 5×5 e/n/h=10/2/0、pf 9×9 全 normal），normal/hard 稀少——这是约束强度的数学后果，属正常现象。
+**mx 系列组合的难度天花板（v2.9.3 实测记录）**：mx 镜像对称约束产生大量强制格 → 关卡推理天然简单，难度量化偏低（mx_sc / mx_loopruns 的 tier_empty 率 77.5%，40 seed 才凑满 10 关，接受率 36.6%）——与 FR/mx_dt 同类「设计特性而非 bug」：不跳过（用户要求全部变体都要产关），但需知道其生成成本高、难度天花板低；`_analyze_issues.ps1` 已自动标注 tier_empty≥50% 的组合。
 
 **生成器删线索/布雷修复（v2.9.3）**：① `_prune_sequential` 保底至少留 1 条线索——全局约束自带开局信息的组合会把线索删光而被 `active.is_empty()` 拒绝整个 attempt（曾致 mx+dt 全灭）；② 单 G 构造式布雷失败后改用 CP-SAT `find_solution` 兜底（原 fallback 随机布雷违反全局约束，曾致 pf 9×9 接受率 0/12，修复后 12/12 且全 normal 档）。
 
@@ -136,8 +137,9 @@ powershell -File tools\_analyze_issues.ps1                        # 本地分析
 
 **恢复流程（明天/新会话照此执行）**：
 1. **查完成**：`runfile _remote_progress.sh`——看两分片 `all_report_shard_0X.json` 是否都已生成、进程是否已退出、watchdog.log 尾部；若分片消失且未完成 → watchdog 应已重启（查日志）；若 watchdog 也死 → 重发 `_remote_launch_full.sh` 续跑。
-2. **收集**：`_remote_collect.sh` → `_cvm_pull.py /root/wm_results.tar.gz <本地>` → 解包 → 关卡 json 合入本地题库评估；
-3. **分析 + 修复**：`_analyze_issues.ps1` 分析事件分布（tier_empty 0.04~0.28 属正常概率性进档；proof_fail/empty_timeout/similar 需逐个查）→ 定位 bug → 本地修复（模式参照 commit 3fabba6/fa5f6d0）→ `verify_all` → 提交 → 单文件推服务器重跑受影响单元。
+2. **一键总验收**（跑完后在服务器上，全输出写 /root/final_verify.log，耗时 1~4h）：`runfile _remote_final_verify.sh 28800 --bg`——串联 verify_batch v3（R07/schema/round-trip/序贯可解）+ diversity_report（全局多样性 J 分布）+ 日志 ERROR 扫描 + 产物打包 `/root/wm_results.tar.gz`。
+3. **收集**：`_cvm_pull.py /root/wm_results.tar.gz <本地>` + `_cvm_pull.py .../final_verify.log <本地>` → 解包 → 关卡 json 合入本地题库；
+4. **分析 + 修复**：`_analyze_issues.ps1` 分析（含端到端接受率/布雷成功率榜单、性能异常检测、难度天花板标注）→ 定位 bug → 本地修复 → `verify_all` → 提交 → 单文件推服务器重跑受影响单元。
 
 ### 能 / 不能
 
