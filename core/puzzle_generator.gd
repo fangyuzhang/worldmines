@@ -19,6 +19,14 @@ var _legacy := PuzzleGeneratorLegacy.new()
 ## 强制格结论与 worker 数无关（探测「假设反值不可行」与首解无关），降 worker 不改变任何质量/难度。
 var num_workers: int = 0
 
+## 阶段统计（v2.9.3 服务器分析增强）：每次 generate_with_rules 重置，
+## 批量工具读取后写入 issues —— 把「空返回」分解为布雷/删线索/验证各阶段失败，
+## 让「布雷成功率」「端到端接受率」可按组合观测（服务器低接受率排查用）。
+## attempts = 布雷尝试数；brep_fail = 布雷阶段失败（构造式+CP-SAT 兜底全空）；
+## no_clues = 线索集为空（罕见）；prune_empty = 删线索后 active 空；
+## verify_fail = 序贯可解验证拒；timeout = attempt 间墙钟超限；success = 1 即出关。
+var last_call_stats := {}
+
 
 ## 内置线索型枚举 → 规则 id（自举式底座：内置变体与内置规则同源、同 API）。
 func _clue_to_rule_id(clue: int) -> String:
@@ -299,12 +307,16 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 		mine_count = int(n * 0.3)
 	mine_count = clampi(mine_count, 1, n - 1)
 	var deadline: int = Time.get_ticks_msec() + timeout_ms
+	last_call_stats = {"attempts": 0, "brep_fail": 0, "no_clues": 0, "prune_empty": 0,
+		"verify_fail": 0, "timeout": 0, "success": 0}
 
 	for attempt in attempts:
 		# 种子派生：每 attempt 独立确定性随机流（同 seed+attempt 必同盘，可复现）。
 		# attempts=1 即「固定种子单次尝试」——一颗种子 = 一次尝试，可复现零歧义。
 		_rng.seed = _derive_seed(seed, attempt)
+		last_call_stats["attempts"] = int(last_call_stats["attempts"]) + 1
 		if Time.get_ticks_msec() > deadline:
+			last_call_stats["timeout"] = int(last_call_stats["timeout"]) + 1
 			push_warning("PuzzleGenerator: 规则生成超时 %s" % clue_rule_id)
 			return {}
 		# 1. 布雷：异形走拓扑随机；矩形走全局规则构造式（镜像/禁形）优先，否则线索规则，最后随机
@@ -314,6 +326,7 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 		else:
 			mines = _place_mines_rules(clue_rule, globals, cols, rows, mine_count)
 		if mines.is_empty():
+			last_call_stats["brep_fail"] = int(last_call_stats["brep_fail"]) + 1
 			continue
 		var mine_set := {}
 		for m in mines:
@@ -338,6 +351,7 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 			#（未翻开的 0 值格夹在已翻开格中间）——这是用户反复报告的 bug 的根源。
 			clue_cells.append(pos)
 		if clue_cells.is_empty():
+			last_call_stats["no_clues"] = int(last_call_stats["no_clues"]) + 1
 			continue
 		# 3. 逆向删线索（保持唯一解）：CP-SAT 快速唯一解计数
 		# 雷数一律以「实际布雷数」为准（而非入参 mine_count）：第三方规则的 place_mines
@@ -350,6 +364,7 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 			active[p] = values[p]
 		_prune_clues_rules(oracle, active, deadline, size, mine_total, values, target_difficulty)
 		if active.is_empty():
+			last_call_stats["prune_empty"] = int(last_call_stats["prune_empty"]) + 1
 			continue
 		# 3.5 遮蔽（问号模式）：选 mask_count 个「值 ≥1 且支持遮蔽」的格变成 ? 格（interval）
 		var masked := _select_masked_rules(clue_rule, active, mask_count, size)
@@ -360,6 +375,7 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 		#    同时收集难度统计（P0-难度量化，成本近零——演绎本就要跑）
 		var diff_stats := {"rounds": [], "complexities": []}
 		if not _solve_rules_stepwise(size, active, masked, mine_total, oracle, values, diff_stats):
+			last_call_stats["verify_fail"] = int(last_call_stats["verify_fail"]) + 1
 			continue
 		# 5. 输出（规则关卡 JSON；播放接线见 Board 集成，本路径先供生成/验证/工坊）
 		var level := _build_level_from_rules(clue_rule_id, global_rule_ids, rows, cols, mines, active, masked, seed, topology)
@@ -372,6 +388,7 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 		prof["clue_ratio"] = snappedf(float(active.size()) / float(non_mine), 0.01)
 		prof["target_difficulty"] = target_difficulty  # 生成标签（对标 L 字段：记录「照着哪档参数生成」）
 		level["difficulty_profile"] = prof
+		last_call_stats["success"] = 1
 		return level
 	return {}
 

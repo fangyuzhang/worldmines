@@ -258,6 +258,12 @@ func _initialize() -> void:
 			var u_proof := 0
 			var u_dup := 0
 			var u_sim := 0
+			# 阶段统计累计（v2.9.3 检测器增强）：布雷/删线索/验证各阶段失败可观测
+			var u_attempts := 0
+			var u_brep_fail := 0
+			var u_prune_empty := 0
+			var u_verify_fail := 0
+			var u_timeout := 0
 			var u_t0 := Time.get_ticks_msec()
 			for seed in range(_seed_start, _seed_max + 1):
 				var t_seed := Time.get_ticks_msec()
@@ -266,6 +272,13 @@ func _initialize() -> void:
 					0, 50, null, _timeout_for(side), _target_difficulty)
 				var cost_ms := Time.get_ticks_msec() - t_seed
 				u_tried += 1
+				# 阶段统计差分累计（generate_with_rules 内每次调用重置）
+				var s: Dictionary = gen.last_call_stats
+				u_attempts += int(s.get("attempts", 0))
+				u_brep_fail += int(s.get("brep_fail", 0))
+				u_prune_empty += int(s.get("prune_empty", 0))
+				u_verify_fail += int(s.get("verify_fail", 0))
+				u_timeout += int(s.get("timeout", 0))
 				if level.is_empty():
 					u_empty += 1
 					# 超时启发式：耗时贴到超时上限 → 大概率是删线索/CP-SAT 超时被杀（非真无解）
@@ -319,9 +332,13 @@ func _initialize() -> void:
 					break
 			stats["ok"] += made
 			# 单元完成行（兼心跳：远程 getfile 拉最后几行即可看进度）
+			# 阶段字段（v2.9.3）：attempts=布雷尝试总数；brep_fail/prune_empty/verify_fail/timeout
+			# 为各阶段失败数——「布雷成功率」= 1 - brep_fail/attempts，「端到端接受率」= made/tried。
 			unit_lines.append(_ev({"t": "unit_done", "combo": combo["id"], "side": side,
 				"made": made, "tried": u_tried, "empty": u_empty, "tier_empty": u_tier,
 				"proof_fail": u_proof, "dup": u_dup, "similar": u_sim,
+				"attempts": u_attempts, "brep_fail": u_brep_fail, "prune_empty": u_prune_empty,
+				"verify_fail": u_verify_fail, "timeout": u_timeout,
 				"cost_s": (Time.get_ticks_msec() - u_t0) / 1000.0}))
 			_append_issues(unit_lines)
 			if made < _per_type:
