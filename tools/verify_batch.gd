@@ -175,13 +175,37 @@ func _check_schema_roundtrip(board: Board, level: Dictionary) -> String:
 		var cell: Cell = board.grid.get_cell(p)
 		if cell == null:
 			return "grid 无该格 %s" % str(p)
-		var got := int(cell.value)
+		var got: Variant = cell.value
 		if rv.has("interval"):
 			var iv: Array = rv["interval"]
-			if got < int(iv[0]) or got > int(iv[1]):
-				return "masked 格值越区间 %s got=%d iv=%s" % [str(p), got, str(iv)]
+			# 仅单值（int）格可判区间；多值规则（分量对）不支持遮蔽语义，跳过该检查。
+			if got is int and int(got) >= 0:
+				if int(got) < int(iv[0]) or int(got) > int(iv[1]):
+					return "masked 格值越区间 %s got=%d iv=%s" % [str(p), int(got), str(iv)]
 		else:
 			var want: Variant = rule.compute_clue(mine_seen, p, size)
-			if want == null or int(want) != got:
-				return "线索值不一致 %s board=%d rule=%s" % [str(p), got, str(want)]
+			if not _value_equal(got, want):
+				return "线索值不一致 %s board=%s rule=%s" % [str(p), str(got), str(want)]
 	return ""
+
+
+## 线索值比较（多值规则安全）：int / 分量对（Array、Vector2i）/ 字符串 都支持。
+## 不能用 int() 强转——hv（水平/垂直分量）等规则的值是分量对，int(Array) 会抛
+##「Nonexistent 'int' constructor」（首轮全量验收实跑暴露：测坏关时只用了 classic 关）。
+static func _value_equal(a: Variant, b: Variant) -> bool:
+	if a == null or b == null:
+		return a == b
+	if a is Array or b is Array:
+		var aa := a as Array
+		var bb := b as Array
+		if aa.size() != bb.size():
+			return false
+		for i in aa.size():
+			if int(aa[i]) != int(bb[i]):
+				return false
+		return true
+	if a is Vector2i or b is Vector2i:
+		return str(a) == str(b)
+	if a is String or b is String:
+		return str(a) == str(b)
+	return int(a) == int(b)
