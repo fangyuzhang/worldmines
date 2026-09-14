@@ -48,7 +48,7 @@ func _initialize() -> void:
 		for k in ["units", "ok", "partial", "skipped", "design_skip", "resumed"]:
 			agg[k] = int(agg.get(k, 0)) + int(st.get(k, 0))
 		var tt: Dictionary = st.get("tiers", {})
-		for t in ["easy", "normal", "hard"]:
+		for t in ["intro", "easy", "normal", "hard"]:
 			agg["tiers"][t] = int(agg["tiers"][t]) + int(tt.get(t, 0))
 		elapsed_max = maxf(elapsed_max, float(r.get("elapsed_s", 0.0)))
 		for key in ["design_skip", "skipped", "partial"]:

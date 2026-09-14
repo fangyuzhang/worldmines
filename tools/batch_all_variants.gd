@@ -200,12 +200,12 @@ func _scan_unit(combo_dir: String) -> Dictionary:
 
 
 ## 单元是否「满额」（续跑跳过判定）：
-## · per_tier 模式：三个难度档各自达到 _per_tier；
+## · per_tier 模式：四个难度档（intro/easy/normal/hard）各自达到 _per_tier；
 ## · 默认模式：总产出达到 _per_type。
 func _unit_full(existing: Dictionary) -> bool:
 	if _per_tier > 0:
 		var tc: Dictionary = existing.get("tier_count", {})
-		for tier in ["easy", "normal", "hard"]:
+		for tier in ["intro", "easy", "normal", "hard"]:
 			if int(tc.get(tier, 0)) < _per_tier:
 				return false
 		return true
@@ -214,7 +214,7 @@ func _unit_full(existing: Dictionary) -> bool:
 
 ## per_tier 模式：全部档是否已满（生成循环的 break 条件）。
 func _all_tiers_full(made_by_tier: Dictionary) -> bool:
-	for tier in ["easy", "normal", "hard"]:
+	for tier in ["intro", "easy", "normal", "hard"]:
 		if int(made_by_tier.get(tier, 0)) < _per_tier:
 			return false
 	return true
@@ -226,14 +226,14 @@ func _all_tiers_full(made_by_tier: Dictionary) -> bool:
 ## 阈值 0.85 只拦「几乎同盘」不误伤正常多样性。
 const SIMILARITY_MAX := 0.85
 
-## 难度可达性预筛（v2.9.3 服务器实测修复）：前 DIFF_PRECHECK 次尝试全部「生成成功但进不了档」
-## 且难度上限远低于 easy 门槛 → 判定该「组合×尺寸」**在难度维不可达**（与数学 UNSAT 同类，
-## 只是维度不同：不是无解，而是不存在「够难」的解）→ 停止白白耗尽 seed_max。
-## 实测依据：mx_ep/8x8、mx_4c/8x8 跑满 40 seed 产出 0 关（tier_empty 100%）；
-## mx_ep 全局 195 次尝试仅 17 关（8.7%）、dt_4c 169 次 42 关（24.9%）。
-## 阈值取 easy 门槛（0.3）的一半留足余量——只截「永远够不到」的单元，不误杀波动组合。
+## 难度可达性预筛（v2.9.3 服务器实测修复；v3.0 适配四档体系）：
+## 前 DIFF_PRECHECK 次尝试全部「生成成功但进不了任何档」（tier_empty）且难度上限 < 阈值 →
+## 判该「组合×尺寸」在难度维不可达（异常保护，与数学 UNSAT 同类）。
+## 四档后的语义变化：< 0.3 的简单内容归「入门档」（不再产生 tier_empty），
+## 故本预筛仅兜底「难度分异常」，不再按 easy 门槛截杀低难度单元——
+## 低难度单元改为正常跑满 seed_max（产出入门档内容；内容增量，符合压榨算力模式）。
 const DIFF_PRECHECK := 4
-const DIFF_UNREACHABLE_MAX := 0.15
+const DIFF_UNREACHABLE_MAX := 0.0
 
 func _max_similarity(mine_sets: Array, new_set: Dictionary) -> float:
 	var worst := 0.0
@@ -315,7 +315,7 @@ func _initialize() -> void:
 	gen.num_workers = 1 if _shard_total > 1 else 0
 	var t0 := Time.get_ticks_msec()
 	var stats := {"units": 0, "ok": 0, "partial": 0, "skipped": 0, "design_skip": 0, "resumed": 0, "fail": 0,
-		"similar_skipped": 0, "tiers": {"easy": 0, "normal": 0, "hard": 0}}
+		"similar_skipped": 0, "tiers": {"intro": 0, "easy": 0, "normal": 0, "hard": 0}}
 	var skipped: Array = []
 	var design_skip: Array = []
 	var partial: Array = []
@@ -502,9 +502,9 @@ func _initialize() -> void:
 	print("  单元(组合×尺寸): %d | 入库总关数 %d | 设计跳过(FR难度) %d | 跳过(数学UNSAT) %d | 续跑满额跳过 %d | 相似拒收 %d | 部分成功 %d" % [
 		stats["units"], stats["ok"], stats["design_skip"], stats["skipped"], stats.get("resumed", 0),
 		stats.get("similar_skipped", 0), stats["partial"]])
-	print("  难度分布: easy=%d normal=%d hard=%d | 候选雷数回退单元 %d" % [
-		stats["tiers"]["easy"], stats["tiers"]["normal"], stats["tiers"]["hard"],
-		int(stats.get("mines_fallback", 0))])
+	print("  难度分布: intro=%d easy=%d normal=%d hard=%d | 候选雷数回退单元 %d" % [
+		stats["tiers"].get("intro", 0), stats["tiers"]["easy"], stats["tiers"]["normal"],
+		stats["tiers"]["hard"], int(stats.get("mines_fallback", 0))])
 	if design_skip.size() > 0:
 		print("  设计跳过清单(%d，FR难度天然<0.3，见GDD 3.3): %s" % [design_skip.size(), ", ".join(design_skip)])
 	if skipped.size() > 0:
@@ -512,7 +512,7 @@ func _initialize() -> void:
 	if partial.size() > 0:
 		print("  部分成功清单(%d): %s" % [partial.size(), ", ".join(partial)])
 	if diff_unreach.size() > 0:
-		print("  难度不可达单元(%d，不存在够难的关卡——非 bug，补跑无效): %s" % [
+		print("  难度不可达单元(%d，任何档位均不可达——非 bug，补跑无效): %s" % [
 			diff_unreach.size(), ", ".join(diff_unreach)])
 	# 报告文件按分片命名：8 个分片进程写同一路径会互相覆盖（实测 probe40 丢了 7 片的 partial 清单）。
 	var report_name := "all_report_shard_%02d.json" % _shard_idx if _shard_total > 1 else "all_report.json"

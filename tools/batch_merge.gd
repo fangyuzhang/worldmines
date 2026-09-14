@@ -56,7 +56,7 @@ func _initialize() -> void:
 			agg["dup"] += int(st.get("dup", 0))
 			agg["elapsed_ms"] += int(st.get("elapsed_ms", 0))
 			var ts: Dictionary = st.get("tiers", {})
-			for t in ["easy", "normal", "hard"]:
+			for t in ["intro", "easy", "normal", "hard"]:
 				agg["tiers"][t] += int(ts.get(t, 0))
 
 	# 全局编号写回顶层

@@ -2,25 +2,32 @@
 extends GutTest
 
 
-## 档位归属：边界与区间。
+## 档位归属：边界与区间（v3.0 四档：intro/easy/normal/hard）。
 func test_tier_of() -> void:
+	assert_eq(Difficulty.tier_of(0.0), "intro", "0.0（左闭）→ intro")
+	assert_eq(Difficulty.tier_of(0.1), "intro", "0.1 → intro")
+	assert_eq(Difficulty.tier_of(0.29), "intro", "0.29 → intro")
+	assert_eq(Difficulty.tier_of(0.3), "easy", "0.3（左闭）→ easy")
 	assert_eq(Difficulty.tier_of(0.5), "easy", "0.5 → easy")
 	assert_eq(Difficulty.tier_of(1.2), "normal", "1.2（左闭）→ normal")
 	assert_eq(Difficulty.tier_of(2.0), "normal", "2.0 → normal")
 	assert_eq(Difficulty.tier_of(2.2), "hard", "2.2（左闭）→ hard")
 	assert_eq(Difficulty.tier_of(99.0), "hard", "99 → hard")
-	assert_eq(Difficulty.tier_of(0.0), "", "0.0 不在任何档")
 
 
 ## 筛选：给定一批含 difficulty_profile 的关卡，按档位筛出正确的子集。
 func test_filter_by_tier() -> void:
 	var levels := [
+		{"name": "x", "difficulty_profile": {"difficulty": 0.1}},
 		{"name": "a", "difficulty_profile": {"difficulty": 0.5}},
 		{"name": "b", "difficulty_profile": {"difficulty": 1.0}},
 		{"name": "c", "difficulty_profile": {"difficulty": 1.8}},
 		{"name": "d", "difficulty_profile": {"difficulty": 2.5}},
 		{"name": "e", "difficulty_profile": {"difficulty": 3.9}},
 	]
+	var intro := Difficulty.filter_by_tier(levels, "intro")
+	assert_eq(intro.size(), 1, "intro 应筛出 1 条（0.1）")
+	assert_eq(str(intro[0]["name"]), "x", "intro 唯一 x")
 	var easy := Difficulty.filter_by_tier(levels, "easy")
 	assert_eq(easy.size(), 2, "easy 应筛出 2 条")
 	assert_eq(str(easy[0]["name"]), "a", "easy 首条 a")

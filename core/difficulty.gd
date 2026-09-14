@@ -7,17 +7,20 @@ class_name Difficulty
 extends RefCounted
 
 
-## 三档定义：difficulty 区间（左闭右开）。
+## 四档定义：difficulty 区间（左闭右开）。
+## v3.0（2026-09-14，难度体系 v2）：新增「入门」档——< 0.3 的简单内容不再丢弃，
+## 归入门档承接（O5 类信息型简单算子、教学/低难度内容；此类盘此前会作为 tier_empty 白产丢弃）。
 ## 实测校准（classic，40% 密度）：
 ##   不删线索 ≈ 0.04｜5×5 各 seed 0.59~1.86｜8×8 删 3s ≈ 2.01｜删 11s ≈ 3.19｜删 18s ≈ 3.95
 const TIERS := {
+	"intro":  {"label": "入门", "min": 0.0, "max": 0.3},
 	"easy":   {"label": "轻松", "min": 0.3, "max": 1.2},
 	"normal": {"label": "普通", "min": 1.2, "max": 2.2},
 	"hard":   {"label": "挑战", "min": 2.2, "max": 1e9},
 }
 
 
-## 给定难度分，返回档位 id（"easy"/"normal"/"hard"；超出全部区间返回 ""）。
+## 给定难度分，返回档位 id（"intro"/"easy"/"normal"/"hard"；超出全部区间返回 ""——四档下仅负值/异常会返回空）。
 static func tier_of(difficulty: float) -> String:
 	for id in TIERS:
 		var t: Dictionary = TIERS[id]

@@ -63,7 +63,7 @@ func _initialize() -> void:
 			mine_fail.append("%s (size=%dx%d total_mines=%d)" % [path, cols, rows, tm])
 		var nm := str(level.get("name", ""))
 		var parts := nm.split("_", false)
-		if parts.size() != 2 or not ["easy", "normal", "hard"].has(parts[0]) or not parts[1].is_valid_int():
+		if parts.size() != 2 or not ["intro", "easy", "normal", "hard"].has(parts[0]) or not parts[1].is_valid_int():
 			name_fail.append("%s (name='%s')" % [path, nm])
 		else:
 			tiers[parts[0]] += 1
