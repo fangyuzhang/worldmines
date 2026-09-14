@@ -69,5 +69,19 @@ func test_upper_bound() -> void:
 	assert_eq(int(_rule.call("value_upper_bound", Vector2i(5, 5))), 4)
 
 
-func test_no_mask_support() -> void:
-	assert_false(bool(_rule.call("supports_mask")), "本版不启用遮蔽")
+func test_mask_support() -> void:
+	# v3.0 修订：遮蔽（问号）启用——区间语义 Σt ∈ [lo, hi]（计数型，直接线性）。
+	# 注：现网生成器的遮蔽 interval 固定 [1, hi]，对值域 0-4 的规则弱化有限（难度实验记录在案）。
+	assert_true(bool(_rule.call("supports_mask")), "遮蔽已启用（计数型区间编码）")
+
+
+func test_interval_constraints_feasible() -> void:
+	# 区间编码冒烟：角格 (0,0) 仅 1 个有效区块（Σt ≤ 1）
+	# 区间 [1,4]（遮蔽语义采样）：可行（三格全雷即可）
+	var oracle := RuleOracle.new(_rule, [], Vector2i(5, 5), 3, null)
+	var spec1 := oracle.build_spec({Vector2i(0, 0): null}, [], {Vector2i(0, 0): Vector2i(1, 4)})
+	assert_true(RuleCpSat.is_feasible(spec1), "角格 [1,4] 可行")
+	# 区间 [3,4]：单区块上限 1——不可行
+	var oracle2 := RuleOracle.new(_rule, [], Vector2i(5, 5), 3, null)
+	var spec2 := oracle2.build_spec({Vector2i(0, 0): null}, [], {Vector2i(0, 0): Vector2i(3, 4)})
+	assert_false(RuleCpSat.is_feasible(spec2), "角格 [3,4] 不可行（单区块上限 1）")

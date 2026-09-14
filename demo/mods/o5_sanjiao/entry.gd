@@ -62,7 +62,8 @@ class TriangleRule:
 				k += 1
 		return k
 
-	func build_clue_constraints(b: RuleBuilder, pos: Vector2i, value: Variant) -> void:
+	## 构造 4 个区块的「三格全雷」布尔 t（双向：t=1 ⟺ ΣB=3）。
+	func _build_block_flags(b: RuleBuilder, pos: Vector2i) -> Array:
 		var ts: Array = []
 		for triple in BLOCK_TRIPLES:
 			var valid := true
@@ -82,7 +83,20 @@ class TriangleRule:
 			# t ≥ ΣB − 2：ΣB=3 → t=1；ΣB≤2 → 无约束（t 可 0）
 			b.add_le(b.sum(bs), b.lin([1], [t], 2))
 			ts.append(t)
+		return ts
+
+	func build_clue_constraints(b: RuleBuilder, pos: Vector2i, value: Variant) -> void:
+		var ts := _build_block_flags(b, pos)
 		b.add_eq(b.sum(ts), int(value))
+
+	## 遮蔽（问号）支持：值语义为计数「Σt」——区间 [lo, hi] 直接线性表达。
+	func supports_mask() -> bool:
+		return true
+
+	func build_interval_constraints(b: RuleBuilder, pos: Vector2i, lo: int, hi: int) -> void:
+		var ts := _build_block_flags(b, pos)
+		b.add_le(lo, b.sum(ts))
+		b.add_le(b.sum(ts), hi)
 
 	func value_upper_bound(_grid_size: Vector2i) -> int:
 		return 4
