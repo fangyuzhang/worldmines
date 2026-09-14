@@ -47,12 +47,14 @@ func test_axis_endpoint_must_both_be_mines() -> void:
 	assert_eq(_val([[0, 1]], Vector2i(1, 1), Vector2i(3, 3)), 0)
 
 
-func test_applies_to_inner_only() -> void:
+func test_applies_to_all_cells() -> void:
+	# v3.0 方案 A 修正：全部格铺线索（原「仅内部格」预检零产，信息量不足）。
 	var size := Vector2i(5, 5)
-	assert_true(bool(_rule.call("applies_to", Vector2i(2, 2), size)), "中心是内部格")
-	assert_true(bool(_rule.call("applies_to", Vector2i(1, 1), size)), "次外圈是内部格")
-	assert_false(bool(_rule.call("applies_to", Vector2i(0, 2), size)), "最外圈不显示")
-	assert_false(bool(_rule.call("applies_to", Vector2i(2, 4), size)), "最外圈不显示（下边）")
+	assert_true(bool(_rule.call("applies_to", Vector2i(2, 2), size)), "中心格")
+	assert_true(bool(_rule.call("applies_to", Vector2i(1, 1), size)), "次外圈格")
+	assert_true(bool(_rule.call("applies_to", Vector2i(0, 2), size)), "最外圈格（方案 A：携带信息）")
+	assert_true(bool(_rule.call("applies_to", Vector2i(2, 4), size)), "最外圈格（下边）")
+	assert_true(bool(_rule.call("applies_to", Vector2i(0, 0), size)), "角格（值域 0–1）")
 
 
 func test_zero_not_diffused() -> void:

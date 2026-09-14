@@ -46,6 +46,7 @@ var _shard_idx := 0
 var _shard_total := 1  # >1 = 分片并行（第 5/6 参数）
 var _seed_start := 1   # 补跑起始 seed（第 7 参数；避免重扫已成功 seed 白花生成时间）
 var _target_difficulty := 0.0  # >0 = 按目标难度生成（第 8 参数，删到达标即停）
+var _extra_combos_spec := ""   # 第 9 参数：额外组合规格（Mod/自定义规则）
 var _issues_path := ""  # issues jsonl 路径（记录功能，分片命名）
 
 
@@ -81,6 +82,41 @@ func _build_combos() -> Array:
 		for j in range(i + 1, GLOBALS.size()):
 			combos.append({"id": "%s_%s" % [GLOBALS[i], GLOBALS[j]], "clue": "classic", "globals": [GLOBALS[i], GLOBALS[j]]})
 	return combos
+
+
+## 额外组合（Mod/自定义规则）规格解析：`clue[+g1+g2][@5,6,7]`，逗号分隔多项。
+## sides 为空 = 全部尺寸；非空 = 仅这些尺寸（Mod 规则常只对部分尺寸有意义，如变径 5×5 停用）。
+func _build_extra_combos() -> Array:
+	var out: Array = []
+	if _extra_combos_spec == "":
+		return out
+	for item in _extra_combos_spec.split(",", false):
+		var spec := str(item).strip_edges()
+		if spec == "":
+			continue
+		var sides: Array = []
+		var combo_part := spec
+		if spec.contains("@"):
+			var at_parts := spec.split("@", false, 1)
+			combo_part = at_parts[0]
+			# 尺寸区段：`5`（单）或 `5-7`（闭区间）——逗号是「多项分隔符」，尺寸内禁用（曾歧义）。
+			var side_str := str(at_parts[1]).strip_edges()
+			if side_str.contains("-"):
+				var rp := side_str.split("-", false, 1)
+				for sd in range(int(rp[0]), int(rp[1]) + 1):
+					sides.append(sd)
+			elif side_str != "":
+				sides.append(int(side_str))
+		var cparts := combo_part.split("+", false)
+		var clue := str(cparts[0]).strip_edges()
+		var globals2: Array = []
+		for i in range(1, cparts.size()):
+			globals2.append(str(cparts[i]).strip_edges())
+		out.append({
+			"id": "x_%s" % combo_part.replace("+", "_"),
+			"clue": clue, "globals": globals2, "sides": sides,
+		})
+	return out
 
 
 ## 数学可行性预筛：统一走 RuleFeasibility 真值查询（CP-SAT + 缓存 + dt 骨牌重采样）。
@@ -199,13 +235,36 @@ func _initialize() -> void:
 		_seed_start = int(args[6])
 	if args.size() >= 8 and args[7] != "":
 		_target_difficulty = float(args[7])
+	# 第 9 参：额外组合（Mod/自定义规则）规格——逗号分隔多项，每项 `clue[+g1+g2][@5,6]`。
+	# 例："o1@5,6,7"、"o1+hpair@6,7"。这些组合追加在内置 92 组合之后（v3.0 平台能力：
+	# 旧版组合表硬编码内置规则，Mod 规则无法进批量——新算子量产的前置缺口）。
+	if args.size() >= 9 and args[8] != "":
+		_extra_combos_spec = args[8]
+	# 第 10 参：预加载 Mod 目录名（逗号分隔，demo/mods/<name>/entry.gd 的 on_load 注册）。
+	# 可复现：量产命令自带 Mod 清单，不依赖全局安装状态。
+	if args.size() >= 10 and args[9] != "":
+		for mod_name in str(args[9]).split(",", false):
+			var entry := "res://demo/mods/%s/entry.gd" % str(mod_name)
+			if ResourceLoader.exists(entry):
+				var sc: Variant = load(entry)
+				if sc != null:
+					sc.new().call("on_load")
+					print("  [mod] 已加载: %s" % str(mod_name))
+			else:
+				push_error("Mod 入口不存在: " + entry)
 	DirAccess.make_dir_recursive_absolute(_out_dir)
 	# 记录文件路径（分片命名——多进程写同一文件会互相覆盖，v2.9.3 probe 实测教训）
 	_issues_path = "%s/%s" % [_out_dir,
 		"issues_shard_%02d.jsonl" % _shard_idx if _shard_total > 1 else "issues.jsonl"]
 
 	var combos := _build_combos()
-	if _limit_combos > 0 and _limit_combos < combos.size():
+	# 额外组合（Mod/自定义规则）追加在内置组合之后（limit 不影响它们——limit 是冒烟用）
+	if _extra_combos_spec != "":
+		combos.append_array(_build_extra_combos())
+	# limit 语义：0=全部；>0=前 N 项（内置冒烟）；-1=仅额外组合（Mod 规则冒烟/量产的干净入口）
+	if _limit_combos == -1:
+		combos = _build_extra_combos()
+	elif _limit_combos > 0 and _limit_combos < combos.size():
 		combos.resize(_limit_combos)
 	# 分片并行：按组合下标取模切分（i % total == idx 归本进程），各进程写各自单元目录互不冲突。
 	# 分片时每进程生成器单 worker（进程数 × 1 = 核数，避免 CP-SAT 4 worker 超额订阅抢核）。
@@ -228,7 +287,10 @@ func _initialize() -> void:
 	print("=== 全变体+混合批量生成（%d 组合 × 5 尺寸 × 每类 %d 关）[shard %d/%d]===" % [
 		combos.size(), _per_type, _shard_idx, _shard_total])
 	for combo in combos:
+		var combo_sides: Array = combo.get("sides", [])
 		for side in SIZES:
+			if not combo_sides.is_empty() and not combo_sides.has(side):
+				continue
 			var mines: int = SIZES[side]
 			stats["units"] += 1
 			var combo_dir := "%s/%s/%dx%d" % [_out_dir, combo["id"], side, side]

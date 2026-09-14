@@ -37,13 +37,15 @@ class CrossPairRule:
 	func describe() -> Dictionary:
 		return {
 			"name": "对穿",
-			"rule_text": "四条直线（横、竖、两条对角）穿过这个数字，数字 = 几条直线两头都是雷；最外圈不显示数字",
+			"rule_text": "四条直线（横、竖、两条对角）穿过这个数字，数字 = 几条直线两头都是雷；盘内任一侧邻域不足时该方向不计",
 		}
 
-	func applies_to(pos: Vector2i, grid_size: Vector2i) -> bool:
-		# 仅内部格（最外圈不显示）：1 ≤ c ≤ C−2 且 1 ≤ r ≤ R−2。
-		return pos.x >= 1 and pos.x <= grid_size.x - 2 \
-			and pos.y >= 1 and pos.y <= grid_size.y - 2
+	func applies_to(_pos: Vector2i, _grid_size: Vector2i) -> bool:
+		# v3.0 方案 A 修正（试点预检驱动）：全部格铺线索。
+		# 原设计「仅内部格」信息量不足——5 尺寸 20 盘预检全线索序贯可解率 0%
+		#（内部线索 ~5.8 条/盘 × 值域 0–4，低于全盘雷分布熵；见 op_design_precheck 与 HANDOFF）。
+		# 外圈格完整轴少 → 值域自然更小（角 0–1、边 0–2），但每格都携带信息。
+		return true
 
 	func compute_clue(mine_set: Dictionary, pos: Vector2i, grid_size: Vector2i) -> Variant:
 		var k := 0
