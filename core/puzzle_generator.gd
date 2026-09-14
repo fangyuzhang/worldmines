@@ -308,7 +308,8 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 	mine_count = clampi(mine_count, 1, n - 1)
 	var deadline: int = Time.get_ticks_msec() + timeout_ms
 	last_call_stats = {"attempts": 0, "brep_fail": 0, "no_clues": 0, "prune_empty": 0,
-		"verify_fail": 0, "timeout": 0, "success": 0}
+		"verify_fail": 0, "timeout": 0, "success": 0,
+		"t_place_ms": 0, "t_prune_ms": 0, "t_verify_ms": 0, "prune_tries": 0, "prune_ok": 0}
 
 	for attempt in attempts:
 		# 种子派生：每 attempt 独立确定性随机流（同 seed+attempt 必同盘，可复现）。
@@ -320,11 +321,13 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 			push_warning("PuzzleGenerator: 规则生成超时 %s" % clue_rule_id)
 			return {}
 		# 1. 布雷：异形走拓扑随机；矩形走全局规则构造式（镜像/禁形）优先，否则线索规则，最后随机
+		var t_place0 := Time.get_ticks_msec()
 		var mines: Array[Vector2i]
 		if topology != null:
 			mines = _place_random_topo(topology, mine_count)
 		else:
 			mines = _place_mines_rules(clue_rule, globals, cols, rows, mine_count)
+		last_call_stats["t_place_ms"] = int(last_call_stats["t_place_ms"]) + (Time.get_ticks_msec() - t_place0)
 		if mines.is_empty():
 			last_call_stats["brep_fail"] = int(last_call_stats["brep_fail"]) + 1
 			continue
@@ -362,7 +365,11 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 		var active := {}
 		for p in clue_cells:
 			active[p] = values[p]
-		_prune_clues_rules(oracle, active, deadline, size, mine_total, values, target_difficulty)
+		var t_prune0 := Time.get_ticks_msec()
+		var pr_state: Dictionary = _prune_clues_rules(oracle, active, deadline, size, mine_total, values, target_difficulty)
+		last_call_stats["t_prune_ms"] = int(last_call_stats["t_prune_ms"]) + (Time.get_ticks_msec() - t_prune0)
+		last_call_stats["prune_tries"] = int(last_call_stats["prune_tries"]) + int(pr_state.get("tries", 0))
+		last_call_stats["prune_ok"] = int(last_call_stats["prune_ok"]) + int(pr_state.get("ok", 0))
 		if active.is_empty():
 			last_call_stats["prune_empty"] = int(last_call_stats["prune_empty"]) + 1
 			continue
@@ -374,7 +381,10 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 		# 4. 纯逻辑可解验证（序贯演绎：CP-SAT forced-cell 检测，遮蔽格走 interval 语义）
 		#    同时收集难度统计（P0-难度量化，成本近零——演绎本就要跑）
 		var diff_stats := {"rounds": [], "complexities": []}
-		if not _solve_rules_stepwise(size, active, masked, mine_total, oracle, values, diff_stats):
+		var t_verify0 := Time.get_ticks_msec()
+		var v_ok := _solve_rules_stepwise(size, active, masked, mine_total, oracle, values, diff_stats)
+		last_call_stats["t_verify_ms"] = int(last_call_stats["t_verify_ms"]) + (Time.get_ticks_msec() - t_verify0)
+		if not v_ok:
 			last_call_stats["verify_fail"] = int(last_call_stats["verify_fail"]) + 1
 			continue
 		# 5. 输出（规则关卡 JSON；播放接线见 Board 集成，本路径先供生成/验证/工坊）
@@ -611,7 +621,7 @@ static func _rect_positions(rows: int, cols: int) -> Array[Vector2i]:
 ## 策略为「顺序删除」O(n) 次验证（实测优于旧「整块删 → 失败二分」~2n 次，见 _prune_sequential）。
 ## target_difficulty（P0-A）：>0 时改为「难度驱动」——删到难度达标即全局停（早停=提速），
 ## 使同档关卡难度可控（固定 timeout 下难度波动可达 3 倍，难度目标下波动收敛）。
-func _prune_clues_rules(oracle: RuleOracle, active: Dictionary, deadline: int, grid_size: Vector2i, total_mines: int, values: Dictionary, target_difficulty: float = 0.0) -> void:
+func _prune_clues_rules(oracle: RuleOracle, active: Dictionary, deadline: int, grid_size: Vector2i, total_mines: int, values: Dictionary, target_difficulty: float = 0.0) -> Dictionary:
 	var keys: Array = []
 	for p in active:
 		# 0 值格不参与删线索：它是「邻域全安全」的锚点，一旦删掉就从 revealed 消失，
@@ -625,8 +635,9 @@ func _prune_clues_rules(oracle: RuleOracle, active: Dictionary, deadline: int, g
 		if pa.y != pb.y:
 			return pa.y < pb.y
 		return pa.x < pb.x)
-	var state := {"target": target_difficulty, "reached": false}
+	var state := {"target": target_difficulty, "reached": false, "tries": 0, "ok": 0}
 	_prune_sequential(oracle, active, keys, deadline, grid_size, total_mines, values, state)
+	return state
 
 
 ## 顺序删除（P0-性能优化·实测胜出）：逐条尝试删除，每条 1 次验证，O(n) 次验证。
@@ -643,11 +654,13 @@ func _prune_sequential(oracle: RuleOracle, active: Dictionary, keys: Array, dead
 		# active.is_empty() 拒绝整个 attempt，白白浪费可行盘（实测 mx_dt 5×5 0/12 全灭于此）。
 		if active.size() <= 1:
 			return
+		state["tries"] = int(state["tries"]) + 1
 		var backup: Variant = active[p]
 		active.erase(p)
 		# 序贯可解保持（R01 真义）：删除后仍能序贯纯逻辑推出全雷才保留删除。
 		var stats := {"rounds": []}
 		if _solve_rules_stepwise(grid_size, active, {}, total_mines, oracle, values, stats):
+			state["ok"] = int(state["ok"]) + 1
 			if float(state["target"]) > 0.0:
 				var d := float(difficulty_from_stats(stats)["difficulty"])
 				if d >= float(state["target"]):
