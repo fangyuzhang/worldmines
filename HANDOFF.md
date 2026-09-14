@@ -103,6 +103,33 @@ dotnet build
 3. **生成后门禁**：`verify_batch`（Board 构造 + 序贯可解）+ `batch_audit_r07`（R07 雷数契约）+ ProofLog 复核。
 **Mod 作者工具**：`tools/mod_selfcheck.gd -- <clue_id> [globals]`——全尺寸体检（可行性/试生成/复核/难度分档），作者上架前自跑。契约与防线详见 GDD 23 号 §3.1.x。
 
+### 变体替换作战手册（v2.9.4 准备，2026-09-14）
+
+**当前基线**（快照：`_staged_levels/variant_snapshot_20260914.json`）：
+- CLUES 9：classic / 4n / clock / hv（多值：行+列分量对）/ fr / loopruns / distsum / sc / knight（未入批量组合）
+- GLOBALS 8：mx / rl / pf / qd / dt / ep / 4c / total_mines（元规则）
+- 批量组合清单唯一来源：`tools/batch_all_variants.gd` 的 `CLUES` / `GLOBALS` 常量
+- 3597 关旧题库已暂存（`_staged_levels/`，见其 MANIFEST.md），不入 git、不占正式目录
+
+**新变体接入两条路（均已实战验证）**：
+1. **内置**：`core/rule_registry.gd` 加规则类（`KIND_CLUE` / `KIND_GLOBAL`）→ `_register_builtins` 注册；
+2. **Mod**：`demo/mods/<ascii_id>/`（manifest.json + entry.gd，RulePlugin 子类 + `on_load` 注册）→ `ModAPI.load_mod`（参考 `demo/mods/hpair_rule_mod` 与 `custom_rule_mod`）。
+
+**接入后自动生效的链路（自举式平台，零额外接线）**：UI 尺寸选择器（RuleFeasibility 预筛）/ 批量预筛 / mod_selfcheck / verify_batch 门禁 / 生成器全流程。
+
+**替换流程（建议顺序）**：
+1. 写规则（RuleBuilder 原语；表达力边界：imp 右端仅单字面量、const 字面量已支持、多值线索返回分量对）；
+2. `tools/mod_selfcheck.gd -- <clue_id> [globals]` 全尺寸体检（可行性/试生成/复核/难度）；
+3. 更新 `batch_all_variants.gd` 的 CLUES/GLOBALS（替换旧变体 id）；
+4. 小范围生成冒烟（limit_combos）→ 门禁抽查（verify_batch）→ 全量生成（分片+续跑）→ final_verify 总验收；
+5. 旧变体题库在 `_staged_levels/` 永久保留，随时可恢复/对照。
+
+**实战坑（务必过一遍）**：
+- 多值线索（如 hv 返回分量对）→ 门禁 round-trip 走 `_value_equal` 已支持；新多值规则勿再走 int() 强转；
+- 「难度天花板低」的组合会被 DIFF_PRECHECK 预筛截停（4 次全 tier_empty 且上限 <0.15）——新变体同样适用，属特性非 bug；
+- tar 打包链会损坏中文文件名（码页双重编码）——mod 目录/文件一律 ASCII id；
+- 跨组合同盘：同全局约束 + 同 seed 共享构造式布雷随机流（线索不同谜题不同）——需消除时用「组合 seed 偏移」（batch 层，不动生成器复现语义）。
+
 **生成质量优化批（v2.9.3）**：
 - **多解采样（mod 试验修正版）**：`_find_solution_best` 对同约束采样 5 解——每次采样**随机把 1 个自由格固定为雷/安全**（解空间切片；CP-SAT 对简单模型「不同 random_seed 同一解」，hpair mod 试验实锤 5 seed 只出 1 种解），随后**淘汰最差（方差最大）解 + 候选集内确定性随机选**（原「取最均匀」会让「最均匀结构唯一」的约束全 seed 收敛同盘——多样性被压缩）。堆簇解结构差仍是序贯低产的根因（保留淘汰收益，rl_ep 9×9 实测 3/3 盘全不同）。回归测试 `test/unit/test_cross_seed_diversity.gd`。
 - **多样性门**：批量生成时新关与组内已有盘峰值 Jaccard > 0.85 拒收（强约束小盘如 dt_4c 5×5 可行空间小、不同 seed 撞相似盘；随机独立盘期望 J≈0.25，0.85 只拦几乎同盘）。审计工具 `tools/diversity_report.gd`。
