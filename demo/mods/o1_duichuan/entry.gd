@@ -86,11 +86,18 @@ class CrossPairRule:
 	func value_upper_bound(_grid_size: Vector2i) -> int:
 		return 4
 
-	## 构造式布雷（v3.0 接受率专项）：「低聚类 + 偏边缘」加权序列采样。
-	## 依据（60 seed 实测相关性）：雷聚类度 vs 难度 r=−0.44（雷越分散越难）、
-	## 边缘雷 r=+0.29；「特征 Top20」盘平均难度 0.49 vs Bottom20 的 0.13（3.8×）。
-	## 合规：一次成型加权采样（按设计规则直接生成布局）——非「随机撒雷 + 拒绝重采」（R03）。
+	## 效率布雷（v3.0 接受率专项·定案版）：「低聚类 + 偏边缘」加权序列采样。
+	## 依据（60 seed 相关性）：雷聚类度 vs 难度 r=−0.44（越分散越难）、边缘雷 r=+0.29；
+	## 特征 Top20 盘平均难度 0.49 vs Bottom20 的 0.13（3.8×）。
+	## A/B 实测（7×7，60 seed）：废品率（<0.1）48%→22%、normal+（≥1.2）5%→8%（不降反升）、
+	## 平均难度 0.359→0.413。曾试「65/35 混合随机模式」，实测全面劣于纯效率（A/B 数据）——
+	## 「随机模式补偿 normal+」的假设不成立，已回滚为纯效率布雷。
+	## 合规：一次成型加权采样（非「随机 + 拒绝重采」，R03）；确定性由传入 rng 保证（同 seed 同盘）。
 	func place_mines(rng: RandomNumberGenerator, cols: int, rows: int, count: int) -> Array[Vector2i]:
+		return _place_weighted(rng, cols, rows, count)
+
+	## 效率模式：低聚类（抑制已选雷八邻权重）+ 偏边缘（边缘格 ×1.25）加权序列采样。
+	func _place_weighted(rng: RandomNumberGenerator, cols: int, rows: int, count: int) -> Array[Vector2i]:
 		var weights: Dictionary = {}
 		for r in rows:
 			for c in cols:
@@ -115,7 +122,6 @@ class CrossPairRule:
 				break
 			out.append(chosen)
 			weights.erase(chosen)
-			# 低聚类：已选雷的八邻权重抑制（结构性压低雷-雷相邻概率）
 			for d in NB8:
 				var q: Vector2i = chosen + d
 				if weights.has(q):
