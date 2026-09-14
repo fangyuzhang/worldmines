@@ -48,6 +48,7 @@ var _seed_start := 1   # 补跑起始 seed（第 7 参数；避免重扫已成�
 var _target_difficulty := 0.0  # >0 = 按目标难度生成（第 8 参数，删到达标即停）
 var _extra_combos_spec := ""   # 第 9 参数：额外组合规格（Mod/自定义规则）
 var _per_tier := 0             # 第 11 参数：>0 = 每档独立上限（GDD §4.7 关卡集口径：每集 100 关）
+var _timeout_coef := 3000      # 第 12 参数：单关超时系数（超时 = side² × 系数 ms；重编码算子如 O2/8×8 需上调）
 
 ## per_tier 模式停滞阈值：连续 N 次尝试全部撞「已满档」→ 停止该单元
 ##（防「easy 满后为 normal/hard 白跑满 seed_max」——O1 等低难度天花板算子的常态）。
@@ -132,10 +133,12 @@ func _is_feasible(clue: String, globals: Array, side: int, mines: int) -> bool:
 
 
 func _timeout_for(side: int) -> int:
-	# 系数 3000（600 → 1500 → 3000）：9×9 重线索组合单关实测 68~193s（本地），
+	# 系数默认 3000（600 → 1500 → 3000）：9×9 重线索组合单关实测 68~193s（本地），
 	# 服务器 CPU 更慢，1500 系数（9×9=121s）会把好关超时杀掉。3000 → 9×9=243s。
+	# v3.0 起系数可配（第 12 参数）：O2 邻序等重编码算子（8×8 单关 ~81s 本地）
+	# 在服务器上可能超 3000 系数上限，用 6000（8×8=384s）避免误杀。
 	# 代价仅是失败关多等一会（成功关不受影响）。
-	return maxi(30_000, side * side * 3000)
+	return maxi(30_000, side * side * _timeout_coef)
 
 
 func _write(path: String, data: Dictionary) -> void:
@@ -283,6 +286,9 @@ func _initialize() -> void:
 	# 每档收满 per_tier 关即停；部分档满时继续为剩余档生成。
 	if args.size() >= 11 and args[10] != "":
 		_per_tier = int(args[10])
+	# 第 12 参：单关超时系数（默认 3000；O2 等重编码算子 8×8 单关 >192s，需上调避免误杀）。
+	if args.size() >= 12 and args[11] != "":
+		_timeout_coef = int(args[11])
 	DirAccess.make_dir_recursive_absolute(_out_dir)
 	# 记录文件路径（分片命名——多进程写同一文件会互相覆盖，v2.9.3 probe 实测教训）
 	_issues_path = "%s/%s" % [_out_dir,
