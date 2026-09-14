@@ -47,6 +47,11 @@ var _shard_total := 1  # >1 = 分片并行（第 5/6 参数）
 var _seed_start := 1   # 补跑起始 seed（第 7 参数；避免重扫已成功 seed 白花生成时间）
 var _target_difficulty := 0.0  # >0 = 按目标难度生成（第 8 参数，删到达标即停）
 var _extra_combos_spec := ""   # 第 9 参数：额外组合规格（Mod/自定义规则）
+var _per_tier := 0             # 第 11 参数：>0 = 每档独立上限（GDD §4.7 关卡集口径：每集 100 关）
+
+## per_tier 模式停滞阈值：连续 N 次尝试全部撞「已满档」→ 停止该单元
+##（防「easy 满后为 normal/hard 白跑满 seed_max」——O1 等低难度天花板算子的常态）。
+const STALL_MAX := 60
 var _issues_path := ""  # issues jsonl 路径（记录功能，分片命名）
 
 
@@ -166,7 +171,7 @@ func _fingerprint(level: Dictionary) -> String:
 
 ## 断点续跑：扫描单元目录已有关卡（总数 / 各档最大编号 / 指纹集 / 雷位集用于相似度门）。
 func _scan_unit(combo_dir: String) -> Dictionary:
-	var out := {"count": 0, "max_idx": {}, "fps": {}, "mine_sets": []}
+	var out := {"count": 0, "max_idx": {}, "fps": {}, "mine_sets": [], "tier_count": {}}
 	var d := DirAccess.open(combo_dir)
 	if d == null:
 		return out
@@ -184,10 +189,32 @@ func _scan_unit(combo_dir: String) -> Dictionary:
 		var parts := str(f.get_basename()).split("_", false)
 		if parts.size() == 2:
 			var tier := str(parts[0])
+			out["tier_count"][tier] = int(out["tier_count"].get(tier, 0)) + 1
 			var idx := int(parts[1])
 			if int(out["max_idx"].get(tier, 0)) < idx:
 				out["max_idx"][tier] = idx
 	return out
+
+
+## 单元是否「满额」（续跑跳过判定）：
+## · per_tier 模式：三个难度档各自达到 _per_tier；
+## · 默认模式：总产出达到 _per_type。
+func _unit_full(existing: Dictionary) -> bool:
+	if _per_tier > 0:
+		var tc: Dictionary = existing.get("tier_count", {})
+		for tier in ["easy", "normal", "hard"]:
+			if int(tc.get(tier, 0)) < _per_tier:
+				return false
+		return true
+	return int(existing["count"]) >= _per_type
+
+
+## per_tier 模式：全部档是否已满（生成循环的 break 条件）。
+func _all_tiers_full(made_by_tier: Dictionary) -> bool:
+	for tier in ["easy", "normal", "hard"]:
+		if int(made_by_tier.get(tier, 0)) < _per_tier:
+			return false
+	return true
 
 
 ## 与组内已有盘的峰值 Jaccard 相似度（雷位集 交/并）。> SIMILARITY_MAX 时拒收新关——
@@ -252,6 +279,10 @@ func _initialize() -> void:
 					print("  [mod] 已加载: %s" % str(mod_name))
 			else:
 				push_error("Mod 入口不存在: " + entry)
+	# 第 11 参：每档独立上限（>0 启用）——GDD §4.7「关卡集 = 机制×尺寸×档，每集 100 关」口径。
+	# 每档收满 per_tier 关即停；部分档满时继续为剩余档生成。
+	if args.size() >= 11 and args[10] != "":
+		_per_tier = int(args[10])
 	DirAccess.make_dir_recursive_absolute(_out_dir)
 	# 记录文件路径（分片命名——多进程写同一文件会互相覆盖，v2.9.3 probe 实测教训）
 	_issues_path = "%s/%s" % [_out_dir,
@@ -284,8 +315,9 @@ func _initialize() -> void:
 	var partial: Array = []
 	var diff_unreach: Array = []
 
-	print("=== 全变体+混合批量生成（%d 组合 × 5 尺寸 × 每类 %d 关）[shard %d/%d]===" % [
-		combos.size(), _per_type, _shard_idx, _shard_total])
+	var quota_desc := "每档 %d 关（per_tier）" % _per_tier if _per_tier > 0 else "每类 %d 关" % _per_type
+	print("=== 全变体+混合批量生成（%d 组合 × 5 尺寸 × %s）[shard %d/%d]===" % [
+		combos.size(), quota_desc, _shard_idx, _shard_total])
 	for combo in combos:
 		var combo_sides: Array = combo.get("sides", [])
 		for side in SIZES:
@@ -318,7 +350,7 @@ func _initialize() -> void:
 			# 断点续跑：扫描已有产出。满额单元直接跳过（重跑安全、不重复生成）；
 			# 未满单元编号接续 + 指纹去重（同 seed 重跑撞已有盘时跳过，不产生冗余文件）。
 			var existing := _scan_unit(combo_dir)
-			if int(existing["count"]) >= _per_type:
+			if _unit_full(existing):
 				stats["resumed"] = int(stats.get("resumed", 0)) + 1
 				stats["ok"] += int(existing["count"])
 				_append_issues([_ev({"t": "unit_done", "combo": combo["id"], "side": side,
@@ -326,6 +358,8 @@ func _initialize() -> void:
 					"proof_fail": 0, "dup": 0, "similar": 0, "cost_s": 0.0, "resumed": true})])
 				continue
 			var made := int(existing["count"])
+			# per_tier 模式：按档计数（含续跑已有），达到上限的档不再收新关
+			var made_by_tier: Dictionary = (existing["tier_count"] as Dictionary).duplicate()
 			var next_idx: Dictionary = existing["max_idx"]
 			var fps: Dictionary = existing["fps"]
 			var mine_sets: Array = existing["mine_sets"]
@@ -337,6 +371,7 @@ func _initialize() -> void:
 			var u_proof := 0
 			var u_dup := 0
 			var u_sim := 0
+			var u_full_stall := 0  # per_tier 模式：连续撞「已满档」计数（达 STALL_MAX 停单元）
 			# 阶段统计累计（v2.9.3 检测器增强）：布雷/删线索/验证各阶段失败可观测
 			var u_attempts := 0
 			var u_brep_fail := 0
@@ -386,6 +421,14 @@ func _initialize() -> void:
 					unit_lines.append(_ev({"t": "tier_empty", "combo": combo["id"], "side": side,
 						"seed": seed, "diff": diff, "cost_s": cost_ms / 1000.0}))
 					continue
+				# per_tier 模式：该档已收满 → 静默跳过（继续为未满档生成）；
+				# 连续撞满档达 STALL_MAX → 停单元（防低难度天花板算子白跑满 seed_max）。
+				if _per_tier > 0 and int(made_by_tier.get(tier, 0)) >= _per_tier:
+					u_full_stall += 1
+					if u_full_stall >= STALL_MAX:
+						break
+					continue
+				u_full_stall = 0
 				# 生成后复核：可加载 + 序贯可解（与 verify_batch 同口径，杜绝废品入库）
 				var log: Dictionary = ProofLog.build(level)
 				if not bool(log.get("solved", false)):
@@ -418,8 +461,12 @@ func _initialize() -> void:
 				level["difficulty"] = diff
 				_write("%s/%s_%02d.json" % [combo_dir, tier, idx], level)
 				made += 1
+				made_by_tier[tier] = int(made_by_tier.get(tier, 0)) + 1
 				stats["tiers"][tier] = int(stats["tiers"].get(tier, 0)) + 1
-				if made >= _per_type:
+				if _per_tier > 0:
+					if _all_tiers_full(made_by_tier):
+						break
+				elif made >= _per_type:
 					break
 			stats["ok"] += made
 			# 单元完成行（兼心跳：远程 getfile 拉最后几行即可看进度）
@@ -431,6 +478,7 @@ func _initialize() -> void:
 				"attempts": u_attempts, "brep_fail": u_brep_fail, "prune_empty": u_prune_empty,
 				"verify_fail": u_verify_fail, "timeout": u_timeout,
 				"mines": mines, "mines_fallback": mines_fallback,
+				"per_tier": _per_tier, "by_tier": made_by_tier, "full_stall": u_full_stall,
 				"cost_s": (Time.get_ticks_msec() - u_t0) / 1000.0}))
 			if mines_fallback:
 				stats["mines_fallback"] = int(stats.get("mines_fallback", 0)) + 1
