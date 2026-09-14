@@ -30,6 +30,16 @@ func _initialize() -> void:
 	var args := OS.get_cmdline_user_args()
 	if args.size() >= 1 and str(args[0]) != "":
 		_out_dir = str(args[0])
+	# v3.0：Mod 规则兜底加载——验证 Mod 产物（o1/o2…）必须先注册规则，
+	# 否则被门禁正确拦截为「规则未注册」（-s 环境无 ModAPI autoload）。
+	var mods_dir := DirAccess.open("res://demo/mods")
+	if mods_dir != null:
+		for sub in mods_dir.get_directories():
+			var entry := "res://demo/mods/%s/entry.gd" % sub
+			if ResourceLoader.exists(entry):
+				var sc: Variant = load(entry)
+				if sc != null:
+					sc.new().call("on_load")
 	var files := _list_level_json(_out_dir)
 	if files.is_empty():
 		print("未找到关卡 JSON：%s" % _out_dir)
