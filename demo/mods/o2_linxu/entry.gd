@@ -66,41 +66,28 @@ class NeighborOrderRule:
 		return 8
 
 	func build_clue_constraints(b: RuleBuilder, pos: Vector2i, value: Variant) -> void:
-		var bp := b.cell_var(pos.y, pos.x)
-		var nbp := b.not_lit(bp)
+		var vp := _vp(b, pos)
 		var ls: Array = []
 		for q in b.neighbors(pos, NB8):
-			var bq := b.cell_var(q.y, q.x)
-			var nbq := b.not_lit(bq)
+			var vq := _vp(b, q)
 			var l := b.bool_var()
-			b.add_eq(l, 0, [bp])                        # a) p 是雷 → ℓ=0
-			b.add_eq(l, 1, [nbp, bq])                   # b) ¬B_p ∧ B_q → ℓ=1
-			b.add_le(_nbr_diff(b, q, pos), -1, [nbp, nbq, l])            # c1) ¬B_p∧¬B_q∧ℓ → ΣN(q)−ΣN(p) ≤ −1
-			b.add_le(_nbr_diff(b, pos, q), 0, [nbp, nbq, b.not_lit(l)])  # c2) ¬B_p∧¬B_q∧¬ℓ → ΣN(p)−ΣN(q) ≤ 0
+			# ℓ ⟺ v_q ≤ v_p − 1（双向各一条，enforce = OnlyEnforceIf 语义）
+			b.add_le(vq, b.lin([1], [vp], -1), [l])   # ℓ → v_q ≤ v_p − 1
+			b.add_le(vp, vq, [b.not_lit(l)])          # ¬ℓ → v_p ≤ v_q
 			ls.append(l)
 		b.add_eq(b.sum(ls), int(value))
 
-	## Σ N(a) − Σ N(c) 的合并系数线性式（N(a) 各 +1、N(c) 各 −1，同格系数合并）。
-	func _nbr_diff(b: RuleBuilder, a: Vector2i, c: Vector2i) -> Dictionary:
-		var w: Dictionary = {}
-		_bump(b, w, a, 1)
-		_bump(b, w, c, -1)
-		var ws: Array = []
-		var xs: Array = []
-		for t in w:
-			var wi: int = int(w[t])
-			if wi != 0:
-				ws.append(wi)
-				xs.append(b.cell_var(t.y, t.x))
-		if ws.is_empty():
-			return b.const_expr(0)
-		return b.wsum(ws, xs)
-
-	func _bump(b: RuleBuilder, w: Dictionary, center: Vector2i, sign: int) -> void:
-		for d in NB8:
-			var t: Vector2i = center + d
-			if b.in_board(t.y, t.x):
-				w[t] = int(w.get(t, 0)) + sign
+	## 共享 v 变量（每格一个：v3.0 性能基建 cell_int_var 按格缓存）。
+	## 首次调用时初始化：非雷 → v = Σ N B；雷 → v = −1（GDD §4.3 约定）。
+	## 幂等由 b.mark_once 保证（同格被自己与所有邻居的约束反复引用，只初始化一次）。
+	func _vp(b: RuleBuilder, pos: Vector2i) -> Dictionary:
+		var v := b.cell_int_var(pos.y, pos.x, -1, 8)
+		if not b.mark_once("v_init|%d,%d" % [pos.x, pos.y]):
+			return v
+		var bp := b.cell_var(pos.y, pos.x)
+		b.add_eq(v, b.sum(b.cell_vars(b.neighbors(pos, NB8))), [b.not_lit(bp)])
+		b.add_eq(v, -1, [bp])
+		return v
 
 	## 经典雷数 v（雷格约定 −1）。
 	static func _v(mine_set: Dictionary, pos: Vector2i, grid_size: Vector2i) -> int:

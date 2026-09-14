@@ -101,6 +101,35 @@ func int_var(lo: int, hi: int) -> Dictionary:
 	return CPIR.aux_var(i)
 
 
+## 按格缓存的整数变量（v3.0 性能基建）：同一格的共享量（如邻序的经典雷数 v）
+## 会被「本格约束」与「所有邻居的约束」反复引用，必须复用同一变量——
+## 否则各调用点各建一份，约束量随度数平方级膨胀且语义要靠等值约束硬拉回。
+## 缓存以 (列,行) 为键；builder 生命周期 = 单次 spec 构建 → 天然 per-spec 安全。
+var _cell_int_cache: Dictionary = {}
+
+func cell_int_var(r: int, c: int, lo: int, hi: int) -> Dictionary:
+	var key := Vector2i(c, r)
+	if _cell_int_cache.has(key):
+		return _cell_int_cache[key]
+	var v := int_var(lo, hi)
+	_cell_int_cache[key] = v
+	return v
+
+
+## 规则作者的 per-spec 临时存储（builder 生命周期内有效，不同 spec 互不影响）。
+## 用途：规则需要跨「逐格调用」维护状态时（如「某格的共享变量是否已初始化」），
+## 平台不内置具体语义，由规则自行约定键。
+var scratch: Dictionary = {}
+
+
+## 按格标记（配合 scratch）：首次返回 true，其后 false。便于「初始化一次」类逻辑。
+func mark_once(key: Variant) -> bool:
+	if scratch.has(key):
+		return false
+	scratch[key] = true
+	return true
+
+
 func not_lit(lit: Dictionary) -> Dictionary:
 	return CPIR.not_lit(lit)
 
