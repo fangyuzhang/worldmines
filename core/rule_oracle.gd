@@ -117,6 +117,15 @@ func build_spec(active: Dictionary, known_mines: Array = [], masked: Dictionary 
 		g.build_global_constraints(bg)
 	var aux: Array = bg.aux_vars.duplicate(true)
 	var next_base: int = bg.next_aux_index()
+	# v3.0：线索规则的全局约束（如 O4 的 ∑w=k）——独立 builder，IR 并入 spec["globals"]。
+	# 逐格 builder 与它不共享 aux；需要跨格的语义由规则用「按格统一编码」自证一致（见 RulePlugin 注释）。
+	var bq := RuleBuilder.new(rows, cols, _total_mines, next_base)
+	if topology != null:
+		bq.set_topology(topology)
+	if clue_rule != null:
+		clue_rule.build_global_clue_constraints(bq)
+	aux.append_array(bq.aux_vars)
+	next_base = bq.next_aux_index()
 	# 各线索 IR（aux 编号顺延，保证 spec 内全局唯一）
 	var clues: Array = []
 	if clue_rule != null:
@@ -147,6 +156,17 @@ func build_spec(active: Dictionary, known_mines: Array = [], masked: Dictionary 
 	var mine_cells: Array = []
 	for m in known_mines:
 		mine_cells.append([m.y, m.x])
+	# aux 去重（v3.0）：显式索引共享池（bool_var_at/int_var_at）会让「同一索引」在
+	# 全局 builder 与逐格 builder 各声明一次——C# 侧声明两次会「覆盖创建」导致引用断裂，
+	# 故此处按索引只保留首见条目（首见 = 变量池的创建者）。
+	var seen_aux := {}
+	var aux_dedup: Array = []
+	for av in aux:
+		var ai := int(av["i"])
+		if not seen_aux.has(ai):
+			seen_aux[ai] = true
+			aux_dedup.append(av)
+	aux = aux_dedup
 	var spec := {
 		"rows": rows,
 		"cols": cols,
@@ -154,7 +174,7 @@ func build_spec(active: Dictionary, known_mines: Array = [], masked: Dictionary 
 		"safe_cells": safe,
 		"mine_cells": mine_cells,
 		"clues": clues,
-		"globals": bg.constraints,
+		"globals": bg.constraints + bq.constraints,
 		"aux": aux,
 		"timeout_ms": 8000,
 	}

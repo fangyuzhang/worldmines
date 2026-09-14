@@ -122,6 +122,24 @@ func cell_int_var(r: int, c: int, lo: int, hi: int) -> Dictionary:
 var scratch: Dictionary = {}
 
 
+## v3.0：按「显式索引」声明布尔 aux（跨 builder 共享变量的正确路径）——
+## C# 侧 aux 变量按索引全局池化（_auxBoolVars[i]）：多个 builder 声明「同一索引 i」
+## 即指向同一个 CP-SAT 变量。用于「全局 builder 先分配变量池、逐格/其他 builder 引用同池」。
+## 调用方保证：同一索引在本 builder 内只声明一次、且索引不与任何自动分配的 aux 冲突
+## （共享池应使用「独立高偏移段」，见 O4 的共享索引公式）。
+func bool_var_at(i: int) -> Dictionary:
+	aux_vars.append({"i": i, "kind": "bool"})
+	_aux_count += 1
+	return CPIR.aux_var(i)
+
+
+## v3.0：按「显式索引」声明整数 aux（共享池用）。
+func int_var_at(i: int, lo: int, hi: int) -> Dictionary:
+	aux_vars.append({"i": i, "kind": "int", "lo": lo, "hi": hi})
+	_aux_count += 1
+	return CPIR.aux_var(i)
+
+
 ## 按格标记（配合 scratch）：首次返回 true，其后 false。便于「初始化一次」类逻辑。
 func mark_once(key: Variant) -> bool:
 	if scratch.has(key):

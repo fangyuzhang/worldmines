@@ -58,6 +58,18 @@ func build_clue_constraints(_b: RuleBuilder, _pos: Vector2i, _value: Variant) ->
 	pass
 
 
+## v3.0 扩展：线索规则的「棋盘级」约束（可选覆写）——
+## 需要「全盘配额」的算子（如变径 O4 的 ∑_p w_p = k）在生成 spec 时被调用一次。
+## 语义：b 是独立于逐格 builder 的「全局 builder」，其 constraints 并入 spec["globals"]
+## （与全局规则 IR 同锅翻译）；aux 编号空间由 build_spec 统一管理（先于逐格分配）。
+## 注意：逐格 builder 与全局 builder 不共享 aux 变量。跨格共享量的正确写法：
+## 把「共享量的语义」用「全盘统一的『按格编码』」表达（如 w_p 在逐格 builder 按格重建、k 配额在
+## 全局 builder 用「相同构造」重建——两边用确定性规则生成『内容一致』的变量集，
+## CP-SAT 层面各自独立、语义由约束保证；O4 采用此模式）。
+func build_global_clue_constraints(_b: RuleBuilder) -> void:
+	pass
+
+
 ## 该规则是否支持遮蔽（问号格）。计数型（classic/4n/sc/distsum）返回 true；
 ## 非计数型（clock/fr/loopruns/hv）遮蔽语义不成立，返回 false。
 func supports_mask() -> bool:
