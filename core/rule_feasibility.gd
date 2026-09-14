@@ -19,6 +19,36 @@ const DT_RESAMPLE := 5
 
 static var _cache: Dictionary = {}
 
+## ==== 候选雷数列表（v3.0，GDD 终版 §8.1）====
+## 守恒算子的整除/奇偶要求常与 R07 标准雷数互斥（如「相邻行锁」6×6 需奇数雷、
+## 「四象」需 4 的倍数、「等差行」需行数的倍数）——标准值首选、其余按序回退。
+## 5×5 全兼容；6×6 候选依据：Z2 需奇（13/15）、Z3 需 4 倍数（12/16）、Z5 需 3 倍数（12/15/18）；
+## 7×7 需 7 的倍数（14/21）；8×8 需 4 的倍数/偶（24/28）；9×9 需 9 的倍数（27/36）。
+const CANDIDATES := {
+	5: [10],
+	6: [14, 12, 15, 16, 18, 13],
+	7: [20, 14, 21],
+	8: [26, 24, 28],
+	9: [32, 27, 36],
+}
+
+## 标准雷数（候选列表首项）。
+static func standard_mines(size: int) -> int:
+	var list: Array = CANDIDATES.get(size, [])
+	return int(list[0]) if not list.is_empty() else -1
+
+
+## 解析该组合×尺寸的可用雷数：按候选列表顺序取第一个可行值。
+## 返回 {mines: int（-1 = 全候选不可行）, standard: bool（是否标准值）}。
+## 旧行为（仅标准值）等价于 standard==true 分支；批量/UI/门禁按此统一入口接线。
+static func resolve_mines(clue_id: String, global_ids: Array, size: int) -> Dictionary:
+	var list: Array = CANDIDATES.get(size, [])
+	for i in list.size():
+		var m := int(list[i])
+		if query(clue_id, global_ids, size, m):
+			return {"mines": m, "standard": i == 0}
+	return {"mines": -1, "standard": false}
+
 
 ## 查询 (clue_id, global_ids, size, mines) 是否数学可行（带缓存）。
 static func query(clue_id: String, global_ids: Array, size: int, mines: int) -> bool:

@@ -40,6 +40,7 @@ func _initialize() -> void:
 	var tiers := {"easy": 0, "normal": 0, "hard": 0}
 	var profiled := 0  # 有 difficulty_profile 的关卡数（手工关可能没有，不计入分布告警）
 	var ratio_warn: Array[String] = []
+	var fallback_count := 0  # 候选雷数回退关数（合法但非标准雷数，单独计数）
 	for path in files:
 		var level := _load_json(path)
 		if level.is_empty():
@@ -53,13 +54,19 @@ func _initialize() -> void:
 		if board.grid == null or board.total_mines != int(level.get("total_mines", -1)):
 			failed.append("%s (Board 构造加载失败)" % path)
 			continue
-		# 门禁 ②：R07 固定雷数契约（仅 5..9 矩形盘；QD 偷调平 bug 即此审计抓出）。
+		# 门禁 ②：R07 雷数契约（仅 5..9 矩形盘；QD 偷调平 bug 即此审计抓出）。
+		# v3.0 扩展：候选雷数回退——守恒算子的整除/奇偶要求与标准值互斥时，
+		# 落盘雷数可以是候选列表内的回退值（GDD §8.1）；不在候选列表 = FAIL。
 		var sz: Dictionary = level.get("size", {})
 		var side := int(sz.get("cols", 0))
-		if int(sz.get("rows", 0)) == side and R07_MINES.has(side) \
-				and int(level.get("total_mines", -1)) != int(R07_MINES[side]):
-			failed.append("%s (R07 雷数不符: %s != %d)" % [path, str(level.get("total_mines")), int(R07_MINES[side])])
-			continue
+		if int(sz.get("rows", 0)) == side and R07_MINES.has(side):
+			var mv := int(level.get("total_mines", -1))
+			var cands: Array = RuleFeasibility.CANDIDATES.get(side, [])
+			if not cands.has(mv):
+				failed.append("%s (R07 雷数不在候选列表: %d ∉ %s)" % [path, mv, str(cands)])
+				continue
+			if mv != int(R07_MINES[side]):
+				fallback_count += 1
 		# 门禁 ③+④：schema 基础校验 + 线索值 round-trip（Board 重算 vs 规则独立重算）。
 		var bad := _check_schema_roundtrip(board, level)
 		if bad != "":
@@ -86,6 +93,8 @@ func _initialize() -> void:
 	print("  目录: %s" % _out_dir)
 	print("  可解 %d / 失败 %d" % [ok, failed.size()])
 	print("  难度分布: easy=%d normal=%d hard=%d（有画像 %d 关）" % [tiers["easy"], tiers["normal"], tiers["hard"], profiled])
+	if fallback_count > 0:
+		print("  候选雷数回退关: %d（守恒算子整除/奇偶要求，合法）" % fallback_count)
 	if ratio_warn.size() > 0:
 		print("  冗余线索告警(clue_ratio>%.2f): %d 关——删线索不充分会虚低难度，前几例: %s" % [
 			CLUE_RATIO_WARN, ratio_warn.size(), ", ".join(ratio_warn.slice(0, 5))])

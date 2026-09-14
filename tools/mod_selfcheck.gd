@@ -44,12 +44,18 @@ func _initialize() -> void:
 	var feasible_sizes: Array = []
 	var unsat_sizes: Array = []
 	for side in [5, 6, 7, 8, 9]:
-		var mines: int = R07_MINES[side]
-		var feas := RuleFeasibility.query(clue_id, globals, side, mines)
-		if not feas:
+		# v3.0：候选雷数回退——标准值不可行时按 GDD §8.1 候选列表回退（守恒算子整除/奇偶要求）。
+		var rres := RuleFeasibility.resolve_mines(clue_id, globals, side)
+		if int(rres["mines"]) < 0:
 			unsat_sizes.append("%dx%d" % [side, side])
-			print("  %dx%d=%d雷: 数学不可行（UNSAT）——发布时应禁用该尺寸/提示换组合" % [side, side, mines])
+			print("  %dx%d: 数学不可行（全候选 %s 均 UNSAT）——发布时应禁用该尺寸/提示换组合" % [
+				side, side, str(RuleFeasibility.CANDIDATES.get(side, []))])
 			continue
+		var mines: int = int(rres["mines"])
+		if not bool(rres["standard"]):
+			print("  %dx%d: 标准 %d 雷不可行 → 候选回退 %d 雷（合法，生成侧自动采用）" % [
+				side, side, R07_MINES[side], mines])
+		var feas := true
 		var t0 := Time.get_ticks_msec()
 		var level: Dictionary = PuzzleGenerator.new().generate_with_rules(
 			clue_id, globals, Vector2i(side, side), mines, 1, 0, 50, null,

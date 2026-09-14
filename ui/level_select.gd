@@ -465,8 +465,9 @@ func _close_popup() -> void:
 ## UNSAT 规则表（手写表曾漏掉 rl 6×6 / qd 6×6、8×8 导致玩家选中后永远转圈；
 ## 且新增/Mod 变体都需要同步手改，必然再漏）。真值查询对任何变体自动正确。
 func _mode_feasible(mode: Dictionary, size: int) -> bool:
-	var mines: int = maxi(1, int(MINE_COUNTS.get(size, int(float(size * size) * 0.4))))
-	return RuleFeasibility.query(str(mode["clue"]), mode.get("globals", []), size, mines)
+	# v3.0：候选雷数回退——标准值不可行但候选可行时，该尺寸仍可玩（生成侧自动用回退雷数）。
+	# 全候选不可行才禁用（如 mx+rl 6×6：镜像+行锁在全部候选雷数下均矛盾）。
+	return int(RuleFeasibility.resolve_mines(str(mode["clue"]), mode.get("globals", []), size)["mines"]) >= 0
 
 
 func _refresh_popup() -> void:

@@ -232,6 +232,7 @@ func _initialize() -> void:
 			var mines: int = SIZES[side]
 			stats["units"] += 1
 			var combo_dir := "%s/%s/%dx%d" % [_out_dir, combo["id"], side, side]
+			# 注：mines 在下方可行性预筛处可能被候选回退覆盖（见 resolve_mines 段）。
 			# FR（首雷）设计跳过（v2.9.3 决策）：FR 线索「向右首雷距离」直接锁定雷位、
 			# 无弱信息值（GDD 3.3 原话），difficulty 恒 <0.3（实测 0.06~0.28，含 G+FR 混合），
 			# 进不了最低 easy 档，无法作为标准三档关卡生成——这是变体特性，非代码 bug。
@@ -241,10 +242,16 @@ func _initialize() -> void:
 				stats["design_skip"] += 1
 				design_skip.append("%s %dx%d" % [combo["id"], side, side])
 				continue
-			if not _is_feasible(combo["clue"], combo["globals"], side, mines):
+			# 候选雷数回退（v3.0，GDD §8.1）：标准雷数不可行时按候选列表回退
+			#（守恒算子整除/奇偶要求与标准值互斥，如「相邻行锁」6×6 需奇数雷）。
+			# 全候选不可行 → 该单元数学上无解，跳过（与旧 UNSAT 语义一致）。
+			var rr := RuleFeasibility.resolve_mines(combo["clue"], combo["globals"], side)
+			if int(rr["mines"]) < 0:
 				stats["skipped"] += 1
 				skipped.append("%s %dx%d" % [combo["id"], side, side])
 				continue
+			mines = int(rr["mines"])
+			var mines_fallback := not bool(rr["standard"])
 			DirAccess.make_dir_recursive_absolute(combo_dir)
 			# 断点续跑：扫描已有产出。满额单元直接跳过（重跑安全、不重复生成）；
 			# 未满单元编号接续 + 指纹去重（同 seed 重跑撞已有盘时跳过，不产生冗余文件）。
@@ -361,7 +368,10 @@ func _initialize() -> void:
 				"proof_fail": u_proof, "dup": u_dup, "similar": u_sim,
 				"attempts": u_attempts, "brep_fail": u_brep_fail, "prune_empty": u_prune_empty,
 				"verify_fail": u_verify_fail, "timeout": u_timeout,
+				"mines": mines, "mines_fallback": mines_fallback,
 				"cost_s": (Time.get_ticks_msec() - u_t0) / 1000.0}))
+			if mines_fallback:
+				stats["mines_fallback"] = int(stats.get("mines_fallback", 0)) + 1
 			_append_issues(unit_lines)
 			if unreachable:
 				# 单独归类：不可达单元补跑也没用（与数学 UNSAT 同口径），不计入 partial。
@@ -376,8 +386,9 @@ func _initialize() -> void:
 	print("  单元(组合×尺寸): %d | 入库总关数 %d | 设计跳过(FR难度) %d | 跳过(数学UNSAT) %d | 续跑满额跳过 %d | 相似拒收 %d | 部分成功 %d" % [
 		stats["units"], stats["ok"], stats["design_skip"], stats["skipped"], stats.get("resumed", 0),
 		stats.get("similar_skipped", 0), stats["partial"]])
-	print("  难度分布: easy=%d normal=%d hard=%d" % [
-		stats["tiers"]["easy"], stats["tiers"]["normal"], stats["tiers"]["hard"]])
+	print("  难度分布: easy=%d normal=%d hard=%d | 候选雷数回退单元 %d" % [
+		stats["tiers"]["easy"], stats["tiers"]["normal"], stats["tiers"]["hard"],
+		int(stats.get("mines_fallback", 0))])
 	if design_skip.size() > 0:
 		print("  设计跳过清单(%d，FR难度天然<0.3，见GDD 3.3): %s" % [design_skip.size(), ", ".join(design_skip)])
 	if skipped.size() > 0:
