@@ -275,7 +275,7 @@ static func precheck_rules(clue_rule_id: String, global_rule_ids: Array, size: V
 ## 离线批量出关建议放宽（如 60s）以换取线索精简度；UI 交互场景用默认保证响应。
 ## target_difficulty（P0-A，默认 0=不限制）：>0 时删线索改为「难度驱动」——
 ## 删到难度画像 difficulty 达标即停（早停=提速），同档关卡难度可控（固定 timeout 下难度波动可达 3 倍）。
-func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vector2i, mine_count: int, seed: int, mask_count: int = 0, attempts: int = 50, topology: GridInterface = null, timeout_ms: int = 15_000, target_difficulty: float = 0.0, mask_lo: int = 1, mask_strategy: int = 0) -> Dictionary:
+func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vector2i, mine_count: int, seed: int, mask_count: int = 0, attempts: int = 50, topology: GridInterface = null, timeout_ms: int = 15_000, target_difficulty: float = 0.0, mask_lo: int = 1, mask_strategy: int = 0, mask_pre: bool = false) -> Dictionary:
 	var reg := RuleRegistry.default()
 	var clue_rule: Object = reg.resolve(StringName(clue_rule_id))
 	if clue_rule == null or clue_rule.get_kind() != RulePlugin.KIND_CLUE:
@@ -365,16 +365,27 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 		var active := {}
 		for p in clue_cells:
 			active[p] = values[p]
+		# 遮蔽前置（方向 1，2026-09-16）：mask_pre 时先从「全线索」选遮蔽格（子设计 A），
+		# 删线索在「弱化信息集」上运行 → MSC 重建后每条保留线索都必要 → 推理批量变小 → 难度上升。
+		# 遮蔽格不允许被删（_prune_clues_rules 的 keys 排除）；mask_count=0 时与旧路径逐位一致。
+		var pre_masked := {}
+		if mask_pre and mask_count > 0:
+			pre_masked = _select_masked_rules(clue_rule, active, mask_count, size, mask_lo, mask_strategy)
 		var t_prune0 := Time.get_ticks_msec()
-		var pr_state: Dictionary = _prune_clues_rules(oracle, active, deadline, size, mine_total, values, target_difficulty)
+		var pr_state: Dictionary = _prune_clues_rules(oracle, active, deadline, size, mine_total, values, target_difficulty, pre_masked)
 		last_call_stats["t_prune_ms"] = int(last_call_stats["t_prune_ms"]) + (Time.get_ticks_msec() - t_prune0)
 		last_call_stats["prune_tries"] = int(last_call_stats["prune_tries"]) + int(pr_state.get("tries", 0))
 		last_call_stats["prune_ok"] = int(last_call_stats["prune_ok"]) + int(pr_state.get("ok", 0))
 		if active.is_empty():
 			last_call_stats["prune_empty"] = int(last_call_stats["prune_empty"]) + 1
 			continue
-		# 3.5 遮蔽（问号模式）：选 mask_count 个「值 ≥1 且支持遮蔽」的格变成 ? 格（interval）
-		var masked := _select_masked_rules(clue_rule, active, mask_count, size)
+		# 3.5 遮蔽（问号模式）：mask_pre 时沿用前置选择（禁止删后重选）；否则按旧路径从删后 active 选。
+		#（同时修复：lo/strategy 未接通调用点的实现 bug——此前双旋钮实际未生效，A/B/C/D 四组相同的实验含此因）
+		var masked: Dictionary
+		if mask_pre:
+			masked = pre_masked
+		else:
+			masked = _select_masked_rules(clue_rule, active, mask_count, size, mask_lo, mask_strategy)
 		# 遮蔽弱化约束后，由第 4 步 _solve_rules_stepwise（带 masked）做序贯可解验证兜底（R01 真义）。
 		# 不再用静态唯一解 count_solutions==1：v2.8.3 起 0 值格不进初始线索，静态多解是正常现象，
 		# 用静态唯一会误杀带遮蔽的规则关卡（与 _prune_clues_rules 同口径）。
@@ -634,12 +645,16 @@ static func _rect_positions(rows: int, cols: int) -> Array[Vector2i]:
 ## 策略为「顺序删除」O(n) 次验证（实测优于旧「整块删 → 失败二分」~2n 次，见 _prune_sequential）。
 ## target_difficulty（P0-A）：>0 时改为「难度驱动」——删到难度达标即全局停（早停=提速），
 ## 使同档关卡难度可控（固定 timeout 下难度波动可达 3 倍，难度目标下波动收敛）。
-func _prune_clues_rules(oracle: RuleOracle, active: Dictionary, deadline: int, grid_size: Vector2i, total_mines: int, values: Dictionary, target_difficulty: float = 0.0) -> Dictionary:
+## masked（遮蔽前置，方向 1，2026-09-16）：被选定遮蔽的格是「问号格」——不许删除
+##（删了就丢失弱化信息），且删除试探的序贯判定带 interval 语义（在「剩余精确线索 + 遮蔽弱约束」下验证）。
+func _prune_clues_rules(oracle: RuleOracle, active: Dictionary, deadline: int, grid_size: Vector2i, total_mines: int, values: Dictionary, target_difficulty: float = 0.0, masked: Dictionary = {}) -> Dictionary:
 	var keys: Array = []
 	for p in active:
 		# 0 值格不参与删线索：它是「邻域全安全」的锚点，一旦删掉就从 revealed 消失，
 		# 加载后变成孤立的空白可点击格（用户反复报告的 bug）。0 值格必须保留。
 		if values[p] is int and int(values[p]) == 0:
+			continue
+		if masked.has(p):
 			continue
 		keys.append(p)
 	keys.sort_custom(func(a, b):
@@ -649,7 +664,7 @@ func _prune_clues_rules(oracle: RuleOracle, active: Dictionary, deadline: int, g
 			return pa.y < pb.y
 		return pa.x < pb.x)
 	var state := {"target": target_difficulty, "reached": false, "tries": 0, "ok": 0}
-	_prune_sequential(oracle, active, keys, deadline, grid_size, total_mines, values, state)
+	_prune_sequential(oracle, active, keys, deadline, grid_size, total_mines, values, state, masked)
 	return state
 
 
@@ -658,7 +673,7 @@ func _prune_clues_rules(oracle: RuleOracle, active: Dictionary, deadline: int, g
 ## 40% 密度下大部分线索必要（删不掉），二分退化成 ~2n 次验证反而更慢；顺序删除快 ~2 倍且
 ## 线索数更少（质量不降反升）。删除顺序与旧实现同为「行优先排序」，确定性一致。
 func _prune_sequential(oracle: RuleOracle, active: Dictionary, keys: Array, deadline: int,
-		grid_size: Vector2i, total_mines: int, values: Dictionary, state: Dictionary) -> void:
+		grid_size: Vector2i, total_mines: int, values: Dictionary, state: Dictionary, masked: Dictionary = {}) -> void:
 	for p in keys:
 		if bool(state["reached"]) or Time.get_ticks_msec() > deadline:
 			return
@@ -671,8 +686,9 @@ func _prune_sequential(oracle: RuleOracle, active: Dictionary, keys: Array, dead
 		var backup: Variant = active[p]
 		active.erase(p)
 		# 序贯可解保持（R01 真义）：删除后仍能序贯纯逻辑推出全雷才保留删除。
+		# 遮蔽前置（方向 1）：判定带 masked 区间语义——在「删后 active + 遮蔽弱约束」下验证。
 		var stats := {"rounds": []}
-		if _solve_rules_stepwise(grid_size, active, {}, total_mines, oracle, values, stats):
+		if _solve_rules_stepwise(grid_size, active, masked, total_mines, oracle, values, stats):
 			state["ok"] = int(state["ok"]) + 1
 			if float(state["target"]) > 0.0:
 				var d := float(difficulty_from_stats(stats)["difficulty"])
@@ -844,6 +860,9 @@ func _build_level_from_rules(clue_rule_id: String, global_rule_ids: Array, rows:
 		var st: Dictionary = clue_obj.call("export_hidden_state")
 		if not st.is_empty():
 			hs[clue_rule_id] = st
+	# k 旋钮落盘（2026-09-16）：不公开盘标记——UI/展示侧据此隐藏 k 信息（公开档默认不写字段，零影响）。
+	if clue_obj != null and clue_obj.has_method("is_k_public") and not bool(clue_obj.call("is_k_public")):
+		out["k_public"] = false
 	for gid in global_rule_ids:
 		var g_obj: Object = RuleRegistry.default().resolve(StringName(gid))
 		if g_obj != null and g_obj.has_method("export_hidden_state"):

@@ -72,6 +72,29 @@ class VariRadiusRule:
 					f += 1
 		return f
 
+	# ==== k 旋钮（2026-09-16 实装：GDD §4.2「k 是否公开」+ 生成器把手）====
+	# k_ratio：配额比例（默认 0.25 ≈ 格数/4，向后兼容）；GDD「k 越大可行域越窄」→ 可调控欠产率。
+	# k_public：普通档公开 k（编码含 Σw=k，玩家可用配额收口推理）；噩梦档不公开——
+	#   编码**省略 Σw=k**（「不知 k」演绎口径）：生成时的序贯验证即在「无配额信息」下进行，
+	#   通过 = 该盘满足 R01（无 k 也可推完）→ 可不公开交付。调用方生成前 set_*（同 set_dominoes 先例）。
+	var _k_ratio: float = 0.25
+	var _k_public: bool = true
+
+	func set_k_ratio(r: float) -> void:
+		_k_ratio = clampf(r, 0.05, 0.5)
+
+	func get_k_ratio() -> float:
+		return _k_ratio
+
+	func set_k_public(v: bool) -> void:
+		_k_public = v
+
+	func is_k_public() -> bool:
+		return _k_public
+
+	func _k_of(cols: int, rows: int) -> int:
+		return maxi(1, int(floor(float(cols * rows) * _k_ratio)))
+
 	## 共享变量池的索引公式（远离自动编号段的固定偏移——见 RuleBuilder.bool_var_at 注释）。
 	static func _wid(c: int, r: int) -> int:
 		return 1_000_000 + r * 64 + c
@@ -84,8 +107,9 @@ class VariRadiusRule:
 		for rr in b.rows:
 			for cc in b.cols:
 				ws.append(b.bool_var_at(_wid(cc, rr)))
-		var k := maxi(1, (b.rows * b.cols) / 4)
-		b.add_eq(b.sum(ws), k)
+		# k_public=false（噩梦档「不公开」）：省略 Σw=k——「不知 k」演绎口径（保 R01 验证）。
+		if _k_public:
+			b.add_eq(b.sum(ws), _k_of(b.cols, b.rows))
 
 	func build_clue_constraints(b: RuleBuilder, pos: Vector2i, value: Variant) -> void:
 		# 引用共享池中的 w_p（同索引 = 同变量）
@@ -118,7 +142,7 @@ class VariRadiusRule:
 			return []
 		return dirs_to_neighbors(pos, grid_size, NB8)
 
-	## 效率布雷 + r=2 分配（一次成型）。k = 格数/4。
+	## 效率布雷 + r=2 分配（一次成型）。k = _k_of（默认 = 格数/4）。
 	func place_mines(rng: RandomNumberGenerator, cols: int, rows: int, count: int) -> Array[Vector2i]:
 		# r=2 分配：从全部格中无放回抽 k 个
 		_r2.clear()
@@ -126,9 +150,7 @@ class VariRadiusRule:
 		for r in rows:
 			for c in cols:
 				all_cells.append(Vector2i(c, r))
-		var k := (cols * rows) / 4
-		if k < 1:
-			k = 1
+		var k := _k_of(cols, rows)
 		for _i in range(mini(k, all_cells.size())):
 			var pick_idx := rng.randi_range(0, all_cells.size() - 1)
 			_r2[all_cells[pick_idx]] = true

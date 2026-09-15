@@ -74,6 +74,27 @@ class XiemaiRule:
 	func value_upper_bound(grid_size: Vector2i) -> int:
 		return maxi(grid_size.x, grid_size.y) - 1
 
+	# ==== k 旋钮（2026-09-16 实装：与 o4 同款；原注释「k 公开 = 难度旋钮」的兑现）====
+	# k_ratio：配额比例（默认 0.25 ≈ 格数/4，向后兼容）；k_public=false 时编码省略 Σs=k
+	#（「不知 k」演绎口径：生成验证即在无配额信息下进行，通过 = 满足 R01 可不公开交付）。
+	var _k_ratio: float = 0.25
+	var _k_public: bool = true
+
+	func set_k_ratio(r: float) -> void:
+		_k_ratio = clampf(r, 0.05, 0.5)
+
+	func get_k_ratio() -> float:
+		return _k_ratio
+
+	func set_k_public(v: bool) -> void:
+		_k_public = v
+
+	func is_k_public() -> bool:
+		return _k_public
+
+	func _k_of(cols: int, rows: int) -> int:
+		return maxi(1, int(floor(float(cols * rows) * _k_ratio)))
+
 	# ==== 逆向编码 ====
 
 	static func _sid(c: int, r: int) -> int:
@@ -84,8 +105,9 @@ class XiemaiRule:
 		for rr in b.rows:
 			for cc in b.cols:
 				ss.append(b.bool_var_at(_sid(cc, rr)))
-		var k := maxi(1, (b.rows * b.cols) / 4)
-		b.add_eq(b.sum(ss), k)
+		# k_public=false（「不公开」）：省略 Σs=k——「不知 k」演绎口径（保 R01 验证）。
+		if _k_public:
+			b.add_eq(b.sum(ss), _k_of(b.cols, b.rows))
 
 	static func _ones(n: int) -> Array:
 		var out: Array = []
@@ -131,9 +153,7 @@ class XiemaiRule:
 		for r in rows:
 			for c in cols:
 				all_cells.append(Vector2i(c, r))
-		var k := (cols * rows) / 4
-		if k < 1:
-			k = 1
+		var k := _k_of(cols, rows)
 		for _i in range(mini(k, all_cells.size())):
 			var pi := rng.randi_range(0, all_cells.size() - 1)
 			_s1[all_cells[pi]] = true
