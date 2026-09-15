@@ -14,9 +14,9 @@ extends RefCounted
 ##   不删线索 ≈ 0.04｜5×5 各 seed 0.59~1.86｜8×8 删 3s ≈ 2.01｜删 11s ≈ 3.19｜删 18s ≈ 3.95
 const TIERS := {
 	"intro":  {"label": "入门", "min": 0.0, "max": 0.3},
-	"easy":   {"label": "轻松", "min": 0.3, "max": 1.2},
-	"normal": {"label": "普通", "min": 1.2, "max": 2.2},
-	"hard":   {"label": "挑战", "min": 2.2, "max": 1e9},
+	"easy":   {"label": "普通", "min": 0.3, "max": 1.2},
+	"normal": {"label": "困难", "min": 1.2, "max": 2.2},
+	"hard":   {"label": "噩梦", "min": 2.2, "max": 1e9},
 }
 
 

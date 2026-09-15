@@ -324,6 +324,7 @@ $$\rho_{\mathcal{V}}=\frac{|\mathcal{S}_0\cap\mathcal{K}_{\mathcal{V}}|}{|\mathc
 
 | 档 | 内部标识 | 画像分区间（初值，上线后按分布重标定） |
 |---|---|---|
+| 入门 | intro | 0.3 以下（承接教学/低难度内容） |
 | 普通 | easy | 0.3 – 1.2 |
 | 困难 | normal | 1.2 – 2.2 |
 | 噩梦 | hard | 2.2 以上 |
