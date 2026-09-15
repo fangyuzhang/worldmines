@@ -50,7 +50,19 @@ func _initialize() -> void:
 		var g: Object = RuleRegistry.default().resolve(StringName(str(gid)))
 		if g != null:
 			gs.append(g)
-	print("=== 设计预检: %s + %s（%d 盘/尺寸，随机布雷）===" % [clue_id, str(globals), trials])
+	# 隐藏态规则检测（2026-09-16 修复）：脚本覆写了 export_hidden_state（如 o4/o5x）→ 必须走
+	# place_mines 获得「真实布雷 + 隐藏态」。否则 compute_clue 在空隐藏态下产出全错线索——
+	# 正是「O5b 序贯 0/10 假阴性」「O4 编码侥幸 20/20」的根因（HANDOFF 工具坑）。
+	# 检测用「脚本方法列表」而非「调 export 看非空」：后者依赖空态返回契约（模糊）。
+	var has_hidden := false
+	var scr: Script = rule.get_script() as Script
+	if scr != null:
+		for m in scr.get_script_method_list():
+			if str(m.get("name", "")) == "export_hidden_state":
+				has_hidden = rule.has_method("place_mines")
+				break
+	print("=== 设计预检: %s + %s（%d 盘/尺寸，%s）===" % [clue_id, str(globals), trials,
+		"place_mines 真实布雷【隐藏态规则】" if has_hidden else "随机布雷"])
 	for side in [5, 6, 7, 8, 9]:
 		var mines_n: int = int(R07_MINES[side])
 		var feas_n := 0
@@ -60,8 +72,13 @@ func _initialize() -> void:
 			var rng := RandomNumberGenerator.new()
 			rng.seed = 1000 + t
 			var mine_set := {}
-			while mine_set.size() < mines_n:
-				mine_set[Vector2i(rng.randi_range(0, side - 1), rng.randi_range(0, side - 1))] = true
+			if has_hidden:
+				# 隐藏态规则：place_mines 同时产出布雷与隐藏态（与生产路径一致）
+				for p in rule.call("place_mines", rng, side, side, mines_n):
+					mine_set[p] = true
+			else:
+				while mine_set.size() < mines_n:
+					mine_set[Vector2i(rng.randi_range(0, side - 1), rng.randi_range(0, side - 1))] = true
 			var active := {}
 			var revealed: Array = []
 			for r in side:
@@ -82,6 +99,9 @@ func _initialize() -> void:
 				"size": {"rows": side, "cols": side}, "total_mines": mines_n,
 				"mines": mines_arr, "seed": t, "revealed": revealed,
 			}
+			if has_hidden:
+				# 载盘复现：与生产落盘同契约（ProofLog→Board.load_level 读取后 import）
+				level["hidden_state"] = {clue_id: rule.call("export_hidden_state")}
 			var oracle := RuleOracle.new(rule, gs, Vector2i(side, side), mines_n, null)
 			if RuleCpSat.is_feasible(oracle.build_spec(active, [], {})):
 				feas_n += 1
