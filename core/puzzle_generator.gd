@@ -275,7 +275,7 @@ static func precheck_rules(clue_rule_id: String, global_rule_ids: Array, size: V
 ## 离线批量出关建议放宽（如 60s）以换取线索精简度；UI 交互场景用默认保证响应。
 ## target_difficulty（P0-A，默认 0=不限制）：>0 时删线索改为「难度驱动」——
 ## 删到难度画像 difficulty 达标即停（早停=提速），同档关卡难度可控（固定 timeout 下难度波动可达 3 倍）。
-func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vector2i, mine_count: int, seed: int, mask_count: int = 0, attempts: int = 50, topology: GridInterface = null, timeout_ms: int = 15_000, target_difficulty: float = 0.0) -> Dictionary:
+func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vector2i, mine_count: int, seed: int, mask_count: int = 0, attempts: int = 50, topology: GridInterface = null, timeout_ms: int = 15_000, target_difficulty: float = 0.0, mask_lo: int = 1, mask_strategy: int = 0) -> Dictionary:
 	var reg := RuleRegistry.default()
 	var clue_rule: Object = reg.resolve(StringName(clue_rule_id))
 	if clue_rule == null or clue_rule.get_kind() != RulePlugin.KIND_CLUE:
@@ -403,8 +403,12 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 	return {}
 
 
-## 从激活线索中选 mask_count 个「值 ≥1 且支持遮蔽」的格变成问号（interval [1, hi]）。
-func _select_masked_rules(clue_rule: Object, active: Dictionary, mask_count: int, size: Vector2i = Vector2i(0, 0)) -> Dictionary:
+## 从激活线索中选 mask_count 个「值 ≥1 且支持遮蔽」的格变成问号（interval [lo, hi]）。
+## v3.0 双旋钮（难度体系 v2）：
+##   · mask_lo：区间下界（默认 1 = 原「排除 0」语义；0 = 完全弱化该格信息）。
+##   · mask_strategy：选格策略——0=随机（原行为）/ 1=高值优先 / 2=低值优先（值=1 优先）。
+##     线索「值」是信息量的代理维度；策略效果以单算子（O5 实验台）probe 难度实测为准。
+func _select_masked_rules(clue_rule: Object, active: Dictionary, mask_count: int, size: Vector2i = Vector2i(0, 0), lo: int = 1, strategy: int = 0) -> Dictionary:
 	var masked := {}
 	if mask_count <= 0 or not clue_rule.supports_mask():
 		return masked
@@ -415,12 +419,21 @@ func _select_masked_rules(clue_rule: Object, active: Dictionary, mask_count: int
 			candidates.append(pos)
 	# 传真实盘面尺寸：此前固定传 (0,0)，按尺寸算上界的 mod 规则会拿到错误的 hi。
 	var hi: int = clue_rule.value_upper_bound(size)
+	if strategy == 1:
+		candidates.sort_custom(func(a, b): return int(active[a]) > int(active[b]))
+	elif strategy == 2:
+		candidates.sort_custom(func(a, b): return int(active[a]) < int(active[b]))
+	else:
+		# 随机策略：Fisher-Yates 洗牌（保持原行为——前 N 个即随机 N 个）
+		for i in candidates.size():
+			var j := _rng.randi_range(i, candidates.size() - 1)
+			var t := candidates[i]
+			candidates[i] = candidates[j]
+			candidates[j] = t
+	# lo 夹至 [0, hi]（lo == hi = 单点区间、无弱化，允许但无效果——由实测判定）
+	var lo_c := clampi(lo, 0, hi)
 	for i in mini(mask_count, candidates.size()):
-		var j := _rng.randi_range(i, candidates.size() - 1)
-		var t := candidates[i]
-		candidates[i] = candidates[j]
-		candidates[j] = t
-		masked[candidates[i]] = Vector2i(1, hi)
+		masked[candidates[i]] = Vector2i(lo_c, hi)
 	return masked
 
 
