@@ -238,6 +238,17 @@ dotnet build
 - **报告汇总**：`tools/report_merge.gd`（多分片报告合并；全库权威统计仍用 `batch_audit_r07.gd`）。
 - **UI**：不可行尺寸 tooltip 说明原因；生成中文案带按尺寸耗时预估。
 
+### 服务器部署流程（固化 checklist，2026-09-15）
+
+**工具**（`tools/` 下划线工具链的一员，Python 路径同「跑起来」节）：
+- `python tools/engine_sync_check.py` —— 一键核验本地 vs 服务器全量 md5（ENGINE/TOOLS/MODS 分级；退出码可入 CI）；
+- `python tools/bundle_sync_engine.py` —— 引擎文件打包一次推（全量 ~77 文件 157KB，1 分钟级）。
+
+**checklist（每次部署必跑全序列）**：
+① 本地测试全绿 → ② git commit → ③ 推改动文件（或 bundle）→ ④ **`engine_sync_check.py` 必须「一致 OK」** → ⑤ C# 有改动时 `dotnet build` → ⑥ 重启任务（断点续跑自动接续）→ ⑦ 日志验证（mod 加载 + 参数回显）。
+
+**为何固化**：「按需推文件」模式曾致 core/ 长期未同步（首次实战查出服务器 core/ 大面积停留 09-13/09-14 快照）——并直接造成「旧引擎把 C# 超时误报当不可行 → 强制格假通过 → 产出推不动的盘」事故（60 关，09-15 侦破修复）。
+
 ### 服务器全量生成（2026-09-13 启动，无人值守）
 
 **背景**：本地全量 5~10h 太慢，转腾讯云 CVM 跑（ins-0fwm81qf · 上海 · 2核2G · TencentOS 4 · 到期 2026-10-12）。
