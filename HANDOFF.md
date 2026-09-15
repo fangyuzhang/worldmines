@@ -416,6 +416,7 @@ ModAPI 关键方法：`load_mod` / `unload_mod`（含规则清理）/`scan_mods`
 15. `BruteForceOracle.count_solutions_classic` **不接受自定义 check 回调**（只支持内置 `constraint` 枚举）。需要自定义 check（如 wasm globalCheck）时必须改用 `count_solutions_variant`——否则 check 定义了却从未被调用，**静默失效**。
 16. **异形拓扑坐标必须非负**：CP-SAT 的 cell 索引是 `[0,rows)×[0,cols)`，负坐标会触发 `RuleSolver.FindForcedCells: Index was outside the bounds of the array`。Mod 可用任意坐标（含负），入口统一调用 `AdjacencyGrid.normalized()` 归一化。
 17. **GDScript 缩进 tab/空格不能混用**（Parse Error）。本项目 `ui/`、`core/` 主流是 **4 空格**；新增代码务必用空格，否则出现"看着对齐却编译不过"。
+18. **隐藏态规则载盘丢失（2026-09-15 夜侦破，重大）**：`Board.load_level` 不恢复规则隐藏态——o5x 斜向选择 s1 / o4 隐藏半径在 JSON 无字段（DT 骨牌有专用 `dominoes` 落盘先例；后引入的隐藏态规则缺对应机制）→ 载盘后 `_compute_clues` 用空/残留状态 → **线索数字全错** → 门禁推理踩雷、游戏内将显示错误数字。**「生成时复核通过」具欺骗性（同进程状态仍正确，灯下黑）**。判盘/复验先做 seed 重放恢复（`rng.seed=seed*1000003+attempt` → `place_mines`，实测 100% 匹配、恢复后 100% 可解）；修复方案（export/import 接口 + 落盘 + 存量补字段，DT 先例通用化）见桌面待办「零」节。
 
 > v2.9.3 已完成全量交叉验证，42 项发现中 24 项已修、2 项误报推翻、1 项回滚。
 > 完整清单见 GDD `25_HANDOFF交接文档.md` §13.1（已修复）/ §13.2（未修复，含重构级与需拍板项）。
