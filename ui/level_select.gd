@@ -11,12 +11,11 @@
 extends Control
 
 # ===== 常量 =====
-const LEVELS_PER_SET := 3       # 每套关卡数（每个变体/混合变体各生成 3 关）
+# 序列相关的常量统一托管在 LevelSequence（终局页要靠它算「下一关」，两处必须同源）。
+const LEVELS_PER_SET := LevelSequence.LEVELS_PER_SET   # 每套关卡数
+const SIZES: Array = LevelSequence.SIZES
 const PAGE_SIZE := 20           # 一页最多 20 关
 const GRID_COLS := 5            # 网格 5 列
-const SIZES: Array = [5, 6, 7, 8, 9]
-## 每尺寸雷数（约 40% 密度：10/25=40%、14/36=38.9%、20/49=40.8%、26/64=40.6%、32/81=39.5%）。
-const MINE_COUNTS := {5: 10, 6: 14, 7: 20, 8: 26, 9: 32}
 ## 删线索阶段墙钟上限（ms），按尺寸分档。实测：≤7×7 用 3s 即可删到最优（4~10 线索）；
 ## 8×8 是瓶颈（3s→22 线索、4s→19、60s→9，收益递减）——3s 保证交互响应，线索略多但可接受；
 ## 9×9 单关 CP-SAT 约 6~12s（32 雷），3s 必超时失败，故单列 15s（GDD 03 号 8×8≤10s 之外）。
@@ -64,7 +63,10 @@ const MODES: Array = [
 	{"id": "dt", "name": "骨牌", "kind": "global", "clue": "classic", "globals": ["dt"], "tip": "G5"},
 	{"id": "ep", "name": "端点", "kind": "global", "clue": "classic", "globals": ["ep"], "tip": "G6"},
 	{"id": "4c", "name": "守恒", "kind": "global", "clue": "classic", "globals": ["4c"], "tip": "G7"},
-	# ---- 混合组合档（G+C，GDD 3.1.1 第 1 档）：暂不开放关卡 ----
+	# ---- 混合组合档（G+C，GDD 3.1.1 第 1 档）：已开放 ----
+	# 注：早期版本这里标注「暂不开放」且依赖 MODES[i]["enabled"]=false 禁用，
+	# 但实际条目里从未写过 enabled 字段 ⇒ 取默认值 true，一直是开放状态。
+	# 注释与代码取其一：以代码现状为准（开放），注释同步更正，避免后来者误判。
 	# parents = [父 G 类 id, 父 C 类 id]。刻意让 Gi+Ci 同序号配对，
 	# 这样每条枝干上「中心 → C_i → 混合_i → G_i」四点共线，图谱不交叉。
 	{"id": "mx_4n", "name": "镜像·四邻", "kind": "mixed", "clue": "4n", "globals": ["mx"], "parents": ["mx", "4n"], "tip": "G1+C1"},
@@ -99,12 +101,50 @@ var _title_label: Label = null
 
 var _scroll_accum := 0.0
 
+## 弹窗关闭动画期间禁止重开（原实现把 _overlay 立刻置 null，
+## 动画的 0.22s 内再点节点就会叠出第二个弹窗）。
+var _popup_closing := false
+
+## 演示用「已通关」记录。**只在本次进程内有效、不落盘**。
+## 历史 bug：这些记录原先直接写进真实的 ProgressStore（user://progress.json），
+## 于是首次进入任何变体×尺寸都会永久留下一条「20.00 秒通关」的假数据，
+## 还会连带解锁下一关——演示脚手架污染了玩家存档。
+static var _mock_cleared: Dictionary = {}
+
 
 func _ready() -> void:
 	add_to_group("themed")
 	ThemeManager.theme_changed.connect(_on_theme_changed)
 	resized.connect(_layout_nodes)
 	_build_graph()
+	_consume_pending_focus()
+
+
+## 终局页「下一关」交接过来的意图：直接展开对应变体×尺寸的关卡弹窗。
+## 选关页默认就会把选中项定位到「最新解锁关卡」，所以玩家看到的就是下一关已被选中。
+func _consume_pending_focus() -> void:
+	var focus: Dictionary = LevelSequence.take_focus()
+	if focus.is_empty():
+		return
+	var mode_id := str(focus.get("mode", ""))
+	var want_size := int(focus.get("size", 0))
+	for i in MODES.size():
+		if str(MODES[i]["id"]) != mode_id:
+			continue
+		var size_i: int = SIZES.find(want_size)
+		_open_popup(i)
+		if size_i >= 0:
+			_size_idx = size_i
+			_ensure_mock()
+			_refresh_popup()
+		return
+
+
+## 通关判定：真实存档 + 进程内演示记录。
+func _is_cleared(key: String) -> bool:
+	if bool(_mock_cleared.get(key, false)):
+		return true
+	return ProgressStore.is_cleared(key)
 
 
 # ==================== 主界面：网状节点图 ====================
@@ -269,7 +309,7 @@ func _draw() -> void:
 # ==================== 弹窗 ====================
 
 func _open_popup(mode_idx: int) -> void:
-	if _overlay != null:
+	if _overlay != null or _popup_closing:
 		return
 	_mode_idx = mode_idx
 	_size_idx = 0
@@ -446,14 +486,17 @@ func _build_right(parent: Node) -> void:
 
 
 func _close_popup() -> void:
-	if _overlay == null:
+	if _overlay == null or _popup_closing:
 		return
 	var ov := _overlay
+	_popup_closing = true
 	_overlay = null
 	var tw := create_tween().set_parallel(true)
 	tw.tween_property(_popup, "scale", Vector2(0.92, 0.92), ANIM)
 	tw.tween_property(_popup, "modulate:a", 0.0, ANIM)
-	tw.chain().tween_callback(ov.queue_free)
+	tw.chain().tween_callback(func():
+		ov.queue_free()
+		_popup_closing = false)
 	_size_btns.clear()
 	_mode_idx = -1
 
@@ -489,7 +532,8 @@ func _refresh_popup() -> void:
 		var ok := _mode_feasible(m, SIZES[i])
 		_size_btns[i].disabled = not ok
 		_size_btns[i].tooltip_text = "" if ok else \
-			"该变体在 %d×%d（%d 雷）下数学上无解——请换尺寸或换变体" % [SIZES[i], SIZES[i], int(MINE_COUNTS.get(SIZES[i], 0))]
+			"该变体在 %d×%d（%d 雷）下数学上无解——请换尺寸或换变体" % [
+					SIZES[i], SIZES[i], LevelSequence.mine_count(SIZES[i])]
 	_style_frame()
 
 	# 分页：定位到「最新解锁关卡」所在页（切换尺寸时重置）
@@ -527,7 +571,7 @@ func _make_tile(idx: int) -> Button:
 	btn.custom_minimum_size = TILE
 	btn.focus_mode = Control.FOCUS_NONE
 	var unlocked := _is_unlocked(idx)
-	var cleared := ProgressStore.is_cleared(_level_key(idx))
+	var cleared := _is_cleared(_level_key(idx))
 	btn.text = str(idx + 1)
 	if cleared:
 		btn.text += "  ✓"
@@ -557,7 +601,7 @@ func _rebuild_dots() -> void:
 func _refresh_stat() -> void:
 	var cleared := 0
 	for i in LEVELS_PER_SET:
-		if ProgressStore.is_cleared(_level_key(i)):
+		if _is_cleared(_level_key(i)):
 			cleared += 1
 	_stat_label.text = "已通关 %d / %d" % [cleared, LEVELS_PER_SET]
 	# 按钮：选中最新解锁关卡 → 继续游戏；手选其他 → 开始游戏；未开放变体 → 禁用
@@ -597,7 +641,7 @@ func _on_tile_pressed(idx: int) -> void:
 	for c in _grid.get_children():
 		if c is Button:
 			var i := int(c.get_meta("idx", -1))
-			_style_tile(c, i == _selected, ProgressStore.is_cleared(_level_key(i)))
+			_style_tile(c, i == _selected, _is_cleared(_level_key(i)))
 	_refresh_stat()
 
 
@@ -625,15 +669,14 @@ func _page_count() -> int:
 
 
 func _mine_count() -> int:
-	# 每尺寸固定雷数（约 40% 密度，见 MINE_COUNTS）；未列出的尺寸回退 40%。
-	var s: int = SIZES[_size_idx]
-	return maxi(1, int(MINE_COUNTS.get(s, int(float(s * s) * 0.4))))
+	# 每尺寸固定雷数（约 40% 密度，见 LevelSequence.MINE_COUNTS）；未列出的尺寸回退 40%。
+	return LevelSequence.mine_count(SIZES[_size_idx])
 
 
 ## 最新解锁关卡：第一个未通关的关卡；全部通关则为最后一关。
 func _latest_unlocked() -> int:
 	for i in LEVELS_PER_SET:
-		if not ProgressStore.is_cleared(_level_key(i)):
+		if not _is_cleared(_level_key(i)):
 			return i
 	return LEVELS_PER_SET - 1
 
@@ -641,21 +684,27 @@ func _latest_unlocked() -> int:
 func _is_unlocked(idx: int) -> bool:
 	if idx == 0:
 		return true
-	return ProgressStore.is_cleared(_level_key(idx - 1))
+	return _is_cleared(_level_key(idx - 1))
 
 
-## 模拟存档：首次进入某套时预置前 MOCK_CLEARED 关为已通关（便于演示解锁/继续流程）。
+## 演示预设：首次进入某套时预置前 MOCK_CLEARED 关为「已通关」（便于演示解锁/继续流程）。
+## **只写内存字典，不落盘**——写进 ProgressStore 等于往玩家真存档里塞假成绩。
 func _ensure_mock() -> void:
 	if _mode_idx < 0:
 		return
 	for i in LEVELS_PER_SET:
-		if ProgressStore.is_cleared(_level_key(i)):
+		if _is_cleared(_level_key(i)):
 			return
 	for i in mini(MOCK_CLEARED, LEVELS_PER_SET):
-		ProgressStore.record_clear(_level_key(i), 20.0 + float(i) * 3.0)
+		_mock_cleared[_level_key(i)] = true
 
 
 # ==================== 进入对局 ====================
+
+## 生成尝试总数（与原 generate_with_rules(attempts=50) 口径一致）。
+const GEN_ATTEMPTS := 50
+var _gen_cancel := false
+
 
 func _on_play() -> void:
 	if _play_btn == null or _mode_idx < 0:
@@ -670,56 +719,120 @@ func _on_play() -> void:
 	if not pre["ok"]:
 		_play_btn.disabled = false
 		_refresh_stat()
-		_toast(str(pre["reason"]))
+		UiToast.popup(self, str(pre["reason"]))
 		return
-	# 2) 组合可行，进入生成（仍可能换 seed 尝试，但不会对 UNSAT 组合白跑）。
-	#    生成是同步阻塞的单次调用（CP-SAT 全管线），无法中途刷新进度——给出按尺寸的
-	#    诚实预估，避免玩家以为卡死（9×9 单关实测 ~9~15s）。
-	_play_btn.text = "生成中…（预计约 %d 秒）" % _estimate_gen_seconds(s)
-	await get_tree().process_frame
-	var path := _ensure_level_file(_selected)
+	# 2) 组合可行，进入生成。
+	#    生成是同步阻塞的（CP-SAT 全管线单次调用不可中断），原先只能干等到它跑完——
+	#    现在把重试循环提到 UI 层：每次 attempt 之间让出一帧，界面可响应「取消」。
+	var path := await _ensure_level_file_async(_selected)
 	if path == "":
 		_play_btn.disabled = false
 		_refresh_stat()
-		_toast("该组合可行，但本关未能生成序贯可解布局，请换一关或换尺寸")
+		UiToast.popup(self, "已取消生成" if _gen_cancel else \
+				"该组合可行，但本关未能生成序贯可解布局，请换一关或换尺寸")
 		return
 	if GameSession.start_level(path):
 		get_tree().change_scene_to_file("res://ui/board_view.tscn")
 	else:
 		_play_btn.disabled = false
 		_refresh_stat()
-		_toast("关卡加载失败")
+		UiToast.popup(self, "关卡加载失败")
 
 
 ## 生成并缓存关卡文件（已存在则直接复用，避免重复生成）。
-func _ensure_level_file(idx: int) -> String:
-	var dir := "user://gen_levels"
-	DirAccess.make_dir_recursive_absolute(dir)
+## 异步版：attempt 之间让帧 + 可被玩家取消。
+func _ensure_level_file_async(idx: int) -> String:
 	var m: Dictionary = MODES[_mode_idx]
+	var s: int = SIZES[_size_idx]
 	# 兜底防御（正常已被 _refresh_popup 的尺寸禁用拦下）：数学不可行组合直接拦截，
 	# 不进入生成器白耗 50 次 attempt（每次都会 UNSAT 返回空）。
-	if not _mode_feasible(m, SIZES[_size_idx]):
+	if not _mode_feasible(m, s):
 		push_warning("关卡选择：变体 %s 在 %d×%d（R07 雷数）下数学不可行，已拦截生成" % [
-			str(m["id"]), SIZES[_size_idx], SIZES[_size_idx]])
+			str(m["id"]), s, s])
 		return ""
-	var path := "%s/%s_%d_%d.json" % [dir, m["id"], SIZES[_size_idx], idx]
+	var path := LevelSequence.level_path(str(m["id"]), s, idx)
 	if FileAccess.file_exists(path):
 		return path
-	var s: int = SIZES[_size_idx]
+
+	DirAccess.make_dir_recursive_absolute(LevelSequence.GEN_DIR)
+	var dlg := _open_gen_dialog(s)
+	var deadline := Time.get_ticks_msec() + _gen_timeout(s)
 	var gen := PuzzleGenerator.new()
-	var level: Dictionary = gen.generate_with_rules(
-		String(m["clue"]), m["globals"], Vector2i(s, s), _mine_count(), _level_seed(idx),
-		0, 50, null, _gen_timeout(s))
-	if level.is_empty():
-		return ""
-	# 记录生成参数，便于追溯复现
-	level["gen"] = {"mode": m["id"], "size": s, "index": idx, "seed": _level_seed(idx)}
-	var f := FileAccess.open(path, FileAccess.WRITE)
-	if f == null:
-		return ""
-	f.store_string(JSON.stringify(level, "  "))
-	f.close()
-	return path
+	var out := ""
+	var started_ms := Time.get_ticks_msec()
+	for attempt in GEN_ATTEMPTS:
+		await get_tree().process_frame
+		if _gen_cancel:
+			break
+		var used_sec: int = (Time.get_ticks_msec() - started_ms) / 1000
+		dlg.get_meta("sub").text = "已用时 %d 秒（上限 %d 秒）" % [used_sec, _gen_timeout(s) / 1000]
+		var remain: int = deadline - Time.get_ticks_msec()
+		if remain <= 0:
+			break
+		# 单次 attempt + 外层换种子：首尝试的种子派生与原来完全一致
+		# （内部 attempts=1 ⇒ _derive_seed(seed, 0)），保证既有关卡文件复现语义不变。
+		var level: Dictionary = gen.generate_with_rules(
+			String(m["clue"]), m["globals"], Vector2i(s, s), _mine_count(),
+			_level_seed(idx) + attempt, 0, 1, null, remain)
+		if level.is_empty():
+			continue
+		# 记录生成参数，便于追溯复现
+		level["gen"] = {"mode": m["id"], "size": s, "index": idx, "seed": _level_seed(idx)}
+		var f := FileAccess.open(path, FileAccess.WRITE)
+		if f == null:
+			break
+		f.store_string(JSON.stringify(level, "  "))
+		f.close()
+		out = path
+		break
+	_close_gen_dialog(dlg)
+	_gen_cancel = false
+	return out
+
+
+## 生成进度弹窗：明确告诉玩家「程序在忙」，并给取消出口。
+func _open_gen_dialog(size: int) -> PopupPanel:
+	_gen_cancel = false
+	var dlg := PopupPanel.new()
+	dlg.exclusive = true
+	var panel := PanelContainer.new()
+	dlg.add_child(panel)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 14)
+	vb.custom_minimum_size = Vector2(320, 0)
+	panel.add_child(vb)
+
+	var title := Label.new()
+	title.text = "正在生成 %d×%d 关卡" % [size, size]
+	title.add_theme_font_size_override("font_size", 22)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vb.add_child(title)
+
+	var sub := Label.new()
+	sub.add_theme_font_size_override("font_size", 16)
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub.text = "大概需要 %d 秒，复杂变体会更久" % _estimate_gen_seconds(size)
+	vb.add_child(sub)
+
+	var cancel := Button.new()
+	cancel.text = "取消"
+	cancel.focus_mode = Control.FOCUS_NONE
+	cancel.custom_minimum_size = Vector2(0, 44)
+	cancel.pressed.connect(func():
+		_gen_cancel = true
+		dlg.hide())
+	vb.add_child(cancel)
+
+	dlg.set_meta("sub", sub)
+	add_child(dlg)
+	dlg.hide()   # Window 默认 visible=true
+	dlg.popup_centered()
+	return dlg
+
+
+func _close_gen_dialog(dlg: PopupPanel) -> void:
+	if dlg != null and is_instance_valid(dlg):
+		dlg.queue_free()
 
 
 # ==================== 滚轮翻页 ====================
@@ -886,21 +999,4 @@ func _on_theme_changed() -> void:
 
 
 # ==================== 杂项 ====================
-
-func _toast(msg: String) -> void:
-	var lb := Label.new()
-	lb.text = msg
-	lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lb.add_theme_font_size_override("font_size", 18)
-	lb.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	lb.offset_top = -56
-	lb.custom_minimum_size = Vector2(0, 32)
-	add_child(lb)
-	lb.add_theme_color_override("font_color", ThemeManager.danger())
-	var timer := Timer.new()
-	timer.wait_time = 2.0
-	timer.one_shot = true
-	timer.timeout.connect(lb.queue_free)
-	timer.timeout.connect(timer.queue_free)
-	add_child(timer)
-	timer.start()
+# toast 统一走 UiToast（原先此处与 main_menu 各实现了一份完全相同的 Label+Timer）。

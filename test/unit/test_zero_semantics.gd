@@ -23,6 +23,28 @@ func test_ring_variants_zero_means_eight_neighbors_safe() -> void:
 		assert_eq(ClueEngine.zero_safe_dirs(v, 1).size(), 0, "变体 %d 的值 1 不应扩散" % v)
 
 
+func test_loopruns_full_ring_is_one_not_zero() -> void:
+	# v3.x 零值修复的可执行规格：全雷环必须 = 1（一整段），不得 = 0。
+	# 旧 bug：全雷环无 0→1 上升沿 → 返回 0 → zero_safe_dirs 误判「八邻全安全」，
+	# 把全雷邻域整体清空（红线级：违反 R01 插件契约）。
+	var mines := {}
+	for x in 3:
+		for y in 3:
+			if not (x == 1 and y == 1):
+				mines[Vector2i(x, y)] = true
+	var gsize := Vector2i(3, 3)
+	var center := Vector2i(1, 1)
+	assert_eq(ClueEngine._loop_runs_value(mines, center, gsize), 1,
+		"全雷环应返回 1（一整段），不得返回 0")
+	var val: Variant = ClueEngine.compute(V.LOOP_RUNS, mines, center, gsize)
+	assert_eq(int(val), 1, "compute 路径全雷环应返回 1")
+	assert_eq(ClueEngine.zero_safe_dirs(V.LOOP_RUNS, val).size(), 0,
+		"全雷环的线索值（1）不得触发任何零值扩散")
+	# 空环 → 0 → 可扩散（契约正向仍成立）
+	assert_eq(ClueEngine._loop_runs_value({}, center, gsize), 0, "空环应返回 0")
+	assert_eq(_dir_set(V.LOOP_RUNS, 0).size(), 8, "修复后值 0 仍应扩散 8 邻")
+
+
 func test_4n_and_sc_use_their_own_windows() -> void:
 	assert_eq(_dir_set(V.N4, 0).size(), 4, "4N 的值 0 应只扩散 4 个正交邻")
 	assert_eq(_dir_set(V.SAME_COLOR, 0).size(), 4, "SC 的值 0 应只扩散 4 个对角邻")

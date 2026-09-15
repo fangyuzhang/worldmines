@@ -159,6 +159,50 @@ func reveal(pos: Vector2i) -> void:
         _maybe_auto_ultimate_hint()
 
 
+## 一键展开（chord，市面扫雷标配，本作此前缺失）：
+## 在**已翻开的数字格**上，若邻域已插旗数 == 该格线索值，则翻开其余未翻开的邻格。
+##
+## 设计取舍：
+##   · 只接受**整数值**线索（HV 返回分量对、FR 返回 "inf"）→ 语义不明时拒绝，绝不猜；
+##   · 每一格仍走 reveal() 统一入口 → 无猜-专家档的「推不出来就拒绝」、
+##     音效、自动存档、终局判定全部复用同一套逻辑，不引入第二条路径；
+##   · 旗插错时按标准扫雷语义处理（翻开即可能踩雷）——错旗是玩家的判断，不是系统的猜测，
+##     不违反 R01（R01 约束的是关卡本身序贯可解，不是玩家操作）。
+## 返回实际翻开的格数（0 = 条件不满足）。
+func chord(pos: Vector2i) -> int:
+    if state != State.PLAYING or board == null or board.grid == null:
+        return 0
+    if not board.grid.in_board(pos):
+        return 0
+    var cell: Cell = board.grid.get_cell(pos)
+    if cell == null or cell.state != Cell.State.REVEALED:
+        return 0
+    if not (cell.value is int):
+        return 0
+    var need: int = int(cell.value)
+    var flagged := 0
+    var targets: Array[Vector2i] = []
+    for p in board.grid.get_neighbors(pos):
+        var c: Cell = board.grid.get_cell(p)
+        if c == null:
+            continue
+        if c.state == Cell.State.FLAGGED:
+            flagged += 1
+        elif c.state == Cell.State.HIDDEN:
+            targets.append(p)
+    if flagged != need or targets.is_empty():
+        return 0
+    var opened := 0
+    for p in targets:
+        reveal(p)
+        var c2: Cell = board.grid.get_cell(p)
+        if c2 != null and c2.state == Cell.State.REVEALED:
+            opened += 1
+        if board.state != Board.GameState.PLAYING:
+            break  # 已终局（踩雷/胜利）立即停手
+    return opened
+
+
 func toggle_flag(pos: Vector2i) -> void:
     if state != State.PLAYING or board == null:
         return
@@ -242,11 +286,13 @@ func _hint_budget_cap() -> int:
             return -1
 
 
-## 提示是否已充满（未开启充能时恒为 true）。
-func hint_charged() -> bool:
+## 提示充能进度 0.0~1.0（未开启充能时恒为 1.0）。
+## 全项目唯一的充能口径入口：HUD 用它显示百分比、%>=100 判定「已充满」。
+## （原先并存的 hint_charged() 是无调用者的死代码，已删除——两个同义 API 只会各自漂移。）
+func hint_charge_ratio() -> float:
     if not SettingsManager.hint_charge:
-        return true
-    return hint_charge_left >= HINT_CHARGE_SEC
+        return 1.0
+    return clampf(hint_charge_left / HINT_CHARGE_SEC, 0.0, 1.0)
 
 
 # ============ 无猜模式（对标游戏 doc10 §2；红线兼容实现） ============

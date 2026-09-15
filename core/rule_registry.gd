@@ -664,7 +664,26 @@ class LoopRunsRule:
 			b.add_imp(ri, cur)                            # ri → cur==1
 			b.add_imp(ri, b.not_lit(prev))                # ri → prev==0
 			b.add_bool_or([b.not_lit(cur), prev, ri])     # (cur==1 ∧ prev==0) → ri
-		b.add_eq(b.sum(runs), int(value))
+		# v3.x 零值修复对齐（与 ClueEngine._loop_runs_value 同步）：
+		# runs[i] ⟺ cur_i ∧ ¬prev_i 已由上方约束钉死，故 Σruns 由格状态唯一决定。
+		# 全雷环没有 0→1 上升沿（Σruns=0）但语义值 = 1，按值分支编码：
+		#   值 0 ⟺ 空环：Σruns == 0，且至少一格非雷（排除全雷环）；
+		#   值 1 ⟺ 恰一段 或 全雷环：Σruns ≤ 1（段起点两两互斥）且至少一格雷；
+		#   值 ≥ 2：Σruns == value（空环 / 全雷环自动排除）。
+		var v := int(value)
+		if v == 0:
+			b.add_eq(b.sum(runs), 0)
+			var not_mine: Array = []
+			for c in cells:
+				not_mine.append(b.not_lit(c))
+			b.add_bool_or(not_mine)
+		elif v == 1:
+			for i in runs.size():
+				for j in range(i + 1, runs.size()):
+					b.add_bool_or([b.not_lit(runs[i]), b.not_lit(runs[j])])
+			b.add_bool_or(cells.duplicate())
+		else:
+			b.add_eq(b.sum(runs), v)
 
 	func zero_safe_neighbors(pos: Vector2i, grid_size: Vector2i, value: Variant = null) -> Array[Vector2i]:
 		if value != 0:

@@ -138,13 +138,8 @@ func _on_clear() -> void:
 	if _drawing == null:
 		return
 	if _drawing.strokes.size() > 10:
-		var dlg := ConfirmationDialog.new()
-		dlg.dialog_text = "确定清除全部绘画吗？此操作可撤销。"
-		dlg.ok_button_text = "清除"
-		dlg.cancel_button_text = "取消"
-		dlg.confirmed.connect(_drawing.clear_all)
-		add_child(dlg)
-		dlg.popup_centered()
+		UiConfirm.ask(self, "确定清除全部绘画吗？此操作可撤销。", "清除", "取消",
+				_drawing.clear_all)
 	else:
 		_drawing.clear_all()
 

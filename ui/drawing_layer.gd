@@ -1,6 +1,9 @@
 # drawing_layer.gd —— 绘画覆盖层（永久保留核心辅助功能，模仿《14 种扫雷变体 2》）
 # 纯视觉层：不参与判负/线索/胜利/提示等任何游戏逻辑（红线 2）。
-# 坐标 = 本层本地坐标（全屏覆盖 board_view，即屏幕坐标；默认不跟随棋盘缩放）。
+# 坐标 = **棋盘坐标**（不是屏幕坐标）：由 board_view 注入一对换算函数。
+#   历史 bug：笔迹原先直接存屏幕坐标，改一次窗口大小（cell_px / board_origin 随之重算）
+#   笔记就和格子全部错位，换分辨率读档同理。改棋存盘后 Series 缩放天然跟随棋盘。
+#   未注入换算函数时退化为「屏幕坐标 == 棋盘坐标」（保持既有行为，也便于单测独立实例化）。
 # 事件拦截：绘画模式 ON → MOUSE_FILTER_STOP（拦鼠标）；OFF → IGNORE（仅显示）。
 # 数据独立存储：SaveData.metadata["drawing"]，恢复时一并还原；重开清空；撤销独立（红线 3/6）。
 class_name DrawingLayer
@@ -21,6 +24,28 @@ const SIZES: Array[int] = [2, 4, 6]
 
 const COLOR_COUNT := 7      # 0(主题) + 6 预设
 const UNDO_LIMIT := 50
+
+## 存档格式版本。
+##   v1（无 v 字段）= 屏幕坐标 —— 棋盘坐标改造后无法对齐；
+##   v2 = 棋盘坐标（随棋盘缩放/换分辨率，当前格式）。
+## 为什么要显式写版本号：v1 笔迹在新格式下会整体错位，而**错位笔记比没有笔记更危险**
+## （玩家会照着错误位置推理）。宁可丢弃旧笔记并明确告知。
+const SAVE_VERSION := 2
+
+## 采样节流：与上一个采样点的屏幕距离小于该值则不入笔。
+## 鼠标/触控可以以 kHz 频率发 motion 事件，不节流会攒出上万个点，
+## 而 _draw() 是逐连线 + 逐点画圆，直接决定每帧开销。
+const MIN_SAMPLE_DIST := 2.5
+
+## 棋盘坐标换算钩子（board_view 注入）。空 Callable = 不透换（屏幕坐标即棋盘坐标）。
+var board_to_screen := Callable()
+var screen_to_board := Callable()
+
+## 本次擦除拖拽的标记 id：替代原先的 _erased_refs 数组（Array.has 是 O(n)，
+## 且 strokes 里的笔画不能用 Dictionary 键做成员判断——内容相同的两笔会哈希碰撞）。
+var _erase_batch_id := 0
+## 擦除时的笔画包围盒缓存（按 strokes 下标），用于快速排除远离光标的笔画。
+var _bounds: Array = []
 
 ## 非绘画模式（草稿态）的淡化系数：退出绘画后痕迹仍在，但压暗以不干扰读盘
 const DIM_FACTOR := 0.55
@@ -45,7 +70,6 @@ enum _Mode { NONE, DRAW, ERASE }
 var _mode: int = _Mode.NONE
 var _active_stroke: Dictionary = {}
 var _erase_batch: Array = []       # 本次擦除累积的撤销条目
-var _erased_refs: Array = []       # 本次擦除已处理过的笔画（去重）
 
 
 func _ready() -> void:
@@ -131,7 +155,7 @@ func _gui_input(event: InputEvent) -> void:
 		if (left or right) and event.pressed:
 			if right or is_erasing:
 				_start_erase()
-				_erase_at(event.position)
+				_erase_at(_to_board(event.position))
 			else:
 				_start_draw(event.position)
 			accept_event()
@@ -144,17 +168,38 @@ func _gui_input(event: InputEvent) -> void:
 			accept_event()
 	elif event is InputEventMouseMotion:
 		if _mode == _Mode.DRAW and not _active_stroke.is_empty():
-			_active_stroke["points"].append(event.position)
-			queue_redraw()
+			var pts: PackedVector2Array = _active_stroke["points"]
+			var last: Vector2 = _to_screen(pts[pts.size() - 1])
+			# 采样节流：够远才记点（屏幕距离比较，与坐标系换算出耦）
+			if (event.position - last).length() >= MIN_SAMPLE_DIST:
+				pts.append(_to_board(event.position))
+				queue_redraw()
 		elif _mode == _Mode.ERASE:
-			_erase_at(event.position)
+			_erase_at(_to_board(event.position))
 		accept_event()
+
+
+## 屏幕坐标 → 棋盘坐标（未注入换算时透传）。
+func _to_board(p: Vector2) -> Vector2:
+	return screen_to_board.call(p) if screen_to_board.is_valid() else p
+
+
+## 棋盘坐标 → 屏幕坐标（未注入换算时透传）。
+func _to_screen(p: Vector2) -> Vector2:
+	return board_to_screen.call(p) if board_to_screen.is_valid() else p
+
+
+## 注入棋盘换算（board_view 调用；闭包内部读的是 board_view 的实时字段，布局变化无需重新注入）。
+func set_board_transform(b2s: Callable, s2b: Callable) -> void:
+	board_to_screen = b2s
+	screen_to_board = s2b
+	queue_redraw()
 
 
 func _start_draw(pos: Vector2) -> void:
 	_mode = _Mode.DRAW
 	_active_stroke = {
-		"points": PackedVector2Array([pos]),
+		"points": PackedVector2Array([_to_board(pos)]),
 		"color": color_of(current_color),
 		"size": SIZES[current_size],
 		"is_eraser": false,
@@ -174,7 +219,8 @@ func _finish_draw() -> void:
 func _start_erase() -> void:
 	_mode = _Mode.ERASE
 	_erase_batch = []
-	_erased_refs = []
+	_erase_batch_id += 1
+	_rebuild_bounds()
 
 
 func _erase_at(pos: Vector2) -> void:
@@ -184,27 +230,63 @@ func _erase_at(pos: Vector2) -> void:
 		_erase_partial_at(pos)
 
 
+## 擦除半径（**棋盘单位**）。有换算时把屏幕上的固定像素半径折算到棋盘空间，
+## 保证缩放棋盘后橡皮的视觉大小不变。
 func _erase_radius() -> float:
-	return float(SIZES[current_size]) * 2.0
+	var r: float = float(SIZES[current_size]) * 2.0
+	if screen_to_board.is_valid():
+		var zero: Vector2 = screen_to_board.call(Vector2.ZERO)
+		var one: Vector2 = screen_to_board.call(Vector2(r, 0.0))
+		return maxf((one - zero).x, 0.0001)
+	return r
+
+
+## 是否已处理过该笔画（本次拖拽内）。用笔画字典内的临时字段，O(1)。
+func _tagged(s: Dictionary) -> bool:
+	return int(s.get("_erase_tag", -1)) == _erase_batch_id
+
+
+func _tag(s: Dictionary) -> void:
+	s["_erase_tag"] = _erase_batch_id
+
+
+## 重建笔画包围盒（每次拖拽开始时算一次即可，取代原先逐点全扫描）。
+func _rebuild_bounds() -> void:
+	_bounds.clear()
+	for s in strokes:
+		var pts: PackedVector2Array = s["points"]
+		if pts.is_empty():
+			_bounds.append(Rect2())
+			continue
+		var r := Rect2(pts[0], Vector2.ZERO)
+		for p in pts:
+			r = r.expand(p as Vector2)
+		_bounds.append(r)
 
 
 ## 整条擦除：命中半径即删除整笔（可撤销）
 func _erase_whole_at(pos: Vector2) -> void:
 	var radius := _erase_radius()
 	var removed: Array = []
-	for s in strokes:
-		if _erased_refs.has(s):
+	# 先用包围盒快速排掉远离光标的笔画（只有命中的候选才逐点判定）
+	for i in strokes.size():
+		var s: Dictionary = strokes[i]
+		if _tagged(s) or (s["points"] as PackedVector2Array).is_empty():
+			continue
+		var b: Rect2 = _bounds[i] if i < _bounds.size() else Rect2(pos, Vector2.ZERO)
+		if not b.grow(radius).has_point(pos):
 			continue
 		for p in s["points"]:
 			if (p as Vector2).distance_to(pos) <= radius:
+				_tag(s)
 				removed.append(s)
-				_erased_refs.append(s)
 				break
 	if removed.is_empty():
 		return
 	for s in removed:
 		strokes.erase(s)
 	_erase_batch.append({"op": "remove", "strokes": removed})
+	_rebuild_bounds()  # 下标缓存随笔画集合变化失效
 	queue_redraw()
 
 
@@ -213,12 +295,12 @@ func _erase_partial_at(pos: Vector2) -> void:
 	var radius := _erase_radius()
 	var touched: Array = []
 	for s in strokes:
-		if _erased_refs.has(s):
+		if _tagged(s):
 			continue
 		for p in s["points"]:
 			if (p as Vector2).distance_to(pos) <= radius:
+				_tag(s)
 				touched.append(s)
-				_erased_refs.append(s)
 				break
 	if touched.is_empty():
 		return
@@ -259,7 +341,6 @@ func _finish_erase() -> void:
 		_push_undo({"op": "batch", "entries": _erase_batch.duplicate()})
 		_redo_stack.clear()
 	_erase_batch = []
-	_erased_refs = []
 	queue_redraw()
 
 
@@ -362,14 +443,20 @@ func has_strokes() -> bool:
 
 func _draw() -> void:
 	for s in strokes:
-		var pts: PackedVector2Array = s["points"]
 		var col: Color = s["color"]
 		var w: int = int(s["size"])
-		if pts.is_empty():
+		var raw: PackedVector2Array = s["points"]
+		if raw.is_empty():
 			continue
+		# 笔迹以棋盘坐标存储，绘制前换算回屏幕（棋盘缩放/平移由此自动跟随）
+		var pts := PackedVector2Array()
+		for p in raw:
+			pts.append(_to_screen(p))
 		if pts.size() == 1:
 			draw_circle(pts[0], w * 0.5, col)
 		else:
+			# 连线 + 关节圆点。采样节流后点数已大幅下降，这里不再额外抽稀，
+			# 否则快速书写的笔画会出现明显的折线感。
 			draw_polyline(pts, col, float(w), true)
 			for p in pts:
 				draw_circle(p, w * 0.5, col)
@@ -390,15 +477,30 @@ func get_save_data() -> Dictionary:
 			"is_eraser": bool(s.get("is_eraser", false)),
 		})
 	return {
+		"v": SAVE_VERSION,
 		"strokes": out,
 		"current_color": current_color,
 		"current_size": current_size,
 	}
 
 
+## 上次 load_save_data 是否因「旧版（v1 屏幕坐标）」而丢弃了笔迹。
+## 供 UI 层给出明确提示，避免玩家以为笔迹凭空消失。
+var _legacy_discarded := false
+
+
+func legacy_discarded() -> bool:
+	return _legacy_discarded
+
+
 func load_save_data(data: Dictionary) -> void:
 	clear_strokes()
+	_legacy_discarded = false
 	if data.is_empty():
+		return
+	if int(data.get("v", 1)) < SAVE_VERSION:
+		_legacy_discarded = true
+		changed.emit()
 		return
 	for sd in data.get("strokes", []):
 		var pts := PackedVector2Array()

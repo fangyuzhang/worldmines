@@ -16,6 +16,7 @@ var _panel: PanelContainer
 func _ready() -> void:
     add_to_group("themed")
     ThemeManager.theme_changed.connect(_on_theme_changed)
+    exclusive = true  # 对局内设置：避免点击穿透到棋盘，也让 board_view 能识别「有弹窗」
     _build_ui()
 
 

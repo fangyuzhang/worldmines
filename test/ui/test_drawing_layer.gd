@@ -150,6 +150,51 @@ func test_d11_partial_erase_redo() -> void:
 	assert_eq(_layer.strokes.size(), 2, "重做后应回到两段")
 
 
+# D13：笔迹以「棋盘坐标」存储 —— 窗口缩放/换分辨率后笔记跟着棋盘走
+# （历史 bug：原先存屏幕坐标，改一次窗口大小所有笔记就与格子错位）
+func test_d13_board_coords_follow_transform() -> void:
+	_layer.set_board_transform(func(p: Vector2): return p * 2.0, func(p: Vector2): return p / 2.0)
+	_layer._start_draw(Vector2(10, 10))     # 屏幕 (10,10) → 棋盘 (5,5)
+	_layer._finish_draw()
+	assert_eq(_layer.strokes[0]["points"][0], Vector2(5, 5), "入笔坐标必须换算到棋盘空间")
+	assert_almost_eq(_layer._erase_radius(), 4.0, 0.001,
+			"擦除半径同样折算（屏幕 8px → 棋盘 4 单位）")
+
+
+# D14：未注入换算函数时退化为透传（单测/独立实例化的既有行为不变）
+func test_d14_identity_without_transform() -> void:
+	_layer.set_board_transform(Callable(), Callable())
+	_layer._start_draw(Vector2(10, 10))
+	_layer._finish_draw()
+	assert_eq(_layer.strokes[0]["points"][0], Vector2(10, 10), "无换算时原样存储")
+	assert_almost_eq(_layer._erase_radius(), float(DrawingLayer.SIZES[1]) * 2.0, 0.001)
+
+
+# D15：存档带版本号，当前格式可无损往返
+func test_d15_save_data_is_versioned() -> void:
+	_layer._start_draw(Vector2(1, 1))
+	_layer._finish_draw()
+	var data := _layer.get_save_data()
+	assert_eq(int(data.get("v", 0)), DrawingLayer.SAVE_VERSION, "存盘必须写版本号")
+	var layer2: DrawingLayer = load("res://ui/drawing_layer.tscn").instantiate()
+	add_child_autofree(layer2)
+	layer2.load_save_data(data)
+	assert_false(layer2.legacy_discarded(), "当前版本不应被判为旧格式")
+	assert_eq(layer2.strokes.size(), 1)
+
+
+# D16：旧版（v1 屏幕坐标、无 v 字段）必须丢弃，且要能告知玩家
+func test_d16_legacy_save_is_discarded() -> void:
+	var legacy := {
+		"strokes": [{"points": [[10, 10], [20, 20]], "color": "#E53935", "size": 4}],
+		"current_color": 1,
+		"current_size": 1,
+	}
+	_layer.load_save_data(legacy)
+	assert_eq(_layer.strokes.size(), 0, "v1 屏幕坐标笔迹无法对齐棋盘 → 丢弃")
+	assert_true(_layer.legacy_discarded(), "应置位供 UI 提示，不能静默消失")
+
+
 # D12：整条模式行为不被新功能改变 —— 命中任意一点即删整笔
 func test_d12_whole_erase_removes_full_stroke() -> void:
 	_layer.erase_mode = DrawingLayer.EraseMode.WHOLE

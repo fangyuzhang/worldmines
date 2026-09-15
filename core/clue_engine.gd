@@ -150,6 +150,10 @@ static func _fr_value(mine_set: Dictionary, pos: Vector2i, grid_size: Vector2i) 
 
 
 ## LoopRuns：8 邻环序（首尾相接）的连续雷段数。
+## 语义（v3.x 零值修复）：空环 = 0，全环 = 1（视作一整段），其余 = 0→1 上升沿数。
+## 修复理由：环形序列全雷时没有上升沿，旧实现返回 0 与空环歧义；
+## 而 zero_safe_dirs 对值 0 返回全部八邻方向 → 全雷邻域会被误当安全整体清空。
+## 修复后 0 ⟺ 八邻无雷，零值扩散恢复合法。
 static func _loop_runs_value(mine_set: Dictionary, pos: Vector2i, grid_size: Vector2i) -> int:
 	# 收集环上实际存在的格子的雷状态（按环序，跳过越界格）
 	var seq: Array[int] = []
@@ -166,6 +170,9 @@ static func _loop_runs_value(mine_set: Dictionary, pos: Vector2i, grid_size: Vec
 		var cur: int = seq[i]
 		if prev == 0 and cur == 1:
 			runs += 1
+	# 全雷环：无上升沿但确有雷 → 视作一整段
+	if runs == 0 and seq.has(1):
+		runs = 1
 	return runs
 
 

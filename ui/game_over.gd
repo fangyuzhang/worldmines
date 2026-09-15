@@ -7,6 +7,7 @@ var _big_label: Label
 var _sub_label: Label
 var _panel: PanelContainer
 var _undo_btn: Button
+var _next_btn: Button
 var _again_btn: Button
 
 
@@ -44,6 +45,15 @@ func _ready() -> void:
     _undo_btn.pressed.connect(func(): GameSession.undo())
     vbox.add_child(_undo_btn)
 
+    # 通关后直接进入下一关（原先只有「重新开始 / 返回菜单」，
+    # 而关卡解锁依赖「通关上一关」，玩家每次都得手动退回选关页重走一遍）。
+    _next_btn = Button.new()
+    _next_btn.text = "下一关"
+    _next_btn.focus_mode = Control.FOCUS_NONE
+    _next_btn.custom_minimum_size = Vector2(240, 44)
+    _next_btn.pressed.connect(_on_next_level)
+    vbox.add_child(_next_btn)
+
     _again_btn = Button.new()
     _again_btn.text = "重新开始"
     _again_btn.focus_mode = Control.FOCUS_NONE
@@ -75,6 +85,10 @@ func _on_game_ended(won: bool) -> void:
     _big_label.text = "胜利！" if won else "失败"
     if _undo_btn != null:
         _undo_btn.visible = not won  # 撤回仅在失败终局可用
+    # 下一关：只有「生成关卡序列」里的关卡才知道下一关是谁（见 LevelSequence）。
+    # 手工关（res://levels/…）没有序列概念 → 不提供该入口。
+    if _next_btn != null:
+        _next_btn.visible = won and LevelSequence.has_next(GameSession.level_path)
     var board: Board = GameSession.board
     var revealed_n: int = board.get_stats()["revealed"] if board != null else 0
     var total: int = int(GameSession.elapsed)
@@ -82,6 +96,16 @@ func _on_game_ended(won: bool) -> void:
     var s: int = total % 60
     _sub_label.text = "用时 %02d:%02d · 翻开 %d 格" % [m, s, revealed_n]
     _apply_theme()
+
+
+## 前往同一「变体 × 尺寸」序列的下一关。
+## 生成流程归选关页管（它才知道怎么生成/缓存关卡文件），这里只交接「翻到哪一套」的意图。
+func _on_next_level() -> void:
+    var p := LevelSequence.parse_path(GameSession.level_path)
+    if not p.is_empty():
+        LevelSequence.request_focus(str(p["mode"]), int(p["size"]))
+    SaveCoordinator.clear()
+    get_tree().change_scene_to_file("res://ui/level_select.tscn")
 
 
 ## 重新开始 / 撤回后隐藏终局覆盖层。

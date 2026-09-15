@@ -77,7 +77,7 @@ func _rebuild_list() -> void:
 	ex_btn.pressed.connect(func():
 		var r: Dictionary = ExampleMod.install()
 		if bool(r.get("ok", false)):
-			_toast("已安装示例规则包（%d 个 Def），点「加载」启用" % int(r.get("count", 0)))
+			_toast("已安装示例规则包（%d 个 Def），点「加载」启用" % int(r.get("count", 0)), false)
 		else:
 			_toast("安装失败：%s" % r.get("reason", ""))
 		_rebuild_list())
@@ -240,7 +240,8 @@ func _generate_wasm_levels(mod_name: String, kind: String) -> void:
 			f.store_string(JSON.stringify(level, "  "))
 			f.close()
 			produced += 1
-	_toast("已为 %s 生成 %d 个 wasm %s关" % [mod_name, produced, "约束" if kind == "global" else "线索"])
+	_toast("已为 %s 生成 %d 个 wasm %s关" % [mod_name, produced, "约束" if kind == "global" else "线索"],
+			produced == 0)
 
 
 func _make_def_row(mod_name: String, def_name: String) -> HBoxContainer:
@@ -282,7 +283,7 @@ func _generate_levels(mod_name: String, def_name: String) -> void:
 			f.store_string(JSON.stringify(level, "  "))
 			f.close()
 			produced += 1
-	_toast("已为 %s 生成 %d 关" % [def_name, produced])
+	_toast("已为 %s 生成 %d 关" % [def_name, produced], produced == 0)
 
 
 ## 自定义规则行（自举式：RulePlugin 线索规则 + 生成关卡按钮）。
@@ -335,7 +336,7 @@ func _generate_rule_levels(rule_id: String) -> void:
 			f.store_string(JSON.stringify(level, "  "))
 			f.close()
 			produced += 1
-	_toast("已为规则 %s 生成 %d 关" % [rule_id, produced])
+	_toast("已为规则 %s 生成 %d 关" % [rule_id, produced], produced == 0)
 
 
 ## P0-A：读 mod 声明的棋盘拓扑（board.json），返回 {topo: AdjacencyGrid|null, size: Vector2i}。
@@ -358,22 +359,10 @@ func _mod_board(mod_name: String) -> Dictionary:
 	return {"topo": topo, "size": Vector2i(max_c + 1, max_r + 1)}
 
 
-func _toast(msg: String) -> void:
-	var lb := Label.new()
-	lb.text = msg
-	lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lb.add_theme_font_size_override("font_size", 18)
-	lb.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	lb.position = Vector2(0, 8)
-	lb.custom_minimum_size = Vector2(0, 32)
-	add_child(lb)
-	var timer := Timer.new()
-	timer.wait_time = 2.5
-	timer.one_shot = true
-	timer.timeout.connect(lb.queue_free)
-	timer.timeout.connect(timer.queue_free)
-	add_child(timer)
-	timer.start()
+## toast 统一走 UiToast（原先本页与 skin_browser / settings_panel / main_menu
+## 各实现了一份同构的 Label+Timer，行为与配色已经开始分叉）。
+func _toast(msg: String, danger: bool = true) -> void:
+	UiToast.popup(self, msg, danger)
 
 
 func _apply_theme() -> void:

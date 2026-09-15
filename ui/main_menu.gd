@@ -97,22 +97,9 @@ func _on_restore_yes() -> void:
 
 # ============ toast（场景内顶部 Label + Timer，2s 自动消失；文案 §8.5） ============
 
-func _toast(msg: String) -> void:
-    var lb := Label.new()
-    lb.text = msg
-    lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    lb.add_theme_font_size_override("font_size", 18)
-    lb.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-    lb.position = Vector2(0, 8)
-    lb.custom_minimum_size = Vector2(0, 32)
-    add_child(lb)
-    var timer := Timer.new()
-    timer.wait_time = 2.0
-    timer.one_shot = true
-    timer.timeout.connect(lb.queue_free)
-    timer.timeout.connect(timer.queue_free)
-    add_child(timer)
-    timer.start()
+## toast 统一走 UiToast（原先此处与 level_select 各实现了一份完全相同的 Label+Timer）。
+func _toast(msg: String, danger: bool = true) -> void:
+    UiToast.popup(self, msg, danger)
 
 
 # ============ 主题（所有色值经 ThemeManager） ============

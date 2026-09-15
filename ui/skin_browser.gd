@@ -185,7 +185,7 @@ func _on_delete(skin_id: String, skin_name: String) -> void:
 	dlg.cancel_button_text = "取消"
 	dlg.confirmed.connect(func():
 		var r := SkinService.remove(skin_id)
-		_toast("皮肤已删除" if r["ok"] else "删除失败：%s" % r["reason"]))
+		_toast("皮肤已删除" if r["ok"] else "删除失败：%s" % r["reason"], not r["ok"]))
 	add_child(dlg)
 	dlg.popup_centered()
 
@@ -207,27 +207,15 @@ func _on_import() -> void:
 	fd.add_filter("*.zip", "皮肤包 (*.zip)")
 	fd.file_selected.connect(func(path: String):
 		var r := SkinService.import_zip(path)
-		_toast("皮肤已导入" if r["ok"] else "导入失败：%s" % r["reason"]))
+		_toast("皮肤已导入" if r["ok"] else "导入失败：%s" % r["reason"], not r["ok"]))
 	add_child(fd)
 	fd.popup_centered()
 
 
-func _toast(msg: String) -> void:
-	var lb := Label.new()
-	lb.text = msg
-	lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lb.add_theme_font_size_override("font_size", 16)
-	lb.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	lb.offset_top = -40
-	lb.custom_minimum_size = Vector2(0, 32)
-	add_child(lb)
-	var timer := Timer.new()
-	timer.wait_time = 2.0
-	timer.one_shot = true
-	timer.timeout.connect(lb.queue_free)
-	timer.timeout.connect(timer.queue_free)
-	add_child(timer)
-	timer.start()
+## toast 统一走 UiToast（原先本页与 mod_select / settings_panel / main_menu
+## 各实现了一份同构的 Label+Timer，行为与配色已经开始分叉）。
+func _toast(msg: String, danger: bool = true) -> void:
+	UiToast.popup(self, msg, danger)
 
 
 func _on_theme_changed() -> void:

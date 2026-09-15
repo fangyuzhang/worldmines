@@ -15,11 +15,24 @@ var hover_pos: Vector2i = Vector2i(-1, -1)
 ## 涟漪动效队列（§8.4.5）：{pos: Vector2i, t0: float（ msec ）， k: int 级联序号}
 var _ripples: Array = []
 var _ripple_window_start_ms: int = -1
+## 涟漪逐帧缓存（Vector2i -> {"s": 缩放} / {"off": 平移}）。
+## 原实现对每个格子 O(1) 扫描整个涟漪队列（连锁翻开时可达数十条），
+## 大盘下变成 O(格子数 × 涟漪数)/帧。改为每帧只算一次几何，绘制时查表。
+var _ripple_cache: Dictionary = {}
+var _ripple_cache_ms: int = -1
 
 ## 提示高亮（一步直推）：结论格描边 + 依据格描边（推理文字见 HintPanel 浮动窗口）
 var _hint_steps: Array = []
 var _hint_until_ms: int = -1
 const HINT_TTL_MS := 6000
+
+## 无猜模式「猜测被拒」反馈：以前 GameSession 发了 guess_rejected 但没有任何订阅者，
+## 玩家点下去只有一声音效、格子纹丝不动，看起来就像卡死。现给出视觉反馈 + 节流文案。
+var _reject_pos: Vector2i = Vector2i(-1, -1)
+var _reject_until_ms: int = -1
+var _reject_toast_ms: int = -100000
+const REJECT_FLASH_MS := 550
+const REJECT_TOAST_THROTTLE_MS := 3000
 
 
 func _ready() -> void:
@@ -28,9 +41,18 @@ func _ready() -> void:
 	GameSession.session_started.connect(_on_session_started)
 	if not GameSession.hint_ready.is_connected(_on_hint_ready):
 		GameSession.hint_ready.connect(_on_hint_ready)
+	if not GameSession.guess_rejected.is_connected(_on_guess_rejected):
+		GameSession.guess_rejected.connect(_on_guess_rejected)
+	# 鼠标移出棋盘：不再有 MouseMotion 事件，悬停高亮会永远定格在最后一格
+	mouse_exited.connect(_on_mouse_exited)
 	# 绘画层（棋盘之上、HUD 之下）+ 底栏工具栏
 	_drawing = load("res://ui/drawing_layer.tscn").instantiate()
 	add_child(_drawing)
+	# 笔迹改用棋盘坐标存储：窗口缩放 / 换分辨率读档时笔记自动跟着格子走。
+	# 闭包读的是当前字段值，故 _layout() 改变 cell_px / board_origin 后无需重新注入。
+	_drawing.set_board_transform(
+			func(p: Vector2): return board_origin + p * cell_px,
+			func(p: Vector2): return (p - board_origin) / float(maxi(cell_px, 1)))
 	var hud: Control = load("res://ui/hud.tscn").instantiate()
 	add_child(hud)
 	_toolbar = load("res://ui/drawing_toolbar.tscn").instantiate()
@@ -38,6 +60,9 @@ func _ready() -> void:
 	_toolbar.setup(_drawing)
 	_game_over = load("res://ui/game_over.tscn").instantiate()
 	add_child(_game_over)
+	_pause_menu = load("res://ui/pause_menu.tscn").instantiate()
+	add_child(_pause_menu)
+	_pause_menu.hide()  # Window 默认 visible=true，不显式隐藏会一进局就盖住棋盘
 	# 提示浮动窗口（推理文字；可拖拽/缩放/调字体）
 	_hint_panel = HintPanel.new()
 	add_child(_hint_panel)
@@ -53,13 +78,17 @@ var _game_over: Control
 var _drawing: DrawingLayer
 var _toolbar: Control
 var _hint_panel: HintPanel
+var _pause_menu: PopupPanel
 
 
 func _on_session_started() -> void:
 	_connect_board()
 	_ripples.clear()
 	_ripple_window_start_ms = -1
+	_ripple_cache.clear()
+	_ripple_cache_ms = -1
 	_clear_hint()
+	_clear_reject()
 	_load_drawing()
 	_layout()
 	queue_redraw()
@@ -72,6 +101,9 @@ func _load_drawing() -> void:
 	var pending: Dictionary = GameSession.pending_drawing
 	if pending is Dictionary and not pending.is_empty():
 		_drawing.load_save_data(pending)
+		# 旧版（v1 屏幕坐标）笔迹无法对齐棋盘 → 已丢弃，必须告知，不能静默消失
+		if _drawing.legacy_discarded():
+			UiToast.popup(self, "旧版绘画笔记无法对齐棋盘已清空；新笔记会跟随棋盘缩放")
 	else:
 		_drawing.clear_strokes()
 
@@ -116,6 +148,33 @@ func _on_cell_changed(pos: Vector2i) -> void:
 				_ripple_window_start_ms = now_ms
 				_ripples.clear()  # 上一波动画窗口关闭，新窗口从 k=0 重新计
 			_ripples.append({"pos": pos, "t0": now_ms, "k": _ripples.size()})
+			_ripple_cache_ms = -1
+			_request_frames()
+	queue_redraw()
+
+
+## 无猜-专家档：翻开请求被拒绝（该格无法纯逻辑推出）。
+## 必须给出可见反馈——否则玩家会认为点击无响应/游戏卡死。
+func _on_guess_rejected(pos: Vector2i) -> void:
+	_reject_pos = pos
+	var now_ms := Time.get_ticks_msec()
+	_reject_until_ms = now_ms + REJECT_FLASH_MS
+	_request_frames()
+	if now_ms - _reject_toast_ms > REJECT_TOAST_THROTTLE_MS:
+		_reject_toast_ms = now_ms
+		UiToast.popup(self, "这一格无法纯逻辑推出（无猜模式不允许猜测）")
+	queue_redraw()
+
+
+func _clear_reject() -> void:
+	_reject_pos = Vector2i(-1, -1)
+	_reject_until_ms = -1
+
+
+func _on_mouse_exited() -> void:
+	if hover_pos.x < 0:
+		return
+	hover_pos = Vector2i(-1, -1)
 	queue_redraw()
 
 
@@ -138,21 +197,34 @@ func _layout() -> void:
 
 func _process(_delta: float) -> void:
 	var now_ms := Time.get_ticks_msec()
-	var hint_expired := false
+	var dirty := false
 	if _hint_until_ms > 0 and now_ms >= _hint_until_ms:
 		# 高亮描边到期只清高亮；推理文字窗口保留（盘面变化时才清）
 		_hint_steps = []
 		_hint_until_ms = -1
-		hint_expired = true
+		dirty = true
+	if _reject_until_ms > 0 and now_ms >= _reject_until_ms:
+		_reject_pos = Vector2i(-1, -1)
+		_reject_until_ms = -1
+		dirty = true
 	# 涟漪存在期间持续重绘；队列清空即停止（§8.4.5 性能条款）
-	if _ripples.is_empty():
-		if hint_expired:
-			queue_redraw()
-		return
-	_ripples = _ripples.filter(func(rp): return now_ms - rp["t0"] < 400)
-	if _ripples.is_empty():
-		_ripple_window_start_ms = -1
-	queue_redraw()
+	if not _ripples.is_empty():
+		_ripples = _ripples.filter(func(rp): return now_ms - rp["t0"] < 400)
+		if _ripples.is_empty():
+			_ripple_window_start_ms = -1
+		_ripple_cache_ms = -1  # 队列变了（含超时淘汰）→ 缓存作废
+		dirty = true
+	if dirty:
+		queue_redraw()
+	# 无动画时彻底关掉逐帧回调：静态棋盘不需要每帧醒来
+	if _ripples.is_empty() and _hint_until_ms < 0 and _reject_until_ms < 0:
+		set_process(false)
+
+
+## 有动画要做时唤醒逐帧回调（由涟漪/提示/拒绝反馈各自调用）。
+func _request_frames() -> void:
+	if not is_processing():
+		set_process(true)
 
 
 # ============ 渲染（§8.4.8 逐格绘制，全部色值经 ThemeManager） ============
@@ -198,6 +270,23 @@ func _draw() -> void:
 
 	if not endgame:
 		_draw_hint(scale, font)
+		_draw_reject()
+
+
+## 无猜模式「猜测被拒」反馈：该格画一圈危险色描边，闪烁两下后淡出。
+func _draw_reject() -> void:
+	if _reject_pos.x < 0 or GameSession.board == null or GameSession.board.grid == null:
+		return
+	if not GameSession.board.grid.in_board(_reject_pos):
+		return
+	var remain: float = float(_reject_until_ms - Time.get_ticks_msec()) / float(REJECT_FLASH_MS)
+	if remain <= 0.0:
+		return
+	var rect := Rect2(board_origin + Vector2(_reject_pos.x, _reject_pos.y) * cell_px + Vector2(2, 2),
+			Vector2(cell_px - 4, cell_px - 4))
+	var col := ThemeManager.danger()
+	col.a = clampf(abs(sin((1.0 - remain) * TAU * 2.0)), 0.25, 1.0) * clampf(remain, 0.0, 1.0)
+	draw_rect(rect, col, false, 3.0)
 
 
 ## 提示高亮：结论格 safe=绿描边 / mine=红描边；依据线索格 accent 细描边。
@@ -364,36 +453,49 @@ func _draw_hover_highlight(center_pos: Vector2i, with_neighbors: bool) -> void:
 # ============ 涟漪动效（§8.4.5：150ms 中心弹跳 / 200ms 邻格平移 / 50ms 级联 / ≤400ms） ============
 
 ## pos 参与活跃涟漪时返回调整后的绘制矩形（中心缩放 / 邻格位移），否则原样返回。
+## 几何每帧统一算一次（_rebuild_ripple_cache），此处只查表——避免 O(格子数 × 涟漪数)。
 func _ripple_rect_for(pos: Vector2i, rect: Rect2) -> Rect2:
 	if _ripples.is_empty():
 		return rect
-	var now_ms := Time.get_ticks_msec()
+	if _ripple_cache_ms != Time.get_ticks_msec():
+		_rebuild_ripple_cache()
+	var e: Dictionary = _ripple_cache.get(pos, {})
+	if e.is_empty():
+		return rect
+	if e.has("s"):
+		# 中心格：缩放 1.0 → 1.15 → 1.0，150ms（矩形绕中心缩放）
+		var half: Vector2 = rect.size * 0.5 * float(e["s"])
+		var cpos: Vector2 = rect.position + rect.size * 0.5
+		return Rect2(cpos - half, half * 2.0)
+	# 邻格：向远离中心方向平移（按格子尺寸缩放，200ms）
+	return Rect2(rect.position + (e["off"] as Vector2), rect.size)
+
+
+## 重算涟漪几何缓存。命中语义与原实现一致：**首个**影响到该格的涟漪决定它的形变。
+func _rebuild_ripple_cache() -> void:
+	_ripple_cache.clear()
+	_ripple_cache_ms = Time.get_ticks_msec()
+	if _ripples.is_empty() or GameSession.board == null or GameSession.board.grid == null:
+		return
+	var now_ms := _ripple_cache_ms
+	var dirs := [Vector2i(0, -1), Vector2i(1, -1), Vector2i(1, 0), Vector2i(1, 1),
+			Vector2i(0, 1), Vector2i(-1, 1), Vector2i(-1, 0), Vector2i(-1, -1)]
 	for rp in _ripples:
 		var t: float = (float(now_ms - rp["t0"]) - 50.0 * rp["k"]) / 1000.0
 		if t < 0.0:
 			continue
 		var center: Vector2i = rp["pos"]
-		if center == pos:
-			# 中心格：缩放 1.0 → 1.15 → 1.0，150ms（矩形绕中心缩放）
+		if not _ripple_cache.has(center):
 			var tc: float = clampf(t / 0.15, 0.0, 1.0)
-			var s: float = 1.0 + 0.15 * sin(PI * tc)
-			var half := rect.size * 0.5 * s
-			var cpos := rect.position + rect.size * 0.5
-			return Rect2(cpos - half, half * 2.0)
-		elif _is_8_neighbor(pos, center):
-			# 邻格：向远离中心方向平移 3px（按格子尺寸缩放，200ms）
-			var tn: float = clampf(t / 0.2, 0.0, 1.0)
-			var amp: float = 3.0 * (float(cell_px) / 48.0) * sin(PI * tn)
-			var dir := (Vector2(pos.x, pos.y) - Vector2(center.x, center.y)).normalized()
-			if dir.length() < 0.5:
-				dir = Vector2.ZERO
-			return Rect2(rect.position + dir * amp, rect.size)
-	return rect
-
-
-func _is_8_neighbor(a: Vector2i, b: Vector2i) -> bool:
-	var d: Vector2i = (a - b).abs()
-	return (d.x <= 1 and d.y <= 1) and not (d.x == 0 and d.y == 0)
+			_ripple_cache[center] = {"s": 1.0 + 0.15 * sin(PI * tc)}
+		var tn: float = clampf(t / 0.2, 0.0, 1.0)
+		var amp: float = 3.0 * (float(cell_px) / 48.0) * sin(PI * tn)
+		for d in dirs:
+			var np: Vector2i = center + d
+			if _ripple_cache.has(np) or not GameSession.board.grid.in_board(np):
+				continue
+			var dir: Vector2 = (Vector2(np.x, np.y) - Vector2(center.x, center.y)).normalized()
+			_ripple_cache[np] = {"off": dir * amp}
 
 
 ## 邻格颜色微闪：深色模式叠加 5% 提亮 / 亮色模式叠加 5% 压暗（§8.4.5）。
@@ -429,21 +531,74 @@ func _gui_input(event: InputEvent) -> void:
 		if pos.x < 0:
 			return
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-			GameSession.reveal(pos)
+			# 左键点已翻开的数字格 = 一键展开（chord）；点未翻开格 = 正常翻开
+			if _is_revealed(pos):
+				GameSession.chord(pos)
+			else:
+				GameSession.reveal(pos)
+			accept_event()
+		elif event.button_index == MOUSE_BUTTON_MIDDLE and event.pressed:
+			GameSession.chord(pos)
 			accept_event()
 		elif event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
 			GameSession.toggle_flag(pos)
+			# 按住右键拖动 = 连续插旗（与 chord 同源的 QoL，市面标配）
+			_flag_dragging = true
+			_flag_drag_last = pos
+			accept_event()
+		elif event.button_index == MOUSE_BUTTON_RIGHT and not event.pressed:
+			_flag_dragging = false
+			_flag_drag_last = Vector2i(-1, -1)
 			accept_event()
 	elif event is InputEventMouseMotion:
 		if GameSession.state == GameSession.State.PLAYING:
 			var pos := _pick(event.position)
+			if _flag_dragging and (event.button_mask & MOUSE_BUTTON_MASK_RIGHT) != 0:
+				# 拖动只「插」不「取消」：每进入一个新格补一面旗，
+				# 避免把已插好的旗拖没了（拖动中不做 toggle 循环）
+				if pos.x >= 0 and pos != _flag_drag_last:
+					_flag_drag_last = pos
+					_flag_if_hidden(pos)
 			if pos != hover_pos:
 				hover_pos = pos
 				queue_redraw()
 
 
+## 最上层的可见弹出层（设置弹窗 / 确认框 / 暂停面板）；没有则返回 null。
+## ★ 历史 bug：PopupPanel/ConfirmationDialog **不会自动吃掉未处理的按键**，
+## 于是设置弹窗开着时按 R 会把对局重开、按空格还在翻格。这里显式让弹窗优先。
+func _first_visible_popup() -> Window:
+	var tree := get_tree()
+	if tree == null:
+		return null
+	return _scan_window(tree.root)
+
+
+func _has_open_popup() -> bool:
+	return _first_visible_popup() != null
+
+
+func _scan_window(n: Node) -> Window:
+	for c in n.get_children():
+		var w := _scan_window(c)
+		if w != null:
+			return w
+		if c is Window and c != get_tree().root and (c as Window).visible:
+			return c as Window
+	return null
+
+
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.pressed:
+		return
+	# ESC 关闭最上层弹窗（Godot 的 Window/Popup 不自带 ESC 关闭行为）
+	if event.keycode == KEY_ESCAPE:
+		var top := _first_visible_popup()
+		if top != null:
+			top.hide()
+			accept_event()
+			return
+	if _has_open_popup():
 		return
 	if SettingsManager != null and not SettingsManager.keyboard_enabled:
 		return
@@ -463,6 +618,11 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		if _handle_paint_key(event):
 			accept_event()
 		return
+	# ESC：暂停 / 继续（State.PAUSED 此前从未被任何 UI 触发，这里给它的真实入口）
+	if event.keycode == KEY_ESCAPE:
+		_toggle_pause()
+		accept_event()
+		return
 	var board: Board = GameSession.board
 	if board == null or board.grid == null:
 		return
@@ -471,13 +631,17 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	var handled := true
 	match event.keycode:
 		KEY_R:
-			GameSession.restart()
+			_confirm_restart()
 		KEY_F:
 			GameSession.toggle_flag(cur)
 		KEY_H:
 			GameSession.request_hint()
 		KEY_SPACE, KEY_ENTER:
-			GameSession.reveal(cur)
+			# 与鼠标同口径：光标停在已翻开的数字格上时执行一键展开
+			if _is_revealed(cur):
+				GameSession.chord(cur)
+			else:
+				GameSession.reveal(cur)
 		KEY_HOME:
 			cur.x = 0
 		KEY_END:
@@ -576,6 +740,57 @@ func _handle_paint_key(event: InputEventKey) -> bool:
 			_drawing.cycle_size(1)
 			return true
 	return false
+
+
+# ============ 暂停 / 破坏性操作确认 ============
+
+## 暂停 / 继续。GameSession.set_paused 此前只有测试在调用，这里是它真实的 UI 入口。
+func _toggle_pause() -> void:
+	if GameSession.state == GameSession.State.PAUSED:
+		GameSession.set_paused(false)
+		if _pause_menu != null:
+			_pause_menu.hide()
+		queue_redraw()
+	elif GameSession.state == GameSession.State.PLAYING:
+		GameSession.set_paused(true)
+		if _pause_menu != null:
+			_pause_menu.popup_center_refreshed()
+	
+
+
+## 外部入口（HUD「暂停」按钮）。
+func toggle_pause() -> void:
+	_toggle_pause()
+
+
+## 重开是不可撤销的破坏性操作：R 键与 WASD 光标键同处主键盘区，误触代价是丢整局。
+## 判定口径统一放在 UiConfirm（HUD「重开」按钮与此处共用）。
+func _confirm_restart() -> void:
+	UiConfirm.confirm_restart(self, func(): GameSession.restart())
+
+
+## 右键拖动状态（连续插旗）
+var _flag_dragging := false
+var _flag_drag_last: Vector2i = Vector2i(-1, -1)
+
+
+## 拖动插旗：只对未翻开格生效（不取消已有旗）。
+func _flag_if_hidden(pos: Vector2i) -> void:
+	if GameSession.board == null or GameSession.board.grid == null:
+		return
+	if not GameSession.board.grid.in_board(pos):
+		return
+	var cell := GameSession.board.grid.get_cell(pos)
+	if cell != null and cell.state == Cell.State.HIDDEN:
+		GameSession.toggle_flag(pos)
+
+
+## 该格是否已翻开（决定左键/空格走「翻开」还是「一键展开」）。
+func _is_revealed(pos: Vector2i) -> bool:
+	if GameSession.board == null or GameSession.board.grid == null:
+		return false
+	var cell := GameSession.board.grid.get_cell(pos)
+	return cell != null and cell.state == Cell.State.REVEALED
 
 
 func _pick(local_pos: Vector2) -> Vector2i:

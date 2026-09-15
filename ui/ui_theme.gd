@@ -82,14 +82,24 @@ static func bind_hover(control: Control, scale_to: float) -> void:
 	if control.has_meta("_ui_hover_lift"):
 		return
 	control.set_meta("_ui_hover_lift", true)
-	control.mouse_entered.connect(func():
-		control.pivot_offset = control.size * 0.5
-		var tw := control.create_tween()
-		tw.set_trans(Tween.TRANS_QUAD)
-		tw.set_ease(Tween.EASE_OUT)
-		tw.tween_property(control, "scale", Vector2(scale_to, scale_to), 0.2))
-	control.mouse_exited.connect(func():
-		var tw := control.create_tween()
-		tw.set_trans(Tween.TRANS_QUAD)
-		tw.set_ease(Tween.EASE_OUT)
-		tw.tween_property(control, "scale", Vector2.ONE, 0.2))
+	control.mouse_entered.connect(func(): _lift_to(control, scale_to))
+	control.mouse_exited.connect(func(): _lift_to(control, 1.0))
+
+
+## 两点修正（原实现的真实缺陷）：
+##   ① 每次进出都 create_tween()：快速划过会留下多个同目标同属性的 tween 同时驱动 scale，
+##      谁后写谁生效 → 抖动甚至卡在非 1.0 的缩放上。现先 kill 掉本控件上的旧 tween 再开新的。
+##   ② pivot_offset 原先只在 mouse_entered 那一刻按当时 size 取；换页/改字号后布局一变，
+##      缩放就不再绕中心（表现为斜向漂移）。改为动画开始时才取当前 size。
+static func _lift_to(control: Control, scale_to: float) -> void:
+	if not is_instance_valid(control):
+		return
+	var old: Tween = control.get_meta("_ui_hover_tween", null)
+	if old != null and old.is_valid():
+		old.kill()
+	control.pivot_offset = control.size * 0.5
+	var tw := control.create_tween()
+	tw.set_trans(Tween.TRANS_QUAD)
+	tw.set_ease(Tween.EASE_OUT)
+	tw.tween_property(control, "scale", Vector2(scale_to, scale_to), 0.2)
+	control.set_meta("_ui_hover_tween", tw)

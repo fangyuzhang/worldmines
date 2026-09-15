@@ -90,6 +90,12 @@ var GOLDEN := {
 		# 右下角单雷：(0,0) 邻域无雷 → 0；(1,1) 只有右下 1 段 → 1
 		{"size": Vector2i(3, 3), "mines": [Vector2i(2, 2)],
 			"checks": {Vector2i(0, 0): 0, Vector2i(1, 1): 1}},
+		# 全雷环（v3.x 零值修复钉死）：中心 8 邻全雷，环上无 0→1 上升沿，
+		# 旧实现误判 0（会触发零值误扩散）；修复后全环视作一整段 → 1
+		{"size": Vector2i(3, 3),
+			"mines": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0), Vector2i(0, 1),
+				Vector2i(2, 1), Vector2i(0, 2), Vector2i(1, 2), Vector2i(2, 2)],
+			"checks": {Vector2i(1, 1): 1}},
 	],
 	# ── distsum：正交×1 + 对角×2 ──
 	"distsum": [

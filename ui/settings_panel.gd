@@ -123,27 +123,15 @@ func _on_clear_progress() -> void:
     dlg.cancel_button_text = "取消"
     dlg.confirmed.connect(func():
         ProgressStore.clear_all()
-        _toast("通关进度已清除"))
+        _toast("通关进度已清除", false))
     add_child(dlg)
     dlg.popup_centered()
 
 
-func _toast(msg: String) -> void:
-    var lb := Label.new()
-    lb.text = msg
-    lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    lb.add_theme_font_size_override("font_size", 18)
-    lb.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-    lb.position = Vector2(0, 8)
-    lb.custom_minimum_size = Vector2(0, 32)
-    add_child(lb)
-    var timer := Timer.new()
-    timer.wait_time = 2.0
-    timer.one_shot = true
-    timer.timeout.connect(lb.queue_free)
-    timer.timeout.connect(timer.queue_free)
-    add_child(timer)
-    timer.start()
+## toast 统一走 UiToast（原先本页与 mod_select / skin_browser / main_menu
+## 各实现了一份同构的 Label+Timer，行为与配色已经开始分叉）。
+func _toast(msg: String, danger: bool = true) -> void:
+    UiToast.popup(self, msg, danger)
 
 
 func _add_check_row(parent: Node, label: String, setter: Callable) -> CheckButton:
