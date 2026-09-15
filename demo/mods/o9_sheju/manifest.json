@@ -1,0 +1,9 @@
+{
+	"id": "o9_sheju",
+	"version": "3.0.0",
+	"api_version": "2.9",
+	"entry": {
+		"runtime": "gdscript",
+		"path": "entry.gd"
+	}
+}
