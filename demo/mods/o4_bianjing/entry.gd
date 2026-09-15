@@ -164,6 +164,20 @@ class VariRadiusRule:
 					weights[q] = maxf(0.05, float(weights[q]) * 0.35)
 		return out
 
+	# ==== 隐藏态导出/导入（载盘复现，2026-09-16；「radius2 落盘」里程碑兑现——通用 hidden_state 机制）====
+
+	func export_hidden_state() -> Dictionary:
+		var arr: Array = []
+		for p in _r2:
+			arr.append({"c": p.x, "r": p.y})
+		arr.sort_custom(RulePlugin.state_pos_less)
+		return {"r2": arr}
+
+	func import_hidden_state(state: Dictionary) -> void:
+		_r2.clear()
+		for it in state.get("r2", []):
+			_r2[Vector2i(int(it["c"]), int(it["r"]))] = true
+
 
 func on_load() -> void:
 	RuleRegistry.default().register(VariRadiusRule.new())

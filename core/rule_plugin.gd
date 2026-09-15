@@ -107,6 +107,28 @@ func place_mines(_rng: RandomNumberGenerator, _cols: int, _rows: int, _count: in
 	return []
 
 
+# ==== 隐藏态导出 / 导入（载盘复现，2026-09-16）====
+
+## 导出「生成时决定的隐藏态」——有隐藏状态的规则覆写（如 o4 半径集合 r2 / o5x 斜向集合 s1）。
+## 契约：生成落盘时调用本方法，返回非空字典 → 写入 level["hidden_state"][rule_id]；
+##       Board.load_level 读取后对同一规则实例调用 import_hidden_state 恢复。
+## 返回空字典（默认）= 无隐藏态（载盘无损）。
+## 背景：此前隐藏态不落盘 → 载盘后 compute_clue 用空/残留状态 → 线索数字全错
+##      （HANDOFF 已知坑 #18，2026-09-15 侦破）。新增隐藏态规则务必实现本对方法。
+func export_hidden_state() -> Dictionary:
+	return {}
+
+
+## 导入隐藏态（与 export_hidden_state 严格配对：import(export()) == 原状态）。
+func import_hidden_state(_state: Dictionary) -> void:
+	pass
+
+
+## 隐藏态坐标数组排序比较器（先 r 后 c，保证导出确定序；mod 可用 sort_custom 引用）。
+static func state_pos_less(a: Dictionary, b: Dictionary) -> bool:
+	return int(a["r"]) * 1000 + int(a["c"]) < int(b["r"]) * 1000 + int(b["c"])
+
+
 # ==== 共享工具 ====
 
 ## 数 mine_set 中 dirs 邻域的雷数（内置计数规则共用）。

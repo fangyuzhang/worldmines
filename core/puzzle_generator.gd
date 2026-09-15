@@ -835,6 +835,23 @@ func _build_level_from_rules(clue_rule_id: String, global_rule_ids: Array, rows:
 				d_arr.append(pair)
 			out["dominoes"] = d_arr
 	# 异形拓扑：落盘拓扑描述（positions + adjacency），供 Board 加载复现异形棋盘。
+	# 隐藏态落盘（2026-09-16，HANDOFF 已知坑 #18）：有隐藏态的规则（o4/o5x 等）导出生成时
+	# 状态 → Board.load_level 恢复。此前缺失 → 载盘后 compute_clue 用空/残留状态 → 线索
+	# 数字全错（门禁踩雷、游戏内错数）。导出空字典的规则不写入（无隐藏态，零影响）。
+	var hs := {}
+	var clue_obj: Object = RuleRegistry.default().resolve(StringName(clue_rule_id))
+	if clue_obj != null and clue_obj.has_method("export_hidden_state"):
+		var st: Dictionary = clue_obj.call("export_hidden_state")
+		if not st.is_empty():
+			hs[clue_rule_id] = st
+	for gid in global_rule_ids:
+		var g_obj: Object = RuleRegistry.default().resolve(StringName(gid))
+		if g_obj != null and g_obj.has_method("export_hidden_state"):
+			var gst: Dictionary = g_obj.call("export_hidden_state")
+			if not gst.is_empty():
+				hs[str(gid)] = gst
+	if not hs.is_empty():
+		out["hidden_state"] = hs
 	if topology != null:
 		out["topology"] = _topology_to_dict(topology)
 	return out

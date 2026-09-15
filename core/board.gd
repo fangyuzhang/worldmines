@@ -152,6 +152,16 @@ func load_level(level: Dictionary) -> void:
                         if dt_rule != null and dt_rule.has_method("set_dominoes"):
                                 dt_rule.set_dominoes(dominoes)
 
+        # ★ 隐藏态恢复（2026-09-16，HANDOFF 已知坑 #18）：读取 level["hidden_state"] 并分发给
+        # 对应规则实例——否则 o4/o5x 等隐藏态规则载盘后 compute_clue 用空/残留状态 → 数字全错。
+        # 与 DT 骨牌 set_dominoes 同为「载盘状态同步」；顺序必须在 _compute_clues() 之前。
+        if level.has("hidden_state"):
+                var hs: Dictionary = level.get("hidden_state", {})
+                for rid in hs:
+                        var hr: Object = RuleRegistry.default().resolve(StringName(rid))
+                        if hr != null and hr.has_method("import_hidden_state"):
+                                hr.call("import_hidden_state", hs[rid])
+
         for m in level.get("mines", []):
                 var pos := Vector2i(m["c"], m["r"])
                 _static_mines.append(pos)
