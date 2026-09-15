@@ -49,10 +49,12 @@ var _target_difficulty := 0.0  # >0 = 按目标难度生成（第 8 参数，删
 var _extra_combos_spec := ""   # 第 9 参数：额外组合规格（Mod/自定义规则）
 var _per_tier := 0             # 第 11 参数：>0 = 每档独立上限（GDD §4.7 关卡集口径：每集 100 关）
 var _timeout_coef := 3000      # 第 12 参数：单关超时系数（超时 = side² × 系数 ms；重编码算子如 O2/8×8 需上调）
+var _tiered_target := false    # 第 13 参数："tiered" = 方案 B 动态目标（按未满档传 target_difficulty）
+var _stall_max := 60           # 第 14 参数：停滞阈值覆盖（默认 60；调小 = 满档后更早停单元）
 
 ## per_tier 模式停滞阈值：连续 N 次尝试全部撞「已满档」→ 停止该单元
 ##（防「easy 满后为 normal/hard 白跑满 seed_max」——O1 等低难度天花板算子的常态）。
-const STALL_MAX := 60
+## 可用第 14 参数覆盖（_stall_max）——废品率优化方案 A：调小省尾部空等时间。
 var _issues_path := ""  # issues jsonl 路径（记录功能，分片命名）
 
 
@@ -130,6 +132,22 @@ func _build_extra_combos() -> Array:
 ## v2.9.3 收敛为唯一真值入口，新增/Mod 变体自动正确。
 func _is_feasible(clue: String, globals: Array, side: int, mines: int) -> bool:
 	return RuleFeasibility.query(clue, globals, side, mines)
+
+
+## 方案 B（废品率优化）：按「下一个未满档」返回定向难度目标。
+## 顺序 intro→easy→normal→hard——低档优先（易产，防高难档死磕阻塞）。
+## 取「档下界 + 10% 档宽（封顶 0.25）」：删线索刚过线即停（省时间）；intro 下界为 0 → 固定 0.05。
+## hard 的 max=1e9 → 封顶保证目标有限（2.2+0.25=2.45）。
+func _next_tier_target(made_by_tier: Dictionary) -> float:
+	for tid in ["intro", "easy", "normal", "hard"]:
+		if _per_tier <= 0 or int(made_by_tier.get(tid, 0)) < _per_tier:
+			if tid == "intro":
+				return 0.05
+			var t: Dictionary = Difficulty.TIERS[tid]
+			var lo := float(t["min"])
+			var width := float(t["max"]) - lo
+			return lo + minf(width * 0.1, 0.25)
+	return 0.0
 
 
 func _timeout_for(side: int) -> int:
@@ -289,6 +307,14 @@ func _initialize() -> void:
 	# 第 12 参：单关超时系数（默认 3000；O2 等重编码算子 8×8 单关 >192s，需上调避免误杀）。
 	if args.size() >= 12 and args[11] != "":
 		_timeout_coef = int(args[11])
+	# 第 13 参："tiered" = 动态目标（废品率优化方案 B）——按「下一个未满档」传 target_difficulty，
+	# 删线索「朝档走 + 达标即停」；默认关（产出行为不变，实验对照用）。
+	if args.size() >= 13 and args[12] != "":
+		if str(args[12]) == "tiered":
+			_tiered_target = true
+	# 第 14 参：停滞阈值覆盖（废品率优化方案 A）——默认 60，调小 = 满档后更早停单元。
+	if args.size() >= 14 and args[13] != "":
+		_stall_max = int(args[13])
 	DirAccess.make_dir_recursive_absolute(_out_dir)
 	# 记录文件路径（分片命名——多进程写同一文件会互相覆盖，v2.9.3 probe 实测教训）
 	_issues_path = "%s/%s" % [_out_dir,
@@ -398,9 +424,13 @@ func _initialize() -> void:
 						"max_diff": max_diff_seen, "tried": u_tried}))
 					break
 				var t_seed := Time.get_ticks_msec()
+				# 方案 B：动态目标——tiered 模式下按「下一个未满档」定向传 target_difficulty。
+				var t_target := _target_difficulty
+				if _tiered_target and t_target <= 0.0:
+					t_target = _next_tier_target(made_by_tier)
 				var level: Dictionary = gen.generate_with_rules(
 					combo["clue"], combo["globals"], Vector2i(side, side), mines, seed,
-					0, 50, null, _timeout_for(side), _target_difficulty)
+					0, 50, null, _timeout_for(side), t_target)
 				var cost_ms := Time.get_ticks_msec() - t_seed
 				u_tried += 1
 				# 阶段统计差分累计（generate_with_rules 内每次调用重置）
@@ -431,7 +461,7 @@ func _initialize() -> void:
 				# 连续撞满档达 STALL_MAX → 停单元（防低难度天花板算子白跑满 seed_max）。
 				if _per_tier > 0 and int(made_by_tier.get(tier, 0)) >= _per_tier:
 					u_full_stall += 1
-					if u_full_stall >= STALL_MAX:
+					if u_full_stall >= _stall_max:
 						break
 					continue
 				u_full_stall = 0
