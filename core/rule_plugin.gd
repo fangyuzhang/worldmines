@@ -124,6 +124,18 @@ func import_hidden_state(_state: Dictionary) -> void:
 	pass
 
 
+# ==== 能力声明（2026-09-16，复盘评审 C2/C3 整改）====
+
+## 规则**显式声明自身能力**，供生成器/工具做能力校验——取代 `has_method` 鸭子探测（隐式契约）。
+## 返回形如 {"k_knob": true, "hidden_state": true} 的字典；**默认 {} = 未声明**。
+## 兼容策略：调用方应「**优先查 declares()、未声明时回退 has_method**」——旧规则零改动可用，
+## 新规则建议显式声明（新增能力时同步声明，避免「实现了但工具不知道 / 工具探测了但规则没实现」）。
+## 已知能力键：k_knob（set_k_public/set_k_ratio/is_k_public）、hidden_state（export/import_hidden_state）、
+##            mask（supports_mask/build_interval_constraints）、place_mines（构造式布雷）。
+func declares() -> Dictionary:
+	return {}
+
+
 ## 隐藏态坐标数组排序比较器（先 r 后 c，保证导出确定序；mod 可用 sort_custom 引用）。
 static func state_pos_less(a: Dictionary, b: Dictionary) -> bool:
 	return int(a["r"]) * 1000 + int(a["c"]) < int(b["r"]) * 1000 + int(b["c"])

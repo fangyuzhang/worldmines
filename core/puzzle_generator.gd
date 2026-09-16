@@ -414,6 +414,31 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 	return {}
 
 
+## 参数对象化入口（2026-09-16，复盘评审 C1 整改 / 架构级）：以字典传参替代 15 个位置参数。
+## 键（均可选，缺省 = generate_with_rules 的默认值）：
+##   clue_rule_id / global_rule_ids / size(Vector2i) / mine_count / seed /
+##   mask_count / attempts / topology / timeout_ms / target_difficulty /
+##   mask_lo / mask_strategy / mask_pre
+## 用法：gen.generate_with_opts({"clue_rule_id": "o4", "size": Vector2i(6, 6), "seed": 200})
+## 说明：内部**转调 generate_with_rules**（零行为差异）；新调用方建议走本入口（新增参数不再
+##       扩散到全部调用点）；旧签名保留兼容，可渐进迁移。
+func generate_with_opts(opts: Dictionary) -> Dictionary:
+	return generate_with_rules(
+		str(opts.get("clue_rule_id", "classic")),
+		opts.get("global_rule_ids", []) as Array,
+		opts.get("size", Vector2i(5, 5)) as Vector2i,
+		int(opts.get("mine_count", 0)),
+		int(opts.get("seed", 1)),
+		int(opts.get("mask_count", 0)),
+		int(opts.get("attempts", 50)),
+		opts.get("topology", null) as GridInterface,
+		int(opts.get("timeout_ms", 15_000)),
+		float(opts.get("target_difficulty", 0.0)),
+		int(opts.get("mask_lo", 1)),
+		int(opts.get("mask_strategy", 0)),
+		bool(opts.get("mask_pre", false)))
+
+
 ## 从激活线索中选 mask_count 个「值 ≥1 且支持遮蔽」的格变成问号（interval [lo, hi]）。
 ## v3.0 双旋钮（难度体系 v2）：
 ##   · mask_lo：区间下界（默认 1 = 原「排除 0」语义；0 = 完全弱化该格信息）。
@@ -864,7 +889,12 @@ func _build_level_from_rules(clue_rule_id: String, global_rule_ids: Array, rows:
 		if not st.is_empty():
 			hs[clue_rule_id] = st
 	# k 旋钮落盘（2026-09-16）：不公开盘标记——UI/展示侧据此隐藏 k 信息（公开档默认不写字段，零影响）。
-	if clue_obj != null and clue_obj.has_method("is_k_public") and not bool(clue_obj.call("is_k_public")):
+	# 能力校验（复盘评审 C3）：优先 declares()，未声明时回退 has_method（向后兼容）。
+	var caps: Dictionary = {}
+	if clue_obj != null and clue_obj.has_method("declares"):
+		caps = clue_obj.call("declares")
+	var has_k_knob := bool(caps.get("k_knob", false)) or (clue_obj != null and clue_obj.has_method("is_k_public"))
+	if has_k_knob and not bool(clue_obj.call("is_k_public")):
 		out["k_public"] = false
 	for gid in global_rule_ids:
 		var g_obj: Object = RuleRegistry.default().resolve(StringName(gid))

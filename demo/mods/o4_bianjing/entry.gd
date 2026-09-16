@@ -101,6 +101,10 @@ class VariRadiusRule:
 		_k_ratio = 0.25
 		_k_public = true
 
+	## 能力声明（评审 C3）：显式声明本规则具备的能力（取代鸭子探测）。
+	func declares() -> Dictionary:
+		return {"k_knob": true, "hidden_state": true, "mask": false}
+
 	## 共享变量池的索引公式（远离自动编号段的固定偏移——见 RuleBuilder.bool_var_at 注释）。
 	static func _wid(c: int, r: int) -> int:
 		return 1_000_000 + r * 64 + c

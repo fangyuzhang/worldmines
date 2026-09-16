@@ -50,17 +50,16 @@ func _initialize() -> void:
 		var g: Object = RuleRegistry.default().resolve(StringName(str(gid)))
 		if g != null:
 			gs.append(g)
-	# 隐藏态规则检测（2026-09-16 修复）：脚本覆写了 export_hidden_state（如 o4/o5x）→ 必须走
-	# place_mines 获得「真实布雷 + 隐藏态」。否则 compute_clue 在空隐藏态下产出全错线索——
-	# 正是「O5b 序贯 0/10 假阴性」「O4 编码侥幸 20/20」的根因（HANDOFF 工具坑）。
-	# 检测用「脚本方法列表」而非「调 export 看非空」：后者依赖空态返回契约（模糊）。
+	# 隐藏态规则检测（第三轮修正，2026-09-16）：
+	# ① 首轮用 get_script_method_list() 推断「是否覆写」——**错**（该列表含继承方法 → 所有规则
+	#    都被判为隐藏态规则）→ o10（无构造式布雷）走 place_mines 得空布雷 → 空盘零产（已修）。
+	# ② 现行判据：**declares() 声明优先**（能力契约，评审 C3），无声明时用已知名单兜底。
+	const HIDDEN_CAPABLE := ["o4", "o5x", "o5b"]
 	var has_hidden := false
-	var scr: Script = rule.get_script() as Script
-	if scr != null:
-		for m in scr.get_script_method_list():
-			if str(m.get("name", "")) == "export_hidden_state":
-				has_hidden = rule.has_method("place_mines")
-				break
+	if rule.has_method("declares"):
+		has_hidden = bool((rule.call("declares") as Dictionary).get("hidden_state", false))
+	if not has_hidden:
+		has_hidden = str(clue_id) in HIDDEN_CAPABLE
 	print("=== 设计预检: %s + %s（%d 盘/尺寸，%s）===" % [clue_id, str(globals), trials,
 		"place_mines 真实布雷【隐藏态规则】" if has_hidden else "随机布雷"])
 	for side in [5, 6, 7, 8, 9]:
@@ -76,7 +75,9 @@ func _initialize() -> void:
 				# 隐藏态规则：place_mines 同时产出布雷与隐藏态（与生产路径一致）
 				for p in rule.call("place_mines", rng, side, side, mines_n):
 					mine_set[p] = true
-			else:
+			# 防御（第三轮修正）：place_mines 返回空（规则无构造式布雷/异常）→ 回退随机布雷，
+			# 避免产出「零雷空盘」（其指纹 = 线索数等于盘面格数、序贯必然零产）。
+			if mine_set.is_empty():
 				while mine_set.size() < mines_n:
 					mine_set[Vector2i(rng.randi_range(0, side - 1), rng.randi_range(0, side - 1))] = true
 			var active := {}

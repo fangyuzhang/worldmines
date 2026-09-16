@@ -51,6 +51,19 @@ func test_o4_k_public_true_default_no_flag() -> void:
 	assert_false(lv.has("k_public"), "公开档不应有 k_public 字段")
 
 
+func test_gen_opts_entry_equivalent() -> void:
+	# 参数对象化入口（评审 C1）：generate_with_opts 与位置参数逐位等价
+	var a: Dictionary = PuzzleGenerator.new().generate_with_rules(
+		"o5", [], Vector2i(5, 5), 10, 7, 3, 50, null, 120_000, 0.0, 1, 0, true)
+	var b: Dictionary = PuzzleGenerator.new().generate_with_opts({
+		"clue_rule_id": "o5", "size": Vector2i(5, 5), "mine_count": 10, "seed": 7,
+		"mask_count": 3, "timeout_ms": 120_000, "mask_pre": true})
+	assert_false(a.is_empty(), "位置参数应可生成")
+	assert_false(b.is_empty(), "opts 入口应可生成")
+	assert_eq((a.get("revealed", []) as Array).size(), (b.get("revealed", []) as Array).size(),
+		"两入口线索数应一致（同 seed 同盘）")
+
+
 func test_o5x_k_knob_contract() -> void:
 	var rule: Object = RuleRegistry.default().resolve(&"o5x")
 	rule.call("set_k_ratio", 0.2)
