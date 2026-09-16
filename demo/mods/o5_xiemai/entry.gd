@@ -95,6 +95,12 @@ class XiemaiRule:
 	func _k_of(cols: int, rows: int) -> int:
 		return maxi(1, int(floor(float(cols * rows) * _k_ratio)))
 
+	## 便捷重置（契约防护）：规则为注册表单例——调用方 set 后应在生成结束（或批次结束）调用本方法，
+	## 避免状态跨调用残留（同 _s1 的状态管理契约）。
+	func reset_k_knob() -> void:
+		_k_ratio = 0.25
+		_k_public = true
+
 	# ==== 逆向编码 ====
 
 	static func _sid(c: int, r: int) -> int:

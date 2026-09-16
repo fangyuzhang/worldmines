@@ -95,6 +95,12 @@ class VariRadiusRule:
 	func _k_of(cols: int, rows: int) -> int:
 		return maxi(1, int(floor(float(cols * rows) * _k_ratio)))
 
+	## 便捷重置（契约防护）：规则为注册表单例——调用方 set 后应在生成结束（或批次结束）调用本方法，
+	## 避免状态跨调用残留（同 set_dominoes / o5x._s1 的状态管理契约）。
+	func reset_k_knob() -> void:
+		_k_ratio = 0.25
+		_k_public = true
+
 	## 共享变量池的索引公式（远离自动编号段的固定偏移——见 RuleBuilder.bool_var_at 注释）。
 	static func _wid(c: int, r: int) -> int:
 		return 1_000_000 + r * 64 + c

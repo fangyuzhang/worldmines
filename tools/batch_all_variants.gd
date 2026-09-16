@@ -51,6 +51,7 @@ var _per_tier := 0             # 第 11 参数：>0 = 每档独立上限（GDD �
 var _timeout_coef := 3000      # 第 12 参数：单关超时系数（超时 = side² × 系数 ms；重编码算子如 O2/8×8 需上调）
 var _tiered_target := false    # 第 13 参数："tiered" = 方案 B 动态目标（按未满档传 target_difficulty）
 var _stall_max := 60           # 第 14 参数：停滞阈值覆盖（默认 60；调小 = 满档后更早停单元）
+var _k_public := -1            # 第 15 参数：k 旋钮（0=不公开 / 1=公开；缺省 -1=不设置，保持规则默认）
 
 ## per_tier 模式停滞阈值：连续 N 次尝试全部撞「已满档」→ 停止该单元
 ##（防「easy 满后为 normal/hard 白跑满 seed_max」——O1 等低难度天花板算子的常态）。
@@ -315,6 +316,10 @@ func _initialize() -> void:
 	# 第 14 参：停滞阈值覆盖（废品率优化方案 A）——默认 60，调小 = 满档后更早停单元。
 	if args.size() >= 14 and args[13] != "":
 		_stall_max = int(args[13])
+	# 第 15 参：k 旋钮（0=不公开 / 1=公开；缺省不设置）。对实现 set_k_public 的规则（o4/o5x）
+	# 生效：不公开 → 编码省略 Σ=k（生成验证即「不知 k」口径，通过 = 满足 R01）+ 关卡落盘 k_public=false。
+	if args.size() >= 15 and args[14] != "":
+		_k_public = int(args[14])
 	DirAccess.make_dir_recursive_absolute(_out_dir)
 	# 记录文件路径（分片命名——多进程写同一文件会互相覆盖，v2.9.3 probe 实测教训）
 	_issues_path = "%s/%s" % [_out_dir,
@@ -351,6 +356,12 @@ func _initialize() -> void:
 	print("=== 全变体+混合批量生成（%d 组合 × 5 尺寸 × %s）[shard %d/%d]===" % [
 		combos.size(), quota_desc, _shard_idx, _shard_total])
 	for combo in combos:
+		# k 旋钮（第 15 参）：对本组合的 clue/global 规则统一设置（不公开 = 省略 Σ=k 口径）
+		if _k_public >= 0:
+			for _rid in ([combo["clue"]] as Array) + (combo.get("globals", []) as Array):
+				var _kr: Object = RuleRegistry.default().resolve(StringName(str(_rid)))
+				if _kr != null and _kr.has_method("set_k_public"):
+					_kr.call("set_k_public", _k_public == 1)
 		var combo_sides: Array = combo.get("sides", [])
 		for side in SIZES:
 			if not combo_sides.is_empty() and not combo_sides.has(side):
