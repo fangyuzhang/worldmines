@@ -686,9 +686,12 @@ func _prune_sequential(oracle: RuleOracle, active: Dictionary, keys: Array, dead
 		var backup: Variant = active[p]
 		active.erase(p)
 		# 序贯可解保持（R01 真义）：删除后仍能序贯纯逻辑推出全雷才保留删除。
-		# 遮蔽前置（方向 1）：判定带 masked 区间语义——在「删后 active + 遮蔽弱约束」下验证。
+		# 遮蔽前置（方向 1）：注意判定**忽略遮蔽**（传 {}）——实测（2026-09-16 交叉验证）：
+		# 若把遮蔽弱区间带入判定，任何删除都会判定失败 → 线索全保留（clue_ratio=1.0）、
+		# 盘退化为「全线索」（既无删减也谈不上难度提升）。遮蔽格只受「不许删」保护（keys 排除），
+		# 删减逻辑按精确线索口径找最小充分集——这才是前置的设计意图（选格前移 + MSC 照常重建）。
 		var stats := {"rounds": []}
-		if _solve_rules_stepwise(grid_size, active, masked, total_mines, oracle, values, stats):
+		if _solve_rules_stepwise(grid_size, active, {}, total_mines, oracle, values, stats):
 			state["ok"] = int(state["ok"]) + 1
 			if float(state["target"]) > 0.0:
 				var d := float(difficulty_from_stats(stats)["difficulty"])
