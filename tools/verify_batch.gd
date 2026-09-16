@@ -118,9 +118,13 @@ func _initialize() -> void:
 		print("  候选雷数回退关: %d（守恒算子整除/奇偶要求，合法）" % fallback_count)
 	_report_clue_ratio(clue_rows)
 	if profiled >= 3 and tiers["normal"] == 0 and tiers["hard"] == 0:
-		# 症状提示（不判失败）：删线索超时不足会静默产出「全 easy」的偷工题库，
-		# 根因见 batch_generate.gd 的超时说明。需要 normal/hard 请加大 timeout_seconds。
-		print("  警告: normal/hard 档为空——可能是删线索超时不足（见 batch_generate 超时说明）")
+		# 症状提示（不判失败）。两种成因，处置相反，须按 ①/② 区分（2026-09-16 补）：
+		#   ① 删线索超时不足 → 静默产出「全 easy」的偷工题库（需加大 timeout_seconds，见 batch_generate）；
+		#   ② 该算子可达难度天花板本就 < normal 门槛（如 o9/o5x 等信息型算子）→ 分层口径的正常现象，
+		#      **不要**加 timeout（白烧算力，产线 tiered 停滞阈值会正确退出）。
+		# 判据：盯上面的「线索冗余分层」——同（尺寸×档）组内无离群、中位接近 1.0 → 判 ②（线索已删无可删）。
+		print("  警告: normal/hard 档为空——需区分：①删线索超时不足（见 batch_generate 超时说明，加 timeout）"
+			+ "｜②算子难度天花板 < normal 门槛（信息型算子正常现象，勿加 timeout）——判据见上方「线索冗余分层」")
 	for x in failed:
 		print("  FAIL: " + x)
 	if failed.is_empty():
