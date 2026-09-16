@@ -20,8 +20,14 @@ const CliShutdown := preload("res://tools/cli_shutdown.gd")
 
 ## R07 固定雷数契约（GDD）：尺寸 → 雷数。仅对 5..9 矩形盘生效。
 const R07_MINES := {5: 10, 6: 14, 7: 20, 8: 26, 9: 32}
-## 线索冗余告警阈值：clue_ratio（线索数/非雷格数）超过它 = 删线索不充分（假 easy 倾向）。
-const CLUE_RATIO_WARN := 0.5
+## 线索冗余诊断（2026-09-16 改口径）：原「绝对阈值 0.5」对低档盘是**结构性误报**——
+## clue_ratio 随档位单调递减，是 tiered 产线「朝档走 + 达标即停」的必然结果
+## （实测三批一致：intro 中位 0.92~0.95 / easy 0.64~0.80 / normal 0.44~0.59 / hard 0.47~0.51，
+## 见 tools/_diag_clue_ratio.py）。旧阈值把正常的 intro 盘 100% 判为告警，反而淹没真信号。
+## 改为「相对口径」：按（尺寸 × 档）分组，组内中位数 + DELTA 以上 = 离群（疑似删线索不充分）。
+const CLUE_RATIO_OUTLIER_DELTA := 0.15
+## 相对口径的最小样本：组内盘数少于此值时不告警（只展示分层中位数），避免小样本误判。
+const CLUE_RATIO_MIN_SAMPLE := 5
 
 var _out_dir := "user://batch_levels"
 
@@ -47,9 +53,11 @@ func _initialize() -> void:
 		return
 	var ok := 0
 	var failed: Array[String] = []
-	var tiers := {"easy": 0, "normal": 0, "hard": 0}
+	# 四档全计（2026-09-16 修复）：旧实现只有 easy/normal/hard——v3.0 新增 intro 档后
+	# intro 盘**一关都不计数**（o9 250 关全 intro → 输出 easy=0 normal=0 hard=0）。
+	var tiers := {"intro": 0, "easy": 0, "normal": 0, "hard": 0}
 	var profiled := 0  # 有 difficulty_profile 的关卡数（手工关可能没有，不计入分布告警）
-	var ratio_warn: Array[String] = []
+	var clue_rows: Array = []  # 冗余线索分层诊断数据 {side, tier, cr, file}（末尾 _report_clue_ratio）
 	var fallback_count := 0  # 候选雷数回退关数（合法但非标准雷数，单独计数）
 	for path in files:
 		var level := _load_json(path)
@@ -88,26 +96,27 @@ func _initialize() -> void:
 			ok += 1
 			var prof: Dictionary = level.get("difficulty_profile", {})
 			var d := float(prof.get("difficulty", -1.0))
+			var t := ""
 			if d >= 0.0:
 				profiled += 1
-				var t := Difficulty.tier_of(d)
+				t = Difficulty.tier_of(d)
 				if tiers.has(t):
 					tiers[t] += 1
-			# 冗余线索告警（症状提示，不判死）：clue_ratio 高 = 删线索不充分 → 假 easy 倾向。
+			# 冗余线索诊断（症状提示，不判死）：clue_ratio 高 = 删线索不充分 → 假 easy 倾向。
+			# 2026-09-16：改「相对口径」——先收集，末尾按（尺寸 × 档）分组对比（_report_clue_ratio）。
 			var cr := float(prof.get("clue_ratio", 0.0))
-			if cr > CLUE_RATIO_WARN:
-				ratio_warn.append("%s clue_ratio=%.2f" % [path.get_file(), cr])
+			if cr > 0.0 and t != "":
+				clue_rows.append({"side": side, "tier": t, "cr": cr, "file": path.get_file()})
 		else:
 			failed.append("%s (%s)" % [path, str(log.get("reason", "推不到底"))])
 	print("=== 题库验证完成 ===")
 	print("  目录: %s" % _out_dir)
 	print("  可解 %d / 失败 %d" % [ok, failed.size()])
-	print("  难度分布: easy=%d normal=%d hard=%d（有画像 %d 关）" % [tiers["easy"], tiers["normal"], tiers["hard"], profiled])
+	print("  难度分布: intro=%d easy=%d normal=%d hard=%d（有画像 %d 关）" % [
+		tiers["intro"], tiers["easy"], tiers["normal"], tiers["hard"], profiled])
 	if fallback_count > 0:
 		print("  候选雷数回退关: %d（守恒算子整除/奇偶要求，合法）" % fallback_count)
-	if ratio_warn.size() > 0:
-		print("  冗余线索告警(clue_ratio>%.2f): %d 关——删线索不充分会虚低难度，前几例: %s" % [
-			CLUE_RATIO_WARN, ratio_warn.size(), ", ".join(ratio_warn.slice(0, 5))])
+	_report_clue_ratio(clue_rows)
 	if profiled >= 3 and tiers["normal"] == 0 and tiers["hard"] == 0:
 		# 症状提示（不判失败）：删线索超时不足会静默产出「全 easy」的偷工题库，
 		# 根因见 batch_generate.gd 的超时说明。需要 normal/hard 请加大 timeout_seconds。
@@ -124,6 +133,63 @@ func _initialize() -> void:
 
 func _process(_delta: float) -> bool:
 	return CliShutdown.poll(self)
+
+
+## 线索冗余分层诊断（相对口径，2026-09-16）：先按档给出 clue_ratio 中位数（信息展示），
+## 再按（尺寸 × 档）分组做离群检测——组内盘数 ≥ CLUE_RATIO_MIN_SAMPLE 时，
+## clue_ratio > 组中位 + CLUE_RATIO_OUTLIER_DELTA 的盘列为「疑似删线索不充分」。
+##
+## 为什么不用绝对阈值：clue_ratio 由「档位目标」决定（tiered 产线删到 target 即停），
+## intro/easy 盘天然保留大部分线索——旧口径把它们全判告警（o9 100%、o10 91%），
+## 真信号被淹没。相对口径下正常批次应接近 0 离群，只有「同档同尺寸内显著偏高的盘」才报。
+## 症状提示，不判失败（不影响 exit code）。
+func _report_clue_ratio(rows: Array) -> void:
+	if rows.is_empty():
+		return
+	var by_tier := {}
+	var groups := {}
+	for r in rows:
+		var t := str(r["tier"])
+		if not by_tier.has(t):
+			by_tier[t] = []
+		by_tier[t].append(float(r["cr"]))
+		var k := "%dx%d|%s" % [int(r["side"]), int(r["side"]), t]
+		if not groups.has(k):
+			groups[k] = []
+		groups[k].append(r)
+	var parts: Array[String] = []
+	for t in ["intro", "easy", "normal", "hard"]:
+		if by_tier.has(t):
+			var arr: Array = by_tier[t]
+			arr.sort()
+			parts.append("%s med=%.2f(n=%d)" % [t, float(arr[arr.size() / 2]), arr.size()])
+	print("  线索冗余分层(clue_ratio 中位): %s" % (" | ".join(parts) if not parts.is_empty() else "无"))
+	var outliers: Array[String] = []
+	var checked := 0
+	for k in groups:
+		var g: Array = groups[k]
+		if g.size() < CLUE_RATIO_MIN_SAMPLE:
+			continue
+		checked += g.size()
+		var crs: Array = []
+		for r in g:
+			crs.append(float(r["cr"]))
+		crs.sort()
+		var med := float(crs[crs.size() / 2])
+		for r in g:
+			if float(r["cr"]) > med + CLUE_RATIO_OUTLIER_DELTA:
+				outliers.append("%s clue_ratio=%.2f (组中位 %.2f, %s)" % [
+					str(r["file"]), float(r["cr"]), med, k])
+	if checked == 0:
+		print("  线索冗余离群: 样本不足（各（尺寸×档）组 < %d 盘），仅展示分层中位不告警" % CLUE_RATIO_MIN_SAMPLE)
+		return
+	outliers.sort()
+	if outliers.is_empty():
+		print("  线索冗余离群: 0 关（%d 关参与分组对比，无盘高于同（尺寸×档）组中位 +%.2f）" % [
+			checked, CLUE_RATIO_OUTLIER_DELTA])
+	else:
+		print("  线索冗余离群: %d 关 / %d 关参与对比——高于同（尺寸×档）组中位 +%.2f，疑似删线索不充分（相对口径，不判死）前几例: %s" % [
+			outliers.size(), checked, CLUE_RATIO_OUTLIER_DELTA, ", ".join(outliers.slice(0, 3))])
 
 
 func _list_level_json(dir_path: String) -> Array[String]:
