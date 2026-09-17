@@ -97,13 +97,27 @@ func _on_game_ended(won: bool) -> void:
         _undo_btn.visible = not won  # 撤回仅在失败终局可用
     # 下一关：只有「生成关卡序列」里的关卡才知道下一关是谁（见 LevelSequence）。
     # 手工关（res://levels/…）没有序列概念 → 不提供该入口。
+    # 下一关的落点（跨尺寸）：本尺寸打完接下一个尺寸的第 1 关，直到 9×9 末关为止。
+    var next_pos := LevelSequence.advance(GameSession.level_path)
+    var cur_pos := LevelSequence.parse_path(GameSession.level_path)
     if _next_btn != null:
         _next_btn.visible = won and LevelSequence.has_next(GameSession.level_path)
-    # 跳过：失败才有（胜利已给「下一关」），同样只对生成序列关卡提供。
+        # 跨尺寸时把目标写进按钮文案：让玩家知道点下去是「进 6×6」而不是又一张同尺寸图
+        if not next_pos.is_empty() and int(next_pos["size"]) != int(cur_pos.get("size", 0)):
+            _next_btn.text = "进入 %d×%d" % [int(next_pos["size"]), int(next_pos["size"])]
+        else:
+            _next_btn.text = "下一关"
+    # 跳过：失败才有（胜利已给「下一关」），只对生成序列关卡提供。
     # 用 has_skip_target 而非 has_next——后者要求「当前关已通关」，
     # 而失败终局当前关必然未通关，用它按钮永远不会出现。
+    #
+    # 真的没有下一关（9×9 末关）：按钮**仍然显示**但置灰 + 改文案，
+    # 否则玩家看到的是「按需求该有的按钮凭空不见了」（实测反馈过这种困惑）
+    # ——没出路和没按钮，前者至少说明了原因。
     if _skip_btn != null:
-        _skip_btn.visible = (not won) and LevelSequence.has_skip_target(GameSession.level_path)
+        _skip_btn.visible = (not won) and not cur_pos.is_empty()
+        _skip_btn.disabled = next_pos.is_empty()
+        _skip_btn.text = "跳过本关" if not next_pos.is_empty() else "已是最后一关"
     var board: Board = GameSession.board
     var revealed_n: int = board.get_stats()["revealed"] if board != null else 0
     var total: int = int(GameSession.elapsed)
@@ -113,25 +127,29 @@ func _on_game_ended(won: bool) -> void:
     _apply_theme()
 
 
-## 前往同一「变体 × 尺寸」序列的下一关。
-## 生成流程归选关页管（它才知道怎么生成/缓存关卡文件），这里只交接「翻到哪一套」的意图。
+## 前往下一关（可能跨尺寸：本尺寸打完接下一个尺寸的第 1 关）。
+## 生成流程归选关页管（它才知道怎么生成/缓存关卡文件），这里只交接意图；
+## auto_start=true 让选关页接着**直接开局**——否则玩家点「下一关」只是回到选关页，
+## 还得再点一次「开始游戏」（实测反馈：这不叫「到下一关」）。
 func _on_next_level() -> void:
-    var p := LevelSequence.parse_path(GameSession.level_path)
-    if not p.is_empty():
-        LevelSequence.request_focus(str(p["mode"]), int(p["size"]))
+    var pos := LevelSequence.advance(GameSession.level_path)
+    if pos.is_empty():
+        return
+    # tier：关卡库关卡跨档时必须带上（否则选关页落回默认档、开局错关）；生成关为空串
+    LevelSequence.request_focus(str(pos["mode"]), int(pos["size"]), true, str(pos.get("tier", "")))
     SaveCoordinator.clear()
     get_tree().change_scene_to_file("res://ui/level_select.tscn")
 
 
-## 跳过本关（失败终局）：记为 skipped → 解锁下一关 → 回选关页定位到下一关。
+## 跳过本关（失败终局）：记为 skipped → 解锁下一关 → 直接开局下一关（可能跨尺寸）。
 ## 与「下一关」共用同一条导航路径（意图交接给选关页），区别只在进度写法：
 ## 跳过不写 cleared，所以通关统计与最佳用时不受影响，玩家回头补通后标记自动转 ✓。
 func _on_skip_level() -> void:
-    if LevelSequence.skip_to_next(GameSession.level_path) == "":
-        return  # 没有下一关（按钮本不该出现，防御）
-    var p := LevelSequence.parse_path(GameSession.level_path)
-    if not p.is_empty():
-        LevelSequence.request_focus(str(p["mode"]), int(p["size"]))
+    var pos := LevelSequence.advance(GameSession.level_path)
+    if pos.is_empty():
+        return  # 最后一关（按钮已置灰，这里是防御）
+    LevelSequence.skip_to_next(GameSession.level_path)
+    LevelSequence.request_focus(str(pos["mode"]), int(pos["size"]), true, str(pos.get("tier", "")))
     SaveCoordinator.clear()
     get_tree().change_scene_to_file("res://ui/level_select.tscn")
 

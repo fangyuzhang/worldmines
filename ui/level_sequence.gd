@@ -189,8 +189,10 @@ static var _pending_focus: Dictionary = {}
 ## 交接「翻到哪一套」的意图。
 ## auto_start = true 时要求选关页领到意图后**直接开局**（生成仍归它管），
 ## 玩家感知是「点『下一关』/『跳过本关』就直接进下一关」，而不是回到选关页再点一次。
-static func request_focus(mode_id: String, size: int, auto_start := false) -> void:
-	_pending_focus = {"mode": mode_id, "size": size, "auto_start": auto_start}
+## tier：关卡库关卡的档位（2026-09-18 补）——**下一关跨档时必须带上**，否则选关页
+## 会落回默认档（入门）并自动开局错关。生成关传空串即可（无档位概念）。
+static func request_focus(mode_id: String, size: int, auto_start := false, tier := "") -> void:
+	_pending_focus = {"mode": mode_id, "size": size, "auto_start": auto_start, "tier": tier}
 
 
 ## 领取并清空（一次性意图）。无待处理请求返回空字典。

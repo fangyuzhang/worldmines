@@ -155,6 +155,7 @@ func _consume_pending_focus() -> void:
 		return
 	var mode_id := str(focus.get("mode", ""))
 	var want_size := int(focus.get("size", 0))
+	var want_tier := str(focus.get("tier", ""))
 	var auto_start := bool(focus.get("auto_start", false))
 	for i in MODES.size():
 		if str(MODES[i]["id"]) != mode_id:
@@ -164,6 +165,8 @@ func _consume_pending_focus() -> void:
 		_open_popup(i)
 		if size_i >= 0:
 			_size_idx = size_i
+			if want_tier != "":
+				_tier = want_tier   # 跨档「下一关」：带上目标档（_refresh_popup 会校验该档有无内容）
 			_ensure_mock()
 			_refresh_popup()
 		if auto_start:
@@ -638,6 +641,17 @@ func _gg_cell(g1: String, g2: String) -> Button:
 
 # ---------- 页三：Mod（按来源分组） ----------
 
+## 玩家安装的 Mod（排除随包官方算子）。
+## 官方 22 席经 ModAPI 自举加载，但其变体已并入「单项变体」页作为一等变体——
+## 若本页再列出官方 Mod，会出现 22 个空章节（各自写着「未注册可玩变体」，实机实测踩过）。
+func _player_mod_ids() -> Array[String]:
+	var out: Array[String] = []
+	for id in ModAPI.list_mods():
+		if not ModAPI.is_bundled(str(id)):
+			out.append(str(id))
+	return out
+
+
 ## Mod 变体独立成页：数量由玩家装了什么决定，不占用内置变体的版面——
 ## 玩家装 3 个还是 30 个 Mod，「单项变体」页永远长一个样。
 func _build_mod_page() -> Control:
@@ -646,7 +660,7 @@ func _build_mod_page() -> Control:
 	vb.add_theme_constant_override("separation", 16)
 	(shell[1] as MarginContainer).add_child(vb)
 
-	var ids := ModAPI.list_mods()
+	var ids := _player_mod_ids()
 	if ids.is_empty():
 		vb.add_child(_mod_empty_state())
 		return shell[0]
@@ -659,7 +673,7 @@ func _build_mod_page() -> Control:
 	for id in ids:
 		def_total += (ModAPI.mod_info(id).get("defs", []) as Array).size()
 	var hint := Label.new()
-	hint.text = "已加载 %d 个 Mod：%d 个可玩变体 + %d 个 Def 规则　·　变体自动出现在本页，卸载后自动消失" % [
+	hint.text = "已安装 %d 个玩家 Mod：%d 个可玩变体 + %d 个 Def 规则　·　官方 22 席算子在「单项变体」页" % [
 			ids.size(), total, def_total]
 	hint.add_theme_font_size_override("font_size", 14)
 	hint.set_meta("secondary", true)
@@ -1473,10 +1487,12 @@ func _on_play() -> void:
 		_play_btn.disabled = true
 		_play_btn.text = "载入中…"
 		await get_tree().process_frame
+		# await 期间玩家可能已关掉弹窗（控件已释放）：失败路径触碰控件前必须判活
 		var lp := LevelLibrary.materialize(str(m["id"]), s, _tier, _selected)
 		if lp == "":
-			_play_btn.disabled = false
-			_refresh_stat()
+			if is_instance_valid(_play_btn):
+				_play_btn.disabled = false
+				_refresh_stat()
 			UiToast.popup(self, "关卡数据缺失（%s 档第 %d 关）" % [
 					str(Difficulty.TIERS.get(_tier, {}).get("label", _tier)), _selected + 1])
 			return
@@ -1485,8 +1501,9 @@ func _on_play() -> void:
 		if GameSession.start_level(lp):
 			get_tree().change_scene_to_file("res://ui/board_view.tscn")
 			return
-		_play_btn.disabled = false
-		_refresh_stat()
+		if is_instance_valid(_play_btn):
+			_play_btn.disabled = false
+			_refresh_stat()
 		UiToast.popup(self, "关卡加载失败")
 		return
 	_play_btn.disabled = true

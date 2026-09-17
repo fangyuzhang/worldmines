@@ -25,6 +25,7 @@ func after_each() -> void:
 	if ModAPI.list_mods().has(DEF_MOD_ID):
 		ModAPI.unload_mod(DEF_MOD_ID)
 	_remove_def_mod()
+	_remove_mod_level()
 
 
 # ---- 工具 ----
@@ -36,6 +37,15 @@ func _count_meta_buttons(node: Node, meta_key: String) -> int:
 	for c in node.get_children():
 		n += _count_meta_buttons(c, meta_key)
 	return n
+
+
+## 收集带某 meta 标记的按钮（调用方传自己的数组，避免默认参数被共享）。
+func _collect_meta_buttons(node: Node, meta_key: String, out: Array) -> Array:
+	if node is Button and node.has_meta(meta_key):
+		out.append(node)
+	for c in node.get_children():
+		_collect_meta_buttons(c, meta_key, out)
+	return out
 
 
 ## 统计「可点」的交叉格（置灰的冗余格不算入口）。
@@ -123,7 +133,9 @@ func test_ls1_three_pages_are_built() -> void:
 	assert_eq(_view._pages.size(), 3, "应有三个页面（单项变体 / 混合档 / Mod）")
 
 	var single := _count_meta_buttons(_view._pages[_view.PAGE_SINGLE], "card_btn")
-	assert_eq(single, 16, "单项变体页：经典 1 + 线索 8 + 全局约束 7 = 16 张卡片")
+	# 2026-09-18：官方 22 席算子（随包内置 Mod）并入单项变体页为一等变体——
+	# 经典 1 + 线索 18（内置 8 + 官方 O 系 10）+ 全局 19（内置 7 + 官方 S/Z 12）= 38
+	assert_eq(single, 38, "单项变体页：经典 1 + 线索 18 + 全局约束 19 = 38 张卡片（含官方算子）")
 	assert_eq(_count_meta_buttons(_view._pages[_view.PAGE_MIXED], "cell_btn"), 8 * 7,
 			"混合档默认表：8 线索 × 7 约束 = 56 个交叉格")
 
@@ -217,8 +229,9 @@ func test_ls9_mod_variant_lands_on_mod_page() -> void:
 	var mi: int = int(v2._mode_index.get("x2diag", -1))
 	assert_eq(v2._page_of(v2.MODES[mi]), v2.PAGE_MOD, "Mod 变体应归 Mod 页")
 	assert_gte(_count_meta_buttons(v2._pages[v2.PAGE_MOD], "card_btn"), 1, "Mod 页应有它的卡片")
-	assert_eq(_count_meta_buttons(v2._pages[v2.PAGE_SINGLE], "card_btn"), 16,
-			"单项变体页不应混进 Mod 变体（内置变体的位置必须稳定）")
+	# 38 = 经典 1 + 线索 18 + 全局 19（含官方算子）；**玩家 Mod 变体（x2diag）仍不得混入**
+	assert_eq(_count_meta_buttons(v2._pages[v2.PAGE_SINGLE], "card_btn"), 38,
+			"单项变体页含官方算子、但不应混进玩家 Mod 变体（位置必须稳定）")
 	assert_true(_has_label_containing(v2._pages[v2.PAGE_MOD], "代码 Mod"),
 			"分组标题应标出该 Mod 的创作形式")
 
@@ -251,6 +264,32 @@ func test_ls10_def_mod_lists_its_defs() -> void:
 	if def_lb != null:
 		assert_true(def_lb.size.x > 300.0,
 				"Def 行应占满整行而不是被挤成一列单字（实际宽 %.1f）" % def_lb.size.x)
+	# Def 是规则平台的**声明式子集**（window/aggregate 是封闭枚举），永远等价于某个内置变体：
+	# 页面要如实标出来（玩家才知道去哪儿玩同款玩法），而不是含糊一句「未注册可玩变体」。
+	assert_eq(PuzzleGenerator.def_to_rule(ModAPI.defs, "LsDir4N", true), "4n",
+			"n4+sum 应映射到内置 4n")
+	assert_eq(PuzzleGenerator.def_to_rule(ModAPI.defs, "LsMirror", false), "mx",
+			"symmetry_axis 应映射到内置 mx")
+	assert_true(_has_label_containing(v2._pages[v2.PAGE_MOD], "≡"),
+			"Def 行应标出等价的内置变体（≡）")
+
+
+# LS14：Mod 的「已生成关卡」接入选关页 —— 生成器的成品应能直接开玩
+# （早先只有模组页能生成、成品也只列在那里，选关页看不见 → 玩家得回模组页找）
+func test_ls14_generated_mod_levels_are_listed() -> void:
+	_write_def_mod()
+	_write_mod_level()
+	var r: Dictionary = ModAPI.load_mod(DEF_MOD_DIR)
+	if not r.get("ok", false):
+		pending("Def mod 加载失败：%s" % str(r.get("reason", "")))
+		return
+	var v2 = load("res://ui/level_select.tscn").instantiate()
+	add_child_autofree(v2)
+	var btn := _find_button(v2._pages[v2.PAGE_MOD], "LsDir4N_01")
+	assert_not_null(btn, "已生成的 Mod 关卡应列在 Mod 页（否则玩家得回模组页找成品）")
+	if btn != null:
+		assert_true(btn.has_meta("mod_level_btn"), "应标记为 Mod 关卡入口")
+		assert_true(str(btn.tooltip_text).contains("直接开始"), "tooltip 应说明点击即开局")
 
 
 # LS11：双约束表（约束 × 约束）——上三角结构、冗余格置灰、真值贯通到弹窗
@@ -337,6 +376,30 @@ func test_ls12_skip_unlocks_next_and_marks_tile() -> void:
 	ProgressStore.reset_cache()
 
 
+# LS13：交叉表支持键盘 / 手柄导航 —— 格子可获焦点（方向键走格、回车即开这一关）。
+# 项目整体是「鼠标优先」（FOCUS_NONE），只给交叉表开这个例外；焦点样式必须存在，
+# 否则方向键走到哪一格看不见（踩过同类坑：可见性/样式不写就等于没有）。
+func test_ls13_matrix_cells_are_focusable() -> void:
+	var v2 = load("res://ui/level_select.tscn").instantiate()
+	add_child_autofree(v2)
+	v2._show_tab(v2.PAGE_MIXED)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var cells := _collect_meta_buttons(v2._pages[v2.PAGE_MIXED], "cell_btn", [])
+	assert_gte(cells.size(), 56, "交叉表应有 56 格")
+	var actionable := 0
+	for c in cells:
+		var btn := c as Button
+		if btn.disabled:
+			continue
+		actionable += 1
+		assert_eq(btn.focus_mode, Control.FOCUS_ALL,
+				"可点的交叉格应能获得焦点（键盘/手柄导航的前提）")
+		assert_true(btn.has_theme_stylebox_override("focus"),
+				"焦点态必须有可见样式，否则方向键走到哪看不见")
+	assert_gte(actionable, 56, "约束×线索表的格子应全部可点")
+
+
 # LS5：卡片互不重叠（用户实测反馈：变体增多后选项之间互相遮挡）
 # 拆页后排布交给容器，这条仍固化「不允许出现遮挡」。
 # 多分辨率验证：1280×720 是项目设计分辨率；1280×1280 是 GUT 无头视口的实际尺寸。
@@ -353,7 +416,7 @@ func test_ls5_cards_do_not_overlap() -> void:
 		await get_tree().process_frame
 		var rects: Array = []
 		_collect_rects(v2._pages[v2.PAGE_SINGLE], "card_btn", rects)
-		assert_eq(rects.size(), 16, "%s：单项变体页应有 16 张卡片" % vp)
+		assert_eq(rects.size(), 38, "%s：单项变体页应有 38 张卡片（含官方算子）" % vp)
 		_assert_no_overlap(rects, "%s 单项变体卡片" % vp)
 		for r in rects:
 			assert_true(r.size.x > 0.0 and r.size.y > 0.0, "%s：卡片不得为零尺寸" % vp)
@@ -395,3 +458,43 @@ func test_ls8_matrix_cells_do_not_overlap() -> void:
 	for r in rects:
 		max_x = maxf(max_x, r.end.x)
 	assert_true(max_x <= 1280.0, "交叉表不得超出 1280 设计分辨率右侧（实际 %.1f）" % max_x)
+
+
+# ---- Mod 关卡的小工具 ----
+
+const DEF_LEVEL_NAME := "LsDir4N_01.json"
+
+
+## 造一个「已生成关卡」成品（复制一个真实关卡当内容）。
+func _write_mod_level() -> void:
+	var dir_path := "user://mods/%s/levels" % DEF_MOD_ID
+	DirAccess.make_dir_recursive_absolute(dir_path)
+	var src := FileAccess.open("res://levels/classic_01.json", FileAccess.READ)
+	if src == null:
+		return
+	var txt := src.get_as_text()
+	src.close()
+	var f := FileAccess.open("%s/%s" % [dir_path, DEF_LEVEL_NAME], FileAccess.WRITE)
+	if f != null:
+		f.store_string(txt)
+		f.close()
+
+
+func _remove_mod_level() -> void:
+	var dir_path := "user://mods/%s/levels" % DEF_MOD_ID
+	var d := DirAccess.open(dir_path)
+	if d != null:
+		d.remove(DEF_LEVEL_NAME)
+	var parent := DirAccess.open("user://mods/%s" % DEF_MOD_ID)
+	if parent != null:
+		parent.remove("levels")
+
+
+func _find_button(node: Node, text: String) -> Button:
+	if node is Button and (node as Button).text == text:
+		return node as Button
+	for c in node.get_children():
+		var r := _find_button(c, text)
+		if r != null:
+			return r
+	return null
