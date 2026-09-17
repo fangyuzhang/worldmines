@@ -192,5 +192,7 @@ class RayDistanceRule:
 		return out
 
 
-func on_load() -> void:
+func on_load() -> bool:
 	RuleRegistry.default().register(RayDistanceRule.new())
+
+	return true

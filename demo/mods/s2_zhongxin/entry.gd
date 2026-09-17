@@ -158,5 +158,7 @@ class CentroidRule:
 		return []
 
 
-func on_load() -> void:
+func on_load() -> bool:
 	RuleRegistry.default().register(CentroidRule.new())
+
+	return true

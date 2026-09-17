@@ -12,6 +12,9 @@ var _clear_btn: Button
 var _swatches: Array = []
 var _size_btns: Array = []
 var _tools_box: VBoxContainer
+# 毛笔图标缓存（key = 文字色|强调色）：ThemeManager 一次切换广播多次 theme_changed，
+# 不缓存则每次广播都重新 SVG 光栅化
+var _icon_cache := {}
 
 
 func setup(layer: DrawingLayer) -> void:
@@ -185,9 +188,13 @@ func _hsep() -> HSeparator:
 
 
 ## 毛笔图标（程序化 SVG → ImageTexture）：笔杆 = 文字色，笔头 = 强调色。
+## 同色组合命中缓存直接返回（一次主题切换广播 ~10 次 theme_changed，此前每次都重建纹理）。
 func _brush_icon() -> ImageTexture:
 	var body := _hex(ThemeManager.text())
 	var tip := _hex(ThemeManager.accent())
+	var key := "%s|%s" % [body, tip]
+	if _icon_cache.has(key):
+		return _icon_cache[key]
 	var svg := """<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
 <path d="M5 3 L17 15 L13 20 L1 8 Z" fill="%s"/>
 <path d="M17 15 L22 22 L13 20 Z" fill="%s"/>
@@ -195,7 +202,9 @@ func _brush_icon() -> ImageTexture:
 	var img := Image.new()
 	if img.load_svg_from_string(svg, 1.0) != OK or img.is_empty():
 		return null
-	return ImageTexture.create_from_image(img)
+	var tex := ImageTexture.create_from_image(img)
+	_icon_cache[key] = tex
+	return tex
 
 
 func _hex(c: Color) -> String:

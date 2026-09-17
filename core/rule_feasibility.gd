@@ -89,12 +89,24 @@ static func _evaluate(clue_id: String, gids: Array, size: int, mines: int) -> bo
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 0x5EED  # 固定：查询结果可复现（与生成无关，仅用于 dt 骨牌重采样）
 	var tries: int = DT_RESAMPLE if has_dt else 1
+	# 共享单例防污染（v3.1）：dt 的 place_mines 会覆写 DtRule._dominoes 单例状态——
+	# evaluate 结束后必须恢复原值，否则重采样残留的划分会在下一次构建 dt 约束时
+	#（hint / 生成）用错误前提演绎（违反 R02）。
+	var dt_rule: Object = null
+	var saved_dominoes: Array = []
+	if has_dt:
+		for g in gs:
+			if g.get_rule_id() == &"dt":
+				dt_rule = g
+				saved_dominoes = g.get_dominoes()
 	for _i in tries:
-		if has_dt:
-			for g in gs:
-				if g.get_rule_id() == &"dt":
-					g.place_mines(rng, size, size, mines)
+		if has_dt and dt_rule != null:
+			dt_rule.place_mines(rng, size, size, mines)
 		var oracle := RuleOracle.new(clue_rule, gs, Vector2i(size, size), mines, null)
 		if RuleCpSat.is_feasible(oracle.build_spec({}, [], {})):
+			if dt_rule != null:
+				dt_rule.set_dominoes(saved_dominoes)
 			return true
+	if dt_rule != null:
+		dt_rule.set_dominoes(saved_dominoes)
 	return false

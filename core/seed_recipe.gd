@@ -10,7 +10,7 @@ var clue_rule_id: String = "classic"  # 线索规则 id
 var global_rule_ids: Array = []       # 全局规则 id 列表
 var mine_count: int = 0
 var mask_count: int = 0               # 遮蔽（问号）格数
-var fingerprint: String = ""          # 规则实现版本指纹（RuleFingerprint.bake）
+var fingerprint: String = ""          # 规则实现版本指纹（预留字段；指纹计算模块已随 v3.1 清理移除）
 
 
 func to_dict() -> Dictionary:

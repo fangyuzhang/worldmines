@@ -158,12 +158,28 @@ func sum(xs: Array) -> Dictionary:
 
 ## 加权和（xs 须为变量引用或 const）。
 func wsum(ws: Array, xs: Array) -> Dictionary:
-	return CPIR.wsum(ws, xs)
+	return CPIR.wsum(ws, _checked_xs(xs))
 
 
 ## 仿射线性表达式：Σ ws[i]·xs[i] + c（任意线性约束的通用表达，如相邻行差==1）。
 func lin(ws: Array, xs: Array, c: int = 0) -> Dictionary:
-	return CPIR.lin(ws, xs, c)
+	return CPIR.lin(ws, _checked_xs(xs), c)
+
+
+## wsum/lin 的 xs 契约检查：项只能是「变量引用（cell/aux）或 const」——C# ToVar 对
+## 其他节点（如嵌套 sum）直接 throw，整个 spec 被上层 catch 成「无解」而静默废关。
+## 此处在创作者 API 出口拦截：坏项按 const 0 处理（保持 ws/xs 索引对齐）并明确报错。
+func _checked_xs(xs: Array) -> Array:
+	var out: Array = []
+	for x in xs:
+		if x is Dictionary:
+			var t := str(x.get("t", ""))
+			if t == "cell" or t == "aux" or t == "const":
+				out.append(x)
+				continue
+		push_error("RuleBuilder: wsum/lin 的 xs 项必须是变量引用或 const，收到 %s（已按 const 0 处理）" % str(x))
+		out.append(const_expr(0))
+	return out
 
 
 func const_expr(v: int) -> Dictionary:

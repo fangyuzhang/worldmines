@@ -209,6 +209,12 @@ func load_mod(dir_path: String) -> Dictionary:
 	# 规则注册是 mod 自己调 RuleRegistry.register 的（ModAPI 无法拦截），只能事后 diff。
 	var before_rules: Array = RuleRegistry.default().all_ids()
 	if not _call_hook(mod_id, HOOK_LOAD):
+		# 失败回滚（v3.1）：on_load 中途崩溃时已注册进全局表的规则按 diff 反向清理——
+		# 否则坏 mod 每次启用都留下半初始化状态（规则缺失/生成失败/提示失效的表象
+		# 与根因完全脱节）。DefEngine 的 Def 注册走 RUNTIME_DEF 分支（钩子之前），无需此处处理。
+		for id in RuleRegistry.default().all_ids():
+			if not before_rules.has(id):
+				RuleRegistry.default().unregister(StringName(id))
 		_mods.erase(mod_id)
 		return {"ok": false, "reason": "on_load 崩溃"}
 	var after_rules: Array = RuleRegistry.default().all_ids()
@@ -360,22 +366,26 @@ func _get_mod(mod_id: String) -> Dictionary:
 
 
 ## 崩溃隔离：调用实例的钩子。返回是否成功（未实现钩子 = 成功）。
-## GDScript 无 try/catch；运行时错误由引擎 push_error 隔离，主程序继续。
-## 此处额外做实例有效性检查 + 崩溃计数（连续 CRASH_LIMIT 次 → crashed）。
+## 契约（v3.1）：代码 Mod 的钩子**必须 return true** 表示完成。
+## GDScript 无 try/catch：钩子内运行时错误只中止脚本栈并 push_error，call 正常返回 null，
+## 实例依然 valid——旧实现靠 is_instance_valid 判崩溃，永远检测不到，坏钩子被记为成功
+## （CRASH_LIMIT/STATE_CRASHED 成不可达代码）。「钩子炸了」与「没按契约写返回值」在调用侧
+## 都表现为非 true → 一律按失败计数（内置示例 demo/mods/custom_rule_mod 已同步 return true）。
+## 注：on_load 中途崩溃时已注册进 RuleRegistry 的规则由 load_mod 按 diff 反向清理。
 func _call_hook(mod_id: String, hook: String) -> bool:
 	var mod := _get_mod(mod_id)
 	if mod.is_empty():
 		return false
 	var instance: Object = mod["instance"]
 	if instance == null or not is_instance_valid(instance):
-		return true  # 无代码入口（Def 规则包）或已释放，不算失败
+		return true  # 无代码入口（Def/wasm 规则包）或已释放，不算失败
 	if not instance.has_method(hook):
 		return true  # 未实现该钩子，正常
-	instance.call(hook)
-	if is_instance_valid(instance):
+	var ret: Variant = instance.call(hook)
+	if ret is bool and bool(ret):
 		mod["crash_count"] = 0
 		return true
-	# 脚本在钩子中失效（self free 等）→ 崩溃计数
+	# 钩子内脚本运行时错误（返回 null）或未按契约返回 true → 崩溃计数
 	mod["crash_count"] = int(mod["crash_count"]) + 1
 	if int(mod["crash_count"]) >= CRASH_LIMIT:
 		mod["state"] = STATE_CRASHED

@@ -22,6 +22,7 @@ static func save(board: Board, elapsed: float, level_path: String = "", drawing:
     var revealed: Array[Vector2i] = []
     var flagged: Array[Vector2i] = []
     var mines: Array[Vector2i] = []
+    var starred: Array[Vector2i] = []
     if board != null and board.grid != null:
         # 遍历用 all_positions()（v2.9.3 修复）：AdjacencyGrid.size() 是包围盒、坐标不连续，
         # 直接按 size 双重循环会把洞格的 get_cell()==null 当 Cell 用 → 空引用错误
@@ -35,6 +36,9 @@ static func save(board: Board, elapsed: float, level_path: String = "", drawing:
                     revealed.append(pos)
                 Cell.State.FLAGGED:
                     flagged.append(pos)
+            # 终极模式星号格（值隐藏的线索格）：不入档则恢复后线索值直接暴露（星号语义丢失）
+            if cell.starred:
+                starred.append(pos)
         mines = board.get_mine_positions()
     sd.revealed_cells = revealed
     sd.flagged_cells = flagged
@@ -44,6 +48,12 @@ static func save(board: Board, elapsed: float, level_path: String = "", drawing:
     var meta := {}
     meta["level_path"] = level_path
     meta["ended"] = ended
+    # 终极模式星号 / 演绎确证雷集（T3 合规：只进 metadata，顶层 6 字段锁死）。
+    # proven_mines 不入档 → 恢复后「只剩 1 格却推不动」的假卡死防护失效（见 board.gd 头注释）。
+    if not starred.is_empty():
+        meta["starred"] = _pairs(starred)
+    if board != null and not board.proven_mines.is_empty():
+        meta["proven_mines"] = _pairs(board.proven_mines.keys())
     if not drawing.is_empty():
         meta["drawing"] = drawing  # 绘画数据（独立于游戏状态，恢复时一并还原）
     sd.metadata = meta
@@ -65,10 +75,24 @@ static func save(board: Board, elapsed: float, level_path: String = "", drawing:
         DirAccess.remove_absolute(TEMP)
         return
 
-    # ⑤ 原子替换主档
+    # ⑤ 原子替换主档（bak 三步：MAIN→.bak → TEMP→MAIN → 删 .bak）。
+    # 旧实现 remove(MAIN)→rename(TEMP) 存在丢失窗口：两步之间崩溃 = MAIN 消失且 TEMP
+    # 未改名；Windows 上 rename 被杀毒/索引器短暂占用失败同样如此——每步检查 Error。
+    var bak := MAIN + ".bak"
+    if FileAccess.file_exists(bak):
+        DirAccess.remove_absolute(bak)
     if FileAccess.file_exists(MAIN):
-        DirAccess.remove_absolute(MAIN)
-    DirAccess.rename_absolute(TEMP, MAIN)
+        if DirAccess.rename_absolute(MAIN, bak) != OK:
+            push_error("存档替换失败：MAIN 无法改名（可能被占用），保留旧档")
+            DirAccess.remove_absolute(TEMP)
+            return
+    if DirAccess.rename_absolute(TEMP, MAIN) != OK:
+        push_error("存档替换失败：TEMP 无法改名为 MAIN，回滚旧档")
+        if FileAccess.file_exists(bak):
+            DirAccess.rename_absolute(bak, MAIN)
+        return
+    if FileAccess.file_exists(bak):
+        DirAccess.remove_absolute(bak)
 
     # ⑥ 重写 TEMP（「进行中对局」存活标志，供崩溃检测）
     var f2 := FileAccess.open(TEMP, FileAccess.WRITE)
@@ -81,17 +105,44 @@ static func _fields_ok(d: Dictionary) -> bool:
     for k in _FIELDS:
         if not d.has(k):
             return false
+    # 类型校验：JSON 手改/损坏可能产生「键在类型错」的档——restore_from_save 的强类型
+    # 赋值（var meta: Dictionary = d["metadata"]）会脚本崩溃而非走 quarantine 坏档隔离，
+    # 此处统一拦截 → load_save 返回 {} → 调用方按坏档隔离处理。
+    if not (d["metadata"] is Dictionary):
+        return false
+    for k in ["revealed_cells", "flagged_cells", "mine_positions"]:
+        if not (d[k] is Array):
+            return false
     return true
 
 
-## 读主档 → Dictionary；无档/解析失败返回 {}。
+## 读主档 → Dictionary；无档/解析失败/字段类型错返回 {}（调用方按坏档隔离处理）。
+## MAIN 缺失/损坏时回退读 TEMP：bak 三步把 MAIN 消失窗口缩到最小，TEMP（第 ⑥ 步）
+## 总保留最近一次成功写盘的内容，作为最后兜底。
 static func load_save() -> Dictionary:
-    if not FileAccess.file_exists(MAIN):
+    var d := _parse_json_file(MAIN)
+    if d.is_empty() and FileAccess.file_exists(TEMP):
+        var fallback := _parse_json_file(TEMP)
+        if not fallback.is_empty() and _fields_ok(fallback):
+            return fallback
+    return d
+
+
+static func _parse_json_file(path: String) -> Dictionary:
+    if not FileAccess.file_exists(path):
         return {}
-    var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(MAIN))
-    if parsed is Dictionary:
+    var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+    if parsed is Dictionary and _fields_ok(parsed):
         return parsed
     return {}
+
+
+## Vector2i 数组 → [row, col] 对（save_data.gd 序列化约定）。
+static func _pairs(arr: Array) -> Array:
+    var out: Array = []
+    for v in arr:
+        out.append([v.y, v.x])
+    return out
 
 
 ## TEMP 残留 = 上次在对局中异常终止。

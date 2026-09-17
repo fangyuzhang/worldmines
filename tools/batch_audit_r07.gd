@@ -46,7 +46,7 @@ func _initialize() -> void:
 	var mine_fail: Array[String] = []
 	var name_fail: Array[String] = []
 	var per_unit := {}
-	var tiers := {"easy": 0, "normal": 0, "hard": 0}
+	var tiers := {"intro": 0, "easy": 0, "normal": 0, "hard": 0}
 	for path in files:
 		var f := FileAccess.open(path, FileAccess.READ)
 		var data: Variant = JSON.parse_string(f.get_as_text()) if f != null else null
@@ -89,7 +89,7 @@ func _initialize() -> void:
 	print("开工单元: %d | 满额(>=10关) %d | 未满 %d" % [per_unit.size(), full, partial.size()])
 	if partial.size() > 0:
 		print("未满清单: " + ", ".join(partial))
-	print("难度分布: easy=%d normal=%d hard=%d" % [tiers["easy"], tiers["normal"], tiers["hard"]])
+	print("难度分布: intro=%d easy=%d normal=%d hard=%d" % [tiers["intro"], tiers["easy"], tiers["normal"], tiers["hard"]])
 	var clean := parse_fail.is_empty() and mine_fail.is_empty() and name_fail.is_empty()
 	print("=== R07-AUDIT-%s ===" % ("OK" if clean else "FAILED"))
 	CliShutdown.request_exit(0 if clean else 1)

@@ -72,5 +72,7 @@ class HuanyouRule:
 		return 4  # 内部最多 4 段（GDD：值域 0–4）
 
 
-func on_load() -> void:
+func on_load() -> bool:
 	RuleRegistry.default().register(HuanyouRule.new())
+
+	return true

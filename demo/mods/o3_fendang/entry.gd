@@ -94,5 +94,7 @@ class TierRule:
 		return out
 
 
-func on_load() -> void:
+func on_load() -> bool:
 	RuleRegistry.default().register(TierRule.new())
+
+	return true

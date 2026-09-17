@@ -114,5 +114,7 @@ class FourQuadrantRule:
 		return cnt[0] == cnt[1] and cnt[1] == cnt[2] and cnt[2] == cnt[3]
 
 
-func on_load() -> void:
+func on_load() -> bool:
 	RuleRegistry.default().register(FourQuadrantRule.new())
+
+	return true

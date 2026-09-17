@@ -101,5 +101,7 @@ class OddDisplayRule:
 		return out
 
 
-func on_load() -> void:
+func on_load() -> bool:
 	RuleRegistry.default().register(OddDisplayRule.new())
+
+	return true

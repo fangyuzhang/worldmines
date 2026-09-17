@@ -140,5 +140,7 @@ class TriangleRule:
 		return out
 
 
-func on_load() -> void:
+func on_load() -> bool:
 	RuleRegistry.default().register(TriangleRule.new())
+
+	return true

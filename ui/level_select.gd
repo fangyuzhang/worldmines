@@ -540,7 +540,7 @@ func _refresh_popup() -> void:
 	var page_count := _page_count()
 	_page = clampi(_page, 0, page_count - 1)
 	_selected = _latest_unlocked()
-	_page = _selected / PAGE_SIZE
+	_page = floori(float(_selected) / float(PAGE_SIZE))
 
 	_rebuild_grid()
 	_rebuild_dots()
@@ -660,8 +660,10 @@ func _level_key(idx: int) -> String:
 
 
 func _level_seed(idx: int) -> int:
-	# 确定性种子：同模式+尺寸+序号必得同一盘
-	return (_mode_idx + 1) * 100000 + (_size_idx + 1) * 1000 + idx
+	# 确定性种子：同模式+尺寸+序号必得同一盘。
+	# v3.1：改用模式 id / 尺寸边长的稳定哈希而非数组下标——插入新变体/尺寸
+	# 不再改变所有后续模式的种子（「同 seed 同盘」承诺不因 MODES/SIZES 顺序变化失效）。
+	return hash("%s|%d|%d" % [str(MODES[_mode_idx]["id"]), SIZES[_size_idx], idx])
 
 
 func _page_count() -> int:

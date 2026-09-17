@@ -12,20 +12,22 @@ signal game_ended(won: bool)
 signal hint_ready(steps: Array)
 ## 撤回后广播（UI 隐藏终局覆盖层 + 重绘棋盘）
 signal session_restored
+## 猜测被拒绝时广播（UI 用于提示玩家「本模式不允许猜测」）
+signal guess_rejected(pos: Vector2i)
 
 enum State { IDLE, PLAYING, PAUSED, ENDED }
 
-## 提示三档（对标游戏 doc10 §3.2）
-const HINT_NORMAL := 0    # 标准：给出结论格 + 依据线索
-const HINT_WEAK := 1      # 弱提示：只高亮要用到的线索，不显示可推格
-const HINT_DISABLED := 2  # 禁用：完全关闭提示
+## 提示三档（对标游戏 doc10 §3.2）—— 转发常量：外部/UI/测试引用方零改动
+const HINT_NORMAL := HintCoordinator.HINT_NORMAL
+const HINT_WEAK := HintCoordinator.HINT_WEAK
+const HINT_DISABLED := HintCoordinator.HINT_DISABLED
 ## 免费提示充能周期（秒；对标 FREE_HINT_TIME = 120f）
-const HINT_CHARGE_SEC := 120.0
+const HINT_CHARGE_SEC := HintCoordinator.HINT_CHARGE_SEC
 
-## 无猜模式三档（对标 doc10 §2）
-const NO_GUESS_OFF := 0      # 关闭（默认）
-const NO_GUESS_EXPERT := 1   # 专家：禁止猜测（拒绝翻开推不出来的格）
-const NO_GUESS_ULTIMATE := 2 # 终极：新翻开的线索格打星号（值隐藏），卡住时点提示揭开
+## 无猜模式三档（对标 doc10 §2）—— 转发常量：外部/UI/测试引用方零改动
+const NO_GUESS_OFF := NoGuessGuard.NO_GUESS_OFF
+const NO_GUESS_EXPERT := NoGuessGuard.NO_GUESS_EXPERT
+const NO_GUESS_ULTIMATE := NoGuessGuard.NO_GUESS_ULTIMATE
 
 var level_path: String = ""
 var board: Board = null
@@ -34,17 +36,31 @@ var timer_started: bool = false
 var cursor: Vector2i = Vector2i.ZERO
 var exploded_pos: Vector2i = Vector2i(-1, -1)  # 判负引爆格，终局高亮用
 var state: int = State.IDLE
-## 提示充能累计（秒）。开启充能时需 ≥ HINT_CHARGE_SEC 才算充满。
-var hint_charge_left: float = 0.0
-## 未充满就用了提示 → true（供未来「完美通关」判定消费；当前尚无完美判定）
-var hint_uncharged_used: bool = false
+## 提示充能累计（秒）。委托给 HintCoordinator 持有（hud.gd 等外部读取入口不变）。
+var hint_charge_left: float:
+    get: return _hints.charge_left
+    set(v): _hints.charge_left = v
+## 未充满就用了提示 → true（委托给 HintCoordinator 持有）。
+var hint_uncharged_used: bool:
+    get: return _hints.uncharged_used
+    set(v): _hints.uncharged_used = v
+
+## 拆分后的协作组件（§拆分 2026-09：无猜守卫 / 提示编排从本类抽出）
+var _guard := NoGuessGuard.new()
+var _hints := HintCoordinator.new()
 
 var _last_save_ms: int = -100000  # 自动存档防抖（首次翻格立即存）
 var _last_reveal_pos: Vector2i = Vector2i(-1, -1)  # 引爆格追踪
 
-# 绘画层引用（board_view 注入）+ 恢复时待载入的绘画数据
-var drawing_layer: DrawingLayer = null
+# 绘画数据采集回调（board_view 创建绘画层后注册）+ 恢复时待载入的绘画数据。
+# autoload 不直接持有 UI 节点类型（依赖倒置）：采集走 provider，恢复走纯数据 pending_drawing。
+var _drawing_provider: Callable = Callable()
 var pending_drawing: Dictionary = {}
+
+
+## board_view 在绘画层就绪后注册采集闭包（如 func(): return _drawing.get_save_data()）。
+func set_drawing_provider(p: Callable) -> void:
+    _drawing_provider = p
 
 
 func _ready() -> void:
@@ -56,12 +72,11 @@ func _process(delta: float) -> void:
     _tick(delta)
 
 
-## 计时门控（§10.7.8）：state == PLAYING 且 timer_started 才累计。
+## 计时门控（§10.7.8）：state == PLAYING 且 timer_started 才累计；充能累计委托给 _hints。
 func _tick(delta: float) -> void:
     if state == State.PLAYING and timer_started:
         elapsed += delta
-        if SettingsManager.hint_charge:
-            hint_charge_left = minf(hint_charge_left + delta, HINT_CHARGE_SEC)
+        _hints.tick(delta)
 
 
 # ============ 对局生命周期 ============
@@ -74,10 +89,15 @@ func start_level(path: String) -> bool:
         push_error("关卡加载失败: " + path)
         state = State.IDLE
         return false
-    # mod 关卡（user:// 路径 + clue_def 字段）：注入共享 DefEngine 后重算线索
-    if path.begins_with("user://") and board.clue_def_name != "":
-        board.def_engine = ModAPI.defs
-        board._compute_clues()
+    # mod 关卡（user:// + clue_def/constraint_def 字段）：Board 构造时 def_engine 为 null，
+    # load_level 内的 def 分支不成立 → clue_def_name 恒空（旧判断是死分支，关卡静默按
+    # 经典 8 邻计算、数字全错）。此处读 JSON 探测 def 字段，注入共享 DefEngine 后按原始
+    # 数据重建棋盘（load_level 先复位再走全流程，def 分支此时生效）。
+    if path.begins_with("user://") and ModAPI != null:
+        var d := _read_level_dict(path)
+        if not d.is_empty() and (str(d.get("clue_def", "")) != "" or str(d.get("constraint_def", "")) != ""):
+            board.def_engine = ModAPI.defs
+            board.load_level(d)
     elapsed = 0.0
     timer_started = false
     cursor = Vector2i.ZERO
@@ -85,11 +105,8 @@ func start_level(path: String) -> bool:
     _last_reveal_pos = Vector2i(-1, -1)
     # 终极模式：本次对局的「玩家新翻开线索格一律打星号」开关
     board.hide_new_clues = SettingsManager.no_guess_mode == NO_GUESS_ULTIMATE
-    hint_charge_left = 0.0
-    hint_uncharged_used = false
-    _ng_safe_cache = {}
-    _ng_cache_step = -1
-    _ng_rejected = 0
+    _hints.reset()
+    _guard.reset()
     _last_save_ms = -100000  # 新对局首次翻格立即存
     pending_drawing = {}  # 新对局：绘画清空
     _connect_board_signals()
@@ -116,16 +133,17 @@ func undo() -> bool:
         return false
     if board.state != Board.GameState.LOST:
         return false
-    if board.grid.in_board(exploded_pos):
-        var cell := board.grid.get_cell(exploded_pos)
-        if cell.state == Cell.State.REVEALED:
-            cell.state = Cell.State.HIDDEN
-            board.cell_state_changed.emit(exploded_pos)
+    # 引擎公共 API：引爆格恢复 + 状态回转（UI 不再直写 cell.state/board.state）
+    if not board.undo_explode(exploded_pos):
+        return false
     exploded_pos = Vector2i(-1, -1)
     _last_reveal_pos = Vector2i(-1, -1)
-    board.state = Board.GameState.PLAYING
     state = State.PLAYING
     timer_started = true  # 撤回后继续计时
+    # 撤回后立即重写主档（清掉 ended=true 的终局档）——否则「判负→撤回→直接退出」
+    # 会把败局档留在 MAIN，下次「继续」被拒，撤回救回的进度丢失。
+    _last_save_ms = -100000
+    _maybe_autosave()
     session_restored.emit()
     return true
 
@@ -140,8 +158,8 @@ func reveal(pos: Vector2i) -> void:
         return  # 旗/? 格不响应左键（引擎虽会清标翻开，session 层拦截）
     # 无猜-专家档：拒绝翻开「当前信息推不出来」的格（红线兼容实现，见下方小节注释）。
     # 终极档不禁止猜测（它的难度来自星号遮蔽，不是禁止操作）。
-    if SettingsManager.no_guess_mode == NO_GUESS_EXPERT and not is_deducible_safe(pos):
-        _ng_rejected += 1
+    if SettingsManager.no_guess_mode == NO_GUESS_EXPERT and not _guard.is_deducible_safe(board, pos):
+        _guard.record_rejection()
         guess_rejected.emit(pos)
         AudioManager.play("flag")
         return
@@ -220,160 +238,41 @@ func toggle_flag(pos: Vector2i) -> void:
 
 ## 请求一步提示。返回 ReasoningStep 数组（可能为空），并广播 hint_ready 供 UI 高亮。
 ## 非 PLAYING / 无棋盘 / 提示被禁用 → 空数组（不报错）。
+## 推理步骤组装/充能消耗/降级/上限/揭星全部委托 HintCoordinator（见 hint_coordinator.gd）。
 func request_hint() -> Array[ReasoningStep]:
     var steps: Array[ReasoningStep] = []
-    if state == State.PLAYING and board != null and SettingsManager.hint_mode != HINT_DISABLED:
-        var solver := HintSolver.new()
-        if board.def_engine != null:
-            solver.engine = board.def_engine  # mod 关卡用共享 DefEngine
-        if board.clue_def_name != "":
-            steps = solver.hint_def(board, board.clue_def_name)
-        else:
-            steps = solver.hint(board)
-        # 充能：未充满就用 → 标记本局「非完美」，并清零重新充能
-        if SettingsManager.hint_charge:
-            if hint_charge_left < HINT_CHARGE_SEC:
-                hint_uncharged_used = true
-            hint_charge_left = 0.0
-        # 弱提示：只高亮「要用到的线索」，结论格不展示（board_view 依 method 跳过）
-        if SettingsManager.hint_mode == HINT_WEAK:
-            for s in steps:
-                (s as ReasoningStep).method = "weak"
-        steps = _limit_hint_budget(steps)
-        # 提示断言为「必雷」的格 = 演绎确证 → 记入棋盘的确证雷集。
-        # 后续提示可复用它（跨调用不再丢信息，避免「只剩 1 格却推不动」的假卡死）；
-        # 注意这与玩家插的旗**不是一回事**：错旗永远不参与推理。
-        for st in steps:
-            if (st as ReasoningStep).state == "mine":
-                board.mark_proven_mine((st as ReasoningStep).pos)
-        # 终极模式（对标 doc10 §2.4）：星号格遮蔽着线索值。
-        # 当前若能推出安全格 → 正常给提示；若确实推不出任何安全格（卡住了）
-        # → 揭开全部星号让对局继续（这一步本身就消耗一次提示）。
-        if SettingsManager.no_guess_mode == NO_GUESS_ULTIMATE and board.has_stars():
-            var has_safe := false
-            for st in steps:
-                if (st as ReasoningStep).state == "safe":
-                    has_safe = true
-                    break
-            if not has_safe:
-                board.reveal_stars()
-                steps.clear()
+    if state == State.PLAYING:
+        steps = _hints.compute_hint(board)
     hint_ready.emit(steps)
     return steps
-
-
-## 一次提示给出的结论格上限（对标游戏 doc10 §3.3 的 maxClues 与难度挂钩）：
-## easy → 3，normal → 5，hard / 无难度画像 → 不限（-1）。
-## 对齐 GDD 14.2「每次提示只给一个推理阶段，绝不一次性给全部答案」。
-func _limit_hint_budget(steps: Array[ReasoningStep]) -> Array[ReasoningStep]:
-    if board == null or steps.is_empty():
-        return steps
-    var cap := _hint_budget_cap()
-    if cap < 0 or steps.size() <= cap:
-        return steps
-    return steps.slice(0, cap)
-
-
-func _hint_budget_cap() -> int:
-    if board == null or board.difficulty < 0.0:
-        return -1
-    match Difficulty.tier_of(board.difficulty):
-        "easy":
-            return 3
-        "normal":
-            return 5
-        _:
-            return -1
 
 
 ## 提示充能进度 0.0~1.0（未开启充能时恒为 1.0）。
 ## 全项目唯一的充能口径入口：HUD 用它显示百分比、%>=100 判定「已充满」。
 ## （原先并存的 hint_charged() 是无调用者的死代码，已删除——两个同义 API 只会各自漂移。）
 func hint_charge_ratio() -> float:
-    if not SettingsManager.hint_charge:
-        return 1.0
-    return clampf(hint_charge_left / HINT_CHARGE_SEC, 0.0, 1.0)
+    return _hints.charge_ratio()
 
 
-# ============ 无猜模式（对标游戏 doc10 §2；红线兼容实现） ============
+# ============ 无猜模式（对标游戏 doc10 §2） ============
 #
-# 对标游戏的「专家模式」用「猜错就重排剩余雷」实现，即**移动雷位**——
-# 但本作关卡雷位写死在 JSON，移动会破坏 R01 序贯可解验证与关卡数据（见 25_HANDOFF §13.2
-# 「无首次点击保护」条目里的同一矛盾）。
-#
-# 本实现给出**数学保证相同、但不移动雷位**的等价语义：**拒绝**翻开任何无法从当前
-# 玩家视角 100% 推导的格子。玩家同样无法靠猜测蒙混过关，且不碰任何关卡数据。
-# 口径差异：对标是「猜了会死」，本作是「根本不让猜」。
-
-## 猜测被拒绝时广播（UI 用于提示玩家「本模式不允许猜测」）
-signal guess_rejected(pos: Vector2i)
-
-## 推导结果缓存：Vector2i -> true（当前盘面下必然安全）
-var _ng_safe_cache: Dictionary = {}
-## 缓存对应的推理步总数（用于判断缓存是否过期；每步走一步直推计数）
-var _ng_cache_step: int = 0
-## 本局被拒次数（统计用）
-var _ng_rejected: int = 0
+# 推导缓存 / 拒绝计数 / 可推安全格判定全部委托 NoGuessGuard（见 no_guess_guard.gd）。
+# 本节注释保留在守卫文件头部；此处只做薄委托，对外 API 签名不变。
 
 
 ## 该格在当前玩家视角下是否「必然安全」（可 100% 推导）。
-## 结果按「已推出的结论集大小」做缓存：盘面一变（翻格/插旗）结论集就变，缓存自然失效。
-## 注意：只读玩家视角约束（HintSolver 契约），不读真实雷位。
 func is_deducible_safe(pos: Vector2i) -> bool:
-    if board == null:
-        return false
-    if _ng_cache_step != _deduce_stamp():
-        _rebuild_ng_cache()
-    return _ng_safe_cache.has(pos)
-
-
-## 缓存有效性标记。必须同时覆盖三件事，否则会误命中过期缓存：
-##   ① 盘面实例（同关卡重开得到的新 Board 状态图案可能完全相同）；
-##   ② 每格的 状态 + 星号位（星号改变玩家可见信息，但不改 state）；
-##   ③ 位置（防止「状态计数相同但换位」的情况）。
-## 历史 bug：只用「位置 + 状态」哈希 → 星号变化与换 Board 都不失效，
-## 实测表现为「新盘面复用了上一局的可断定结论」。
-func _deduce_stamp() -> int:
-    var h := int(board.get_instance_id()) % 2147483647
-    var sz: Vector2i = board.grid.size()
-    for y in sz.y:
-        for x in sz.x:
-            var c: Cell = board.grid.get_cell(Vector2i(x, y))
-            var st: int = c.state if c != null else -1
-            var star: int = 1 if (c != null and c.starred) else 0
-            h = (h * 31 + st * 131 + star * 17 + x * 7 + y) % 2147483647
-    return h
-
-
-func _rebuild_ng_cache() -> void:
-    _ng_safe_cache = {}
-    var solver := HintSolver.new()
-    if board.def_engine != null:
-        solver.engine = board.def_engine
-    var steps: Array[ReasoningStep] = []
-    if board.clue_def_name != "":
-        steps = solver.hint_def(board, board.clue_def_name)
-    else:
-        steps = solver.hint(board)
-    for st in steps:
-        if st.state == "safe":
-            _ng_safe_cache[st.pos] = true
-    _ng_cache_step = _deduce_stamp()
+    return _guard.is_deducible_safe(board, pos)
 
 
 ## 被拒绝的猜测次数（本局）。
 func rejected_guess_count() -> int:
-    return _ng_rejected
+    return _guard.rejected_count()
 
 
 ## 当前盘面下「可无猜推出的安全格数」（终极模式附加信息用）。
-## 复用同一份推导缓存，不额外触发一次求解。
 func deducible_safe_count() -> int:
-    if board == null:
-        return 0
-    if _ng_cache_step != _deduce_stamp():
-        _rebuild_ng_cache()
-    return _ng_safe_cache.size()
+    return _guard.deducible_safe_count(board)
 
 
 ## 终极模式附加开关（doc10 §2.3 AddOnAutoReveal）：可推格数为 0 时自动按下提示
@@ -386,7 +285,7 @@ func _maybe_auto_ultimate_hint() -> void:
         return
     if board == null or not board.has_stars():
         return
-    if deducible_safe_count() > 0:
+    if _guard.deducible_safe_count(board) > 0:
         return
     request_hint()
 
@@ -421,25 +320,10 @@ func restore_from_save() -> bool:
     if fresh == null:
         return false
 
-    # 雷位以关卡文件为准（同文件同雷位）；盘面状态 = 存档快照覆盖
-    var size := fresh.grid.size()  # 包围盒（矩形棋盘 == 棋盘；异形含洞格）
-    for r in size.y:
-        for c in size.x:
-            var pos := Vector2i(c, r)
-            var cell := fresh.grid.get_cell(pos)
-            if cell == null:
-                continue  # 异形洞格（v2.9.3 守卫：此前 null.state 会报错）
-            cell.state = Cell.State.HIDDEN
-    for p in d.get("revealed_cells", []):
-        if p is Array and p.size() == 2:
-            var pos := Vector2i(int(p[1]), int(p[0]))  # 存档 [row, col]（save_data.gd 约定）
-            if fresh.grid.in_board(pos):
-                fresh.grid.get_cell(pos).state = Cell.State.REVEALED
-    for p in d.get("flagged_cells", []):
-        if p is Array and p.size() == 2:
-            var pos := Vector2i(int(p[1]), int(p[0]))
-            if fresh.grid.in_board(pos):
-                fresh.grid.get_cell(pos).state = Cell.State.FLAGGED
+    # 雷位以关卡文件为准（同文件同雷位）；盘面状态 = 存档快照覆盖。
+    # v3.1：改走引擎公共 API restore_cell_states（封装全盘重置 + revealed/flagged 应用 +
+    # 异形洞格守卫），UI 不再直写 cell.state。
+    fresh.restore_cell_states(d.get("revealed_cells", []), d.get("flagged_cells", []))
 
     # 一致性校验：存档雷位与关卡雷位必须一致（关卡被改过 → 拒绝恢复）
     var saved_mines := {}
@@ -455,6 +339,19 @@ func restore_from_save() -> bool:
         if not fresh_mines.has(k):
             return false
 
+    # 终极模式开关与星号 / 确证雷集恢复：此前 restore 丢失 hide_new_clues（新翻格不再打星、
+    # 已星格的线索值直接暴露），proven_mines 不恢复则「只剩 1 格却推不动」的假卡死复现。
+    fresh.hide_new_clues = SettingsManager != null and SettingsManager.no_guess_mode == NO_GUESS_ULTIMATE
+    for p in meta.get("starred", []):
+        if p is Array and p.size() == 2:
+            var spos := Vector2i(int(p[1]), int(p[0]))
+            if fresh.grid.in_board(spos):
+                fresh.grid.get_cell(spos).starred = true
+    for p in meta.get("proven_mines", []):
+        if p is Array and p.size() == 2:
+            var ppos := Vector2i(int(p[1]), int(p[0]))
+            if fresh.grid.in_board(ppos):
+                fresh.mark_proven_mine(ppos)
     board = fresh
     level_path = path
     elapsed = float(d.get("timer_seconds", 0.0))
@@ -467,7 +364,7 @@ func restore_from_save() -> bool:
     _connect_board_signals()
     # 恢复后的盘面可能已满足胜利条件（存档快照直接覆盖 state，不走 reveal），
     # 而恢复流程本身不判胜负 → 补判一次（信号此时已连接，回调可正常触发）。
-    board._check_win()
+    board.evaluate_win()
     SaveCoordinator.clear_temp()
     session_started.emit()
     return true
@@ -515,7 +412,9 @@ func _finish(won: bool) -> void:
 func _maybe_autosave() -> void:
     if SettingsManager == null or not SettingsManager.autosave_enabled:
         return
-    if state != State.PLAYING and state != State.ENDED:
+    # 只在 PLAYING 自动存档。ENDED 由 _finish 按胜负各自处置（终局档带 ended 标记），
+    # 此前放行 ENDED 会用无标记的常规档覆盖终局档 → 失败局可被「恢复」复活（SL 作弊通道）。
+    if state != State.PLAYING:
         return
     var now := Time.get_ticks_msec()
     if now - _last_save_ms < 5000:
@@ -524,8 +423,18 @@ func _maybe_autosave() -> void:
     SaveCoordinator.save(board, elapsed, level_path, _get_drawing())
 
 
-## 取当前绘画层数据（无绘画层或空则返回 {}）
+## 取当前绘画层数据（provider 未注册或数据为空则返回 {}）
 func _get_drawing() -> Dictionary:
-    if drawing_layer != null and is_instance_valid(drawing_layer):
-        return drawing_layer.get_save_data()
+    if _drawing_provider.is_valid():
+        return _drawing_provider.call()
     return {}
+
+
+## 读关卡 JSON 为 Dictionary（mod clue_def 注入探测用；失败/非对象返回 {}）。
+func _read_level_dict(path: String) -> Dictionary:
+    var f := FileAccess.open(path, FileAccess.READ)
+    if f == null:
+        return {}
+    var v: Variant = JSON.parse_string(f.get_as_text())
+    f.close()
+    return v if v is Dictionary else {}

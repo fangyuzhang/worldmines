@@ -214,5 +214,7 @@ class XiemaiRule:
 			_s1[Vector2i(int(it["c"]), int(it["r"]))] = true
 
 
-func on_load() -> void:
+func on_load() -> bool:
 	RuleRegistry.default().register(XiemaiRule.new())
+
+	return true

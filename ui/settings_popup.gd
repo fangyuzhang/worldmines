@@ -61,6 +61,9 @@ func _build_ui() -> void:
     _autosave_chk = _add_check_row(vbox, "自动存档", func(v: bool): SettingsManager.set_autosave_enabled(v), SettingsManager.autosave_enabled)
     _keyboard_chk = _add_check_row(vbox, "键盘操作", func(v: bool): SettingsManager.set_keyboard_enabled(v), SettingsManager.keyboard_enabled)
     _sfx_chk = _add_check_row(vbox, "音效", func(v: bool): SettingsManager.set_sfx_enabled(v), SettingsManager.sfx_enabled)
+    # 连携操作：一键展开（chord）+ 右键拖动插旗，与设置页同项（对局内可即时关闭）
+    _add_check_row(vbox, "连携操作（一键展开 / 拖动插旗）",
+        func(v: bool): SettingsManager.set_quick_actions(v), SettingsManager.quick_actions)
 
     # 提示模式（对标游戏 doc10 §3.2）：标准 / 弱提示 / 禁用
     var hint_row := HBoxContainer.new()
@@ -107,7 +110,9 @@ func _build_ui() -> void:
     op_slider.step = 0.05
     op_slider.value = SettingsManager.drawing_opacity
     op_slider.custom_minimum_size = Vector2(160, 24)
-    op_slider.value_changed.connect(func(v: float): SettingsManager.set_drawing_opacity(v))
+    # 拖动中只应用效果（apply 不落盘）；松手（drag_ended）才写盘——此前每刻度全量写盘
+    op_slider.value_changed.connect(func(v: float): SettingsManager.apply_drawing_opacity(v))
+    op_slider.drag_ended.connect(func(_c: bool): SettingsManager.save())
     op_row.add_child(op_slider)
     vbox.add_child(op_row)
 

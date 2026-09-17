@@ -143,14 +143,17 @@ func load_level(level: Dictionary) -> void:
                 grid = rg
 
         # 骨牌（DT 变体）：须在 grid 建好后解析，才能校验坐标是否落在盘内。
+        var dt_rule: Object = RuleRegistry.default().resolve(&"dt")
         if level.has("dominoes"):
                 dominoes = _parse_dominoes(level["dominoes"])
                 # DT 底座化：把关卡的骨牌划分同步给 DtRule（规则平台的约束构建用「当前关卡」的划分，
                 # 而非上次生成时残留的——跨关卡状态泄漏的根治点）。
-                if dominoes.size() > 0:
-                        var dt_rule: Object = RuleRegistry.default().resolve(&"dt")
-                        if dt_rule != null and dt_rule.has_method("set_dominoes"):
-                                dt_rule.set_dominoes(dominoes)
+                if dominoes.size() > 0 and dt_rule != null and dt_rule.has_method("set_dominoes"):
+                        dt_rule.set_dominoes(dominoes)
+        elif dt_rule != null and dt_rule.has_method("set_dominoes") and rule_global_ids.has("dt"):
+                # 共享单例防残留（v3.1）：规则关卡声明 dt 但不带 dominoes 数据时显式清空——
+                # 否则上一关（DT）的划分残留，hint/生成在错误划分上演绎（违反 R02）。
+                dt_rule.set_dominoes([])
 
         # ★ 隐藏态恢复（2026-09-16，HANDOFF 已知坑 #18）：读取 level["hidden_state"] 并分发给
         # 对应规则实例——否则 o4/o5x 等隐藏态规则载盘后 compute_clue 用空/残留状态 → 数字全错。
@@ -164,6 +167,11 @@ func load_level(level: Dictionary) -> void:
 
         for m in level.get("mines", []):
                 var pos := Vector2i(m["c"], m["r"])
+                # 防御纵深：越界雷条目直接跳过（与 revealed 越界守卫同语义）——
+                # get_cell 返回 null 时 `.is_mine = true` 会空引用中止整个加载。
+                if not grid.in_board(pos):
+                        push_warning("关卡 mines 越界条目已跳过: (%d,%d)" % [pos.x, pos.y])
+                        continue
                 _static_mines.append(pos)
                 grid.get_cell(pos).is_mine = true
 
@@ -578,6 +586,48 @@ func _check_win() -> void:
         if win_condition.is_won(self):
                 state = GameState.WON
                 game_won.emit()
+
+
+# ==== v3.1 新增公共 API（对局会话用；新增方法不触碰锁死接口的字段/签名）====
+
+## 撤回踩雷：引爆格恢复 HIDDEN，棋盘状态回 PLAYING（仅 LOST 态生效）。
+## UI 不再直写 cell.state / board.state（引擎内部状态封装）。
+## 返回 true = 状态已回 PLAYING（引爆格不在盘内/非翻开态时只做状态回转，与旧语义一致）。
+func undo_explode(exploded: Vector2i) -> bool:
+        if state != GameState.LOST:
+                return false
+        if grid != null and grid.in_board(exploded):
+                var cell: Cell = grid.get_cell(exploded)
+                if cell != null and cell.state == Cell.State.REVEALED:
+                        cell.state = Cell.State.HIDDEN
+                        cell_state_changed.emit(exploded)
+        state = GameState.PLAYING
+        return true
+
+
+## 从存档快照恢复盘面状态：全盘重置 HIDDEN 后应用 revealed/flagged（存档 [row, col] 格式）。
+## 异形洞格守卫内置（get_cell 为 null 的格跳过）；UI 不再直写 cell.state。
+func restore_cell_states(revealed: Array, flagged: Array) -> void:
+        for pos in grid.all_positions():
+                var cell: Cell = grid.get_cell(pos)
+                if cell != null:
+                        cell.state = Cell.State.HIDDEN
+        for p in revealed:
+                if p is Array and p.size() == 2:
+                        var pos := Vector2i(int(p[1]), int(p[0]))
+                        if grid.in_board(pos):
+                                grid.get_cell(pos).state = Cell.State.REVEALED
+        for p in flagged:
+                if p is Array and p.size() == 2:
+                        var pos := Vector2i(int(p[1]), int(p[0]))
+                        if grid.in_board(pos):
+                                grid.get_cell(pos).state = Cell.State.FLAGGED
+
+
+## 判胜补评估（公共入口）：恢复对局等场景下盘面可能已满足胜利条件。
+## 内部委托 _check_win（PLAYING 态守卫 + win_condition 策略）。
+func evaluate_win() -> void:
+        _check_win()
 
 
 ## 统计信息（供 HUD / 统计使用）。

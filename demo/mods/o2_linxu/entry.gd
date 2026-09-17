@@ -103,5 +103,7 @@ class NeighborOrderRule:
 		return c
 
 
-func on_load() -> void:
+func on_load() -> bool:
 	RuleRegistry.default().register(NeighborOrderRule.new())
+
+	return true

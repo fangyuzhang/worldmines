@@ -199,5 +199,7 @@ class ComponentCountRule:
 		return comps == k
 
 
-func on_load() -> void:
+func on_load() -> bool:
 	RuleRegistry.default().register(ComponentCountRule.new())
+
+	return true

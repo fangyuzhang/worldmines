@@ -10,6 +10,7 @@ var _autosave_chk: CheckButton
 var _keyboard_chk: CheckButton
 var _sfx_chk: CheckButton
 var _fullscreen_chk: CheckButton
+var _quick_chk: CheckButton
 
 
 func _ready() -> void:
@@ -90,6 +91,9 @@ func _build_ui() -> void:
     # 全屏模式：勾选 = 独占全屏（无边框）；取消 = 窗口模式（可自由调整大小）
     _fullscreen_chk = _add_check_row(vbox, "全屏模式",
         func(v: bool): SettingsManager.set_fullscreen(v))
+    # 连携操作：一键展开（chord）+ 右键拖动插旗。默认开；误触多可关
+    _quick_chk = _add_check_row(vbox, "连携操作（一键展开 / 拖动插旗）",
+        func(v: bool): SettingsManager.set_quick_actions(v))
 
     # 行 6：通关进度（清除，二次确认）
     var row6 := HBoxContainer.new()
@@ -111,6 +115,7 @@ func _build_ui() -> void:
     _keyboard_chk.button_pressed = SettingsManager.keyboard_enabled
     _sfx_chk.button_pressed = SettingsManager.sfx_enabled
     _fullscreen_chk.button_pressed = SettingsManager.fullscreen
+    _quick_chk.button_pressed = SettingsManager.quick_actions
 
     _apply_theme()
 
@@ -124,6 +129,10 @@ func _on_clear_progress() -> void:
     dlg.confirmed.connect(func():
         ProgressStore.clear_all()
         _toast("通关进度已清除", false))
+    # 关闭即释放（v3.1）：反复打开清除确认不再累积隐藏节点
+    dlg.visibility_changed.connect(func():
+        if not dlg.visible:
+            dlg.queue_free())
     add_child(dlg)
     dlg.popup_centered()
 

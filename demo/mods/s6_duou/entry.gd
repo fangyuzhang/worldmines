@@ -198,5 +198,7 @@ class EvenDegreeRule:
 		return true
 
 
-func on_load() -> void:
+func on_load() -> bool:
 	RuleRegistry.default().register(EvenDegreeRule.new())
+
+	return true

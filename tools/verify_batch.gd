@@ -166,7 +166,7 @@ func _report_clue_ratio(rows: Array) -> void:
 		if by_tier.has(t):
 			var arr: Array = by_tier[t]
 			arr.sort()
-			parts.append("%s med=%.2f(n=%d)" % [t, float(arr[arr.size() / 2]), arr.size()])
+			parts.append("%s med=%.2f(n=%d)" % [t, float(arr[floori(arr.size() / 2.0)]), arr.size()])
 	print("  线索冗余分层(clue_ratio 中位): %s" % (" | ".join(parts) if not parts.is_empty() else "无"))
 	var outliers: Array[String] = []
 	var checked := 0
@@ -179,7 +179,7 @@ func _report_clue_ratio(rows: Array) -> void:
 		for r in g:
 			crs.append(float(r["cr"]))
 		crs.sort()
-		var med := float(crs[crs.size() / 2])
+		var med := float(crs[floori(crs.size() / 2.0)])
 		for r in g:
 			if float(r["cr"]) > med + CLUE_RATIO_OUTLIER_DELTA:
 				outliers.append("%s clue_ratio=%.2f (组中位 %.2f, %s)" % [

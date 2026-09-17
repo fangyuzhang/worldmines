@@ -40,6 +40,8 @@ class HorizontalPairRule:
 				])
 
 
-func on_load() -> void:
+func on_load() -> bool:
 	# 与内置规则同一张表、同一套 API（ModAPI 会 diff 记录归属，卸载时自动清理）。
 	RuleRegistry.default().register(HorizontalPairRule.new())
+
+	return true

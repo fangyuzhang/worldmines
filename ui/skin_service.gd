@@ -171,6 +171,14 @@ func import_zip(zip_path: String) -> Dictionary:
 		var rel := p
 		if root != "." and root != "" and rel.begins_with(root + "/"):
 			rel = rel.substr(root.length() + 1)
+		# zip-slip 防护（v3.1）：拒绝「..」路径段与绝对路径条目，防止恶意 zip 写出 skins 目录之外
+		var slip: bool = rel.begins_with("/") or rel.contains("\\")
+		for seg in rel.split("/"):
+			if seg == "..":
+				slip = true
+		if slip:
+			push_warning("皮肤 zip 含可疑路径，已跳过: " + p)
+			continue
 		var bytes := zr.read_file(p)
 		if bytes == null:
 			continue

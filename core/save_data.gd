@@ -10,7 +10,9 @@ var mine_positions: Array[Vector2i] = []   # 静态雷位（恢复与生成算�
 var seed_value: int = 0                    # 仅作元数据，恢复对局不依赖它
 var metadata: Dictionary = {}              # 预留：P2 绘画层 / P3 来源标识/体检徽章
 
-const SAVE_PATH := "user://save.json"
+## v3.1：删除 SaveData 自带的 save()/load() 直写直读入口（SAVE_PATH 与 SaveCoordinator.MAIN
+## 同路径双入口，绕过三段式写盘 / ended 标记 / 坏档隔离，误调即破坏 §10.10 契约）。
+## 持久化唯一入口 = SaveCoordinator.save / load_save。
 
 
 func to_dict() -> Dictionary:
@@ -25,33 +27,18 @@ func to_dict() -> Dictionary:
 
 
 ## 从字典恢复。雷位/翻开/标记/计时/游戏状态精确恢复。
+## 防御：字段类型漂移（手改/损坏 JSON）时安全回退，不让畸形条目引发下标越界崩溃。
 func from_dict(d: Dictionary) -> void:
-	revealed_cells = _int_pairs_to_arr(d.get("revealed_cells", []))
-	flagged_cells = _int_pairs_to_arr(d.get("flagged_cells", []))
-	timer_seconds = d.get("timer_seconds", 0.0)
-	mine_positions = _int_pairs_to_arr(d.get("mine_positions", []))
-	seed_value = d.get("seed_value", 0)
-	metadata = d.get("metadata", {})
-
-
-func save() -> bool:
-	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-	if f == null:
-		return false
-	f.store_string(JSON.stringify(to_dict()))
-	f.close()
-	return true
-
-
-func load() -> bool:
-	if not FileAccess.file_exists(SAVE_PATH):
-		return false
-	var text := FileAccess.get_file_as_string(SAVE_PATH)
-	var parsed: Variant = JSON.parse_string(text)
-	if parsed == null:
-		return false
-	from_dict(parsed)
-	return true
+	var rev: Variant = d.get("revealed_cells", [])
+	var flg: Variant = d.get("flagged_cells", [])
+	var mns: Variant = d.get("mine_positions", [])
+	revealed_cells = _int_pairs_to_arr(rev if rev is Array else [])
+	flagged_cells = _int_pairs_to_arr(flg if flg is Array else [])
+	timer_seconds = float(d.get("timer_seconds", 0.0))
+	mine_positions = _int_pairs_to_arr(mns if mns is Array else [])
+	seed_value = int(d.get("seed_value", 0))
+	var md: Variant = d.get("metadata", {})
+	metadata = md if md is Dictionary else {}
 
 
 func _arr_to_int_pairs(arr: Array[Vector2i]) -> Array:
@@ -64,5 +51,7 @@ func _arr_to_int_pairs(arr: Array[Vector2i]) -> Array:
 func _int_pairs_to_arr(pairs: Array) -> Array[Vector2i]:
 	var out: Array[Vector2i] = []
 	for p in pairs:
+		if not (p is Array) or p.size() != 2:
+			continue  # 畸形条目跳过（此前 p[1] 直接下标会崩）
 		out.append(Vector2i(p[1], p[0]))
 	return out

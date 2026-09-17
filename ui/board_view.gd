@@ -66,8 +66,9 @@ func _ready() -> void:
 	# 提示浮动窗口（推理文字；可拖拽/缩放/调字体）
 	_hint_panel = HintPanel.new()
 	add_child(_hint_panel)
-	# 绘画层引用交给 GameSession，供存档/恢复
-	GameSession.drawing_layer = _drawing
+	# 绘画数据采集回调交给 GameSession（依赖倒置：autoload 不持有 UI 节点类型）。
+	# 闭包读 board_view 自己的 _drawing 字段，取实时值；绘画层仅 _ready 创建一次，无需重复注册。
+	GameSession.set_drawing_provider(func(): return _drawing.get_save_data())
 	# 双时序兼容：_ready 里手动调一次（恢复路径时 session 先开好、场景后进来）
 	_on_session_started()
 	get_viewport().connect("size_changed", _layout)
@@ -172,6 +173,10 @@ func _clear_reject() -> void:
 
 
 func _on_mouse_exited() -> void:
+	# 右键拖动插旗中移出控件：释放事件收不到（gui_input 只在控件内触发）→ 在此复位，
+	# 否则 _flag_dragging 残留到下次右键按下才被重置（拖出再拖入会误插旗）
+	_flag_dragging = false
+	_flag_drag_last = Vector2i(-1, -1)
 	if hover_pos.x < 0:
 		return
 	hover_pos = Vector2i(-1, -1)
@@ -243,6 +248,10 @@ func _draw() -> void:
 		for c in size.x:
 			var pos := Vector2i(c, r)
 			var cell := board.grid.get_cell(pos)
+			# 异形拓扑（AdjacencyGrid）洞格返回 null（口径与 save/hud/stats 的 all_positions 对齐）：
+			# 此前直接 _draw_cell(null) 空引用中止 _draw → 棋盘渲染整体失效。
+			if cell == null:
+				continue
 			var rect := Rect2(board_origin + Vector2(c, r) * cell_px, Vector2(cell_px, cell_px))
 			# 涟漪几何（§8.4.5）：中心格缩放弹跳 / 邻格向远离中心平移（直接改绘制矩形，免矩阵）
 			var rrect: Rect2 = _ripple_rect_for(pos, rect)
@@ -532,19 +541,21 @@ func _gui_input(event: InputEvent) -> void:
 			return
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 			# 左键点已翻开的数字格 = 一键展开（chord）；点未翻开格 = 正常翻开
-			if _is_revealed(pos):
+			if _quick_actions_enabled() and _is_revealed(pos):
 				GameSession.chord(pos)
 			else:
 				GameSession.reveal(pos)
 			accept_event()
 		elif event.button_index == MOUSE_BUTTON_MIDDLE and event.pressed:
-			GameSession.chord(pos)
+			if _quick_actions_enabled():
+				GameSession.chord(pos)
 			accept_event()
 		elif event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
 			GameSession.toggle_flag(pos)
 			# 按住右键拖动 = 连续插旗（与 chord 同源的 QoL，市面标配）
-			_flag_dragging = true
-			_flag_drag_last = pos
+			if _quick_actions_enabled():
+				_flag_dragging = true
+				_flag_drag_last = pos
 			accept_event()
 		elif event.button_index == MOUSE_BUTTON_RIGHT and not event.pressed:
 			_flag_dragging = false
@@ -603,8 +614,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if SettingsManager != null and not SettingsManager.keyboard_enabled:
 		return
 	if GameSession.state != GameSession.State.PLAYING:
-		# R 重开是终局例外（HUD/GameOver 也有按钮；键盘通道同样允许）
-		if event.keycode == KEY_R:
+		# R 重开是终局例外（HUD/GameOver 也有按钮；键盘通道同样允许）。
+		# PAUSED 不放行：对局仍在进行，直接重开会绕过 ui_confirm 的二次确认（误触丢进度）。
+		if event.keycode == KEY_R and GameSession.state == GameSession.State.ENDED:
 			GameSession.restart()
 			accept_event()
 		return
@@ -638,7 +650,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			GameSession.request_hint()
 		KEY_SPACE, KEY_ENTER:
 			# 与鼠标同口径：光标停在已翻开的数字格上时执行一键展开
-			if _is_revealed(cur):
+			if _quick_actions_enabled() and _is_revealed(cur):
 				GameSession.chord(cur)
 			else:
 				GameSession.reveal(cur)
@@ -769,6 +781,11 @@ func _confirm_restart() -> void:
 	UiConfirm.confirm_restart(self, func(): GameSession.restart())
 
 
+## 连携操作总开关（一键展开 chord + 右键拖动插旗）。默认开启，可在设置页关掉。
+func _quick_actions_enabled() -> bool:
+	return SettingsManager == null or SettingsManager.quick_actions
+
+
 ## 右键拖动状态（连续插旗）
 var _flag_dragging := false
 var _flag_drag_last: Vector2i = Vector2i(-1, -1)
@@ -803,5 +820,8 @@ func _pick(local_pos: Vector2) -> Vector2i:
 		return Vector2i(-1, -1)
 	var size := GameSession.board.grid.size()
 	if c < 0 or c >= size.x or r < 0 or r >= size.y:
+		return Vector2i(-1, -1)
+	# 异形拓扑洞格：包围盒内的洞不是有效格（与 _draw/save/hud 的 all_positions 口径对齐）
+	if GameSession.board.grid.get_cell(Vector2i(c, r)) == null:
 		return Vector2i(-1, -1)
 	return Vector2i(c, r)

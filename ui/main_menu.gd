@@ -82,6 +82,10 @@ func _check_crash_restore() -> void:
     dialog.cancel_button_text = "放弃"
     dialog.confirmed.connect(_on_restore_yes)
     dialog.canceled.connect(func(): SaveCoordinator.clear())
+    # 关闭即释放（v3.1）：对话框不 queue_free 会随复用累积隐藏节点
+    dialog.visibility_changed.connect(func():
+        if not dialog.visible:
+            dialog.queue_free())
     add_child(dialog)
     dialog.popup_centered()
 

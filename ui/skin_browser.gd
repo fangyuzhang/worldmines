@@ -186,6 +186,10 @@ func _on_delete(skin_id: String, skin_name: String) -> void:
 	dlg.confirmed.connect(func():
 		var r := SkinService.remove(skin_id)
 		_toast("皮肤已删除" if r["ok"] else "删除失败：%s" % r["reason"], not r["ok"]))
+	# 关闭即释放（v3.1）：反复删除操作不再累积隐藏节点
+	dlg.visibility_changed.connect(func():
+		if not dlg.visible:
+			dlg.queue_free())
 	add_child(dlg)
 	dlg.popup_centered()
 
@@ -196,6 +200,10 @@ func _on_info(skin: Dictionary) -> void:
 	dlg.dialog_text = "名称：%s\n作者：%s\n版本：%s\n底版：%s\n类型：%s" % [
 		skin["name"], skin["author"], skin["version"], skin.get("base", "dark"), kind]
 	dlg.ok_button_text = "关闭"
+	# 关闭即释放（v3.1）：反复查看详情不再累积隐藏节点
+	dlg.visibility_changed.connect(func():
+		if not dlg.visible:
+			dlg.queue_free())
 	add_child(dlg)
 	dlg.popup_centered()
 

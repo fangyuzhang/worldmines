@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://cu1vp0wu3tr5r"
+
+[deps]
+
+files=["res://关卡集总表.层.translation", "res://关卡集总表.组合.translation", "res://关卡集总表.尺寸.translation", "res://关卡集总表.雷数.translation", "res://关卡集总表.难度档.translation", "res://关卡集总表.设计关数.translation"]
+
+source_file="res://关卡集总表.csv"
+dest_files=["res://关卡集总表.层.translation", "res://关卡集总表.组合.translation", "res://关卡集总表.尺寸.translation", "res://关卡集总表.雷数.translation", "res://关卡集总表.难度档.translation", "res://关卡集总表.设计关数.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

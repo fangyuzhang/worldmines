@@ -211,5 +211,7 @@ class VariRadiusRule:
 			_r2[Vector2i(int(it["c"]), int(it["r"]))] = true
 
 
-func on_load() -> void:
+func on_load() -> bool:
 	RuleRegistry.default().register(VariRadiusRule.new())
+
+	return true

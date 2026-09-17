@@ -88,3 +88,54 @@ func test_t8b_quarantine_twice() -> void:
     SaveCoordinator.quarantine()  # .bak 已存在分支
     assert_true(FileAccess.file_exists(BAK))
     assert_false(FileAccess.file_exists(MAIN))
+
+
+# ==== v3.1 修复回归 ====
+
+# v3.1/M3：主档替换走 bak 三步——二次 save 覆盖旧档后 .bak 应清理、读回为最新内容
+func test_save_replaces_existing_main_via_bak() -> void:
+    var b := _get_board()
+    GameSession.level_path = "res://levels/classic_01.json"
+    SaveCoordinator.save(b, 1.0, "res://levels/classic_01.json")
+    SaveCoordinator.save(b, 2.0, "res://levels/classic_01.json")  # 第二次替换（走 bak 三步）
+    assert_false(FileAccess.file_exists(BAK), "替换完成后 .bak 应清理")
+    var d: Dictionary = SaveCoordinator.load_save()
+    assert_almost_eq(float(d["timer_seconds"]), 2.0, 0.001, "读回应为最新档")
+
+
+# v3.1/M3：MAIN 缺失（替换窗口崩溃模拟）→ load_save 回退 TEMP 兜底
+func test_load_save_falls_back_to_temp() -> void:
+    var b := _get_board()
+    GameSession.level_path = "res://levels/classic_01.json"
+    SaveCoordinator.save(b, 3.5, "res://levels/classic_01.json")
+    DirAccess.remove_absolute(MAIN)  # 模拟替换窗口期 MAIN 消失
+    var d: Dictionary = SaveCoordinator.load_save()
+    assert_false(d.is_empty(), "MAIN 消失应回退 TEMP 恢复")
+    assert_almost_eq(float(d["timer_seconds"]), 3.5, 0.001)
+
+
+# v3.1/M1：字段类型漂移（键在类型错）→ load_save 返回 {} → 调用方走 quarantine，
+# 而不是 restore_from_save 强类型赋值时脚本崩溃
+func test_type_drift_save_rejected() -> void:
+    var f := FileAccess.open(MAIN, FileAccess.WRITE)
+    f.store_string(JSON.stringify({
+        "revealed_cells": [], "flagged_cells": [], "timer_seconds": 0.0,
+        "mine_positions": [], "seed_value": 0,
+        "metadata": "not-a-dict",
+    }))
+    f.close()
+    var d: Dictionary = SaveCoordinator.load_save()
+    assert_eq(d, {}, "metadata 类型漂移应被拒收（走坏档隔离而非脚本崩溃）")
+
+
+# v3.1/G1：ENDED 状态下自动存档必须是 no-op——终局档（ended=true）不可被
+# 无标记常规档覆盖，否则失败局可经「恢复」复活（SL 作弊通道）
+func test_ended_autosave_is_noop() -> void:
+    var b := _get_board()
+    GameSession.level_path = "res://levels/classic_01.json"
+    SaveCoordinator.save(b, 9.0, "res://levels/classic_01.json", {}, true)  # 终局盘
+    GameSession.state = GameSession.State.ENDED
+    GameSession._maybe_autosave()  # 旧实现会在此用 ended=false 覆盖终局档
+    var d: Dictionary = SaveCoordinator.load_save()
+    assert_true(bool(d["metadata"].get("ended", false)), "终局标记必须保留")
+    GameSession.state = GameSession.State.IDLE

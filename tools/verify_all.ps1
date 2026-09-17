@@ -65,6 +65,11 @@ foreach ($pair in @(@('unit', 'unit'), @('ui', 'ui'), @('integration', 'integrat
     if ($r[0] -gt 0) {
         $failures += $r[0]
         $summary += "$label : $($r[0]) failing"
+    } elseif ($r[1] -ge 10) {
+        # pending 大面积出现 = 核心验证被静默跳过（如 C# 后端缺失时 59+ 处守卫全转 pending），
+        # 必须显眼提示而不是混在「OK」里——套件显示绿色但实际什么都没验证
+        Write-Host "  WARNING: risky/pending=$($r[1]) 疑似大面积跳过（检查 C# 后端/环境）" -ForegroundColor Yellow
+        $summary += "$label : WARNING risky/pending=$($r[1])（疑似大面积跳过，非绿色）"
     } else {
         $summary += "$label : OK (risky/pending=$($r[1]))"
     }

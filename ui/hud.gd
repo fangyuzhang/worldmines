@@ -16,6 +16,9 @@ var _settings_popup: PopupPanel
 var _box: HBoxContainer
 var _last_shown_sec: int = -1
 var _flag_cache: int = -1
+# 「可断定格数」0.5s 节流缓存：推导含 CP-SAT 全盘哈希，终极模式常开时每帧全算白付性能
+var _deducible_cache: int = 0
+var _deducible_at_ms: int = -100000
 
 
 func _ready() -> void:
@@ -111,7 +114,12 @@ func _process(_delta: float) -> void:
     # AddOnEarlyMineCount 的反面：默认隐藏「剩余可断定格数」；开启时才显示。
     # 只在显示时才算（推导含 CP-SAT，避免默认路径白付性能）。
     if ult and not SettingsManager.ult_hide_deducible:
-        _mines_label.text += "　可断定 %d" % GameSession.deducible_safe_count()
+        # 0.5s 节流：显示层允许的滞后，换取推导不再每帧全盘执行
+        var now_ms := Time.get_ticks_msec()
+        if now_ms - _deducible_at_ms > 500:
+            _deducible_cache = GameSession.deducible_safe_count()
+            _deducible_at_ms = now_ms
+        _mines_label.text += "　可断定 %d" % _deducible_cache
     _time_label.text = "时间 %02d:%02d" % [total / 60, total % 60]
 
 

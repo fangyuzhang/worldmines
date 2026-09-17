@@ -17,6 +17,12 @@ var _players: Array[AudioStreamPlayer] = []
 
 
 func _ready() -> void:
+	# 开机同步音效开关：本 autoload（注册序 7）在 SettingsManager（序 4）之后就绪，
+	# 由自己读取持久化值。原实现在 SettingsManager.load_cfg 里反向写本节点，
+	# 因 autoload _ready 时序失败导致 sfx_enabled=false 开机不生效。
+	# 运行时切换仍由 SettingsManager.set_sfx_enabled 双向同步（含测试断言依赖）。
+	if SettingsManager != null:
+		enabled = SettingsManager.sfx_enabled
 	for i in 8:
 		var p := AudioStreamPlayer.new()
 		add_child(p)

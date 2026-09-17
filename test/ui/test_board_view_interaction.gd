@@ -35,8 +35,9 @@ func _key(code: int) -> InputEventKey:
 # B1：构建即完成接线 —— 绘画层拿到棋盘坐标换算（窗口缩放后笔记跟随棋盘）
 func test_b1_builds_and_injects_board_transform() -> void:
 	assert_not_null(_view, "棋盘视图应能实例化")
-	var layer: DrawingLayer = GameSession.drawing_layer
-	assert_not_null(layer, "board_view 应把绘画层交给 GameSession")
+	var layer: DrawingLayer = _view._drawing
+	assert_not_null(layer, "board_view 应创建绘画层")
+	assert_true(GameSession._drawing_provider.is_valid(), "board_view 应注册绘画数据采集回调")
 	assert_true(layer.screen_to_board.is_valid(), "必须注入屏幕→棋盘换算")
 	assert_true(layer.board_to_screen.is_valid(), "必须注入棋盘→屏幕换算")
 
@@ -108,6 +109,38 @@ func test_b6_right_drag_flags_multiple_cells() -> void:
 	up.position = _cell_center(hidden[1])
 	_view._gui_input(up)
 	assert_false(_view._flag_dragging, "松开右键应结束拖动")
+
+
+# B7：设置里关掉「连携操作」→ 两个快捷手势都应失效（但仍能正常翻开/插旗）
+func test_b7_quick_actions_can_be_disabled() -> void:
+	var prev: bool = SettingsManager.quick_actions
+	SettingsManager.set_quick_actions(false)
+
+	var board: Board = GameSession.board
+	var hidden: Array[Vector2i] = []
+	for p in board.grid.all_positions():
+		if board.grid.get_cell(p).state == Cell.State.HIDDEN:
+			hidden.append(p)
+		if hidden.size() >= 2:
+			break
+
+	# 右键拖动不再连续插旗（单点插旗仍生效）
+	var down := InputEventMouseButton.new()
+	down.button_index = MOUSE_BUTTON_RIGHT
+	down.pressed = true
+	down.position = _cell_center(hidden[0])
+	_view._gui_input(down)
+	var move := InputEventMouseMotion.new()
+	move.button_mask = MOUSE_BUTTON_MASK_RIGHT
+	move.position = _cell_center(hidden[1])
+	_view._gui_input(move)
+	assert_eq(board.grid.get_cell(hidden[0]).state, Cell.State.FLAGGED, "单点插旗不受影响")
+	assert_eq(board.grid.get_cell(hidden[1]).state, Cell.State.HIDDEN, "关闭后拖动不应插旗")
+
+	# 开关本身必须被 board_view 读到（chord 的入口判定就靠它）
+	assert_false(_view._quick_actions_enabled(), "关闭后 board_view 应读到关闭")
+	SettingsManager.set_quick_actions(prev)
+	assert_true(_view._quick_actions_enabled(), "恢复后应重新生效")
 
 
 # B5：暂停不再是死代码 —— toggle_pause 能真正进入并退出 PAUSED

@@ -148,5 +148,7 @@ class OnionRule:
 		return []
 
 
-func on_load() -> void:
+func on_load() -> bool:
 	RuleRegistry.default().register(OnionRule.new())
+
+	return true

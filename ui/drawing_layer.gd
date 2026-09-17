@@ -83,6 +83,13 @@ func _ready() -> void:
 # ============ 模式 / 状态 ============
 
 func set_paint_mode(on: bool) -> void:
+	# 作画/擦除进行中切出（ESC/P/快捷键）：先按 mouse-release 同款逻辑收尾——
+	# 此前直接清 _active_stroke/_erase_batch，该笔/批次已画上却无撤销条目（孤儿，Ctrl+Z 撤不掉）。
+	if not on and paint_mode:
+		if _mode == _Mode.DRAW:
+			_finish_draw()
+		elif _mode == _Mode.ERASE:
+			_finish_erase()
 	paint_mode = on
 	mouse_filter = Control.MOUSE_FILTER_STOP if on else Control.MOUSE_FILTER_IGNORE
 	_mode = _Mode.NONE
@@ -515,8 +522,9 @@ func load_save_data(data: Dictionary) -> void:
 			"size": int(sd.get("size", 4)),
 			"is_eraser": bool(sd.get("is_eraser", false)),
 		})
-	current_color = int(data.get("current_color", 0))
-	current_size = int(data.get("current_size", 1))
+	# 坏档防御：手改存档的大值此前会让 _start_draw 的 SIZES[current_size] 越界
+	current_color = clampi(int(data.get("current_color", 0)), 0, COLOR_COUNT - 1)
+	current_size = clampi(int(data.get("current_size", 1)), 0, SIZES.size() - 1)
 	_undo_stack.clear()
 	_redo_stack.clear()
 	queue_redraw()

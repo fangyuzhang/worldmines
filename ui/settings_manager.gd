@@ -45,6 +45,11 @@ var ult_auto_reveal: bool = false
 # 而不是把这个开关塞进终极模式。
 # 窗口模式：true = 独占全屏；false = 窗口模式（可调整大小）
 var fullscreen: bool = false
+# 连携操作（市面扫雷标配的两个快捷手势）：
+#   · 一键展开 chord：点已翻开的数字格（或中键 / 空格），若邻域旗数 == 线索值则展开其余邻格
+#   · 右键拖动连续插旗
+# 默认开启；若真机反馈「误触太多」可在此关闭（两者绑定一个开关，避免设置项膨胀）。
+var quick_actions: bool = true
 
 
 func _ready() -> void:
@@ -81,7 +86,10 @@ func load_cfg() -> void:
     ult_hide_deducible = _get_bool(cfg, "ult_hide_deducible", true)
     ult_auto_reveal = _get_bool(cfg, "ult_auto_reveal", false)
     fullscreen = _get_bool(cfg, "fullscreen", false)
-    AudioManager.enabled = sfx_enabled
+    quick_actions = _get_bool(cfg, "quick_actions", true)
+    # 注：AudioManager.enabled 的开机同步已移入 AudioManager._ready——本 autoload 注册序(4)
+    # 早于 AudioManager(7)，此处反向引用会因 _ready 时序失败，导致持久化的音效开关开机不生效；
+    # 且测试手工实例化 SettingsManager 调 load_cfg 时不应产生改写真实 AudioManager 的全局副作用。
 
 
 func _get_str(cfg: ConfigFile, key: String, fallback: String) -> String:
@@ -114,6 +122,7 @@ func save() -> void:
     cfg.set_value("game", "ult_hide_deducible", ult_hide_deducible)
     cfg.set_value("game", "ult_auto_reveal", ult_auto_reveal)
     cfg.set_value("game", "fullscreen", fullscreen)
+    cfg.set_value("game", "quick_actions", quick_actions)
     cfg.save(PATH)
 
 
@@ -159,6 +168,12 @@ func set_sfx_enabled(v: bool) -> void:
 func set_drawing_opacity(v: float) -> void:
     drawing_opacity = clampf(v, 0.5, 1.0)
     save()
+    settings_changed.emit()
+
+
+## 仅应用不落盘（滑条拖动的 value_changed 每刻度触发——落盘放 drag_ended，避免一次拖动几十次全量写盘）
+func apply_drawing_opacity(v: float) -> void:
+    drawing_opacity = clampf(v, 0.5, 1.0)
     settings_changed.emit()
 
 
@@ -217,6 +232,12 @@ func set_ult_auto_reveal(v: bool) -> void:
 func set_fullscreen(v: bool) -> void:
     fullscreen = v
     _apply_window_mode()
+    save()
+    settings_changed.emit()
+
+
+func set_quick_actions(v: bool) -> void:
+    quick_actions = v
     save()
     settings_changed.emit()
 

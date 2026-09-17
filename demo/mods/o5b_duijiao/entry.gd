@@ -179,5 +179,7 @@ class DiagGroupRule:
 		return out
 
 
-func on_load() -> void:
+func on_load() -> bool:
 	RuleRegistry.default().register(DiagGroupRule.new())
+
+	return true
