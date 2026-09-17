@@ -655,6 +655,9 @@ func _mode_enabled() -> bool:
 
 
 func _level_key(idx: int) -> String:
+	# 缓存/进度键不掺雷数：同 mode×size 的雷数由 resolve_mines 唯一确定（候选回退是
+	# 确定性判定 + 缓存），且回退组合在旧版（固定标准雷数）下本就生成不出文件
+	#（UNSAT），不存在「旧缓存与新雷数撞键」的歧义——无需为候选回退改键结构。
 	var m: Dictionary = MODES[_mode_idx]
 	return "gen://%s/%d/%d" % [m["id"], SIZES[_size_idx], idx]
 
@@ -663,6 +666,7 @@ func _level_seed(idx: int) -> int:
 	# 确定性种子：同模式+尺寸+序号必得同一盘。
 	# v3.1：改用模式 id / 尺寸边长的稳定哈希而非数组下标——插入新变体/尺寸
 	# 不再改变所有后续模式的种子（「同 seed 同盘」承诺不因 MODES/SIZES 顺序变化失效）。
+	# 雷数不掺入种子（GDD §8.1）：它由 mode×size 经候选回退唯一确定，见 _level_key 注释。
 	return hash("%s|%d|%d" % [str(MODES[_mode_idx]["id"]), SIZES[_size_idx], idx])
 
 
@@ -671,8 +675,14 @@ func _page_count() -> int:
 
 
 func _mine_count() -> int:
-	# 每尺寸固定雷数（约 40% 密度，见 LevelSequence.MINE_COUNTS）；未列出的尺寸回退 40%。
-	return LevelSequence.mine_count(SIZES[_size_idx])
+	# v3.0 候选雷数回退（GDD 终版 §8.1）：走 RuleFeasibility 真值解析——标准雷数与
+	# 守恒算子互斥时自动回退候选列表下一项（如 qd 8×8：26 非 4 倍数 → 回退 24）。
+	# 结果带缓存（同 mode×size 仅首次走 CP-SAT），与 _mode_feasible 共享同一批查询。
+	# 全候选不可行返回 -1（正常流程被 _refresh_popup 的尺寸禁用 + _on_play 防御拦下，
+	# 不会走到生成）。
+	var m: Dictionary = MODES[_mode_idx]
+	return int(RuleFeasibility.resolve_mines(
+			String(m["clue"]), m.get("globals", []), SIZES[_size_idx])["mines"])
 
 
 ## 最新解锁关卡：第一个未通关的关卡；全部通关则为最后一关。
@@ -716,6 +726,19 @@ func _on_play() -> void:
 	_play_btn.disabled = true
 	_play_btn.text = "校验中…"
 	await get_tree().process_frame
+	# 0) 防御：全候选雷数均不可行（正常流程已被尺寸按钮禁用拦下）→ 直接拒绝，不进生成。
+	#    （resolve_mines 带缓存，此处与 _mine_count/_mode_feasible 共享查询结果。）
+	var rr := RuleFeasibility.resolve_mines(String(m["clue"]), m.get("globals", []), s)
+	if int(rr["mines"]) < 0:
+		_play_btn.disabled = false
+		_refresh_stat()
+		UiToast.popup(self, "该变体在 %d×%d 的全部候选雷数下数学无解——请换尺寸或换变体" % [s, s])
+		return
+	# 候选雷数回退提示（非阻断 toast，GDD 终版 §8.1 口径）：标准雷数与守恒算子互斥时，
+	# 生成器自动改用候选列表下一项——明确告知玩家，不打断流程。
+	if not bool(rr["standard"]):
+		UiToast.popup(self, "该组合在 %d 雷下不可行，已回退 %d 雷（候选列表自动选择）" % [
+			LevelSequence.mine_count(s), int(rr["mines"])])
 	# 1) 可行性预筛（毫秒级）：规则冗余/矛盾、雷数不可达 → 立即拒绝，绝不暴力生成
 	var pre := PuzzleGenerator.precheck_rules(String(m["clue"]), m["globals"], Vector2i(s, s), _mine_count())
 	if not pre["ok"]:
@@ -749,7 +772,7 @@ func _ensure_level_file_async(idx: int) -> String:
 	# 兜底防御（正常已被 _refresh_popup 的尺寸禁用拦下）：数学不可行组合直接拦截，
 	# 不进入生成器白耗 50 次 attempt（每次都会 UNSAT 返回空）。
 	if not _mode_feasible(m, s):
-		push_warning("关卡选择：变体 %s 在 %d×%d（R07 雷数）下数学不可行，已拦截生成" % [
+		push_warning("关卡选择：变体 %s 在 %d×%d（全部候选雷数）下数学不可行，已拦截生成" % [
 			str(m["id"]), s, s])
 		return ""
 	var path := LevelSequence.level_path(str(m["id"]), s, idx)

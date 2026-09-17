@@ -4,7 +4,8 @@ extends SceneTree
 #
 # 组合清单（GDD 01 号 3.1.1 / 3.2）：
 #   单 C（8）+ 单 G（7）+ G+C（7×8=56）+ G+G（C(7,2)=21）= 92 组合
-# 尺寸：5×5~9×9（R07 雷数 10/14/20/26/32）。
+# 尺寸：5×5~9×9（雷数 = RuleFeasibility.CANDIDATES 候选列表，标准值首选、按序回退，
+# GDD 终版 §8.1——qd 8×8 等「26 雷不可行」组合自动改用 24 雷生成）。
 #
 # 用法：
 #   godot --headless --path . -s res://tools/batch_all_variants.gd -- [out_dir] [per_type] [seed_max] [limit_combos] [shard_idx shard_total] [seed_start]
@@ -36,7 +37,10 @@ const CliShutdown := preload("res://tools/cli_shutdown.gd")
 
 const CLUES := ["classic", "4n", "clock", "hv", "fr", "loopruns", "distsum", "sc"]
 const GLOBALS := ["mx", "rl", "pf", "qd", "dt", "ep", "4c"]
-const SIZES := {5: 10, 6: 14, 7: 20, 8: 26, 9: 32}
+## 尺寸清单与雷数真值源（v3.0，GDD §8.1）：直接引用 RuleFeasibility.CANDIDATES
+##（key = 边长，value = 候选雷数列表）。单元循环的「请求雷数」由 resolve_mines
+## 按候选回退决定（见 _initialize），此表仅提供尺寸遍历——禁止手写第二份雷数表。
+const SIZES := RuleFeasibility.CANDIDATES
 
 var _out_dir := "user://batch_all"
 var _per_type := 10
@@ -351,6 +355,7 @@ func _initialize() -> void:
 	var design_skip: Array = []
 	var partial: Array = []
 	var diff_unreach: Array = []
+	var fallback_units: Array = []  # 候选雷数回退单元明细（审计报告带上实际雷数）
 
 	var quota_desc := "每档 %d 关（per_tier）" % _per_tier if _per_tier > 0 else "每类 %d 关" % _per_type
 	print("=== 全变体+混合批量生成（%d 组合 × 5 尺寸 × %s）[shard %d/%d]===" % [
@@ -366,7 +371,7 @@ func _initialize() -> void:
 		for side in SIZES:
 			if not combo_sides.is_empty() and not combo_sides.has(side):
 				continue
-			var mines: int = SIZES[side]
+			var mines: int = RuleFeasibility.standard_mines(side)
 			stats["units"] += 1
 			var combo_dir := "%s/%s/%dx%d" % [_out_dir, combo["id"], side, side]
 			# 注：mines 在下方可行性预筛处可能被候选回退覆盖（见 resolve_mines 段）。
@@ -386,6 +391,11 @@ func _initialize() -> void:
 			if int(rr["mines"]) < 0:
 				stats["skipped"] += 1
 				skipped.append("%s %dx%d" % [combo["id"], side, side])
+				# unfeasible 事件（沿用 issues.jsonl 事件写法）：带该尺寸候选列表，
+				# 离线可排查「标准值/各回退值为何全不可行」（逐候选 CP-SAT 结论已在缓存）。
+				_append_issues([_ev({"t": "unfeasible", "combo": combo["id"], "side": side,
+					"clue": combo["clue"], "globals": combo["globals"],
+					"candidates": RuleFeasibility.CANDIDATES.get(side, [])})])
 				continue
 			mines = int(rr["mines"])
 			var mines_fallback := not bool(rr["standard"])
@@ -529,6 +539,7 @@ func _initialize() -> void:
 				"cost_s": (Time.get_ticks_msec() - u_t0) / 1000.0}))
 			if mines_fallback:
 				stats["mines_fallback"] = int(stats.get("mines_fallback", 0)) + 1
+				fallback_units.append("%s %dx%d→%d雷" % [combo["id"], side, side, mines])
 			_append_issues(unit_lines)
 			if unreachable:
 				# 单独归类：不可达单元补跑也没用（与数学 UNSAT 同口径），不计入 partial。
@@ -555,12 +566,16 @@ func _initialize() -> void:
 	if diff_unreach.size() > 0:
 		print("  难度不可达单元(%d，任何档位均不可达——非 bug，补跑无效): %s" % [
 			diff_unreach.size(), ", ".join(diff_unreach)])
+	if int(stats.get("mines_fallback", 0)) > 0:
+		print("  候选雷数回退单元(%d，标准雷数与守恒算子互斥→候选列表自动回退，GDD §8.1): %s" % [
+			int(stats.get("mines_fallback", 0)), ", ".join(fallback_units)])
 	# 报告文件按分片命名：8 个分片进程写同一路径会互相覆盖（实测 probe40 丢了 7 片的 partial 清单）。
 	var report_name := "all_report_shard_%02d.json" % _shard_idx if _shard_total > 1 else "all_report.json"
 	_write("%s/%s" % [_out_dir, report_name], {
 		"elapsed_s": elapsed, "stats": stats,
 		"design_skip": design_skip, "skipped": skipped, "partial": partial,
 		"diff_unreachable": diff_unreach,
+		"mines_fallback_units": fallback_units,
 		"issues_file": _issues_path.get_file(),
 	})
 	print("  事件记录: %s（%d 单元行 + 全量失败事件，可远程拉回分析）" % [_issues_path, stats["units"]])

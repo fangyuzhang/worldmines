@@ -6,15 +6,19 @@ extends SceneTree
 ## 「6×6 必须 14 雷」这类固定雷数红线——当年 QD 偷调平 bug 产出的 12 雷关正是
 ## 「自洽但违反 R07」。本工具独立核对：
 ##   ① JSON 可解析（强杀半截文件检测）；
-##   ② R07 雷数契约（尺寸 → 固定雷数逐关核对，10/14/20/26/32）；
-##   ③ name 字段格式（tier_NN，tier ∈ easy/normal/hard）；
+##   ② R07 雷数契约（尺寸 → 雷数 ∈ 候选列表逐关核对；标准 10/14/20/26/32 首选、
+##      其余为守恒算子回退值，GDD 终版 §8.1）；
+##   ③ name 字段格式（tier_NN，tier ∈ intro/easy/normal/hard）；
 ##   ④ 按单元（组合×尺寸）统计满额情况与难度分布。
 ##
 ## 用法：godot --headless --path . -s res://tools/batch_audit_r07.gd -- <dir>
 ##   dir 默认 user://batch_all。任一解析/雷数/name 失败 → exit 1（可接 CI）。
 const CliShutdown := preload("res://tools/cli_shutdown.gd")
 
-const EXPECT_MINES := {5: 10, 6: 14, 7: 20, 8: 26, 9: 32}
+## 候选雷数真值源（v3.0，GDD §8.1）：雷数 ∈ RuleFeasibility.CANDIDATES[size] 即合法
+##（首项 = 标准值，其余 = 守恒算子整除/奇偶互斥时的回退值）。
+## 禁止在此手写第二份列表——候选扩充只改 rule_feasibility.gd 一处。
+const EXPECT_MINES := RuleFeasibility.CANDIDATES
 
 var _dir := "user://batch_all"
 
@@ -59,8 +63,10 @@ func _initialize() -> void:
 		var cols := int(level.get("size", {}).get("cols", 0))
 		var rows := int(level.get("size", {}).get("rows", 0))
 		var tm := int(level.get("total_mines", -1))
-		if cols != rows or not EXPECT_MINES.has(cols) or tm != EXPECT_MINES[cols]:
-			mine_fail.append("%s (size=%dx%d total_mines=%d)" % [path, cols, rows, tm])
+		if cols != rows or not EXPECT_MINES.has(cols) or not (EXPECT_MINES[cols] as Array).has(tm):
+			var cands: Array = EXPECT_MINES.get(cols, [])
+			mine_fail.append("%s (size=%dx%d total_mines=%d ∉ 候选%s)" % [
+				path, cols, rows, tm, str(cands)])
 		var nm := str(level.get("name", ""))
 		var parts := nm.split("_", false)
 		if parts.size() != 2 or not ["intro", "easy", "normal", "hard"].has(parts[0]) or not parts[1].is_valid_int():

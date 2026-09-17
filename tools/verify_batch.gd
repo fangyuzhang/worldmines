@@ -18,8 +18,9 @@ extends SceneTree
 # 可靠退出：见 cli_shutdown.gd 顶部注释。
 const CliShutdown := preload("res://tools/cli_shutdown.gd")
 
-## R07 固定雷数契约（GDD）：尺寸 → 雷数。仅对 5..9 矩形盘生效。
-const R07_MINES := {5: 10, 6: 14, 7: 20, 8: 26, 9: 32}
+## R07 雷数契约（GDD §8.1）：尺寸 → 雷数 ∈ RuleFeasibility.CANDIDATES[size]
+##（首项 = 标准值，其余 = 守恒算子回退值）。仅对 5..9 矩形盘生效。
+## 真值源唯一：候选/标准值均引用 rule_feasibility.gd，禁止在此手写第二份列表。
 ## 线索冗余诊断（2026-09-16 改口径）：原「绝对阈值 0.5」对低档盘是**结构性误报**——
 ## clue_ratio 随档位单调递减，是 tiered 产线「朝档走 + 达标即停」的必然结果
 ## （实测三批一致：intro 中位 0.92~0.95 / easy 0.64~0.80 / normal 0.44~0.59 / hard 0.47~0.51，
@@ -77,13 +78,13 @@ func _initialize() -> void:
 		# 落盘雷数可以是候选列表内的回退值（GDD §8.1）；不在候选列表 = FAIL。
 		var sz: Dictionary = level.get("size", {})
 		var side := int(sz.get("cols", 0))
-		if int(sz.get("rows", 0)) == side and R07_MINES.has(side):
+		if int(sz.get("rows", 0)) == side and RuleFeasibility.CANDIDATES.has(side):
 			var mv := int(level.get("total_mines", -1))
 			var cands: Array = RuleFeasibility.CANDIDATES.get(side, [])
 			if not cands.has(mv):
 				failed.append("%s (R07 雷数不在候选列表: %d ∉ %s)" % [path, mv, str(cands)])
 				continue
-			if mv != int(R07_MINES[side]):
+			if mv != RuleFeasibility.standard_mines(side):
 				fallback_count += 1
 		# 门禁 ③+④：schema 基础校验 + 线索值 round-trip（Board 重算 vs 规则独立重算）。
 		var bad := _check_schema_roundtrip(board, level)
