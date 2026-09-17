@@ -80,6 +80,12 @@ var _selected := 0
 
 # 弹窗内控件引用
 var _size_btns: Array[Button] = []
+## 难度列（关卡库模式）：四档竖排；该（变体×尺寸）库内无内容时整列隐藏，回退生成流。
+var _tier_col: VBoxContainer = null
+var _tier_btns: Array[Button] = []
+var _tier := ""              # 当前档（仅关卡库模式）
+var _lib_mode := false       # 当前（变体 × 尺寸）是否有正式关卡库内容
+var _lib_count := 0          # 当前（变体 × 尺寸 × 档）的关数
 var _frame: PanelContainer = null
 var _grid_wrap: Control = null
 var _grid: GridContainer = null
@@ -138,14 +144,18 @@ func _refresh_modes() -> void:
 		_mode_index[str((MODES[i] as Dictionary)["id"])] = i
 
 
-## 终局页「下一关」交接过来的意图：直接展开对应变体×尺寸的关卡弹窗。
-## 选关页默认就会把选中项定位到「最新解锁关卡」，所以玩家看到的就是下一关已被选中。
+## 终局页交接过来的意图：翻到对应变体×尺寸，必要时**直接开局**。
+## 选关页默认会把选中项定位到「最新解锁关卡」——通关或跳过之后，那一项正好是下一关。
+## auto_start 为真（来自「下一关」/「跳过本关」）时，展开弹窗后立刻开局：
+## 生成仍归本页（这里才有生成器与取消入口），玩家感知是「点一下就进了下一关」；
+## 生成失败或被取消则停在选关页（弹窗已开着），不会卡在无出路的状态。
 func _consume_pending_focus() -> void:
 	var focus: Dictionary = LevelSequence.take_focus()
 	if focus.is_empty():
 		return
 	var mode_id := str(focus.get("mode", ""))
 	var want_size := int(focus.get("size", 0))
+	var auto_start := bool(focus.get("auto_start", false))
 	for i in MODES.size():
 		if str(MODES[i]["id"]) != mode_id:
 			continue
@@ -156,6 +166,8 @@ func _consume_pending_focus() -> void:
 			_size_idx = size_i
 			_ensure_mock()
 			_refresh_popup()
+		if auto_start:
+			_on_play()
 		return
 
 
@@ -567,7 +579,10 @@ func _matrix_cell(clue_id: String, global_id: String) -> Button:
 	btn.text = "%s·%s" % [VariantCatalog.display_name(global_id), VariantCatalog.display_name(clue_id)]
 	btn.custom_minimum_size = Vector2(CELL_W, 48)
 	btn.clip_text = true   # 名称再长也不许撑宽格子（撑宽会把整表挤到横向滚动）
-	btn.focus_mode = Control.FOCUS_NONE
+	# 交叉格开焦点 → 鼠标点一下就「进入」键盘/手柄导航，之后方向键可在表格内走格
+	# （GridContainer 的相邻兄弟正是几何相邻格，Godot 自动推导四向邻居，
+	#  上下 = 换线索、左右 = 换约束）。其余按钮仍 FOCUS_NONE，沿用项目「鼠标优先」设计。
+	btn.focus_mode = Control.FOCUS_ALL
 	btn.add_theme_font_size_override("font_size", 12)
 	btn.set_meta("cell_btn", true)
 	_style_card(btn)
@@ -598,7 +613,7 @@ func _gg_cell(g1: String, g2: String) -> Button:
 	btn.text = "%s·%s" % [VariantCatalog.display_name(g1), VariantCatalog.display_name(g2)]
 	btn.custom_minimum_size = Vector2(CELL_W, 48)
 	btn.clip_text = true   # 名称再长也不许撑宽格子（撑宽会把整表挤到横向滚动）
-	btn.focus_mode = Control.FOCUS_NONE
+	btn.focus_mode = Control.FOCUS_ALL   # 与约束×线索表一致：方向键可在三角表内走格
 	btn.add_theme_font_size_override("font_size", 12)
 	btn.set_meta("cell_btn", true)
 	_style_card(btn)
@@ -697,34 +712,91 @@ func _mod_section(mod_id: String) -> Control:
 		note.add_theme_font_size_override("font_size", 13)
 		note.set_meta("secondary", true)
 		flow.add_child(note)
+
+	# 已生成的 Mod 关卡（模组页生成按钮的成品，落在 user://mods/<mod>/levels/）：
+	# 直接列在这里可开玩——没必要让玩家为了玩成品再回模组页找一遍。
+	var levels := _mod_level_buttons(mod_id)
+	if levels != null:
+		wrap.add_child(levels)
 	return wrap
 
 
-## Def 规则行。Def 注册进的是 DefEngine 而不是规则注册表，因此**不会**出现在本页的变体表里，
-## 但它确实提供了可玩内容（主菜单「模组」页可为其生成关卡）——如实列出，
-## 否则玩家看到空白分组会以为装了个空包。
+## Def 规则行。Def 注册进的是 DefEngine 而不是规则注册表，因此**不会**出现在变体表里。
+## 但它不是凭空消失的理由：Def 的 (window, aggregate) / op 是**封闭枚举**，
+## 永远等价于内置 8 线索 / 7 约束之一（n4+sum ≡ 四邻、symmetry_axis ≡ 镜像）——
+## 所以这里如实标出「≡ 哪个内置变体、去哪儿玩同款玩法」；
+## 映射不到的组合（规则平台没有对应算子）则明说不可生成，而不是留个空分组。
 func _mod_def_label(defs: Array) -> Control:
-	var clues: Array[String] = []
-	var constraints: Array[String] = []
+	var parts: Array[String] = []
 	for d in defs:
 		var n := str((d as Dictionary).get("name", ""))
 		if n == "":
 			continue
-		if str((d as Dictionary).get("type", "")) == "clue":
-			clues.append(n)
+		var is_clue := str((d as Dictionary).get("type", "")) == "clue"
+		var kind := "线索" if is_clue else "约束"
+		var rid := PuzzleGenerator.def_to_rule(ModAPI.defs, n, is_clue)
+		if rid == "":
+			parts.append("%s %s（规则平台无对应算子，不可生成）" % [kind, n])
 		else:
-			constraints.append(n)
-	var parts: Array[String] = []
-	if not clues.is_empty():
-		parts.append("线索 %d 个（%s）" % [clues.size(), ", ".join(clues)])
-	if not constraints.is_empty():
-		parts.append("约束 %d 个（%s）" % [constraints.size(), ", ".join(constraints)])
+			parts.append("%s %s ≡ %s（%s）" % [kind, n, VariantCatalog.display_name(rid), rid])
+	if parts.is_empty():
+		parts.append("（无）")
 	var lb := Label.new()
-	lb.text = "Def 规则：%s　·　在主菜单「模组」页可为其生成关卡" % "　".join(parts)
+	lb.text = "Def 规则：%s　·　玩法等同对应内置变体，可在选关页直接玩；下方「已生成关卡」是它的成品" % "　".join(parts)
 	lb.add_theme_font_size_override("font_size", 13)
 	lb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lb.set_meta("secondary", true)
 	return lb
+
+
+## 该 Mod 已生成的关卡（模组页生成器的成品）。无则返回 null，调用方不加空块。
+func _mod_level_buttons(mod_id: String) -> Control:
+	var dir_path := "user://mods/%s/levels" % mod_id
+	var d := DirAccess.open(dir_path)
+	if d == null:
+		return null
+	var files: Array[String] = []
+	for f in d.get_files():
+		if str(f).ends_with(".json"):
+			files.append("%s/%s" % [dir_path, str(f)])
+	if files.is_empty():
+		return null
+	files.sort()
+
+	var wrap := VBoxContainer.new()
+	wrap.add_theme_constant_override("separation", 6)
+	var head := Label.new()
+	head.text = "已生成关卡 %d 个（点击直接开玩）" % files.size()
+	head.add_theme_font_size_override("font_size", 13)
+	head.set_meta("secondary", true)
+	wrap.add_child(head)
+
+	var flow := HFlowContainer.new()
+	flow.add_theme_constant_override("h_separation", 10)
+	flow.add_theme_constant_override("v_separation", 10)
+	flow.alignment = FlowContainer.ALIGNMENT_CENTER
+	wrap.add_child(flow)
+	for p in files:
+		var b := Button.new()
+		b.text = str(p.get_file().get_basename())
+		b.custom_minimum_size = Vector2(140, 40)
+		b.focus_mode = Control.FOCUS_NONE
+		b.tooltip_text = "直接开始这一关\n%s" % p
+		b.set_meta("mod_level_btn", true)
+		_style_card(b)
+		b.pressed.connect(_open_mod_level.bind(p))
+		UiTheme.bind_hover(b, 1.04)
+		flow.add_child(b)
+	return wrap
+
+
+## 直接开玩 Mod 关卡（Def / wasm 生成器的成品）。
+## 异形或损坏关卡会被 LevelLoader 拒绝 → 只提示、不切场景（避免进了棋盘才发现是坏档）。
+func _open_mod_level(path: String) -> void:
+	if not GameSession.start_level(path):
+		UiToast.popup(self, "关卡加载失败：%s" % path.get_file())
+		return
+	get_tree().change_scene_to_file("res://ui/board_view.tscn")
 
 
 func _mod_runtime_label(runtime: String) -> String:
@@ -784,8 +856,9 @@ func _mod_empty_state() -> Control:
 # ---------- 卡片 / 进度 ----------
 
 ## 卡片与交叉格共用的紧凑样式（标准按钮内边距 16/8 会把交叉格撑到相互挤压）。
+## focus 态是给交叉表的键盘/手柄导航用的（卡片仍 FOCUS_NONE，不会显示它）。
 func _style_card(btn: Button) -> void:
-	for state in ["normal", "hover", "pressed"]:
+	for state in ["normal", "hover", "pressed", "focus"]:
 		var sb := StyleBoxFlat.new()
 		sb.set_corner_radius_all(6)
 		sb.set_border_width_all(1)
@@ -797,6 +870,11 @@ func _style_card(btn: Button) -> void:
 			"hover":
 				sb.bg_color = ThemeManager.card().lightened(0.06)
 				sb.border_color = ThemeManager.accent()
+			"focus":
+				# 方向键走到哪一格必须一眼看出来：底色再亮一档 + 2px 边框
+				sb.bg_color = ThemeManager.card().lightened(0.12)
+				sb.border_color = ThemeManager.accent()
+				sb.set_border_width_all(2)
 			"pressed":
 				sb.bg_color = ThemeManager.accent().darkened(0.35)
 				sb.border_color = ThemeManager.accent()
@@ -814,7 +892,7 @@ func _attach_progress(btn: Button, mode_id: String) -> void:
 	var done := _cleared_total(mode_id)
 	if done <= 0:
 		return
-	var total := SIZES.size() * LEVELS_PER_SET
+	var total := _mode_total(mode_id)
 	btn.draw.connect(func():
 		# 必须显式写成 btn.draw_rect(...)：GDScript 的 lambda 里 self 是外层对象
 		#（= 选关页），直接 draw_rect 会画到「正在绘制的那个节点」之外 → 报 !drawing。
@@ -825,14 +903,27 @@ func _attach_progress(btn: Button, mode_id: String) -> void:
 				ThemeManager.safe(), true))
 
 
-## 该变体在各尺寸下的已通关总数（0 ~ SIZES.size() * LEVELS_PER_SET）。
+## 该变体在各尺寸（含正式关卡库的全部档）下的已通关总数。
 func _cleared_total(mode_id: String) -> int:
 	var n := 0
 	for s in SIZES:
 		for i in LEVELS_PER_SET:
 			if _is_cleared(LevelSequence.level_key(mode_id, s, i)):
 				n += 1
+		var c := LevelLibrary.counts(mode_id, s)
+		for t in c:
+			for i in int(c[t]):
+				if _is_cleared(LevelSequence.lib_key(mode_id, s, str(t), i)):
+					n += 1
 	return n
+
+
+## 该变体的总关数（卡片进度条分母）：库内有关卡按库计，否则按生成关口径（5 尺寸 × 3 关）。
+func _mode_total(mode_id: String) -> int:
+	var t := LevelLibrary.total(mode_id)
+	if t > 0:
+		return t
+	return SIZES.size() * LEVELS_PER_SET
 
 
 
@@ -923,6 +1014,11 @@ func _open_popup(mode_idx: int) -> void:
 
 ## 左侧：棋盘框（尺寸选择栏 + 关卡网格 + 分页圆点），整体蓝色高亮发光。
 func _build_left(parent: Node) -> void:
+	# 每次开弹窗都重建控件：清掉上一轮的引用，否则 _refresh_tier_buttons 会往
+	# **已随弹窗释放**的按钮上写字（实机报「previously freed」）。
+	_tier_btns.clear()
+	_tier_col = null
+	_size_btns.clear()
 	_frame = PanelContainer.new()
 	_frame.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_frame.custom_minimum_size = Vector2(700, 0)
@@ -931,13 +1027,23 @@ func _build_left(parent: Node) -> void:
 	_frame.gui_input.connect(_on_frame_input)
 	parent.add_child(_frame)
 
+	# 左：难度列（关卡库模式）｜右：尺寸栏 + 关卡网格——「上方棋盘大小、左侧难度竖列」。
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 14)
+	_frame.add_child(row)
+
+	_tier_col = VBoxContainer.new()
+	_tier_col.add_theme_constant_override("separation", 8)
+	_tier_col.custom_minimum_size = Vector2(120, 0)
+	row.add_child(_tier_col)
+
 	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	vbox.add_theme_constant_override("separation", 12)
-	vbox.add_theme_constant_override("margin_left", 16)
 	vbox.add_theme_constant_override("margin_right", 16)
 	vbox.add_theme_constant_override("margin_top", 14)
 	vbox.add_theme_constant_override("margin_bottom", 16)
-	_frame.add_child(vbox)
+	row.add_child(vbox)
 
 	# 尺寸选择栏
 	var size_bar := HBoxContainer.new()
@@ -979,6 +1085,57 @@ func _build_left(parent: Node) -> void:
 	_dots_box.add_theme_constant_override("separation", 10)
 	_dots_box.custom_minimum_size = Vector2(24, 0)
 	grid_row.add_child(_dots_box)
+
+	_build_tier_col()
+
+
+## 难度列：四档竖排（关卡库模式）。每格 = 档名 + 该档关数；无内容的档置灰。
+## 整个（变体 × 尺寸）库内无内容 → 整列隐藏，回退「按种子生成 3 关」的老流程。
+func _build_tier_col() -> void:
+	var cap := Label.new()
+	cap.text = "难度"
+	cap.add_theme_font_size_override("font_size", 15)
+	cap.set_meta("secondary", true)
+	_tier_col.add_child(cap)
+	for t in LevelLibrary.TIER_ORDER:
+		var b := Button.new()
+		b.focus_mode = Control.FOCUS_NONE
+		b.custom_minimum_size = Vector2(120, 54)
+		b.clip_text = true
+		b.set_meta("choice_btn", true)
+		b.pressed.connect(_on_tier_selected.bind(str(t)))
+		_tier_col.add_child(b)
+		_tier_btns.append(b)
+		UiTheme.bind_hover(b, 1.04)
+
+
+## 档位按钮刷新（文字 = 档名 + 关数；无内容置灰；非库模式整列隐藏）。
+func _refresh_tier_buttons() -> void:
+	if _tier_col == null or not is_instance_valid(_tier_col):
+		return
+	_tier_col.visible = _lib_mode
+	if not _lib_mode:
+		return
+	var m: Dictionary = MODES[_mode_idx]
+	var c := LevelLibrary.counts(str(m["id"]), SIZES[_size_idx])
+	for i in _tier_btns.size():
+		var t: String = str(LevelLibrary.TIER_ORDER[i])
+		var n := int(c.get(t, 0))
+		var tier_def: Dictionary = Difficulty.TIERS.get(t, {})
+		_tier_btns[i].text = "%s\n%d 关" % [str(tier_def.get("label", t)), n]
+		_tier_btns[i].disabled = n <= 0
+		_style_choice(_tier_btns[i], t == _tier)
+
+
+func _on_tier_selected(t: String) -> void:
+	if not _lib_mode or t == _tier:
+		return
+	if LevelLibrary.count(str(MODES[_mode_idx]["id"]), SIZES[_size_idx], t) <= 0:
+		return
+	_tier = t
+	_page = 0
+	_scroll_accum = 0.0
+	_refresh_popup()
 
 
 ## 右侧面板：通关统计 + 继续/开始游戏按钮。
@@ -1072,6 +1229,18 @@ func _refresh_popup() -> void:
 					SIZES[i], SIZES[i], LevelSequence.mine_count(SIZES[i])]
 	_style_frame()
 
+	# ---- 关卡库开关（2026-09-17）：本（变体 × 尺寸）有正式关卡 → 走库（难度列生效）；
+	#      没有 → 回退「按种子生成 3 关」的老流程（未量产的组合仍然可玩，无需开关切换）。
+	_lib_mode = LevelLibrary.has_any(str(m["id"]), SIZES[_size_idx])
+	if _lib_mode:
+		var present := LevelLibrary.tiers_present(str(m["id"]), SIZES[_size_idx])
+		if not present.has(_tier):
+			_tier = str(present[0])   # 默认落在该尺寸最轻的档（入门优先）
+	else:
+		_tier = ""
+	_refresh_tier_buttons()
+	_lib_count = LevelLibrary.count(str(m["id"]), SIZES[_size_idx], _tier) if _lib_mode else 0
+
 	# 分页：定位到「最新解锁关卡」所在页（切换尺寸时重置）
 	var page_count := _page_count()
 	_page = clampi(_page, 0, page_count - 1)
@@ -1087,7 +1256,7 @@ func _rebuild_grid() -> void:
 	for c in _grid.get_children():
 		c.queue_free()
 	var start := _page * PAGE_SIZE
-	var end := mini(start + PAGE_SIZE, LEVELS_PER_SET)
+	var end := mini(start + PAGE_SIZE, _set_count())
 	for i in range(start, end):
 		_grid.add_child(_make_tile(i))
 	# 关卡不足时网格留白：补足空占位，保证方块尺寸统一、从左到右从上到下排列
@@ -1111,13 +1280,24 @@ func _make_tile(idx: int) -> Button:
 	# 跳过态必须与「已通关 ✓」区分：玩家看到「第 2 关没打勾却能进第 3 关」
 	# 会当成 bug，所以给跳过单独的角标 ›（可回头补，补完就变 ✓）。
 	var skipped := (not cleared) and _is_skipped(_level_key(idx))
-	btn.text = str(idx + 1)
-	if cleared:
-		btn.text += "  ✓"
-	elif skipped:
-		btn.text += "  ›"
-	elif not unlocked:
-		btn.text = "🔒"
+	if _lib_mode:
+		# 库关卡：标签 = 序号 + 难度值（两行）——同一档内 100 关，玩家靠难度挑关
+		var m: Dictionary = MODES[_mode_idx]
+		btn.text = LevelLibrary.level_label(str(m["id"]), SIZES[_size_idx], _tier, idx)
+		if cleared:
+			btn.text += " ✓"
+		var dif := LevelLibrary.level_difficulty(str(m["id"]), SIZES[_size_idx], _tier, idx)
+		btn.tooltip_text = "%s · %d×%d · %s 档第 %d 关\n（难度 %.2f；正式量产关卡）" % [
+				str(m["name"]), SIZES[_size_idx], SIZES[_size_idx],
+				str(Difficulty.TIERS.get(_tier, {}).get("label", _tier)), idx + 1, dif]
+	else:
+		btn.text = str(idx + 1)
+		if cleared:
+			btn.text += "  ✓"
+		elif skipped:
+			btn.text += "  ›"
+		elif not unlocked:
+			btn.text = "🔒"
 	btn.disabled = not unlocked
 	btn.set_meta("idx", idx)  # 选中态刷新需要回读关卡序号
 	btn.pressed.connect(_on_tile_pressed.bind(idx))
@@ -1141,10 +1321,14 @@ func _rebuild_dots() -> void:
 
 func _refresh_stat() -> void:
 	var cleared := 0
-	for i in LEVELS_PER_SET:
+	for i in _set_count():
 		if _is_cleared(_level_key(i)):
 			cleared += 1
-	_stat_label.text = "已通关 %d / %d" % [cleared, LEVELS_PER_SET]
+	if _lib_mode:
+		_stat_label.text = "已通关 %d / %d\n（%s 档）" % [cleared, _set_count(),
+				str(Difficulty.TIERS.get(_tier, {}).get("label", _tier))]
+	else:
+		_stat_label.text = "已通关 %d / %d" % [cleared, _set_count()]
 	# 按钮：选中最新解锁关卡 → 继续游戏；手选其他 → 开始游戏；未开放变体 → 禁用
 	if _mode_enabled():
 		_play_btn.disabled = false
@@ -1180,8 +1364,8 @@ func _on_tile_pressed(idx: int) -> void:
 		return
 	_selected = idx
 	for c in _grid.get_children():
-		if c is Button:
-			var i := int(c.get_meta("idx", -1))
+		if c is Button and c.has_meta("idx"):
+			var i := int(c.get_meta("idx"))
 			var key := _level_key(i)
 			var done := _is_cleared(key)
 			# 跳过态同样要刷新：不传的话点一下别的格子就会把 › 的样式冲掉
@@ -1203,6 +1387,8 @@ func _level_key(idx: int) -> String:
 	# 确定性判定 + 缓存），且回退组合在旧版（固定标准雷数）下本就生成不出文件
 	#（UNSAT），不存在「旧缓存与新雷数撞键」的歧义——无需为候选回退改键结构。
 	var m: Dictionary = MODES[_mode_idx]
+	if _lib_mode:
+		return LevelSequence.lib_key(str(m["id"]), SIZES[_size_idx], _tier, idx)
 	return "gen://%s/%d/%d" % [m["id"], SIZES[_size_idx], idx]
 
 
@@ -1214,8 +1400,13 @@ func _level_seed(idx: int) -> int:
 	return hash("%s|%d|%d" % [str(MODES[_mode_idx]["id"]), SIZES[_size_idx], idx])
 
 
+## 当前集的关数：关卡库 = 该（变体×尺寸×档）的关数；生成关 = LEVELS_PER_SET。
+func _set_count() -> int:
+	return _lib_count if _lib_mode else LEVELS_PER_SET
+
+
 func _page_count() -> int:
-	return maxi(1, ceili(float(LEVELS_PER_SET) / float(PAGE_SIZE)))
+	return maxi(1, ceili(float(_set_count()) / float(PAGE_SIZE)))
 
 
 func _mine_count() -> int:
@@ -1233,16 +1424,18 @@ func _mine_count() -> int:
 ## 跳过的关不再算「待攻克」——否则跳过后回到选关页，会被重新定位回刚跳过的那一关，
 ## 玩家看到的是「跳过没生效」（明明已经跳过了）。
 func _latest_unlocked() -> int:
-	for i in LEVELS_PER_SET:
+	for i in _set_count():
 		var key := _level_key(i)
 		if not _is_cleared(key) and not _is_skipped(key):
 			return i
-	return LEVELS_PER_SET - 1
+	return maxi(0, _set_count() - 1)
 
 
 ## 解锁条件：前一关**已通关或已跳过**。
 ## 跳过是失败终局给出的正当出路，同样推进序列（否则跳过按钮点了也进不去下一关）。
 func _is_unlocked(idx: int) -> bool:
+	if _lib_mode:
+		return true   # 库关卡 = 官方内容，全部开放（不设逐关解锁，玩家自选难度与序号）
 	if idx == 0:
 		return true
 	var prev := _level_key(idx - 1)
@@ -1254,6 +1447,8 @@ func _is_unlocked(idx: int) -> bool:
 func _ensure_mock() -> void:
 	if _mode_idx < 0:
 		return
+	if _lib_mode:
+		return   # 库关卡不预置演示通关：真实内容从零进度开始（打勾代表玩家真打过）
 	for i in LEVELS_PER_SET:
 		if _is_cleared(_level_key(i)):
 			return
@@ -1273,6 +1468,27 @@ func _on_play() -> void:
 		return
 	var m: Dictionary = MODES[_mode_idx]
 	var s: int = SIZES[_size_idx]
+	# 关卡库模式：直接物化正式关卡 → 开局（不经生成/可行性预筛——盘已在库里且门禁验过）。
+	if _lib_mode and _tier != "":
+		_play_btn.disabled = true
+		_play_btn.text = "载入中…"
+		await get_tree().process_frame
+		var lp := LevelLibrary.materialize(str(m["id"]), s, _tier, _selected)
+		if lp == "":
+			_play_btn.disabled = false
+			_refresh_stat()
+			UiToast.popup(self, "关卡数据缺失（%s 档第 %d 关）" % [
+					str(Difficulty.TIERS.get(_tier, {}).get("label", _tier)), _selected + 1])
+			return
+		if _try_resume_saved(lp):
+			return
+		if GameSession.start_level(lp):
+			get_tree().change_scene_to_file("res://ui/board_view.tscn")
+			return
+		_play_btn.disabled = false
+		_refresh_stat()
+		UiToast.popup(self, "关卡加载失败")
+		return
 	_play_btn.disabled = true
 	_play_btn.text = "校验中…"
 	await get_tree().process_frame
@@ -1306,12 +1522,39 @@ func _on_play() -> void:
 		UiToast.popup(self, "已取消生成" if _gen_cancel else \
 				"该组合可行，但本关未能生成序贯可解布局，请换一关或换尺寸")
 		return
+	# 自动续档（v3.2）：本关有「未终局、未通关」的进行中存档 → 直接恢复该进度，
+	# 不重开、不弹窗；恢复失败（坏档/雷位校验不符）则照常全新开局。
+	# 已通关的关不再续旧档（重玩应当从零开始）。
+	if _try_resume_saved(path):
+		return
 	if GameSession.start_level(path):
 		get_tree().change_scene_to_file("res://ui/board_view.tscn")
 	else:
 		_play_btn.disabled = false
 		_refresh_stat()
 		UiToast.popup(self, "关卡加载失败")
+
+
+## 自动续档：存档存在、未终局、level_path 与本关一致、且本关尚未通关 → 恢复并进对局。
+## 任一条件不满足或恢复失败 → false（调用方照常全新开局），绝不阻断开局路径。
+func _try_resume_saved(path: String) -> bool:
+	var d := SaveCoordinator.load_save()
+	if d.is_empty():
+		return false
+	var meta_v: Variant = d.get("metadata", {})
+	if not (meta_v is Dictionary):
+		return false
+	var meta: Dictionary = meta_v
+	if bool(meta.get("ended", false)):
+		return false  # 终局盘不可恢复（防 SL 复活失败局，同 restore_from_save 口径）
+	if str(meta.get("level_path", "")) != path:
+		return false  # 存的是别的关 → 交还给全新开局（旧档随后被新对局存档覆盖）
+	if _is_cleared(_level_key(_selected)):
+		return false  # 已通关的关重玩 = 从零开始，不续旧进度
+	if not GameSession.restore_from_save():
+		return false
+	get_tree().change_scene_to_file("res://ui/board_view.tscn")
+	return true
 
 
 ## 生成并缓存关卡文件（已存在则直接复用，避免重复生成）。
@@ -1538,8 +1781,8 @@ func _style_dot(d: Button, active: bool) -> void:
 ## 这里逐层刷反而容易漏（且会把 _style_choice 的选中态打回默认外观）。
 func _apply_theme() -> void:
 	for n in get_children():
-		if n is Label:
-			var col := ThemeManager.text_secondary() if bool(n.get_meta("secondary", false)) else ThemeManager.text()
+		if n is Label and n.has_meta("secondary"):
+			var col := ThemeManager.text_secondary() if bool(n.get_meta("secondary")) else ThemeManager.text()
 			n.add_theme_color_override("font_color", col)
 		elif n is Button and n.has_meta("std_btn"):
 			UiTheme.style_button(n)
@@ -1555,7 +1798,7 @@ func _apply_popup_theme(root: Node) -> void:
 	for c in root.get_children():
 		if c is Label:
 			c.add_theme_color_override("font_color", ThemeManager.text())
-		elif c is Button and bool(c.get_meta("std_btn", false)):
+		elif c is Button and c.has_meta("std_btn") and bool(c.get_meta("std_btn")):
 			UiTheme.style_button(c)
 		if c.get_child_count() > 0 and not (c is Button):
 			_apply_popup_theme(c)

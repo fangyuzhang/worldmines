@@ -67,7 +67,30 @@ static func rule_of(rule_id: String) -> Object:
 ## 注意：**加载/卸载 Mod 会实时改变这个结果** —— 卸载 Mod 时其注册的规则会被注销
 ## （mod_api.unload_mod），目录随之自动更新，无需任何手动同步。
 static func is_mod_rule(rule_id: String) -> bool:
-	return not RuleRegistry.default().builtin_ids().has(rule_id)
+	if RuleRegistry.default().builtin_ids().has(rule_id):
+		return false
+	return not _is_bundled_rule(rule_id)
+
+
+## 随包内置算子（官方 22 席 O/S/Z）的规则 id 白名单。
+## 与 ModAPI.is_bundled_rule 同源；这里留一份是为了**无头环境**（-s 工具/测试，
+## 无 SceneTree、autoload 不可用）下也能正确判定——autoload 可用时以它为准（真源）。
+const OFFICIAL_RULE_IDS: Array = [
+	"o1", "o2", "o3", "o4", "o5x", "o6", "o7", "o8", "o9", "o10",
+	"s1", "s2", "s3", "s4", "s5", "s6", "s7",
+	"z1", "z2", "z3", "z4", "z5",
+]
+
+
+## 该规则是否来自随包内置 Mod（官方算子）。官方算子**不算玩家 Mod**：
+## 它们应与内置 8 线索 / 7 约束同页展示（否则玩家得去模组页里找官方变体）。
+static func _is_bundled_rule(rule_id: String) -> bool:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree != null and tree.root != null and tree.root.has_node("ModAPI"):
+		var api: Node = tree.root.get_node("ModAPI")
+		if api.has_method("is_bundled_rule"):
+			return bool(api.call("is_bundled_rule", rule_id))
+	return OFFICIAL_RULE_IDS.has(rule_id)
 
 
 ## 混合档的行轴：参与配对的**内置**线索型（不含经典——中心基线与自身组合没有信息量）。

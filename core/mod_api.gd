@@ -29,6 +29,16 @@ const CRASH_LIMIT := 3
 ## mod 根目录（与旧 ModService 约定一致）。
 const MODS_DIR := "user://mods"
 
+## 内置算子 Mod 的随包目录（22 席 O/S/Z 算子，随游戏发行）。
+## 背景（2026-09-17）：MODS_DIR 只扫 user://mods——不做自举的话，玩家机器上**一个变体都不会出现**
+## （O/S/Z 全部经 mod 注册，游戏本体内只有内置 8 线索 + 7 约束），选关页表现为「找不到关卡」。
+## 启动时把本目录下的 Mod 安装到 user://mods 并加载（幂等：已安装不覆盖，玩家改动优先）。
+const BUNDLED_MODS_DIR := "res://demo/mods"
+## 不自举的目录：设计档案（o5 三角）/ 未达标变体（o5b 真盘零产）/ 示例 Mod（留给模组页演示）。
+const BUNDLED_SKIP: Array = ["o5_sanjiao", "o5b_duijiao", "custom_rule_mod", "hpair_rule_mod"]
+## 自举安装成功的 mod id 集合（is_bundled / is_bundled_rule 查询用）。
+var _bundled: Dictionary = {}
+
 
 # ==== 全局共享的自举原语（Mod 与引擎共用同一批实例） ====
 var services := ServiceRegistry.new()      # §14.3 Mod 间互操作
@@ -44,7 +54,99 @@ var grants := CapabilityGrant.new()
 
 
 func _ready() -> void:
-	pass
+	bootstrap_bundled_mods()
+
+
+# ===================== 内置算子 Mod 自举 =====================
+
+## 自举内置算子 Mod：res://demo/mods/<name> → user://mods/<name> → load_mod。
+## 幂等且**可升级**：以「官方两文件（manifest+entry）内容签名」为准——
+##   · 首次安装：整目录拷贝；
+##   · 签名变化（随包版本更新）：只覆写官方文件（玩家自加的数据文件不动）；
+##   · 签名一致：零拷贝。玩家改过的官方文件会被更新覆盖（官方内容以包内为准）。
+## 单个 Mod 失败只记 warning，不阻断启动。返回成功加载的 Mod 数。
+func bootstrap_bundled_mods() -> int:
+	var dir := DirAccess.open(BUNDLED_MODS_DIR)
+	if dir == null:
+		return 0
+	DirAccess.make_dir_recursive_absolute(MODS_DIR)
+	var loaded := 0
+	for mod_dir in dir.get_directories():
+		if BUNDLED_SKIP.has(mod_dir):
+			continue
+		var src := "%s/%s" % [BUNDLED_MODS_DIR, mod_dir]
+		if not FileAccess.file_exists(src.path_join("manifest.json")):
+			continue
+		var dst := "%s/%s" % [MODS_DIR, mod_dir]
+		var marker := dst.path_join(".bundled_hash")
+		var sig := _bundled_signature(src)
+		var need_copy := not FileAccess.file_exists(dst.path_join("manifest.json"))
+		if not need_copy and (not FileAccess.file_exists(marker)
+				or FileAccess.get_file_as_string(marker) != sig):
+			need_copy = true   # 无标记（旧版安装）或随包内容已更新
+		if need_copy:
+			if not _copy_code_mod(src, dst):
+				push_warning("内置算子 Mod 安装失败: %s" % mod_dir)
+				continue
+		var mf := FileAccess.open(marker, FileAccess.WRITE)
+		if mf != null:
+			mf.store_string(sig)
+			mf.close()
+		_bundled[mod_dir] = true
+		if _mods.has(mod_dir):
+			continue
+		var r := load_mod(dst)
+		if bool(r.get("ok", false)):
+			loaded += 1
+			_bundled[str(r.get("mod_id", mod_dir))] = true
+		else:
+			push_warning("内置算子 Mod 加载失败: %s（%s）" % [mod_dir, str(r.get("reason", ""))])
+	return loaded
+
+
+## 官方两文件的内容签名（manifest + entry）；据此判断随包 Mod 是否需要（重）安装。
+func _bundled_signature(src: String) -> String:
+	var text := ""
+	for f in ["manifest.json", "entry.gd"]:
+		if FileAccess.file_exists(src.path_join(f)):
+			text += FileAccess.get_file_as_string(src.path_join(f)) + "\n----\n"
+	return str(text.hash())
+
+
+## 复制一个代码 Mod 目录（manifest + entry + 其它数据文件；跳过 .uid 编辑器缓存）。
+func _copy_code_mod(src: String, dst: String) -> bool:
+	if DirAccess.make_dir_recursive_absolute(dst) != OK:
+		return false
+	var d := DirAccess.open(src)
+	if d == null:
+		return false
+	var files: Array = ["manifest.json", "entry.gd"]
+	for f in d.get_files():
+		if not str(f).ends_with(".uid") and not files.has(f):
+			files.append(f)
+	for fname in files:
+		var sp := src.path_join(fname)
+		if not FileAccess.file_exists(sp):
+			if fname == "manifest.json" or fname == "entry.gd":
+				return false   # 两个必需文件缺失 = 包不完整
+			continue
+		var f := FileAccess.open(dst.path_join(fname), FileAccess.WRITE)
+		if f == null:
+			return false
+		f.store_string(FileAccess.get_file_as_string(sp))
+		f.close()
+	return true
+
+
+## 该 mod 是否为随包内置（官方算子）。选关页据此把官方算子当「内置变体」展示，而非玩家 Mod。
+func is_bundled(mod_id: String) -> bool:
+	return _bundled.has(mod_id)
+
+
+## 该规则是否来自随包内置 Mod（官方算子）。
+func is_bundled_rule(rule_id: String) -> bool:
+	var owner_id := find_rule_owner(rule_id)
+	return owner_id != "" and _bundled.has(owner_id)
 
 
 # ===================== §14.2 扩展点自注册 =====================
@@ -88,14 +190,14 @@ func scan_mods() -> Array[String]:
 	if dir == null:
 		return out
 	dir.list_dir_begin()
-	var name := dir.get_next()
-	while name != "":
-		if dir.current_is_dir() and not name.begins_with("."):
-			var full := MODS_DIR.path_join(name)
+	var entry_name := dir.get_next()
+	while entry_name != "":
+		if dir.current_is_dir() and not entry_name.begins_with("."):
+			var full := MODS_DIR.path_join(entry_name)
 			if FileAccess.file_exists(full.path_join("manifest.json")) \
 					or DirAccess.dir_exists_absolute(full.path_join("defs")):
-				out.append(name)
-		name = dir.get_next()
+				out.append(entry_name)
+		entry_name = dir.get_next()
 	dir.list_dir_end()
 	out.sort()
 	return out
