@@ -205,16 +205,24 @@ func load_mod(dir_path: String) -> Dictionary:
 		"rules": [],  # P0-T5：本 mod 经 on_load 注册的规则 id（卸载时清理）
 	}
 
-	# 调用 on_load 前快照 RuleRegistry，on_load 后对比——新出现的规则归本 mod。
-	# 规则注册是 mod 自己调 RuleRegistry.register 的（ModAPI 无法拦截），只能事后 diff。
+	# 调用 on_load 前快照 RuleRegistry + 共享 DefEngine，on_load 后对比——
+	# 注册是 mod 自己调 RuleRegistry.register / 写 DefEngine 的（ModAPI 无法拦截），只能事后 diff。
 	var before_rules: Array = RuleRegistry.default().all_ids()
+	var before_clue_defs: Array = defs.clue_defs.keys()
+	var before_constraint_defs: Array = defs.constraint_defs.keys()
 	if not _call_hook(mod_id, HOOK_LOAD):
-		# 失败回滚（v3.1）：on_load 中途崩溃时已注册进全局表的规则按 diff 反向清理——
+		# 失败回滚（v3.1）：on_load 中途崩溃时已注册进全局表的规则与 Def 按 diff 反向清理——
 		# 否则坏 mod 每次启用都留下半初始化状态（规则缺失/生成失败/提示失效的表象
-		# 与根因完全脱节）。DefEngine 的 Def 注册走 RUNTIME_DEF 分支（钩子之前），无需此处处理。
+		# 与根因完全脱节）。
 		for id in RuleRegistry.default().all_ids():
 			if not before_rules.has(id):
 				RuleRegistry.default().unregister(StringName(id))
+		for k in defs.clue_defs.keys():
+			if not before_clue_defs.has(k):
+				defs.clue_defs.erase(k)
+		for k in defs.constraint_defs.keys():
+			if not before_constraint_defs.has(k):
+				defs.constraint_defs.erase(k)
 		_mods.erase(mod_id)
 		return {"ok": false, "reason": "on_load 崩溃"}
 	var after_rules: Array = RuleRegistry.default().all_ids()

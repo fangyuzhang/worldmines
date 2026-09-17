@@ -419,6 +419,21 @@ ModAPI 关键方法：`load_mod` / `unload_mod`（含规则清理）/`scan_mods`
 
 ⚠️ 旧 `ModService` 已删除（2026-09 并入 ModAPI）——搜到它说明是过期文档。
 
+### 钩子返回值契约（v3.1，硬性）
+
+代码 Mod（`runtime=gdscript`）的钩子 **必须 `return true` 表示完成**：
+
+```gdscript
+func on_load() -> bool:
+	RuleRegistry.default().register(MyRule.new())
+	return true
+```
+
+- GDScript 无 try/catch：钩子内运行时错误只中止脚本栈（`call` 返回 null），实例依然 valid——`ModAPI._call_hook` 以「返回值是否为 true」判定成败，**没写 return true 的钩子一律按失败处理**。
+- `on_load` 失败 → `load_mod` 回滚：按 diff **反向注销**该次注册进 RuleRegistry 的规则、按 diff **反向清除**写进共享 DefEngine 的 Def，然后整包拒绝。
+- 内置 22 算子即以此形式实装于 `demo/mods/`（o1_duichuan…z5_dengcha，26 个包），全部已适配 `return true`——**新增算子 mod 照抄此结构，漏写会导致规则静默未注册**（表象：生成失败/「规则未注册」报错/大片测试红）。
+- `unregister` 拒绝注销内置规则（H3 保护，v3.1）——diff 回滚误伤内置表会被拒绝并 push_warning。
+
 ## 红线（违反即返工，详见 GDD `21_红线规范_绝对不可改变.md` R01~R37）
 
 - **R01** 序贯纯逻辑可解是硬红线（全程无二选一）
@@ -455,6 +470,9 @@ ModAPI 关键方法：`load_mod` / `unload_mod`（含规则清理）/`scan_mods`
 16. **异形拓扑坐标必须非负**：CP-SAT 的 cell 索引是 `[0,rows)×[0,cols)`，负坐标会触发 `RuleSolver.FindForcedCells: Index was outside the bounds of the array`。Mod 可用任意坐标（含负），入口统一调用 `AdjacencyGrid.normalized()` 归一化。
 17. **GDScript 缩进 tab/空格不能混用**（Parse Error）。本项目 `ui/`、`core/` 主流是 **4 空格**；新增代码务必用空格，否则出现"看着对齐却编译不过"。
 18. **隐藏态规则载盘丢失（2026-09-15 夜侦破，重大）**：`Board.load_level` 不恢复规则隐藏态——o5x 斜向选择 s1 / o4 隐藏半径在 JSON 无字段（DT 骨牌有专用 `dominoes` 落盘先例；后引入的隐藏态规则缺对应机制）→ 载盘后 `_compute_clues` 用空/残留状态 → **线索数字全错** → 门禁推理踩雷、游戏内将显示错误数字。**「生成时复核通过」具欺骗性（同进程状态仍正确，灯下黑）**。判盘/复验先做 seed 重放恢复（`rng.seed=seed*1000003+attempt` → `place_mines`，实测 100% 匹配、恢复后 100% 可解）；修复方案（export/import 接口 + 落盘 + 存量补字段，DT 先例通用化）见桌面待办「零」节。
+19. **mod 钩子必须 `return true`（v3.1）**：`ModAPI._call_hook` 以返回值判定成败（GDScript 无 try/catch，运行时错误只能靠「没返回 true」探测）。漏写 → `load_mod` 判失败 → **diff 反清理把该 mod 注册的规则全部撤销**（表象：大片测试红「规则未注册」）。修复先查 `demo/mods/*/entry.gd` 是否漏写（见「Mod 创作契约 → 钩子返回值契约」）。
+20. **UI 对引擎内部的直写已收敛（v3.1）**：Board 新增公共 API `undo_explode`/`restore_cell_states`/`evaluate_win`/`recompute`——UI 层**禁止**再直写 `cell.state`/`board.state`/调用 `_` 前缀私有方法（历史：game_session 直写曾与存档/撤销逻辑互相踩踏）。game_session 已拆出 `NoGuessGuard`（无猜守卫，Board 按次传参不持引用）与 `HintCoordinator`（提示编排）。
+21. **Windows 跑全量 GUT 不要加 `-gno_error_tracking`**：该参数禁用 GUT 错误追踪，会把「预期 push_error」断言型测试（如 test_t8_quarantine / test_t9_state_machine）打成假失败。Linux 沙箱防误报才用它。
 
 > v2.9.3 已完成全量交叉验证，42 项发现中 24 项已修、2 项误报推翻、1 项回滚。
 > 完整清单见 GDD `25_HANDOFF交接文档.md` §13.1（已修复）/ §13.2（未修复，含重构级与需拍板项）。

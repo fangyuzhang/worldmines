@@ -3,6 +3,10 @@
 extends Control
 
 var _list_vbox: VBoxContainer
+# 生成进度弹窗 + 取消标志（v3.1：三处生成循环此前同步阻塞 40 次 attempt，
+# UI 冻结无进度不可取消——与 level_select 的 await+取消模式对齐）
+var _gen_cancel := false
+var _gen_dlg: PopupPanel = null
 
 
 func _ready() -> void:
@@ -214,6 +218,40 @@ func _make_wasm_row(mod_name: String) -> HBoxContainer:
 	return row
 
 
+## 生成进度弹窗：告知「程序在忙」并给取消出口（与 level_select 同模式）。
+func _open_gen_dialog(title: String) -> void:
+	_gen_cancel = false
+	var dlg := PopupPanel.new()
+	dlg.exclusive = true
+	var vb := VBoxContainer.new()
+	dlg.add_child(vb)
+	var lb := Label.new()
+	lb.text = title
+	lb.add_theme_font_size_override("font_size", 16)
+	vb.add_child(lb)
+	var sub := Label.new()
+	sub.text = "生成中（CP-SAT 单次求解不可中断，界面按尝试逐次响应取消）"
+	vb.add_child(sub)
+	var cancel := Button.new()
+	cancel.text = "取消"
+	cancel.focus_mode = Control.FOCUS_NONE
+	cancel.custom_minimum_size = Vector2(0, 40)
+	cancel.pressed.connect(func():
+		_gen_cancel = true
+		dlg.hide())
+	vb.add_child(cancel)
+	add_child(dlg)
+	dlg.hide()   # Window 默认 visible=true
+	dlg.popup_centered()
+	_gen_dlg = dlg
+
+
+func _close_gen_dialog() -> void:
+	if _gen_dlg != null and is_instance_valid(_gen_dlg):
+		_gen_dlg.queue_free()
+	_gen_dlg = null
+
+
 ## wasm 黑盒生成：clue → generate_clue；global → generate_global。
 ## 注意：黑盒完备穷举仅小盘可行（≤6×6 少量雷），大盘会超时/超 MAX_COMBOS。
 func _generate_wasm_levels(mod_name: String, kind: String) -> void:
@@ -221,12 +259,14 @@ func _generate_wasm_levels(mod_name: String, kind: String) -> void:
 	if sb == null:
 		_toast("wasm 沙箱不可用")
 		return
+	_open_gen_dialog("正在为 %s 生成 wasm 关卡…" % mod_name)
 	var gen := WasmLevelGenerator.new()
 	var out_dir := "user://mods/%s/levels" % mod_name
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	var produced := 0
 	for t in 40:
-		if produced >= 5:
+		await get_tree().process_frame
+		if _gen_cancel or produced >= 5:
 			break
 		var level: Dictionary
 		if kind == "global":
@@ -240,7 +280,9 @@ func _generate_wasm_levels(mod_name: String, kind: String) -> void:
 			f.store_string(JSON.stringify(level, "  "))
 			f.close()
 			produced += 1
-	_toast("已为 %s 生成 %d 个 wasm %s关" % [mod_name, produced, "约束" if kind == "global" else "线索"],
+	_close_gen_dialog()
+	_gen_cancel = false
+	_toast(("已取消" if _gen_cancel else "已为 %s 生成 %d 个 wasm %s关" % [mod_name, produced, "约束" if kind == "global" else "线索"]),
 			produced == 0)
 
 
@@ -263,6 +305,7 @@ func _make_def_row(mod_name: String, def_name: String) -> HBoxContainer:
 
 
 func _generate_levels(mod_name: String, def_name: String) -> void:
+	_open_gen_dialog("正在为 %s 生成关卡…" % def_name)
 	var gen := PuzzleGenerator.new()
 	var out_dir := "user://mods/%s/levels" % mod_name
 	DirAccess.make_dir_recursive_absolute(out_dir)
@@ -273,7 +316,8 @@ func _generate_levels(mod_name: String, def_name: String) -> void:
 	var mine_count := int(topo.cell_count() * 0.2) if topo != null else 5
 	var produced := 0
 	for t in 40:
-		if produced >= 5:
+		await get_tree().process_frame
+		if _gen_cancel or produced >= 5:
 			break
 		var level := gen.generate_with_engine(ModAPI.defs, def_name, "", size, mine_count, t + 1, topo)
 		if level.is_empty():
@@ -283,7 +327,9 @@ func _generate_levels(mod_name: String, def_name: String) -> void:
 			f.store_string(JSON.stringify(level, "  "))
 			f.close()
 			produced += 1
-	_toast("已为 %s 生成 %d 关" % [def_name, produced], produced == 0)
+	_close_gen_dialog()
+	_gen_cancel = false
+	_toast("已取消" if produced == 0 and _gen_cancel else "已为 %s 生成 %d 关" % [def_name, produced], produced == 0)
 
 
 ## 自定义规则行（自举式：RulePlugin 线索规则 + 生成关卡按钮）。
@@ -312,6 +358,7 @@ func _make_rule_row(rule_id: String) -> HBoxContainer:
 
 ## 用自举式规则平台（generate_with_rules）为指定规则生成关卡。
 func _generate_rule_levels(rule_id: String) -> void:
+	_open_gen_dialog("正在为规则 %s 生成关卡…" % rule_id)
 	var gen := PuzzleGenerator.new()
 	var out_dir := "user://mods/_custom/levels"
 	DirAccess.make_dir_recursive_absolute(out_dir)
@@ -323,7 +370,8 @@ func _generate_rule_levels(rule_id: String) -> void:
 	var mine_count := int(topo.cell_count() * 0.2) if topo != null else 5
 	var produced := 0
 	for t in 40:
-		if produced >= 5:
+		await get_tree().process_frame
+		if _gen_cancel or produced >= 5:
 			break
 		var level := gen.generate_with_rules(rule_id, [], size, mine_count, t + 1, 0, 50, topo)
 		if level.is_empty():
@@ -336,7 +384,9 @@ func _generate_rule_levels(rule_id: String) -> void:
 			f.store_string(JSON.stringify(level, "  "))
 			f.close()
 			produced += 1
-	_toast("已为规则 %s 生成 %d 关" % [rule_id, produced], produced == 0)
+	_close_gen_dialog()
+	_gen_cancel = false
+	_toast("已取消" if produced == 0 and _gen_cancel else "已为规则 %s 生成 %d 关" % [rule_id, produced], produced == 0)
 
 
 ## P0-A：读 mod 声明的棋盘拓扑（board.json），返回 {topo: AdjacencyGrid|null, size: Vector2i}。

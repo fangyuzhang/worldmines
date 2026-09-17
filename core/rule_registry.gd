@@ -55,8 +55,14 @@ func register(rule: Object) -> bool:
 
 
 ## 注销规则（P0-T5：卸载 mod 时清理其注册的规则）。
-## 内置规则不可注销——调用方（ModAPI）只对 mod 注册的规则调用本方法。
+## 内置规则不可注销（v3.1/H3）：_builtin_ids 由 _register_builtins 登记，
+## 调用方传错 id / mod diff 误判时拒绝并告警，防止内置表被静默掏空
+## （内置规则失效会让 classic/mx/pf 等全部关卡「规则未注册」显式报错，
+## 或更糟——走旧坑 #9 的静默降级路径）。
 func unregister(rule_id: StringName) -> bool:
+	if _builtin_ids.has(String(rule_id)):
+		push_warning("RuleRegistry: 拒绝注销内置规则 %s" % String(rule_id))
+		return false
 	return _rules.erase(rule_id)
 
 

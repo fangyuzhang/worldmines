@@ -994,8 +994,18 @@ func _apply_popup_theme(root: Node) -> void:
 			_apply_popup_theme(c)
 
 
+## 主题切换去抖（v3.1）：ThemeManager 一次切换广播 ~10 次 theme_changed，而
+## _refresh_popup 会重跑 4 次 RuleFeasibility 查询（弹窗开着时 = 40 次 CP-SAT 调用
+## + 网格整体重建闪烁）。300ms 去抖把多次广播合并为 1 次刷新，最终状态一致。
+var _theme_refresh_pending := false
+
 func _on_theme_changed() -> void:
 	_apply_theme()
+	if _mode_idx < 0 or _theme_refresh_pending:
+		return
+	_theme_refresh_pending = true
+	await get_tree().create_timer(0.3).timeout
+	_theme_refresh_pending = false
 	if _mode_idx >= 0:
 		_refresh_popup()
 
