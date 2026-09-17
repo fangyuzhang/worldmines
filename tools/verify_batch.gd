@@ -109,7 +109,22 @@ func _initialize() -> void:
 			if cr > 0.0 and t != "":
 				clue_rows.append({"side": side, "tier": t, "cr": cr, "file": path.get_file()})
 		else:
-			failed.append("%s (%s)" % [path, str(log.get("reason", "推不到底"))])
+			# 失败原因（2026-09-17 补可诊断性）：ProofLog 的 reason 有一种**空串路径**——
+			# 推导中误翻/误标了雷（state=LOST）时循环从顶部 break，reason 保持初始 ""，
+			# 表现为 FAIL 行「文件名 ()」完全无法定位。此处显式化为 LOST。
+			var reason := str(log.get("reason", ""))
+			if reason == "":
+				reason = "推理踩雷（LOST：推导过程中误翻/误标了雷）"
+			# 隐藏态规则缺 hidden_state 字段 → 载盘后线索重算**必然不可信**（HANDOFF 坑 #18：
+			# 推理踩雷多数是它引起的）。检出时在原因里给出可行动指引（回填后复验）。
+			# 判据走 declares()（能力显式声明）；**不能用 has_method**——基类实现了
+			# export_hidden_state 空默认，继承污染会让所有规则命中（同预检 regression 的坑）。
+			var clue_obj: Object = RuleRegistry.default().resolve(StringName(str(level.get("clue_rule", ""))))
+			if clue_obj != null and not level.has("hidden_state") \
+					and bool(clue_obj.call("declares").get("hidden_state", false)):
+				reason += "——注：该盘是隐藏态规则但缺 hidden_state 字段，载盘重算线索不可信；" \
+					+ "先跑 tools/_backfill_hidden_state.gd（seed 重放回填）再复验"
+			failed.append("%s (%s)" % [path, reason])
 	print("=== 题库验证完成 ===")
 	print("  目录: %s" % _out_dir)
 	print("  可解 %d / 失败 %d" % [ok, failed.size()])
