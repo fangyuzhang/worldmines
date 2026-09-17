@@ -49,11 +49,11 @@ func snapshot() -> Dictionary:
 	return _grants.duplicate(true)
 
 
-## 恢复授权记录。
-func restore(snapshot: Dictionary) -> void:
+## 恢复授权记录（参数名避开同名方法 snapshot()，消除遮蔽告警）。
+func restore(data: Dictionary) -> void:
 	_grants.clear()
-	for k in snapshot:
-		_grants[StringName(str(k))] = bool(snapshot[k])
+	for k in data:
+		_grants[StringName(str(k))] = bool(data[k])
 
 
 ## 清空。

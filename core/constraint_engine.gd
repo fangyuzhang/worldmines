@@ -119,7 +119,8 @@ static func quadrant_of(r: int, c: int, rows: int, cols: int) -> int:
 
 
 ## G5 骨牌边界：每骨牌恰 1 雷。extra.dominoes 为 Array[Array[Vector2i]]（每骨牌 2 格）。
-static func _check_dt(mine_set: Dictionary, grid_size: Vector2i, extra: Dictionary) -> bool:
+## 注：骨牌坐标由数据给出，与棋盘尺寸无关，故 grid_size 签名占位（_ 前缀消未用告警）。
+static func _check_dt(mine_set: Dictionary, _grid_size: Vector2i, extra: Dictionary) -> bool:
 	var dominoes: Array = extra.get("dominoes", [])
 	if dominoes.is_empty():
 		return true

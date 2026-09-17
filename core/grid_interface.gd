@@ -5,19 +5,19 @@ class_name GridInterface
 extends RefCounted
 
 ## 返回格子对象（引用）。
-func get_cell(pos: Vector2i) -> Cell:
+func get_cell(_pos: Vector2i) -> Cell:
 	push_error("GridInterface.get_cell 必须在子类实现")
 	return null
 
 
 ## 返回 pos 的全部邻格坐标（8 邻域，含边界检查）。
-func get_neighbors(pos: Vector2i) -> Array[Vector2i]:
+func get_neighbors(_pos: Vector2i) -> Array[Vector2i]:
 	push_error("GridInterface.get_neighbors 必须在子类实现")
 	return []
 
 
 ## pos 是否在棋盘内（只读辅助）。
-func in_board(pos: Vector2i) -> bool:
+func in_board(_pos: Vector2i) -> bool:
 	return false
 
 

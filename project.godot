@@ -28,6 +28,15 @@ AudioManager="*res://ui/audio_manager.gd"
 SkinService="*res://ui/skin_service.gd"
 _mcp_game_helper="*res://addons/godot_ai/runtime/game_helper.gd"
 
+[debug]
+
+; 2026-09-18 分析器告警治理（调试器清零）——以下两类为「领域命名的噪音」，工程级关闭：
+; integer_division：棋盘几何全部为有意整数运算（约 30 处，逐处 @warning_ignore 是纯噪音）；
+; shadowed_global_identifier：seed/sign/is_inf/wrap 等领域词恰与内建函数同名（约 28 处），无缺陷价值；
+; 其余遮蔽 / 未用参数类告警保持默认并逐个真修（同名参数改 _ 前缀或换名）。
+gdscript/warnings/integer_division=0
+gdscript/warnings/shadowed_global_identifier=0
+
 [display]
 
 window/size/viewport_width=1280

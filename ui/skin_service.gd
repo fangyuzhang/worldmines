@@ -33,13 +33,13 @@ func refresh() -> void:
 	var dir := DirAccess.open(SKINS_DIR)
 	if dir != null:
 		dir.list_dir_begin()
-		var name := dir.get_next()
-		while name != "":
-			if dir.current_is_dir() and not name.begins_with("."):
-				var meta := _read_meta(SKINS_DIR.path_join(name))
+		var entry := dir.get_next()
+		while entry != "":
+			if dir.current_is_dir() and not entry.begins_with("."):
+				var meta := _read_meta(SKINS_DIR.path_join(entry))
 				if not meta.is_empty():
 					out.append(meta)
-			name = dir.get_next()
+			entry = dir.get_next()
 		dir.list_dir_end()
 	skins = out
 	skins_changed.emit()
@@ -205,13 +205,13 @@ func _remove_dir_recursive(path: String) -> int:
 	if dir == null:
 		return ERR_FILE_NOT_FOUND
 	dir.list_dir_begin()
-	var name := dir.get_next()
-	while name != "":
-		var full := path.path_join(name)
+	var entry := dir.get_next()
+	while entry != "":
+		var full := path.path_join(entry)
 		if dir.current_is_dir():
 			_remove_dir_recursive(full)
 		else:
 			DirAccess.remove_absolute(full)
-		name = dir.get_next()
+		entry = dir.get_next()
 	dir.list_dir_end()
 	return DirAccess.remove_absolute(path)

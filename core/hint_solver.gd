@@ -474,10 +474,11 @@ func _hint_fr(board: Board, pos: Vector2i, constraint: Dictionary, steps: Array[
 	var value: Variant = constraint["value"]
 	var cols := board.grid.size().x
 	if value is String:  # "inf"：右侧全安全
-		var c := pos.x
-		while c + 1 < cols:
-			c += 1
-			var p := Vector2i(c, pos.y)
+		# 注：本分支内扫描游标用 cx——父作用域在下方主路径还有同名 c（避免混淆告警）
+		var cx := pos.x
+		while cx + 1 < cols:
+			cx += 1
+			var p := Vector2i(cx, pos.y)
 			if board.grid.get_cell(p).state != Cell.State.REVEALED:
 				steps.append(_make_step(p, "safe", pos, "fr",
 					"线索 (%d,%d) 首雷值为 ∞，表示右侧全程无雷，故该格必为安全格" % [pos.y, pos.x]))

@@ -26,17 +26,18 @@ const GRID_COLS := 5            # 网格 5 列
 ## 删线索阶段墙钟上限（ms），按尺寸分档。实测：≤7×7 用 3s 即可删到最优（4~10 线索）；
 ## 8×8 是瓶颈（3s→22 线索、4s→19、60s→9，收益递减）——3s 保证交互响应，线索略多但可接受；
 ## 9×9 单关 CP-SAT 约 6~12s（32 雷），3s 必超时失败，故单列 15s（GDD 03 号 8×8≤10s 之外）。
-func _gen_timeout(size: int) -> int:
-	if size >= 9:
+func _gen_timeout(side: int) -> int:
+	if side >= 9:
 		return 15000
 	return 3000
 
 
 ## 生成耗时预览（按钮文案用）：按尺寸的实测经验值（classic 线索，自由模式口径）。
-func _estimate_gen_seconds(size: int) -> int:
-	if size >= 9:
+## 注：参数名用 side——`size` 会遮蔽 Control.size 属性（分析器告警）。
+func _estimate_gen_seconds(side: int) -> int:
+	if side >= 9:
 		return 12
-	if size >= 8:
+	if side >= 8:
 		return 4
 	return 1
 const MOCK_CLEARED := 1         # 模拟存档：首次进入预置已通关数（3 关中预置 1 关，定位到第 2 关）
@@ -1214,10 +1215,11 @@ func _close_popup() -> void:
 ## v2.9.3 起走 RuleFeasibility 真值查询（CP-SAT is_feasible + 缓存）——不再手写
 ## UNSAT 规则表（手写表曾漏掉 rl 6×6 / qd 6×6、8×8 导致玩家选中后永远转圈；
 ## 且新增/Mod 变体都需要同步手改，必然再漏）。真值查询对任何变体自动正确。
-func _mode_feasible(mode: Dictionary, size: int) -> bool:
+func _mode_feasible(mode: Dictionary, side: int) -> bool:
 	# v3.0：候选雷数回退——标准值不可行但候选可行时，该尺寸仍可玩（生成侧自动用回退雷数）。
 	# 全候选不可行才禁用（如 mx+rl 6×6：镜像+行锁在全部候选雷数下均矛盾）。
-	return int(RuleFeasibility.resolve_mines(str(mode["clue"]), mode.get("globals", []), size)["mines"]) >= 0
+	# 注：参数名用 side——`size` 会遮蔽 Control.size 属性（分析器告警）。
+	return int(RuleFeasibility.resolve_mines(str(mode["clue"]), mode.get("globals", []), side)["mines"]) >= 0
 
 
 func _refresh_popup() -> void:
@@ -1627,7 +1629,7 @@ func _ensure_level_file_async(idx: int) -> String:
 
 
 ## 生成进度弹窗：明确告诉玩家「程序在忙」，并给取消出口。
-func _open_gen_dialog(size: int) -> PopupPanel:
+func _open_gen_dialog(side: int) -> PopupPanel:
 	_gen_cancel = false
 	var dlg := PopupPanel.new()
 	dlg.exclusive = true
@@ -1639,7 +1641,7 @@ func _open_gen_dialog(size: int) -> PopupPanel:
 	panel.add_child(vb)
 
 	var title := Label.new()
-	title.text = "正在生成 %d×%d 关卡" % [size, size]
+	title.text = "正在生成 %d×%d 关卡" % [side, side]
 	title.add_theme_font_size_override("font_size", 22)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(title)
@@ -1647,7 +1649,7 @@ func _open_gen_dialog(size: int) -> PopupPanel:
 	var sub := Label.new()
 	sub.add_theme_font_size_override("font_size", 16)
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	sub.text = "大概需要 %d 秒，复杂变体会更久" % _estimate_gen_seconds(size)
+	sub.text = "大概需要 %d 秒，复杂变体会更久" % _estimate_gen_seconds(side)
 	vb.add_child(sub)
 
 	var cancel := Button.new()

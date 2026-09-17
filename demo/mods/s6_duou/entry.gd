@@ -184,7 +184,9 @@ class EvenDegreeRule:
 		return false
 
 	## 全盘复核：每颗雷的八邻域雷数均为偶数（独立于生成过程的终检）。
-	static func _ok(mines: Array[Vector2i], cols: int, rows: int) -> bool:
+	# 注：cols/rows 在本规则（度偶数：逐雷查八邻域度的奇偶）中确实用不到，
+	# 但签名需与注册口对齐——下划线前缀表达「有意未用」，消分析器告警。
+	static func _ok(mines: Array[Vector2i], _cols: int, _rows: int) -> bool:
 		var ms := {}
 		for m in mines:
 			ms[m] = true

@@ -377,10 +377,10 @@ func place_mx(cols: int, rows: int, mine_count: int) -> Array[Vector2i]:
 		var rem := mine_count - j
 		if rem % 2 != 0:
 			continue
-		var k := rem / 2
-		if k > left_cells.size():
+		var pairs := rem / 2
+		if pairs > left_cells.size():
 			continue
-		options.append([k, j])
+		options.append([pairs, j])
 	if options.is_empty():
 		return []
 	var pick: Array = options[_rng.randi_range(0, options.size() - 1)]

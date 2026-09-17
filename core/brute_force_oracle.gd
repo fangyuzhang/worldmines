@@ -156,19 +156,21 @@ func query(
 	# 全局约束叶子检查（闭包捕获预处理数据），与 count_solutions_classic 同构；constraint2 为双布局第二约束。
 	var leaf_check := Callable()
 	if constraint >= 0 or constraint2 >= 0:
-		var idx_cell: Array = prep["idx_cell"]
+		# 块内副本用 _l 后缀——函数尾部还有同名 idx_cell / combo（父作用域），
+		# 同名会让分析器报 CONFUSABLE_LOCAL_DECLARATION（闭包捕获的是本块副本）。
+		var idx_cell_l: Array = prep["idx_cell"]
 		var cands: Array = prep["candidates"]
 		var km: Array = known_mines
 		var cst: int = constraint
 		var cst2: int = constraint2
 		var dom: Array = dominoes
 		var gs: Vector2i = grid_size
-		leaf_check = func(combo: Array) -> bool:
+		leaf_check = func(combo_l: Array) -> bool:
 			var mine_set := {}
 			for p in km:
 				mine_set[p] = true
-			for ci in combo:
-				var pos: Vector2i = idx_cell[cands[ci]]
+			for ci in combo_l:
+				var pos: Vector2i = idx_cell_l[cands[ci]]
 				mine_set[pos] = true
 			var extra := {"dominoes": dom}
 			if cst >= 0 and not ConstraintEngine.check(cst, mine_set, gs, extra):
@@ -314,19 +316,21 @@ func count_solutions_classic(
 	# 全局约束叶子检查（闭包捕获预处理数据）；constraint2 为双布局第二约束。
 	var leaf_check := Callable()
 	if constraint >= 0 or constraint2 >= 0:
-		var idx_cell: Array = prep["idx_cell"]
+		# 块内副本用 _l 后缀——函数尾部还有同名 idx_cell / combo（父作用域），
+		# 同名会让分析器报 CONFUSABLE_LOCAL_DECLARATION（闭包捕获的是本块副本）。
+		var idx_cell_l: Array = prep["idx_cell"]
 		var cands: Array = prep["candidates"]
 		var km: Array = known_mines
 		var cst: int = constraint
 		var cst2: int = constraint2
 		var dom: Array = dominoes
 		var gs: Vector2i = grid_size
-		leaf_check = func(combo: Array) -> bool:
+		leaf_check = func(combo_l: Array) -> bool:
 			var mine_set := {}
 			for p in km:
 				mine_set[p] = true
-			for ci in combo:
-				var pos: Vector2i = idx_cell[cands[ci]]
+			for ci in combo_l:
+				var pos: Vector2i = idx_cell_l[cands[ci]]
 				mine_set[pos] = true
 			var extra := {"dominoes": dom}
 			if cst >= 0 and not ConstraintEngine.check(cst, mine_set, gs, extra):
