@@ -395,11 +395,15 @@ func _on_game_lost() -> void:
 ## 终局处置（§10.10.2）：胜 → 不存 + clear_temp；负 → 存终局盘（autosave 时）+ clear_temp。
 func _finish(won: bool) -> void:
     state = State.ENDED
+    # 进度写「序列键」而不是 level_path：选关页打勾/解锁与 LevelSequence.has_next
+    # 都按序列键读取。历史上这里传 level_path（user://gen_levels/*.json），
+    # 写的与读的不是同一个键 → 通关了不打勾、下一关一直锁着（见 LevelSequence.progress_key）。
+    var key := LevelSequence.progress_key(level_path)
     if won:
-        ProgressStore.record_clear(level_path, elapsed)  # 通关进度（最佳用时取最小）
+        ProgressStore.record_clear(key, elapsed)  # 通关进度（最佳用时取最小）
         SaveCoordinator.clear_temp()
     else:
-        ProgressStore.record_attempt(level_path)  # 失败也算一次尝试
+        ProgressStore.record_attempt(key)  # 失败也算一次尝试
         if SettingsManager != null and SettingsManager.autosave_enabled:
             # 终局盘：打 ended 标记，restore_from_save 会拒绝恢复（禁止 SL 复活失败局）。
             SaveCoordinator.save(board, elapsed, level_path, _get_drawing(), true)
@@ -424,10 +428,20 @@ func _maybe_autosave() -> void:
 
 
 ## 取当前绘画层数据（provider 未注册或数据为空则返回 {}）
+##
+## ⚠️ 不能只判 `_drawing_provider.is_valid()`：provider 是 board_view 注册的闭包，
+## 其宿主（board_view / 绘画层）被释放后，**Callable 本身仍是 valid**，
+## 一旦调用就会在引擎层炸 "Condition \"slot >= slot_max\" is true"（实测于
+## test_game_session_logic::test_t11b —— 前一个用例的 board_view 已释放）。
+## 因此必须再验一次闭包宿主是否还活着。
 func _get_drawing() -> Dictionary:
-    if _drawing_provider.is_valid():
-        return _drawing_provider.call()
-    return {}
+    if not _drawing_provider.is_valid():
+        return {}
+    var host: Object = _drawing_provider.get_object()
+    if host != null and not is_instance_valid(host):
+        _drawing_provider = Callable()   # 宿主已释放 → 注销，别再留着
+        return {}
+    return _drawing_provider.call()
 
 
 ## 读关卡 JSON 为 Dictionary（mod clue_def 注入探测用；失败/非对象返回 {}）。

@@ -1,10 +1,17 @@
-# level_select.gd —— 关卡选择：主网状节点图 + 变体关卡浮动弹窗
+# level_select.gd —— 关卡选择：三个页面 + 变体关卡浮动弹窗
 #
-# 结构：
-#   主界面  中心核心节点（经典）+ 若干分支节点（变体），节点间连线；
-#           悬停缩放；点击分支/中心弹出关卡选择；窗口缩放自动重排 + 重绘连线。
-#   弹窗    固定尺寸（切换内容不缩放）：尺寸选择栏 + 关卡网格同一容器框（选中蓝色高亮发光）
-#           + 网格右侧竖排分页圆点 + 右侧面板（通关统计 / 继续·开始游戏）。
+# 结构（v3.2 起按内容分页）：
+#   页一 单项变体   经典基线 + 线索型 + 全局约束，卡片平铺（16 个，一屏放得下）；
+#   页二 混合档     线索型 × 全局约束 交叉表（8 × 7 = 56 个），行 C 列 G，格子即变体；
+#   页三 Mod        按 Mod 分组，数量随玩家加载变化；无 Mod 时显示空状态且页签隐藏。
+#   弹窗            固定尺寸（切换内容不缩放）：尺寸选择栏 + 关卡网格同一容器框（选中蓝色高亮发光）
+#                   + 网格右侧竖排分页圆点 + 右侧面板（通关统计 / 继续·开始游戏）。
+#
+# 为什么分页（而不是继续用一张径向节点图装下全部变体）：
+#   三类内容的**数量级与性质都不同**——单项 16 个、混合档 56 个（且是正交组合）、
+#   Mod 0~∞ 个。塞进同一屏时，为给 56 个混合档腾位置，单项变体也被迫缩小并滚动；
+#   而交叉表本身就是索引（想看「和骑士有关的组合」看一行，想看「镜像类的」看一列），
+#   56 个格子不需要搜索框，也不存在节点互相遮挡的可能。详见 HANDOFF 的选关页条目。
 #
 # 数据：每个模式 × 4 种棋盘尺寸（5×5/6×6/7×7/8×8）= 一套独立关卡列表（LEVELS_PER_SET 关）。
 #      关卡由种子确定性生成（同 seed 必同盘），首次进入某套时预置前若干关为已通关（模拟存档）。
@@ -38,48 +45,30 @@ const ANIM := 0.22              # 统一过渡时长（0.2~0.25s）
 const POPUP_SIZE := Vector2(1040, 640)
 const TILE := Vector2(116, 84)
 
-# 变体表（GDD 01 号：15 变体 = C0~C7 线索型 + G1~G7 全局约束；另含混合组合档）
-# 字段：
-#   kind    core=中心基线 / clue=C 类线索型 / global=G 类全局约束 / mixed=混合组合
-#   clue    喂给规则平台的线索规则 id；globals 为全局约束规则 id 数组
-#   enabled false = 暂不开放关卡（弹窗可看，按钮禁用）
-# 中心为 C0 经典基线；内圈 C 类、中圈 G 类、外圈混合档（分层同心圆布局）。
-const MODES: Array = [
-	# ---- 中心：C0 经典（基线变体）----
-	{"id": "classic", "name": "经典", "kind": "core", "clue": "classic", "globals": [], "tip": "C0 · 8 邻雷数"},
-	# ---- C 类 · 线索型（C1~C7）----
-	{"id": "4n", "name": "四邻", "kind": "clue", "clue": "4n", "globals": [], "tip": "C1"},
-	{"id": "clock", "name": "钟点", "kind": "clue", "clue": "clock", "globals": [], "tip": "C2"},
-	{"id": "hv", "name": "纵横分计", "kind": "clue", "clue": "hv", "globals": [], "tip": "C3"},
-	{"id": "fr", "name": "首雷", "kind": "clue", "clue": "fr", "globals": [], "tip": "C4"},
-	{"id": "loopruns", "name": "环游程", "kind": "clue", "clue": "loopruns", "globals": [], "tip": "C5"},
-	{"id": "distsum", "name": "曼哈顿和", "kind": "clue", "clue": "distsum", "globals": [], "tip": "C6"},
-	{"id": "sc", "name": "同色", "kind": "clue", "clue": "sc", "globals": [], "tip": "C7"},
-	# ---- G 类 · 全局约束（G1~G7）----
-	{"id": "mx", "name": "镜像", "kind": "global", "clue": "classic", "globals": ["mx"], "tip": "G1"},
-	{"id": "rl", "name": "行锁", "kind": "global", "clue": "classic", "globals": ["rl"], "tip": "G2"},
-	{"id": "pf", "name": "禁形", "kind": "global", "clue": "classic", "globals": ["pf"], "tip": "G3"},
-	{"id": "qd", "name": "四象", "kind": "global", "clue": "classic", "globals": ["qd"], "tip": "G4"},
-	{"id": "dt", "name": "骨牌", "kind": "global", "clue": "classic", "globals": ["dt"], "tip": "G5"},
-	{"id": "ep", "name": "端点", "kind": "global", "clue": "classic", "globals": ["ep"], "tip": "G6"},
-	{"id": "4c", "name": "守恒", "kind": "global", "clue": "classic", "globals": ["4c"], "tip": "G7"},
-	# ---- 混合组合档（G+C，GDD 3.1.1 第 1 档）：已开放 ----
-	# 注：早期版本这里标注「暂不开放」且依赖 MODES[i]["enabled"]=false 禁用，
-	# 但实际条目里从未写过 enabled 字段 ⇒ 取默认值 true，一直是开放状态。
-	# 注释与代码取其一：以代码现状为准（开放），注释同步更正，避免后来者误判。
-	# parents = [父 G 类 id, 父 C 类 id]。刻意让 Gi+Ci 同序号配对，
-	# 这样每条枝干上「中心 → C_i → 混合_i → G_i」四点共线，图谱不交叉。
-	{"id": "mx_4n", "name": "镜像·四邻", "kind": "mixed", "clue": "4n", "globals": ["mx"], "parents": ["mx", "4n"], "tip": "G1+C1"},
-	{"id": "rl_clock", "name": "行锁·钟点", "kind": "mixed", "clue": "clock", "globals": ["rl"], "parents": ["rl", "clock"], "tip": "G2+C2"},
-	{"id": "pf_hv", "name": "禁形·纵横", "kind": "mixed", "clue": "hv", "globals": ["pf"], "parents": ["pf", "hv"], "tip": "G3+C3"},
-	{"id": "qd_fr", "name": "四象·首雷", "kind": "mixed", "clue": "fr", "globals": ["qd"], "parents": ["qd", "fr"], "tip": "G4+C4"},
-	{"id": "dt_loopruns", "name": "骨牌·环游程", "kind": "mixed", "clue": "loopruns", "globals": ["dt"], "parents": ["dt", "loopruns"], "tip": "G5+C5"},
-	{"id": "ep_distsum", "name": "端点·曼哈顿", "kind": "mixed", "clue": "distsum", "globals": ["ep"], "parents": ["ep", "distsum"], "tip": "G6+C6"},
-	{"id": "4c_sc", "name": "守恒·同色", "kind": "mixed", "clue": "sc", "globals": ["4c"], "parents": ["4c", "sc"], "tip": "G7+C7"},
-]
+# ===== 页面编号 =====
+const PAGE_SINGLE := 0          # 页一：单项变体（经典 + 线索型 + 全局约束）
+const PAGE_MIXED := 1           # 页二：混合档（线索 × 全局约束 交叉表）
+const PAGE_MOD := 2             # 页三：Mod（按 Mod 分组，无 Mod 时页签隐藏）
+
+# 变体表：**运行时从规则注册表派生**（见 ui/variant_catalog.gd）。
+#
+# 历史问题：这里原先是一张写死的 15 条常量表，引擎换变体（新增 knight、
+# 新增 O/S/Z 系列 Mod 算子）后 UI 完全不知情 —— 也就是「引擎换了、UI 没动」。
+# 现在改为启动时由 VariantCatalog.build_modes() 生成，成员随注册表实时变化，
+# 结构（kind / id / name / tip / clue / globals / parents / enabled）保持不变，
+# 下游的布局、绘制、进度键逻辑都无需改动。
+var MODES: Array = []
 
 # ===== 运行时状态 =====
-var _nodes: Array[Button] = []       # 全部节点按钮（[0]=中心）
+# 页签（0 单项变体 / 1 混合档 / 2 Mod）。_tab_memory 用 static：
+# 进对局再返回时回到离开时那一页，否则每次都把玩家弹回第一页。
+static var _tab_memory := PAGE_SINGLE
+var _tab := PAGE_SINGLE
+var _tab_btns: Array[Button] = []
+var _page_host: Control = null
+var _pages: Array[Control] = []
+## 变体 id -> MODES 下标（交叉表按 id 找条目，不依赖列表顺序）。
+var _mode_index: Dictionary = {}
 var _overlay: Control = null
 var _popup: PanelContainer = null
 var _popup_body: Control = null
@@ -105,6 +94,9 @@ var _scroll_accum := 0.0
 ## 动画的 0.22s 内再点节点就会叠出第二个弹窗）。
 var _popup_closing := false
 
+## Mod 加载 / 卸载后注册表已变，但弹窗开着时不便重建节点 → 记脏标记，关闭时补建。
+var _modes_dirty := false
+
 ## 演示用「已通关」记录。**只在本次进程内有效、不落盘**。
 ## 历史 bug：这些记录原先直接写进真实的 ProgressStore（user://progress.json），
 ## 于是首次进入任何变体×尺寸都会永久留下一条「20.00 秒通关」的假数据，
@@ -115,9 +107,35 @@ static var _mock_cleared: Dictionary = {}
 func _ready() -> void:
 	add_to_group("themed")
 	ThemeManager.theme_changed.connect(_on_theme_changed)
-	resized.connect(_layout_nodes)
-	_build_graph()
+	_tab = _tab_memory
+	_refresh_modes()      # 变体表必须在建页之前生成：页内容 = MODES 的派生
+	_build_ui()
 	_consume_pending_focus()
+	# Mod 加载 / 卸载 → 注册表变化 → 选关页内容实时增减（卸载时 mod_api 会注销其规则）
+	ModAPI.events.on(EventBus.MOD_LOADED, _on_mods_changed)
+
+
+## Mod 生命周期回调：弹窗开着时只记脏标记（不打断玩家），关闭后再重建。
+func _on_mods_changed(_payload: Variant = null) -> void:
+	if _overlay != null or _popup_closing:
+		_modes_dirty = true
+		return
+	_rebuild_all()
+
+
+## 注册表变化后的统一重建：变体表 + 三页内容。
+func _rebuild_all() -> void:
+	_refresh_modes()
+	_rebuild_pages()
+
+
+## 从规则注册表重算变体表（页面/交叉表都按它派生）。
+func _refresh_modes() -> void:
+	MODES = VariantCatalog.build_modes(Vector2i(SIZES[_size_idx], SIZES[_size_idx]),
+			LevelSequence.mine_count(SIZES[_size_idx]))
+	_mode_index.clear()
+	for i in MODES.size():
+		_mode_index[str((MODES[i] as Dictionary)["id"])] = i
 
 
 ## 终局页「下一关」交接过来的意图：直接展开对应变体×尺寸的关卡弹窗。
@@ -131,6 +149,7 @@ func _consume_pending_focus() -> void:
 	for i in MODES.size():
 		if str(MODES[i]["id"]) != mode_id:
 			continue
+		_show_tab(_page_of(MODES[i]))   # 先翻到该变体所在的页，再开它的弹窗
 		var size_i: int = SIZES.find(want_size)
 		_open_popup(i)
 		if size_i >= 0:
@@ -147,26 +166,22 @@ func _is_cleared(key: String) -> bool:
 	return ProgressStore.is_cleared(key)
 
 
+## 跳过判定（失败终局「跳过本关」）。跳过只解锁下一关，不计入通关统计。
+func _is_skipped(key: String) -> bool:
+	return ProgressStore.is_skipped(key)
+
+
 # ==================== 主界面：网状节点图 ====================
 
-func _build_graph() -> void:
+func _build_ui() -> void:
 	# 顶部标题
 	var title := Label.new()
 	title.text = "选择关卡"
-	title.add_theme_font_size_override("font_size", 30)
+	title.add_theme_font_size_override("font_size", 28)
 	title.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	title.offset_top = 18
+	title.offset_top = 14
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	add_child(title)
-
-	var hint := Label.new()
-	hint.text = "点击节点选择模式　·　内圈 C 类线索型　中圈 G 类全局约束　外圈混合档"
-	hint.add_theme_font_size_override("font_size", 16)
-	hint.set_meta("secondary", true)
-	hint.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	hint.offset_top = 56
-	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	add_child(hint)
 
 	# 返回按钮（左上）
 	var back := Button.new()
@@ -175,135 +190,652 @@ func _build_graph() -> void:
 	back.custom_minimum_size = Vector2(96, 42)
 	back.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
 	back.offset_left = 24
-	back.offset_top = 18
+	back.offset_top = 14
+	back.set_meta("std_btn", true)
 	back.pressed.connect(func(): get_tree().change_scene_to_file("res://ui/main_menu.tscn"))
 	add_child(back)
 
-	# 节点：中心 + C 类 + G 类 + 混合档
-	for i in MODES.size():
-		var m: Dictionary = MODES[i]
-		var kind := String(m["kind"])
-		var enabled := bool(m.get("enabled", true))
-		var btn := Button.new()
-		btn.text = "%s\n%s" % [m["name"], m["tip"]]
-		btn.focus_mode = Control.FOCUS_NONE
-		# 必须显式限字号：默认主题字号较大，中文名会把按钮撑到 140+ 宽，
-		# 导致同一枝干上相邻节点（尤其近水平的枝干）矩形相交。
-		btn.add_theme_font_size_override("font_size", 15 if kind == "mixed" else 16)
-		if kind == "core":
-			btn.custom_minimum_size = Vector2(150, 74)
-		elif kind == "mixed":
-			btn.custom_minimum_size = Vector2(112, 52)  # 混合档更小：挂在枝干中间不抢空间
-		else:
-			btn.custom_minimum_size = Vector2(126, 60)
-		btn.pressed.connect(_open_popup.bind(i))
-		add_child(btn)
-		_nodes.append(btn)
-		if enabled:
-			UiTheme.bind_hover(btn, 1.08)  # 悬停缩放
-		else:
-			_style_node_locked(btn)  # 待开放：暗色、不放大
+	# 页签栏（三个页面各一个标签）
+	var bar := HBoxContainer.new()
+	bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	bar.offset_left = 24
+	bar.offset_right = -24
+	bar.offset_top = 58
+	bar.alignment = BoxContainer.ALIGNMENT_CENTER
+	bar.add_theme_constant_override("separation", 10)
+	add_child(bar)
+	for spec in [["单项变体", PAGE_SINGLE], ["混合档", PAGE_MIXED], ["Mod", PAGE_MOD]]:
+		var b := Button.new()
+		b.text = str(spec[0])
+		b.focus_mode = Control.FOCUS_NONE
+		b.custom_minimum_size = Vector2(148, 42)
+		# 选中态由 _style_choice 负责；打标记让 _apply_theme 不要把它刷回默认按钮样式
+		b.set_meta("choice_btn", true)
+		b.pressed.connect(_show_tab.bind(int(spec[1])))
+		bar.add_child(b)
+		_tab_btns.append(b)
+		UiTheme.bind_hover(b, 1.04)
 
-	_layout_nodes()
+	# 页容器：页签以下的整块区域（滚动由各页自己的 ScrollContainer 负责）
+	_page_host = Control.new()
+	_page_host.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_page_host.offset_left = 8
+	_page_host.offset_right = -8
+	_page_host.offset_top = 110
+	_page_host.offset_bottom = -8
+	add_child(_page_host)
+
+	_rebuild_pages()
 	_apply_theme()
 
 
-## 布局：7 条径向枝干，每条「中心 → C 类 → 混合 → G 类」四点共线、互不交叉。
-## C_i 与 G_i 同序号同角度，混合节点严格取两个父变体（parents=[G,C]）的连线中点，
-## 因此混合天然挂在「合成它的两个变体」之间，且不会与任何节点重叠。
-## 窗口缩放时由 resized 信号触发，重排后 _draw 自动重绘枝干。
-func _layout_nodes() -> void:
-	if _nodes.is_empty():
+# ---------- 页签 / 页面管理 ----------
+
+## 切换当前页（页签点击、焦点交接、Mod 卸载回退都走这里）。
+func _show_tab(t: int) -> void:
+	if t < 0 or t >= _pages.size():
 		return
-	var cx := size.x * 0.5
-	var cy := size.y * 0.5 + 16.0
-	var avail := maxf(minf(size.x, size.y - 120.0), 360.0)
-	var r_in := maxf(avail * 0.25, 150.0)    # C 类内圈
-	var r_out := maxf(avail * 0.47, 285.0)   # G 类外圈（混合取两者中点）
+	# Mod 页在「一个 Mod 都没加载」时不可达（页签已隐藏，这里防程序调用 / 键盘触发）
+	if t == PAGE_MOD and ModAPI.list_mods().is_empty():
+		t = PAGE_SINGLE
+	_tab = t
+	_tab_memory = t
+	for i in _pages.size():
+		if is_instance_valid(_pages[i]):
+			_pages[i].visible = (i == t)
+	for i in _tab_btns.size():
+		_style_choice(_tab_btns[i], i == t)
 
-	var center := Vector2(cx, cy)
-	var pos_by_id := {}
 
-	# 1) 中心：C0 经典基线
-	for i in _nodes.size():
-		if String(MODES[i]["kind"]) != "core":
-			continue
-		_nodes[i].position = center - _nodes[i].size * 0.5
-		pos_by_id[String(MODES[i]["id"])] = center
+## 该变体属于哪一页。**三种数量级不同的内容各占一页**：
+##   单项变体 16 个（一屏放得下）、混合档 56 个（正交组合，交叉表即索引）、
+##   Mod 数量随玩家加载任意增长。混在一页的结果是：为了给 56 个腾地方，
+##   单项变体也得跟着缩小 + 滚动，而玩家通常只想打开其中一个。
+func _page_of(m: Dictionary) -> int:
+	if str(m.get("kind", "clue")) == "mixed":
+		return PAGE_MIXED
+	if str(m.get("source", "builtin")) == "mod":
+		return PAGE_MOD   # Mod 变体一律进 Mod 页（按来源分组，与它是线索还是约束无关）
+	return PAGE_SINGLE
 
-	# 2) C 类内圈 / G 类外圈：按 MODES 声明顺序各自均匀布点（同序号 ⇒ 同角度）
-	var c_count := 0
-	var g_count := 0
-	for m in MODES:
-		var k := String((m as Dictionary)["kind"])
-		if k == "clue":
-			c_count += 1
-		elif k == "global":
-			g_count += 1
-	var ci := 0
-	var gi := 0
-	for i in _nodes.size():
+
+## 重建三页内容（Mod 加载 / 卸载、主题切换、首次进入时调用）。
+func _rebuild_pages() -> void:
+	for p in _pages:
+		if is_instance_valid(p):
+			p.queue_free()
+	_pages.clear()
+	_pages.append(_build_single_page())
+	_pages.append(_build_mixed_page())
+	_pages.append(_build_mod_page())
+	for p in _pages:
+		_page_host.add_child(p)
+	# Mod 页签的可见性：没有 Mod 就整个隐藏（不是置灰——空页签只会让人点进去看空）
+	if _tab_btns.size() > PAGE_MOD:
+		_tab_btns[PAGE_MOD].visible = not ModAPI.list_mods().is_empty()
+	_show_tab(_tab)
+
+
+## 页体外壳：滚动容器 + 内边距。窗口小于内容时滚动，大于时留白（不做缩放）。
+## allow_h_scroll：交叉表在窄窗口下必须能横向滚动（关掉就变成截断右边一列）。
+func _make_page_shell(allow_h_scroll: bool = false) -> Array:
+	var scroll := ScrollContainer.new()
+	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO if allow_h_scroll \
+			else ScrollContainer.SCROLL_MODE_DISABLED
+	var margin := MarginContainer.new()
+	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	margin.add_theme_constant_override("margin_left", 22)
+	margin.add_theme_constant_override("margin_right", 22)
+	margin.add_theme_constant_override("margin_top", 4)
+	margin.add_theme_constant_override("margin_bottom", 22)
+	scroll.add_child(margin)
+	return [scroll, margin]
+
+
+# ---------- 页一：单项变体（卡片平铺） ----------
+
+func _build_single_page() -> Control:
+	var shell := _make_page_shell()
+	var flow := HFlowContainer.new()
+	flow.add_theme_constant_override("h_separation", 14)
+	flow.add_theme_constant_override("v_separation", 14)
+	# 每行居中：流式容器默认 ALIGNMENT_BEGIN，卡片宽度不能整除可视宽时
+	# 余量会全部堆到右侧（实测 4 列：左留白 0px / 右留白 90px），看着是「没居中」。
+	# 居中后余量左右均分；最后一行若不满行也居中（last_wrap_alignment 默认继承）。
+	flow.alignment = FlowContainer.ALIGNMENT_CENTER
+	(shell[1] as MarginContainer).add_child(flow)
+	for i in MODES.size():
 		var m: Dictionary = MODES[i]
-		var kind := String(m["kind"])
-		var ang := -PI * 0.5
-		var r := 0.0
-		if kind == "clue":
-			ang += TAU * float(ci) / float(maxi(c_count, 1))
-			r = r_in
-			ci += 1
-		elif kind == "global":
-			ang += TAU * float(gi) / float(maxi(g_count, 1))
-			r = r_out
-			gi += 1
+		if _page_of(m) != PAGE_SINGLE:
+			continue
+		flow.add_child(_make_card(i, m))
+	return shell[0]
+
+
+## 变体卡片：名称 + 编号 + 规则一句话 + 底部进度条。
+##
+## 文字全部放在**子 Label** 里，按钮自身不带文字：Button 的最小尺寸由 text 撑出，
+## 而 Button 不支持 autowrap（只有 Label 有）——直接把长说明塞进 text 会把卡片撑到
+## 300+ px，每行只排得下 3 张、第 16 张被挤出可视区（实测踩过）。
+## 子 Label 走 autowrap，宽度则由 custom_minimum_size 唯一决定。
+const CARD_W := 272
+const CARD_H := 104
+
+
+func _make_card(mode_idx: int, m: Dictionary) -> Button:
+	var btn := Button.new()
+	btn.custom_minimum_size = Vector2(CARD_W, CARD_H)
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.tooltip_text = _card_tooltip(m)
+	btn.set_meta("card_btn", true)
+	btn.pressed.connect(_open_popup.bind(mode_idx))
+	_style_card(btn)
+
+	var box := VBoxContainer.new()
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE   # 点击必须落到按钮上
+	box.add_theme_constant_override("separation", 4)
+	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	box.offset_left = 10
+	box.offset_right = -10
+	box.offset_top = 8
+	box.offset_bottom = -15                          # 给底部进度条留位置
+	btn.add_child(box)
+
+	var title := Label.new()
+	title.text = "%s  %s" % [str(m["name"]), str(m["tip"])]
+	title.add_theme_font_size_override("font_size", 15)
+	title.add_theme_color_override("font_color", ThemeManager.text())
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(title)
+
+	var desc := Label.new()
+	desc.text = VariantCatalog.rule_text(str(m["id"]))
+	desc.add_theme_font_size_override("font_size", 13)
+	desc.add_theme_color_override("font_color", ThemeManager.text_secondary())
+	desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART   # 中文断行按字，标点不落行首
+	desc.max_lines_visible = 3
+	desc.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	desc.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	desc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(desc)
+
+	UiTheme.bind_hover(btn, 1.03)
+	_attach_progress(btn, str(m["id"]))
+	return btn
+
+
+func _card_tooltip(m: Dictionary) -> String:
+	var lines: Array[String] = ["%s（%s）" % [str(m["name"]), str(m["tip"])]]
+	var text := VariantCatalog.rule_text(str(m["id"]))
+	if not text.is_empty():
+		lines.append(text)
+	if str(m.get("source", "builtin")) == "mod":
+		lines.append("来自已加载的 Mod，可在主菜单「模组」页管理 / 卸载")
+	lines.append("已通关 %d / %d" % [_cleared_total(str(m["id"])), SIZES.size() * LEVELS_PER_SET])
+	return "\n".join(lines)
+
+
+# ---------- 页二：混合档（线索 × 全局约束 交叉表） ----------
+
+## 交叉表：行 = 线索型（C 类），列 = 全局约束（G 类），交叉格 = 两者的混合变体。
+## 表本身就是索引：想找「和骑士有关的组合」看一行，想找「镜像类的」看一列——
+## 56 个组合不需要搜索框。排布交给 GridContainer，故天然不会出现节点互相遮挡。
+# 交叉格 / 表头尺寸：行首 130 + 7 列 × 142 + 列间距 7×6 = 1166 → 加页边距 44 后
+# 仍能完整放进 1280 设计分辨率（不留横向滚动条）。窄窗口由 _make_page_shell(true) 兜底。
+const CELL_W := 142
+const ROW_HEAD_W := 130
+
+
+## 混合档页有两种表，用右上角开关切换：
+##   ① 约束 × 线索   行 = C 类、列 = G 类（56 格）；
+##   ② 约束 × 约束   行 / 列都是 G 类，只填右上三角（C(7,2) = 21 对，每对只出现一次）。
+## 两者共用同一套表头 / 格子 / 进度渲染，切换只换轴与格子来源。
+var _mixed_gg := false
+var _mixed_host: VBoxContainer = null
+var _mixed_hint: Label = null
+var _mixed_btns: Array[Button] = []
+
+
+func _build_mixed_page() -> Control:
+	var shell := _make_page_shell(true)
+	var margin: MarginContainer = shell[1]
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 12)
+	margin.add_child(vb)
+
+	# 顶部：说明（随表切换重写）+ 两张表的切换开关
+	var bar := HBoxContainer.new()
+	bar.add_theme_constant_override("separation", 10)
+	vb.add_child(bar)
+
+	_mixed_hint = Label.new()
+	_mixed_hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_mixed_hint.add_theme_font_size_override("font_size", 13)
+	_mixed_hint.set_meta("secondary", true)
+	bar.add_child(_mixed_hint)
+
+	_mixed_btns.clear()   # 主题切换会整页重建，旧按钮引用必须丢弃
+	for spec in [["1 约束 · 约束×线索", false], ["2 约束 · 约束×约束", true]]:
+		var b := Button.new()
+		b.text = str(spec[0])
+		b.focus_mode = Control.FOCUS_NONE
+		b.custom_minimum_size = Vector2(176, 36)
+		b.pressed.connect(_on_mixed_switch.bind(bool(spec[1])))
+		bar.add_child(b)
+		_mixed_btns.append(b)
+		UiTheme.bind_hover(b, 1.04)
+
+	_mixed_host = VBoxContainer.new()
+	_mixed_host.add_theme_constant_override("separation", 12)
+	vb.add_child(_mixed_host)
+	_fill_mixed_table()
+	return shell[0]
+
+
+func _on_mixed_switch(gg: bool) -> void:
+	_mixed_gg = gg
+	_fill_mixed_table()
+
+
+func _fill_mixed_table() -> void:
+	if _mixed_host == null:
+		return
+	for c in _mixed_host.get_children():
+		c.queue_free()
+	_mixed_host.add_child(_gg_table() if _mixed_gg else _gc_table())
+	for i in _mixed_btns.size():
+		_style_choice(_mixed_btns[i], (i == 1) == _mixed_gg)
+
+
+## 表一：约束 × 线索（行 C / 列 G，8 × 7 = 56 格）。
+func _gc_table() -> Control:
+	var wrap := VBoxContainer.new()
+	wrap.add_theme_constant_override("separation", 10)
+	var clues := VariantCatalog.mixed_clue_ids()
+	var globals := VariantCatalog.mixed_global_ids()
+	_mixed_hint.text = "行 = 线索型（C 类）　列 = 全局约束（G 类）　交叉格 = 两者叠加的混合变体　·　点击任意格开这一关"
+
+	var table := GridContainer.new()
+	table.columns = globals.size() + 1
+	table.add_theme_constant_override("h_separation", 6)
+	table.add_theme_constant_override("v_separation", 6)
+	table.size_flags_horizontal = Control.SIZE_SHRINK_CENTER   # 表整体居中（默认左贴会右侧多出余量）
+	wrap.add_child(table)
+
+	# 表头行：左上角占位 + 每个全局约束一列
+	table.add_child(_matrix_corner("线索型 ＼ 全局约束"))
+	for j in globals.size():
+		table.add_child(_matrix_head("G%d" % (j + 1), globals[j], false))
+	# 每个线索型一行：行首 + 每列一格
+	for i in clues.size():
+		table.add_child(_matrix_head("C%d" % (i + 1), clues[i], true))
+		for gid in globals:
+			table.add_child(_matrix_cell(clues[i], gid))
+
+	wrap.add_child(_matrix_note("共 %d 个组合（%d 线索 × %d 约束）　·　全部经可行性真值查询：数学均可行" % [
+			clues.size() * globals.size(), clues.size(), globals.size()]))
+	return wrap
+
+
+## 表二：约束 × 约束（行 / 列都是 G，21 对只出现一次 → 只填右上三角）。
+## 左下留白不是省略：每一对都已在右上出现，重复填只会让人以为还有第二组组合。
+func _gg_table() -> Control:
+	var wrap := VBoxContainer.new()
+	wrap.add_theme_constant_override("separation", 10)
+	var globals := VariantCatalog.mixed_global_ids()
+	_mixed_hint.text = "行 / 列 = 全局约束（G 类）　右上三角格 = 两个约束同时生效（每对只出现一次）　·　点击任意格开这一关"
+
+	var table := GridContainer.new()
+	table.columns = globals.size() + 1
+	table.add_theme_constant_override("h_separation", 6)
+	table.add_theme_constant_override("v_separation", 6)
+	table.size_flags_horizontal = Control.SIZE_SHRINK_CENTER   # 表整体居中（与约束×线索表一致）
+	wrap.add_child(table)
+
+	table.add_child(_matrix_corner("约束 ＼ 约束"))
+	for j in globals.size():
+		table.add_child(_matrix_head("G%d" % (j + 1), globals[j], false))
+	for i in globals.size():
+		table.add_child(_matrix_head("G%d" % (i + 1), globals[i], true))
+		for j in globals.size():
+			if j > i:
+				table.add_child(_gg_cell(globals[i], globals[j]))
+			else:
+				# 对角线（同一约束不可重复）与左下（与右上同一对）都不产生组合
+				table.add_child(_matrix_blank())
+
+	var pairs := globals.size() * (globals.size() - 1) / 2
+	var alive := VariantCatalog.gg_all(Vector2i(SIZES[_size_idx], SIZES[_size_idx]),
+			LevelSequence.mine_count(SIZES[_size_idx])).size()
+	wrap.add_child(_matrix_note("共 %d 对（C(%d,2)）　·　%d 个可玩（判逻辑冗余的不产生，格子置灰）　·　部分尺寸无解由弹窗内的尺寸按钮自动禁用" % [
+			pairs, globals.size(), alive]))
+	return wrap
+
+
+func _matrix_corner(text: String) -> Control:
+	var lb := Label.new()
+	lb.text = text
+	lb.add_theme_font_size_override("font_size", 13)
+	lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	lb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lb.custom_minimum_size = Vector2(ROW_HEAD_W, 40)
+	lb.set_meta("secondary", true)
+	return lb
+
+
+## 交叉表里的空位（对角线 / 左下三角）：占位保证列宽与行高不变。
+func _matrix_blank() -> Control:
+	var c := Control.new()
+	c.custom_minimum_size = Vector2(CELL_W, 48)
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return c
+
+
+func _matrix_note(text: String) -> Label:
+	var note := Label.new()
+	note.text = text
+	note.add_theme_font_size_override("font_size", 13)
+	note.set_meta("secondary", true)
+	return note
+
+
+## 表头（行首 / 列头）：编号 + 名称，悬停显示规则全文。
+## code 由调用方按轴序给出（不在表头里反查目录：那会为每个表头重建一次注册表清单）。
+func _matrix_head(code: String, rule_id: String, is_row: bool) -> Control:
+	var lb := Label.new()
+	lb.text = ("%s %s" % [code, VariantCatalog.display_name(rule_id)])
+	lb.add_theme_font_size_override("font_size", 13)
+	lb.tooltip_text = VariantCatalog.display_name(rule_id) + "\n" + VariantCatalog.rule_text(rule_id)
+	lb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	if is_row:
+		lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		lb.custom_minimum_size = Vector2(ROW_HEAD_W, 48)
+	else:
+		lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lb.custom_minimum_size = Vector2(CELL_W, 40)
+	return lb
+
+
+## 交叉格：该线索 × 该约束的混合变体。点开即进它自己的选关弹窗。
+func _matrix_cell(clue_id: String, global_id: String) -> Button:
+	var mode_id := "%s_%s" % [global_id, clue_id]
+	var btn := Button.new()
+	var mi: int = int(_mode_index.get(mode_id, -1))
+	btn.text = "%s·%s" % [VariantCatalog.display_name(global_id), VariantCatalog.display_name(clue_id)]
+	btn.custom_minimum_size = Vector2(CELL_W, 48)
+	btn.clip_text = true   # 名称再长也不许撑宽格子（撑宽会把整表挤到横向滚动）
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.add_theme_font_size_override("font_size", 12)
+	btn.set_meta("cell_btn", true)
+	_style_card(btn)
+	if mi < 0:
+		# 组合被判 forbid（逻辑冗余/矛盾）→ 不产生条目：占位显示、不可点，避免死格
+		btn.disabled = true
+		btn.tooltip_text = "%s·%s\n该组合逻辑冗余或矛盾，不产生混合档" % [
+				VariantCatalog.display_name(global_id), VariantCatalog.display_name(clue_id)]
+		return btn
+	var m: Dictionary = MODES[mi]
+	var lines: Array[String] = ["%s（%s）" % [str(m["name"]), str(m["tip"])],
+			VariantCatalog.rule_text(global_id), VariantCatalog.rule_text(clue_id)]
+	if str(m.get("verdict", "ok")) == RuleSignature.WARN:
+		lines.append("⚠ 该组合的可行域偏窄（约束与线索作用域叠加），生成更慢")
+	lines.append("已通关 %d / %d" % [_cleared_total(mode_id), SIZES.size() * LEVELS_PER_SET])
+	btn.tooltip_text = "\n".join(lines)
+	btn.pressed.connect(_open_popup.bind(mi))
+	UiTheme.bind_hover(btn, 1.04)
+	_attach_progress(btn, mode_id)
+	return btn
+
+
+## 双约束格：两条全局约束同时生效（线索走经典）。与 _matrix_cell 同构，只是轴不同。
+func _gg_cell(g1: String, g2: String) -> Button:
+	var mode_id := "%s_%s" % [g1, g2]
+	var btn := Button.new()
+	var mi: int = int(_mode_index.get(mode_id, -1))
+	btn.text = "%s·%s" % [VariantCatalog.display_name(g1), VariantCatalog.display_name(g2)]
+	btn.custom_minimum_size = Vector2(CELL_W, 48)
+	btn.clip_text = true   # 名称再长也不许撑宽格子（撑宽会把整表挤到横向滚动）
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.add_theme_font_size_override("font_size", 12)
+	btn.set_meta("cell_btn", true)
+	_style_card(btn)
+	if mi < 0:
+		# 判 forbid（逻辑冗余 / 矛盾，如 mx 蕴含 ep）→ 不产生条目：置灰占位，避免死格
+		btn.disabled = true
+		btn.tooltip_text = "%s·%s\n两个约束叠加时后者完全冗余，不产生混合档" % [
+				VariantCatalog.display_name(g1), VariantCatalog.display_name(g2)]
+		return btn
+	var m: Dictionary = MODES[mi]
+	var lines: Array[String] = ["%s（%s）" % [str(m["name"]), str(m["tip"])],
+			VariantCatalog.rule_text(g1), VariantCatalog.rule_text(g2)]
+	if str(m.get("verdict", "ok")) == RuleSignature.WARN:
+		lines.append("⚠ 两条全局约束叠加，可行域偏窄——部分尺寸无解，已由弹窗内的尺寸按钮禁用")
+	lines.append("已通关 %d / %d" % [_cleared_total(mode_id), SIZES.size() * LEVELS_PER_SET])
+	btn.tooltip_text = "\n".join(lines)
+	btn.pressed.connect(_open_popup.bind(mi))
+	UiTheme.bind_hover(btn, 1.04)
+	_attach_progress(btn, mode_id)
+	return btn
+
+
+# ---------- 页三：Mod（按来源分组） ----------
+
+## Mod 变体独立成页：数量由玩家装了什么决定，不占用内置变体的版面——
+## 玩家装 3 个还是 30 个 Mod，「单项变体」页永远长一个样。
+func _build_mod_page() -> Control:
+	var shell := _make_page_shell()
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 16)
+	(shell[1] as MarginContainer).add_child(vb)
+
+	var ids := ModAPI.list_mods()
+	if ids.is_empty():
+		vb.add_child(_mod_empty_state())
+		return shell[0]
+
+	var total := 0
+	for i in MODES.size():
+		if _page_of(MODES[i]) == PAGE_MOD:
+			total += 1
+	var def_total := 0
+	for id in ids:
+		def_total += (ModAPI.mod_info(id).get("defs", []) as Array).size()
+	var hint := Label.new()
+	hint.text = "已加载 %d 个 Mod：%d 个可玩变体 + %d 个 Def 规则　·　变体自动出现在本页，卸载后自动消失" % [
+			ids.size(), total, def_total]
+	hint.add_theme_font_size_override("font_size", 14)
+	hint.set_meta("secondary", true)
+	vb.add_child(hint)
+
+	for mod_id in ids:
+		vb.add_child(_mod_section(mod_id))
+	return shell[0]
+
+
+## 单个 Mod 一节：标题（名称 / 形式 / 状态）+ 它注册的可玩变体卡片。
+func _mod_section(mod_id: String) -> Control:
+	var wrap := VBoxContainer.new()
+	wrap.add_theme_constant_override("separation", 8)
+
+	var info := ModAPI.mod_info(mod_id)
+	var manifest: Dictionary = info.get("manifest", {})
+	var entry: Dictionary = manifest.get("entry", {})
+	var runtime := str(entry.get("runtime", ""))
+	var head := Label.new()
+	head.text = "%s　[%s]　%s" % [str(manifest.get("name", mod_id)),
+			_mod_runtime_label(runtime), _mod_state_label(str(info.get("state", "")))]
+	head.add_theme_font_size_override("font_size", 16)
+	wrap.add_child(head)
+
+	# Def 行放在分组 VBox 里（**不能**进下面的卡片流）：autowrap 的 Label 最小宽度≈0，
+	# 进流式容器会被压成一列单字（实测踩过）。
+	var mod_defs: Array = info.get("defs", [])
+	if not mod_defs.is_empty():
+		wrap.add_child(_mod_def_label(mod_defs))
+
+	var flow := HFlowContainer.new()
+	flow.add_theme_constant_override("h_separation", 14)
+	flow.add_theme_constant_override("v_separation", 14)
+	flow.alignment = FlowContainer.ALIGNMENT_CENTER   # 与单项变体页一致：每行居中，不右侧堆积留白
+	wrap.add_child(flow)
+
+	var count := 0
+	for i in MODES.size():
+		var m: Dictionary = MODES[i]
+		if _page_of(m) != PAGE_MOD:
+			continue
+		if ModAPI.find_rule_owner(str(m["id"])) != mod_id:
+			continue
+		flow.add_child(_make_card(i, m))
+		count += 1
+	if count == 0 and mod_defs.is_empty():
+		var note := Label.new()
+		note.text = "该 Mod 未注册可玩变体（仅数据 / 资源）"
+		note.add_theme_font_size_override("font_size", 13)
+		note.set_meta("secondary", true)
+		flow.add_child(note)
+	return wrap
+
+
+## Def 规则行。Def 注册进的是 DefEngine 而不是规则注册表，因此**不会**出现在本页的变体表里，
+## 但它确实提供了可玩内容（主菜单「模组」页可为其生成关卡）——如实列出，
+## 否则玩家看到空白分组会以为装了个空包。
+func _mod_def_label(defs: Array) -> Control:
+	var clues: Array[String] = []
+	var constraints: Array[String] = []
+	for d in defs:
+		var n := str((d as Dictionary).get("name", ""))
+		if n == "":
+			continue
+		if str((d as Dictionary).get("type", "")) == "clue":
+			clues.append(n)
 		else:
-			continue
-		var p := Vector2(cx + cos(ang) * r, cy + sin(ang) * r)
-		_nodes[i].position = p - _nodes[i].size * 0.5
-		pos_by_id[String(m["id"])] = p
-
-	# 3) 混合：父 G 与父 C 的连线中点（严格共线，视觉上「两个变体合成一个混合」）
-	for i in _nodes.size():
-		var m: Dictionary = MODES[i]
-		if String(m["kind"]) != "mixed":
-			continue
-		var ps: Array = m.get("parents", [])
-		if ps.size() < 2:
-			continue
-		var a: Vector2 = pos_by_id.get(String(ps[0]), center)
-		var b: Vector2 = pos_by_id.get(String(ps[1]), center)
-		var mid := (a + b) * 0.5
-		_nodes[i].position = mid - _nodes[i].size * 0.5
-		pos_by_id[String(m["id"])] = mid
-	queue_redraw()
+			constraints.append(n)
+	var parts: Array[String] = []
+	if not clues.is_empty():
+		parts.append("线索 %d 个（%s）" % [clues.size(), ", ".join(clues)])
+	if not constraints.is_empty():
+		parts.append("约束 %d 个（%s）" % [constraints.size(), ", ".join(constraints)])
+	var lb := Label.new()
+	lb.text = "Def 规则：%s　·　在主菜单「模组」页可为其生成关卡" % "　".join(parts)
+	lb.add_theme_font_size_override("font_size", 13)
+	lb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lb.set_meta("secondary", true)
+	return lb
 
 
-## 绘制 7 条枝干：中心 → G 类（穿过同枝干的 C 类与混合节点）。
-## 只画到外圈 G 类这一层，避免「中心辐射到全部 21 个节点」造成的线团。
-func _draw() -> void:
-	if _nodes.is_empty() or not is_instance_valid(_nodes[0]):
+func _mod_runtime_label(runtime: String) -> String:
+	match runtime:
+		ManifestParser.RUNTIME_DEF:
+			return "Def 数据包"
+		ManifestParser.RUNTIME_WASM:
+			return "wasm Mod"
+		ManifestParser.RUNTIME_GDScript:
+			return "代码 Mod"
+	return runtime if runtime != "" else "未知形式"
+
+
+func _mod_state_label(state: String) -> String:
+	match state:
+		ModAPI.STATE_ENABLED:
+			return "已启用"
+		ModAPI.STATE_DISABLED:
+			return "已禁用"
+		ModAPI.STATE_CRASHED:
+			return "已崩溃隔离"
+	return "已加载"
+
+
+func _mod_empty_state() -> Control:
+	var panel := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = ThemeManager.card().darkened(0.2)
+	sb.set_corner_radius_all(10)
+	sb.set_border_width_all(1)
+	sb.border_color = ThemeManager.grid_line()
+	panel.add_theme_stylebox_override("panel", sb)
+
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 10)
+	vb.add_theme_constant_override("margin_left", 20)
+	vb.add_theme_constant_override("margin_right", 20)
+	vb.add_theme_constant_override("margin_top", 22)
+	vb.add_theme_constant_override("margin_bottom", 22)
+	panel.add_child(vb)
+
+	var title := Label.new()
+	title.text = "还没有加载任何 Mod"
+	title.add_theme_font_size_override("font_size", 18)
+	vb.add_child(title)
+
+	var body := Label.new()
+	body.text = "把 Mod 目录放进 mods 文件夹后重进本页即可，变体会自动出现在这里。\n" + \
+			ProjectSettings.globalize_path(ModAPI.MODS_DIR) + "\n" + \
+			"支持三种形式：defs/*.json 数据包（纯声明）、GDScript 代码 Mod、wasm 黑盒 Mod（沙箱运行）。"
+	body.add_theme_font_size_override("font_size", 13)
+	body.set_meta("secondary", true)
+	vb.add_child(body)
+	return panel
+
+
+# ---------- 卡片 / 进度 ----------
+
+## 卡片与交叉格共用的紧凑样式（标准按钮内边距 16/8 会把交叉格撑到相互挤压）。
+func _style_card(btn: Button) -> void:
+	for state in ["normal", "hover", "pressed"]:
+		var sb := StyleBoxFlat.new()
+		sb.set_corner_radius_all(6)
+		sb.set_border_width_all(1)
+		sb.content_margin_left = 8
+		sb.content_margin_right = 8
+		sb.content_margin_top = 6
+		sb.content_margin_bottom = 8   # 给底部进度条留位置
+		match state:
+			"hover":
+				sb.bg_color = ThemeManager.card().lightened(0.06)
+				sb.border_color = ThemeManager.accent()
+			"pressed":
+				sb.bg_color = ThemeManager.accent().darkened(0.35)
+				sb.border_color = ThemeManager.accent()
+			_:
+				sb.bg_color = ThemeManager.card()
+				sb.border_color = ThemeManager.grid_line()
+		btn.add_theme_stylebox_override(state, sb)
+	btn.add_theme_color_override("font_color", ThemeManager.text())
+	btn.add_theme_color_override("font_disabled_color", ThemeManager.text_secondary().darkened(0.3))
+
+
+## 卡片 / 交叉格底部的细进度条（该变体全部尺寸合计的已通关比例）。
+## 只在有进度时才画：变体这么多，玩家需要一眼看出「哪些还没碰过」。
+func _attach_progress(btn: Button, mode_id: String) -> void:
+	var done := _cleared_total(mode_id)
+	if done <= 0:
 		return
-	var line_col := ThemeManager.accent().darkened(0.42)
-	var c: Button = _nodes[0]
-	var cp := c.position + c.size * 0.5
-	for i in range(1, _nodes.size()):
-		var m: Dictionary = MODES[i]
-		var b: Button = _nodes[i]
-		if not is_instance_valid(b) or String(m["kind"]) != "global":
-			continue
-		var p := b.position + b.size * 0.5
-		draw_line(cp, p, line_col, 2.0, true)
-	# 非外圈节点（C 类 / 混合）画在枝干上的小圆点，标识层级
-	for i in range(1, _nodes.size()):
-		var m: Dictionary = MODES[i]
-		if String(m["kind"]) == "global":
-			continue
-		var b: Button = _nodes[i]
-		if not is_instance_valid(b):
-			continue
-		var p := b.position + b.size * 0.5
-		var col := ThemeManager.text_secondary().darkened(0.25) if String(m["kind"]) == "mixed" else line_col
-		draw_circle(p, 3.5, col)
-	draw_circle(cp, 7.0, ThemeManager.accent().darkened(0.15))
+	var total := SIZES.size() * LEVELS_PER_SET
+	btn.draw.connect(func():
+		# 必须显式写成 btn.draw_rect(...)：GDScript 的 lambda 里 self 是外层对象
+		#（= 选关页），直接 draw_rect 会画到「正在绘制的那个节点」之外 → 报 !drawing。
+		var w: float = maxf(btn.size.x - 16.0, 1.0)
+		var y: float = btn.size.y - 7.0
+		btn.draw_rect(Rect2(Vector2(8.0, y), Vector2(w, 3.0)), ThemeManager.grid_line(), true)
+		btn.draw_rect(Rect2(Vector2(8.0, y), Vector2(w * float(done) / float(total), 3.0)),
+				ThemeManager.safe(), true))
+
+
+## 该变体在各尺寸下的已通关总数（0 ~ SIZES.size() * LEVELS_PER_SET）。
+func _cleared_total(mode_id: String) -> int:
+	var n := 0
+	for s in SIZES:
+		for i in LEVELS_PER_SET:
+			if _is_cleared(LevelSequence.level_key(mode_id, s, i)):
+				n += 1
+	return n
+
+
+
 
 
 # ==================== 弹窗 ====================
@@ -496,7 +1028,11 @@ func _close_popup() -> void:
 	tw.tween_property(_popup, "modulate:a", 0.0, ANIM)
 	tw.chain().tween_callback(func():
 		ov.queue_free()
-		_popup_closing = false)
+		_popup_closing = false
+		# 弹窗开着期间若有 Mod 加载/卸载，此刻补建页面
+		if _modes_dirty:
+			_modes_dirty = false
+			_rebuild_all())
 	_size_btns.clear()
 	_mode_idx = -1
 
@@ -572,15 +1108,20 @@ func _make_tile(idx: int) -> Button:
 	btn.focus_mode = Control.FOCUS_NONE
 	var unlocked := _is_unlocked(idx)
 	var cleared := _is_cleared(_level_key(idx))
+	# 跳过态必须与「已通关 ✓」区分：玩家看到「第 2 关没打勾却能进第 3 关」
+	# 会当成 bug，所以给跳过单独的角标 ›（可回头补，补完就变 ✓）。
+	var skipped := (not cleared) and _is_skipped(_level_key(idx))
 	btn.text = str(idx + 1)
 	if cleared:
 		btn.text += "  ✓"
+	elif skipped:
+		btn.text += "  ›"
 	elif not unlocked:
 		btn.text = "🔒"
 	btn.disabled = not unlocked
 	btn.set_meta("idx", idx)  # 选中态刷新需要回读关卡序号
 	btn.pressed.connect(_on_tile_pressed.bind(idx))
-	_style_tile(btn, idx == _selected, cleared)
+	_style_tile(btn, idx == _selected, cleared, skipped)
 	UiTheme.bind_hover(btn, 1.05)
 	return btn
 
@@ -641,7 +1182,10 @@ func _on_tile_pressed(idx: int) -> void:
 	for c in _grid.get_children():
 		if c is Button:
 			var i := int(c.get_meta("idx", -1))
-			_style_tile(c, i == _selected, _is_cleared(_level_key(i)))
+			var key := _level_key(i)
+			var done := _is_cleared(key)
+			# 跳过态同样要刷新：不传的话点一下别的格子就会把 › 的样式冲掉
+			_style_tile(c, i == _selected, done, (not done) and _is_skipped(key))
 	_refresh_stat()
 
 
@@ -685,18 +1229,24 @@ func _mine_count() -> int:
 			String(m["clue"]), m.get("globals", []), SIZES[_size_idx])["mines"])
 
 
-## 最新解锁关卡：第一个未通关的关卡；全部通关则为最后一关。
+## 最新解锁关卡：第一个「既未通关、也未跳过」的关卡；都没有则为最后一关。
+## 跳过的关不再算「待攻克」——否则跳过后回到选关页，会被重新定位回刚跳过的那一关，
+## 玩家看到的是「跳过没生效」（明明已经跳过了）。
 func _latest_unlocked() -> int:
 	for i in LEVELS_PER_SET:
-		if not _is_cleared(_level_key(i)):
+		var key := _level_key(i)
+		if not _is_cleared(key) and not _is_skipped(key):
 			return i
 	return LEVELS_PER_SET - 1
 
 
+## 解锁条件：前一关**已通关或已跳过**。
+## 跳过是失败终局给出的正当出路，同样推进序列（否则跳过按钮点了也进不去下一关）。
 func _is_unlocked(idx: int) -> bool:
 	if idx == 0:
 		return true
-	return _is_cleared(_level_key(idx - 1))
+	var prev := _level_key(idx - 1)
+	return _is_cleared(prev) or _is_skipped(prev)
 
 
 ## 演示预设：首次进入某套时预置前 MOCK_CLEARED 关为「已通关」（便于演示解锁/继续流程）。
@@ -784,6 +1334,7 @@ func _ensure_level_file_async(idx: int) -> String:
 	var deadline := Time.get_ticks_msec() + _gen_timeout(s)
 	var gen := PuzzleGenerator.new()
 	var out := ""
+	# 说明：生成期间界面仍可响应（每次 attempt 之间 await 让帧），取消按钮据此生效。
 	var started_ms := Time.get_ticks_msec()
 	for attempt in GEN_ATTEMPTS:
 		await get_tree().process_frame
@@ -918,22 +1469,7 @@ func _style_frame() -> void:
 	_frame.add_theme_stylebox_override("panel", sb)
 
 
-## 待开放节点（混合档）：暗色弱化，与可玩变体在视觉上区分。
-func _style_node_locked(b: Button) -> void:
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = ThemeManager.card().darkened(0.38)
-	sb.set_corner_radius_all(8)
-	sb.set_border_width_all(1)
-	sb.border_color = ThemeManager.text_secondary().darkened(0.45)
-	sb.content_margin_left = 10
-	sb.content_margin_right = 10
-	sb.content_margin_top = 6
-	sb.content_margin_bottom = 6
-	b.add_theme_stylebox_override("normal", sb)
-	b.add_theme_color_override("font_color", ThemeManager.text_secondary())
-
-
-## 尺寸选项按钮：选中态蓝色高亮。
+## 尺寸选项按钮 / 页签：选中态蓝色高亮。
 func _style_choice(b: Button, active: bool) -> void:
 	var sb := StyleBoxFlat.new()
 	sb.set_corner_radius_all(6)
@@ -952,8 +1488,8 @@ func _style_choice(b: Button, active: bool) -> void:
 	b.add_theme_color_override("font_color", ThemeManager.text())
 
 
-## 关卡方块：选中蓝色高亮；已通关绿色调；未解锁暗色。
-func _style_tile(b: Button, selected: bool, cleared: bool) -> void:
+## 关卡方块四态：选中蓝色高亮 / 已通关绿 / 已跳过中性偏蓝 / 未解锁灰（禁用）。
+func _style_tile(b: Button, selected: bool, cleared: bool, skipped: bool = false) -> void:
 	var sb := StyleBoxFlat.new()
 	sb.set_corner_radius_all(8)
 	sb.set_border_width_all(2 if selected else 1)
@@ -963,6 +1499,11 @@ func _style_tile(b: Button, selected: bool, cleared: bool) -> void:
 	elif cleared:
 		sb.bg_color = ThemeManager.safe().darkened(0.55)
 		sb.border_color = ThemeManager.safe().darkened(0.2)
+	elif skipped:
+		# 已跳过：可点的中性调，介于「已通关的绿」与「未解锁的灰」之间——
+		# 一眼看出这关被让过去了、而且随时能回来补。
+		sb.bg_color = ThemeManager.accent().darkened(0.78)
+		sb.border_color = ThemeManager.accent().darkened(0.45)
 	else:
 		sb.bg_color = ThemeManager.card()
 		sb.border_color = ThemeManager.grid_line()
@@ -992,12 +1533,15 @@ func _style_dot(d: Button, active: bool) -> void:
 	d.add_theme_stylebox_override("pressed", sb)
 
 
+## 页面外 chrome 的主题刷新（标题 / 返回按钮 / 页签）。
+## 卡片、交叉格、表头标签都在页面内部，样式全由代码生成 → 由 _on_theme_changed 整页重建，
+## 这里逐层刷反而容易漏（且会把 _style_choice 的选中态打回默认外观）。
 func _apply_theme() -> void:
 	for n in get_children():
 		if n is Label:
 			var col := ThemeManager.text_secondary() if bool(n.get_meta("secondary", false)) else ThemeManager.text()
 			n.add_theme_color_override("font_color", col)
-		elif n is Button:
+		elif n is Button and n.has_meta("std_btn"):
 			UiTheme.style_button(n)
 	if _overlay != null:
 		_apply_popup_theme(_overlay)
@@ -1019,16 +1563,19 @@ func _apply_popup_theme(root: Node) -> void:
 
 ## 主题切换去抖（v3.1）：ThemeManager 一次切换广播 ~10 次 theme_changed，而
 ## _refresh_popup 会重跑 4 次 RuleFeasibility 查询（弹窗开着时 = 40 次 CP-SAT 调用
-## + 网格整体重建闪烁）。300ms 去抖把多次广播合并为 1 次刷新，最终状态一致。
+## + 网格整体重建闪烁）；再加上重建三页（16 卡片 + 56 交叉格）同样不便宜。
+## 300ms 去抖把多次广播合并为 1 次刷新，最终状态一致——文字色仍立即生效，
+## 避免切换瞬间闪回旧色。
 var _theme_refresh_pending := false
 
 func _on_theme_changed() -> void:
 	_apply_theme()
-	if _mode_idx < 0 or _theme_refresh_pending:
+	if _theme_refresh_pending:
 		return
 	_theme_refresh_pending = true
 	await get_tree().create_timer(0.3).timeout
 	_theme_refresh_pending = false
+	_rebuild_pages()
 	if _mode_idx >= 0:
 		_refresh_popup()
 

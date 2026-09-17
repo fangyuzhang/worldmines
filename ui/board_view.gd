@@ -71,6 +71,13 @@ func _ready() -> void:
 	GameSession.set_drawing_provider(func(): return _drawing.get_save_data())
 	# 双时序兼容：_ready 里手动调一次（恢复路径时 session 先开好、场景后进来）
 	_on_session_started()
+
+
+## 离开场景时注销绘画采集回调：
+## autoload（GameSession）生命周期长于本场景，不注销会留下悬空的 provider 闭包，
+## 之后的自动存档会在引擎层报错（见 GameSession._get_drawing 的同名注释）。
+func _exit_tree() -> void:
+	GameSession.set_drawing_provider(Callable())
 	get_viewport().connect("size_changed", _layout)
 	_layout()
 

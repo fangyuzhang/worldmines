@@ -62,6 +62,13 @@ dotnet build
 | 提示 | `core/hint_solver.gd` |
 | 唯一解计数 | `core/brute_force_oracle.gd` / `solver/RuleSolver.cs` |
 | 关卡 JSON 加载 | `ui/level_loader.gd` |
+| 选关页（三页：单项/混合档/Mod） | `ui/level_select.gd`（页面排布与进度）+ `ui/variant_catalog.gd`（**成员一律从规则注册表派生**，禁止再写死变体表） |
+| **进度键（`ProgressStore`）** | 生成关卡一律走 `LevelSequence.progress_key(path)` → `gen://<mode>/<size>/<idx>`；手工关保持路径。**写与读必须同键**（选关页打勾/解锁、`has_next` 都按此键读，写成文件路径会读不到 → 见坑表 #28） |
+| 跳过本关（失败后的出路） | 终局页 `game_over.gd` 失败时显示 → `LevelSequence.skip_to_next()` 记 `skipped`（**不算通关**：`ProgressStore.record_skip` 与 `cleared` 分开存）→ 选关页 `_is_unlocked` 认 `cleared or skipped`，被跳过的方块显示 `›` 而非 `✓` |
+| 混合档有哪些组合 | **两张表**：约束×线索 `VariantCatalog.mixed_all()`（8 × 7 = 56）+ 约束×约束 `gg_all()`（C(7,2) = 21 对，`mx+ep` 判逻辑冗余不产生 → 20 个）。两者判 forbid 的都自动排除；表轴 = `mixed_clue_ids()` / `mixed_global_ids()` |
+| 混合档两张表怎么选 | 选关页「混合档」页内开关：`_mixed_gg`（false = 约束×线索 / true = 约束×约束上三角）。G+G 的尺寸级不可行比 G+C 常见（如 mx+rl 的 6×6/8×8），由弹窗的尺寸按钮禁用 + 自动切最近可行尺寸兜住，**不是死格** |
+| **Def 数据包（`defs/*.json`）的归属** | 它注册进 `DefEngine`（`ModLoader.load_mod_dir` 返回 `[{name,type}]`，`ModAPI` 存在 mod 记录的 `"defs"` 键），**不进 `RuleRegistry`** → 因此不产生选关页卡片，Mod 页如实列出它的 Def 名并注明去模组页生成关卡 |
+| Def 包怎么玩 | 主菜单「模组」页 → `PuzzleGenerator.generate_with_engine(ModAPI.defs, def_name, ...)` 生成到 `user://mods/<mod>/levels/`。它与规则平台（CP-SAT 生成 / 提示 / 可行性）**是两条独立的链**，打通需要 Def→`RulePlugin` 桥 —— 尚未做，别误以为 Def 包是坏的 |
 | 存档/崩溃恢复 | `ui/save_coordinator.gd` |
 | 对局流程 | `ui/game_session.gd` |
 | 棋盘渲染 | `ui/board_view.gd` |
@@ -478,11 +485,18 @@ func on_load() -> bool:
 14. 删掉某脚本的 `class_name` 后，`.godot/global_script_class_cache.cfg` **不会自动失效**，编译器仍按旧映射把它当脚本类（表现为 `Cannot find member "x" in base res://...`）。修复：删除该缓存文件 + 跑一次完整 `--headless --path . --import` 重建。
 15. `BruteForceOracle.count_solutions_classic` **不接受自定义 check 回调**（只支持内置 `constraint` 枚举）。需要自定义 check（如 wasm globalCheck）时必须改用 `count_solutions_variant`——否则 check 定义了却从未被调用，**静默失效**。
 16. **异形拓扑坐标必须非负**：CP-SAT 的 cell 索引是 `[0,rows)×[0,cols)`，负坐标会触发 `RuleSolver.FindForcedCells: Index was outside the bounds of the array`。Mod 可用任意坐标（含负），入口统一调用 `AdjacencyGrid.normalized()` 归一化。
-17. **GDScript 缩进 tab/空格不能混用**（Parse Error）。本项目 `ui/`、`core/` 主流是 **4 空格**；新增代码务必用空格，否则出现"看着对齐却编译不过"。
+17. **GDScript 缩进 tab/空格不能混用**（Parse Error）。本项目**逐文件风格不统一**：`hud.gd`/`game_session.gd`/`ui_theme.gd`/`progress_store.gd` 用 4 空格，`level_select.gd`/`variant_catalog.gd` 用 tab——改文件前先看它用的是什么，别把「看着对齐却编译不过」引进文件。
 18. **隐藏态规则载盘丢失（2026-09-15 夜侦破，重大）**：`Board.load_level` 不恢复规则隐藏态——o5x 斜向选择 s1 / o4 隐藏半径在 JSON 无字段（DT 骨牌有专用 `dominoes` 落盘先例；后引入的隐藏态规则缺对应机制）→ 载盘后 `_compute_clues` 用空/残留状态 → **线索数字全错** → 门禁推理踩雷、游戏内将显示错误数字。**「生成时复核通过」具欺骗性（同进程状态仍正确，灯下黑）**。判盘/复验先做 seed 重放恢复（`rng.seed=seed*1000003+attempt` → `place_mines`，实测 100% 匹配、恢复后 100% 可解）；修复方案（export/import 接口 + 落盘 + 存量补字段，DT 先例通用化）见桌面待办「零」节。
 19. **mod 钩子必须 `return true`（v3.1）**：`ModAPI._call_hook` 以返回值判定成败（GDScript 无 try/catch，运行时错误只能靠「没返回 true」探测）。漏写 → `load_mod` 判失败 → **diff 反清理把该 mod 注册的规则全部撤销**（表象：大片测试红「规则未注册」）。修复先查 `demo/mods/*/entry.gd` 是否漏写（见「Mod 创作契约 → 钩子返回值契约」）。
 20. **UI 对引擎内部的直写已收敛（v3.1）**：Board 新增公共 API `undo_explode`/`restore_cell_states`/`evaluate_win`/`recompute`——UI 层**禁止**再直写 `cell.state`/`board.state`/调用 `_` 前缀私有方法（历史：game_session 直写曾与存档/撤销逻辑互相踩踏）。game_session 已拆出 `NoGuessGuard`（无猜守卫，Board 按次传参不持引用）与 `HintCoordinator`（提示编排）。
 21. **Windows 跑全量 GUT 不要加 `-gno_error_tracking`**：该参数禁用 GUT 错误追踪，会把「预期 push_error」断言型测试（如 test_t8_quarantine / test_t9_state_machine）打成假失败。Linux 沙箱防误报才用它。
+22. **Button 的最小宽度由 `text` 撑出，且 Button 不支持 autowrap**（只有 `Label` 有）。给卡片/格子按钮塞长说明文字会把它撑到几百 px——流式容器随之少排一列、末件被挤出可视区（选关页实测踩过）。正确做法：按钮 `text` 留空，内部放子 `Label`（`autowrap_mode` + `max_lines_visible` + `OVERRUN_TRIM_ELLIPSIS`），宽度只由 `custom_minimum_size` 决定；子节点 `mouse_filter = MOUSE_FILTER_IGNORE` 保证点击落到按钮上。
+23. **连到 `control.draw` 信号的 lambda 里，`draw_rect` 会落在外层脚本对象上**（GDScript lambda 的 self 是外层对象，不是那个控件）→ 必须显式写 `btn.draw_rect(...)`，否则报 `Drawing is only allowed inside this node's _draw()`。加自定义绘制（如卡片底部进度条）时踩过。
+24. **`autowrap_mode` 的 `Label` 最小宽度≈0**，放进 `HFlowContainer` 会被压成一列单字（整段说明竖着排满一屏）。这类「整行文字」必须挂在 `VBoxContainer` 下占满一行，不要混进流式容器。肉眼才发现的问题，测试要用 **`size.x > 阈值`** 断言锁住（见 `test_ls10_def_mod_lists_its_defs`）。
+25. **Def 数据包与规则平台是两条链**：`ModLoader` 把 Def 写进共享 `DefEngine`，代码/wasm Mod 走 `RuleRegistry`。选关页变体表**只**由 `RuleRegistry` 派生，所以 Def 包天然没有卡片——这是链路差异，不是 bug（误判过一次）。要让它出现在选关页必须造 Def→`RulePlugin` 桥并且处理「无构造式 builder 的 Def 组合无法 CP-SAT 生成」的情况。
+26. **改代码时同一文件的多处编辑必须串行**（工具层教训，非引擎坑）：并行发出的两处编辑各自基于同一份旧内容做替换，后落地的会整段覆盖前一处的改动——实测 `ui/variant_catalog.gd` 新增的 `gg_all()` 定义被同批另一处编辑抹掉，报 `Function "gg_all()" not found in base self`（编译失败的连锁反应更迷惑：`level_select.tscn` 实例退化成裸 `Control`，所有 UI 测试齐刷刷报 `Nonexistent function '_open_popup'`）。看到「所有 UI 测试同时失败」时先查是不是依赖脚本编译不过，而不是去改 UI。
+27. **流式容器默认左对齐**（`FlowContainer.alignment` 默认 `ALIGNMENT_BEGIN`）：卡片宽度不能整除可视宽时，余量全堆右侧——实测 1280 宽下 4 列卡片左留白 0px、右留白 90px，肉眼就是「没居中」（用户实测反馈）。多行卡片流一律设 `alignment = FlowContainer.ALIGNMENT_CENTER`（`last_wrap_alignment` 默认继承它）；`GridContainer` 的表同理会左贴，改 `size_flags_horizontal = SIZE_SHRINK_CENTER`。**测试要用「左留白 == 右留白」断言锁住**（`test_ls5_cards_do_not_overlap`）：这类纯观感问题断言不写就永远不会有人发现。
+28. **进度键：写与读必须同源**（v3.3 修复，用户报「希望加『下一关』」时挖出的真 bug）：`GameSession._finish` 原先直接拿 `level_path`（`user://gen_levels/<mode>_<size>_<idx>.json`）当进度键，而选关页打勾/解锁与 `LevelSequence.has_next` 一律查**序列键** `gen://<mode>/<size>/<idx>`——写的和读的永远不是同一个键。症状极具误导性：功能明明写好了（按钮、解锁、焦点交接全在）却**永不触发**，看起来像「缺功能」。现在统一走 `LevelSequence.progress_key()`；`ProgressStore` 首次加载时把旧的路径键迁移到序列键（幂等、字段按 or/min/相加合并、不丢 best）。**动任何进度相关代码前先问：这个键从哪来、谁按同一个键读？** 判别技巧：真实通关的 `best` 是浮点（`12.0925…`），mock 时代的假记录是整数（`20.0`）。
 
 > v2.9.3 已完成全量交叉验证，42 项发现中 24 项已修、2 项误报推翻、1 项回滚。
 > 完整清单见 GDD `25_HANDOFF交接文档.md` §13.1（已修复）/ §13.2（未修复，含重构级与需拍板项）。

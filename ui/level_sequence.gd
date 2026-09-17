@@ -30,6 +30,20 @@ static func level_key(mode_id: String, size: int, idx: int) -> String:
 	return "gen://%s/%d/%d" % [mode_id, size, idx]
 
 
+## 关卡路径 → 进度键。**写进度与读进度必须都经过这里**：
+## 生成关取序列键（gen://<mode>/<size>/<idx>），非生成关（res://levels/*.json 手工关、
+## 测试关卡）没有序列概念 → 原样返回路径。
+##
+## 为什么要有这个函数：写侧原先直接拿 level_path（user://gen_levels/*.json）当键，
+## 而读侧（选关页打勾/解锁、has_next）一律查序列键——写的和读的永远不是同一个键，
+## 表现就是「通关了不打勾、下一关永远锁着、『下一关』按钮永不出现」。
+static func progress_key(path: String) -> String:
+	var p := parse_path(path)
+	if p.is_empty():
+		return path
+	return level_key(str(p["mode"]), int(p["size"]), int(p["idx"]))
+
+
 ## 解析 gen_levels 路径 → {"mode": String, "size": int, "idx": int}；非生成关返回空字典。
 static func parse_path(path: String) -> Dictionary:
 	var base := path.get_file().get_basename()
@@ -65,6 +79,23 @@ static func has_next(path: String) -> bool:
 		return false
 	var p := parse_path(next_path)
 	return ProgressStore.is_cleared(level_key(str(p["mode"]), int(p["size"]), int(p["idx"]) - 1))
+
+
+## 失败终局「跳过本关」是否可用：只要**存在下一关**即可。
+## 与 has_next 的区别在前提不同：has_next 用于胜利之后（要求当前关已通关），
+## 而跳过发生在失败终局——当前关必然未通关，若沿用 has_next 就永远不会显示。
+static func has_skip_target(path: String) -> bool:
+	return next_level_path(path) != ""
+
+
+## 跳过当前关：记为 skipped（不算通关），只用于解锁下一关。
+## 返回下一关路径（无下一关 → ""，调用方据此不显示该入口）。
+static func skip_to_next(path: String) -> String:
+	var next_path := next_level_path(path)
+	if next_path == "":
+		return ""
+	ProgressStore.record_skip(progress_key(path))   # 写序列键，与读取侧同一约定
+	return next_path
 
 
 # ============ 终局 → 选关页 的焦点交接 ============

@@ -74,6 +74,55 @@ func test_p5_clear_all_and_count() -> void:
 	assert_eq(ProgressStore.cleared_count(), 0, "clear_all 应清空")
 
 
+# P7：跳过本关 —— 记为 skipped，但**不算通关**
+# （跳过若写成 cleared，通关统计与最佳用时都会失真：历史坑见 level_select._mock_cleared）
+func test_p7_skip_is_not_clear() -> void:
+	ProgressStore.record_skip(LEVEL_A)
+	assert_true(ProgressStore.is_skipped(LEVEL_A), "应记为已跳过")
+	assert_false(ProgressStore.is_cleared(LEVEL_A), "跳过不算通关")
+	assert_almost_eq(ProgressStore.best_time(LEVEL_A), -1.0, 0.001, "跳过不产生最佳用时")
+	assert_eq(ProgressStore.cleared_count(), 0, "跳过不计入通关数")
+	ProgressStore.reset_cache()
+	assert_true(ProgressStore.is_skipped(LEVEL_A), "跳过状态应落盘")
+
+
+# P8：跳过后回头打通 → skipped 自动清除，转为正常通关
+func test_p8_clear_after_skip_drops_flag() -> void:
+	ProgressStore.record_skip(LEVEL_A)
+	ProgressStore.record_clear(LEVEL_A, 5.0)
+	assert_true(ProgressStore.is_cleared(LEVEL_A))
+	assert_false(ProgressStore.is_skipped(LEVEL_A), "通关后不应再显示为「跳过」")
+	assert_eq(ProgressStore.cleared_count(), 1, "此时才计入通关数")
+
+
+# P9：键一致性 —— 写进度与读进度必须是同一个键
+# 历史 bug：GameSession 写 user://gen_levels/*.json，选关页与 has_next 读 gen://*，
+# 表现为「通关了却不打勾、下一关一直锁着、终局页的『下一关』永不出现」。
+func test_p9_session_win_writes_sequence_key() -> void:
+	GameSession.level_path = "user://gen_levels/classic_5_0.json"
+	GameSession.elapsed = 3.0
+	GameSession.state = GameSession.State.PLAYING
+	GameSession.board = Board.new()
+	GameSession._finish(true)
+	assert_true(ProgressStore.is_cleared(LevelSequence.level_key("classic", 5, 0)),
+			"通关应写进 gen:// 键（选关页与 has_next 正是按这个键读的）")
+	assert_true(LevelSequence.has_next("user://gen_levels/classic_5_0.json"),
+			"通关后 has_next 应为真 → 终局页的「下一关」才会出现")
+	GameSession.board = null
+	GameSession.state = GameSession.State.IDLE
+
+
+# P10：旧键迁移 —— 早期版本按文件路径记进度，加载时应搬到序列键（老存档不能丢）
+func test_p10_migrates_legacy_path_keys() -> void:
+	ProgressStore.record_clear("user://gen_levels/classic_6_1.json", 11.0)
+	ProgressStore.reset_cache()
+	var key := LevelSequence.level_key("classic", 6, 1)
+	assert_true(ProgressStore.is_cleared(key), "旧的文件路径键应在加载时迁移到 gen:// 键")
+	assert_almost_eq(ProgressStore.best_time(key), 11.0, 0.001, "迁移不得丢最佳用时")
+	assert_false(ProgressStore.is_cleared("user://gen_levels/classic_6_1.json"),
+			"迁移后旧键应被移除（幂等）")
+
+
 # P6：GameSession 通关接线（_finish(true) → 写入进度）
 func test_p6_session_win_records_progress() -> void:
 	GameSession.level_path = LEVEL_A

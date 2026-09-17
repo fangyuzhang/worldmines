@@ -60,7 +60,7 @@ func load_clue_def(json_text: String) -> Dictionary:
 		"min_clue": int(data.get("empty_value", 0)),
 	}
 	engine.register_clue_def(def_name, def)
-	return {"ok": true, "def_name": def_name}
+	return {"ok": true, "def_name": def_name, "type": "clue"}
 
 
 ## 从 JSON 文本加载约束 Def。返回 { ok, def_name, reason }。
@@ -79,7 +79,7 @@ func load_constraint_def(json_text: String) -> Dictionary:
 	if def_name == "" or op == "":
 		return {"ok": false, "reason": "缺少 defName/op 或不支持的 op"}
 	engine.register_constraint_def(def_name, {"type": "constraint", "op": op})
-	return {"ok": true, "def_name": def_name}
+	return {"ok": true, "def_name": def_name, "type": "constraint"}
 
 
 ## 从 JSON 文本加载 Def（按 type 自动分发线索/约束）。
@@ -97,13 +97,16 @@ func load_def(json_text: String) -> Dictionary:
 
 
 ## 加载整个 mod 目录（workshop_rule/ 结构：defs/*.json）。
-## 返回 { ok, loaded, reason }。
+## 返回 { ok, loaded, defs, reason }。
+## defs = 本次注册成功的 [{name, type}] 列表——调用方（ModAPI）据此记录「这个 mod 提供了什么」，
+## 选关页 Mod 分页要把它们如实列出来（Def 不进规则注册表，光看变体表会以为该 mod 什么都没有）。
 func load_mod_dir(dir_path: String) -> Dictionary:
 	var defs_dir := dir_path.path_join("defs")
 	var dir := DirAccess.open(defs_dir)
 	if dir == null:
-		return {"ok": false, "loaded": 0, "reason": "无法打开 defs 目录: %s" % defs_dir}
+		return {"ok": false, "loaded": 0, "defs": [], "reason": "无法打开 defs 目录: %s" % defs_dir}
 	var loaded := 0
+	var defs: Array = []
 	var errors: Array = []
 	dir.list_dir_begin()
 	var fname := dir.get_next()
@@ -115,10 +118,11 @@ func load_mod_dir(dir_path: String) -> Dictionary:
 				f.close()
 				if r.get("ok", false):
 					loaded += 1
+					defs.append({"name": str(r.get("def_name", "")), "type": str(r.get("type", ""))})
 				else:
 					errors.append("%s: %s" % [fname, r.get("reason", "")])
 			else:
 				errors.append("%s: 无法读取" % fname)
 		fname = dir.get_next()
 	dir.list_dir_end()
-	return {"ok": loaded > 0, "loaded": loaded, "reason": " ".join(errors)}
+	return {"ok": loaded > 0, "loaded": loaded, "defs": defs, "reason": " ".join(errors)}

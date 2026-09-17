@@ -8,6 +8,7 @@ var _sub_label: Label
 var _panel: PanelContainer
 var _undo_btn: Button
 var _next_btn: Button
+var _skip_btn: Button
 var _again_btn: Button
 
 
@@ -44,6 +45,15 @@ func _ready() -> void:
     _undo_btn.custom_minimum_size = Vector2(240, 44)
     _undo_btn.pressed.connect(func(): GameSession.undo())
     vbox.add_child(_undo_btn)
+
+    # 失败后的出路：跳过本关直接推进序列（解锁下一关，但不计通关）。
+    # 与「下一关」对称：胜利给前进、失败给绕行，两者都不必退回选关页重走。
+    _skip_btn = Button.new()
+    _skip_btn.text = "跳过本关"
+    _skip_btn.focus_mode = Control.FOCUS_NONE
+    _skip_btn.custom_minimum_size = Vector2(240, 44)
+    _skip_btn.pressed.connect(_on_skip_level)
+    vbox.add_child(_skip_btn)
 
     # 通关后直接进入下一关（原先只有「重新开始 / 返回菜单」，
     # 而关卡解锁依赖「通关上一关」，玩家每次都得手动退回选关页重走一遍）。
@@ -89,6 +99,11 @@ func _on_game_ended(won: bool) -> void:
     # 手工关（res://levels/…）没有序列概念 → 不提供该入口。
     if _next_btn != null:
         _next_btn.visible = won and LevelSequence.has_next(GameSession.level_path)
+    # 跳过：失败才有（胜利已给「下一关」），同样只对生成序列关卡提供。
+    # 用 has_skip_target 而非 has_next——后者要求「当前关已通关」，
+    # 而失败终局当前关必然未通关，用它按钮永远不会出现。
+    if _skip_btn != null:
+        _skip_btn.visible = (not won) and LevelSequence.has_skip_target(GameSession.level_path)
     var board: Board = GameSession.board
     var revealed_n: int = board.get_stats()["revealed"] if board != null else 0
     var total: int = int(GameSession.elapsed)
@@ -101,6 +116,19 @@ func _on_game_ended(won: bool) -> void:
 ## 前往同一「变体 × 尺寸」序列的下一关。
 ## 生成流程归选关页管（它才知道怎么生成/缓存关卡文件），这里只交接「翻到哪一套」的意图。
 func _on_next_level() -> void:
+    var p := LevelSequence.parse_path(GameSession.level_path)
+    if not p.is_empty():
+        LevelSequence.request_focus(str(p["mode"]), int(p["size"]))
+    SaveCoordinator.clear()
+    get_tree().change_scene_to_file("res://ui/level_select.tscn")
+
+
+## 跳过本关（失败终局）：记为 skipped → 解锁下一关 → 回选关页定位到下一关。
+## 与「下一关」共用同一条导航路径（意图交接给选关页），区别只在进度写法：
+## 跳过不写 cleared，所以通关统计与最佳用时不受影响，玩家回头补通后标记自动转 ✓。
+func _on_skip_level() -> void:
+    if LevelSequence.skip_to_next(GameSession.level_path) == "":
+        return  # 没有下一关（按钮本不该出现，防御）
     var p := LevelSequence.parse_path(GameSession.level_path)
     if not p.is_empty():
         LevelSequence.request_focus(str(p["mode"]), int(p["size"]))

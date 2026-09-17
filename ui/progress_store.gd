@@ -23,7 +23,43 @@ static func _data() -> Dictionary:
             f.close()
             if parsed is Dictionary and (parsed as Dictionary).has("levels"):
                 _cache = parsed
+    _migrate_legacy_keys()   # 只操作 _cache，不回调 _data()，无递归
     return _cache
+
+
+## 一次性键迁移（v3.3）：早期版本把「生成关卡」按**文件路径**记进度
+## （user://gen_levels/<mode>_<size>_<idx>.json），而读取侧（选关页打勾/解锁、
+## LevelSequence.has_next）查的是序列键 gen://<mode>/<size>/<idx>——两者永不相等，
+## 那些通关记录因此永远读不到（实测存档里 4 条真实记录处于这种状态）。
+## 这里把它们搬到序列键：目标键已存在时按字段合并，两边数据都不丢。
+## 幂等（跑完不再有 user://gen_levels/ 键），异常也不影响其它进度。
+static func _migrate_legacy_keys() -> void:
+    var levels: Dictionary = _cache.get("levels", {})
+    var moved := 0
+    for k in levels.keys():
+        var key := str(k)
+        if not key.begins_with("user://gen_levels/"):
+            continue
+        var new_key := LevelSequence.progress_key(key)
+        if new_key == key:
+            continue
+        var old: Dictionary = levels[key]
+        var cur: Dictionary = levels.get(new_key, {})
+        var merged: Dictionary = cur.duplicate()
+        merged["cleared"] = bool(cur.get("cleared", false)) or bool(old.get("cleared", false))
+        merged["skipped"] = bool(cur.get("skipped", false)) or bool(old.get("skipped", false))
+        merged["plays"] = int(cur.get("plays", 0)) + int(old.get("plays", 0))
+        var bests: Array = []
+        for rec in [cur, old]:
+            var b := float((rec as Dictionary).get("best", -1.0))
+            if b >= 0.0:
+                bests.append(b)
+        merged["best"] = bests.min() if not bests.is_empty() else -1.0
+        levels[new_key] = merged
+        levels.erase(key)
+        moved += 1
+    if moved > 0:
+        _flush()
 
 
 static func _flush() -> void:
@@ -36,6 +72,7 @@ static func _flush() -> void:
 
 
 ## 记录一次通关：cleared=true，best 取最小值（秒）。
+## 通关同时清掉「跳过」标记：跳过后回头打通，这一关就是正常通关了。
 static func record_clear(level_path: String, seconds: float) -> void:
     if level_path == "":
         return
@@ -43,10 +80,24 @@ static func record_clear(level_path: String, seconds: float) -> void:
     var levels: Dictionary = d["levels"]
     var rec: Dictionary = levels.get(level_path, {"cleared": false, "best": -1.0, "plays": 0})
     rec["cleared"] = true
+    rec["skipped"] = false
     rec["plays"] = int(rec.get("plays", 0)) + 1
     var best := float(rec.get("best", -1.0))
     if best < 0.0 or seconds < best:
         rec["best"] = seconds
+    levels[level_path] = rec
+    _flush()
+
+
+## 记录一次「跳过本关」（失败终局的选择）：**只解锁下一关，不算通关**。
+## 与 cleared 分开存是刻意的：跳过若写成 cleared，通关统计与最佳用时都会失真
+## （历史坑：演示预设直写 cleared，留下过永久的假「20.00 秒通关」记录）。
+static func record_skip(level_path: String) -> void:
+    if level_path == "":
+        return
+    var levels: Dictionary = _data()["levels"]
+    var rec: Dictionary = levels.get(level_path, {"cleared": false, "best": -1.0, "plays": 0})
+    rec["skipped"] = true
     levels[level_path] = rec
     _flush()
 
@@ -65,6 +116,12 @@ static func record_attempt(level_path: String) -> void:
 static func is_cleared(level_path: String) -> bool:
     var rec: Dictionary = _data()["levels"].get(level_path, {})
     return bool(rec.get("cleared", false))
+
+
+## 是否被「跳过」。与 cleared 互不蕴含：跳过只解锁下一关，不计入通关统计。
+static func is_skipped(level_path: String) -> bool:
+    var rec: Dictionary = _data()["levels"].get(level_path, {})
+    return bool(rec.get("skipped", false))
 
 
 ## 最佳用时（秒）；未通关返回 -1.0。

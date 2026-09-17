@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>选关页 · 分区视图（单项 / 混合档 / Mod）Demo</title>
+<style>
+/* 配色取自游戏 ThemeManager._DARK，保证观感一致 */
+:root{
+  --bg:#1E1E24; --card:#28282E; --text:#E0E0E6; --dim:#888892;
+  --accent:#7CB9E8; --danger:#C0504D; --safe:#4EA96B;
+  --line:rgba(0,0,0,.20); --grid:#3A3A42;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--bg);color:var(--text);
+  font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+header{padding:18px 24px 12px;border-bottom:1px solid rgba(255,255,255,.06)}
+h1{margin:0 0 6px;font-size:20px;font-weight:600}
+.sub{color:var(--dim);font-size:13px;line-height:1.7}
+.tabs{display:flex;gap:8px;padding:14px 24px 0}
+.tab{
+  padding:9px 18px;border:1px solid var(--grid);border-radius:6px;background:var(--card);
+  color:var(--text);font-size:14px;cursor:pointer;transition:.15s;
+}
+.tab:hover{border-color:var(--accent)}
+.tab.on{border-color:var(--accent);background:rgba(124,185,232,.14)}
+.flags{display:flex;gap:8px;margin-left:auto;align-items:center;color:var(--dim);font-size:12px}
+.flag{display:inline-flex;align-items:center;gap:5px}
+.dot{width:9px;height:9px;border-radius:3px;display:inline-block}
+
+main{padding:18px 24px 60px}
+.panel{display:none}
+.panel.on{display:block}
+
+/* ============ 视图 A：网格视图（提案） ============ */
+.sec{margin:0 0 22px}
+.sec-head{display:flex;align-items:baseline;gap:10px;margin:0 0 10px}
+.sec-title{font-size:15px;font-weight:600;color:var(--text)}
+.sec-note{font-size:12px;color:var(--dim)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:12px}
+.card{
+  background:var(--card);border:1px solid var(--grid);border-radius:8px;
+  padding:11px 12px;cursor:pointer;transition:.16s;position:relative;min-height:96px;
+}
+.card:hover{border-color:var(--accent);transform:translateY(-2px);
+  box-shadow:0 4px 18px rgba(0,0,0,.35)}
+.card .row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.card .name{font-size:15px;font-weight:600}
+.chip{font-size:11px;padding:1px 6px;border-radius:4px;background:rgba(124,185,232,.16);
+  color:var(--accent);border:1px solid rgba(124,185,232,.35)}
+.chip.mod{background:rgba(230,150,60,.16);color:#E6A24B;border-color:rgba(230,150,60,.4)}
+.chip.core{background:rgba(78,169,107,.16);color:var(--safe);border-color:rgba(78,169,107,.4)}
+.card .desc{font-size:12px;color:var(--dim);line-height:1.55;overflow:hidden;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.card .cnt{position:absolute;right:10px;bottom:8px;font-size:11px;color:var(--dim)}
+.card.featured{border-color:rgba(78,169,107,.5);grid-column:span 2;min-height:110px}
+
+/* ============ 混合档：Excel 交叉表 ============ */
+.xl{overflow-x:auto;border:1px solid var(--grid);border-radius:8px}
+table.xl-table{border-collapse:separate;border-spacing:0;width:100%;min-width:1080px}
+.xl-table th,.xl-table td{border-right:1px solid rgba(255,255,255,.06);
+  border-bottom:1px solid rgba(255,255,255,.06)}
+.xl-table th{background:#232329;font-weight:600;padding:8px 6px;position:sticky;top:0;z-index:2}
+.xl-table thead th:first-child{left:0;z-index:3}
+.xl-table tbody th{position:sticky;left:0;z-index:1;background:#232329;text-align:right;
+  padding:8px 10px;white-space:nowrap;font-size:12px}
+.xl-table thead th{text-align:center;font-size:12px;line-height:1.4}
+.xl-table thead th .code{color:var(--accent);font-size:11px;display:block}
+.xl-table thead th .nm{font-size:12px}
+.xl-table tbody td{padding:0;background:var(--bg)}
+.cell{height:44px;display:flex;align-items:center;justify-content:center;text-align:center;
+  font-size:11.5px;cursor:pointer;transition:.12s;padding:0 4px;line-height:1.25}
+.cell:hover{background:rgba(124,185,232,.2);box-shadow:inset 0 0 0 1px var(--accent)}
+.cell .tag{font-size:10px;color:var(--safe);display:block}
+tr.hot th,tr.hot td{background:#2E2E36}
+td.hot{background:rgba(124,185,232,.08)!important}
+.cell.on-diag{color:var(--text)}
+.cell.off-diag{color:#A9A9B4}
+.xl-legend{display:flex;gap:16px;font-size:12px;color:var(--dim);margin:8px 0 0;flex-wrap:wrap}
+.sw{font-size:13px;padding:6px 12px;border:1px solid var(--grid);border-radius:6px;
+  background:var(--card);color:var(--text);cursor:pointer}
+.sw.on{border-color:var(--accent);background:rgba(124,185,232,.14);font-weight:600}
+.xl-legend .k{display:inline-flex;align-items:center;gap:6px}
+.kbox{width:22px;height:12px;border-radius:3px;border:1px solid var(--grid);display:inline-block}
+
+/* ============ 页内小工具条（页标题 + 右侧开关） ============ */
+.pgbar{display:flex;align-items:center;gap:14px;margin:0 0 16px}
+.pgbar .sub{margin:0;flex:1}
+.switch{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--dim);
+  cursor:pointer;user-select:none;padding:6px 10px;border:1px solid var(--grid);border-radius:6px}
+.switch input{accent-color:#7CB9E8;cursor:pointer}
+
+/* ============ 空状态（Mod 页在无 Mod 时） ============ */
+.empty-state{border:1px dashed var(--grid);border-radius:10px;padding:34px 20px;text-align:center;
+  color:var(--dim);font-size:13.5px;line-height:1.9}
+.empty-state b{color:var(--text);display:block;font-size:15px;margin-bottom:6px}
+.empty-state code{background:rgba(255,255,255,.04);padding:1px 6px;border-radius:4px}
+
+/* ============ 视图 B：环形图谱（现状，按同一套公式复现） ============ */
+.map-wrap{display:flex;justify-content:center}
+.map{position:relative;width:1280px;height:720px;background:var(--bg);border:1px solid var(--grid);
+  border-radius:10px;transform-origin:top center;overflow:hidden}
+.map-title{position:absolute;left:0;right:0;top:18px;text-align:center;font-size:22px}
+.map-hint{position:absolute;left:0;right:0;top:56px;text-align:center;font-size:12px;color:var(--dim)}
+.map-back{position:absolute;left:24px;top:18px;padding:7px 14px;border:1px solid var(--grid);
+  border-radius:6px;background:var(--card);font-size:13px}
+.node{position:absolute;transform:translate(-50%,-50%);border:1px solid var(--grid);
+  background:var(--card);border-radius:6px;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;text-align:center;cursor:pointer;
+  font-size:12px;line-height:1.25;transition:border-color .15s,box-shadow .15s}
+.node:hover{border-color:var(--accent);box-shadow:0 0 0 2px rgba(124,185,232,.25)}
+.node.core{width:150px;height:74px;font-size:16px;border-color:rgba(78,169,107,.5)}
+.node.ring{width:64px;height:48px}
+.node.mixed{width:72px;height:42px}
+.node b{font-weight:600}
+.node i{font-style:normal;color:var(--dim);font-size:11px}
+.map-legend{position:absolute;left:24px;bottom:14px;font-size:12px;color:var(--dim)}
+
+/* ============ 关卡弹窗（两视图共用） ============ */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;
+  align-items:center;justify-content:center;z-index:10}
+.overlay.on{display:flex}
+.popup{width:1040px;max-width:94vw;background:var(--card);border-radius:12px;
+  border:1px solid rgba(124,185,232,.35);box-shadow:0 18px 50px rgba(0,0,0,.55);padding:18px 20px 20px}
+.pop-head{display:flex;align-items:center;margin-bottom:14px}
+.pop-title{font-size:22px;font-weight:600;flex:1}
+.pop-close{width:36px;height:36px;border:1px solid var(--grid);border-radius:6px;
+  background:var(--card);color:var(--text);font-size:16px;cursor:pointer}
+.pop-body{display:flex;gap:18px}
+.pop-left{flex:1;min-width:0}
+.sizebar{display:flex;gap:10px;margin-bottom:12px}
+.size{width:96px;height:38px;border:1px solid var(--grid);border-radius:6px;background:var(--card);
+  color:var(--text);cursor:pointer;font-size:13px}
+.size.on{border-color:var(--accent);background:rgba(124,185,232,.16)}
+.size:disabled{opacity:.35;cursor:not-allowed;text-decoration:line-through}
+.tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.tile{height:84px;border:1px solid var(--grid);border-radius:8px;background:var(--card);
+  display:flex;align-items:center;justify-content:center;font-size:17px;cursor:pointer}
+.tile.cleared{border-color:rgba(78,169,107,.5);color:var(--safe)}
+.tile.on{border-color:var(--accent);background:rgba(124,185,232,.2)}
+.tile.locked{opacity:.4;cursor:not-allowed}
+.pop-right{width:260px;border:1px solid var(--grid);border-radius:8px;padding:16px;
+  display:flex;flex-direction:column}
+.pop-right .cap{font-size:14px;color:var(--dim);margin-bottom:8px}
+.pop-right .stat{font-size:24px;margin-bottom:auto}
+.play{height:48px;border:1px solid var(--accent);border-radius:8px;background:rgba(124,185,232,.18);
+  color:var(--text);font-size:15px;cursor:pointer}
+.note{margin:14px 0 0;padding:12px 14px;border:1px solid var(--grid);border-radius:8px;
+  background:rgba(255,255,255,.02);font-size:12.5px;color:var(--dim);line-height:1.75}
+.note b{color:var(--text)}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>选关页 · 分三个页面</h1>
+  <div class="sub">
+    单项变体 / 混合档 / Mod 各处一页，互不争抢版面。数据与配色取自项目真实来源：
+    变体清单来自 <code>VariantCatalog</code>（当前 23 个）、配色来自 <code>ThemeManager._DARK</code>。
+    点击任意变体可看弹窗流程。
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab on" data-view="single">单项变体</button>
+  <button class="tab" data-view="mixed">混合档</button>
+  <button class="tab" data-view="mod">Mod</button>
+  <button class="tab" data-view="map">对照：现状环形图</button>
+  <div class="flags">
+    <span class="flag"><span class="dot" style="background:#7CB9E8"></span>线索型 C</span>
+    <span class="flag"><span class="dot" style="background:#4EA96B"></span>全局约束 G</span>
+    <span class="flag"><span class="dot" style="background:#E6A24B"></span>Mod</span>
+  </div>
+</div>
+
+<main>
+  <div class="panel on" id="panel-single">
+    <div class="pgbar">
+      <p class="sub">只有单项变体：1 个经典基线 + 8 个线索型 + 7 个全局约束，共 16 张卡片，一屏放得下。</p>
+    </div>
+    <div id="sections"></div>
+    <div class="note">
+      <b>为什么拆页：</b>单项变体总共只有 16 个，卡片平铺是最省事的呈现；
+      但混合档有 56 个、Mod 数量随玩家加载而任意增长——三种内容的<b>数量和性质都不一样</b>，
+      硬塞进同一个滚动页只会让「找某一关」变成翻找。拆页后每页都能用最适合自己的排布。<br>
+      <b>代价：</b>多一次点击才能到达混合档 / Mod；换来的是每页都不再拥挤、不需要滚动。
+    </div>
+  </div>
+
+  <div class="panel" id="panel-mixed">
+    <div id="mixed-host"></div>
+    <div class="note">
+      <b>交叉表解决了什么：</b>当前的混合档只有 7 个（G_i 与 C_i 同序号配对），
+      纯粹是因为环形图每条枝干只能挂一个。改成交叉表后，<b>8 线索 × 7 全局 = 56 个组合全部可达</b>，
+      规则本身就是「约束 + 线索」的正交组合，表结构正好对应它的代数结构。<br>
+      <b>两张表覆盖全部混合档（76 个）：</b>约束×线索 56 个 + <b>约束×约束 21 对（20 个可玩）</b>。<br>
+      <b>已验证：</b>两类组合都经真值查询——G+C 的 56 个在 5×5 / 7×7 全部可行；
+      G+G 的 20 个在 7×7 / 9×9 全部可行（<code>mx+ep</code> 判逻辑冗余不产生，格子置灰；
+      其余尺寸级不可行由弹窗内的尺寸按钮自动禁用）。<br>
+      <b>代价：</b>内容量从 7 个混合档变成 76 个（× 5 尺寸 × 3 关），
+      关卡仍是首次进入时按需生成并缓存，但整体生成量级上升。<br>
+      <b>不需要搜索框：</b>表本身就是索引——想找「和骑士有关的组合」看一行，想找「镜像类的」看一列。
+    </div>
+  </div>
+
+  <div class="panel" id="panel-mod">
+    <div class="pgbar">
+      <p class="sub">Mod 变体独立成页：数量由玩家装了什么决定，不占用内置变体的版面。</p>
+      <label class="switch"><input type="checkbox" id="mod-toggle" checked>已加载 Mod（切换看空状态）</label>
+    </div>
+    <div id="mod-host"></div>
+    <div class="note">
+      <b>Mod 页的两态：</b>未加载任何 Mod 时显示空状态与放置说明；
+      加载后卡片自动出现，并且<b>按来源分组</b>（Def 数据包 / 代码 Mod / wasm），
+      每张卡可显示该 Mod 的算子数量与作者。<br>
+      <b>好处：</b>内置变体不再被 Mod 挤动位置——玩家装 3 个 Mod 还是 30 个，
+      「经典 / 线索型 / 全局约束」那几页永远长一个样，肌肉记忆不会被破坏。
+    </div>
+  </div>
+
+  <div class="panel" id="panel-map">
+    <p class="sub" style="margin:0 0 16px">按项目当前布局公式 1:1 复现（1280×720 设计分辨率、23 节点、紧凑内边距）。节点尺寸即游戏里的真实尺寸。</p>
+    <div class="map-wrap"><div class="map" id="map">
+      <div class="map-title">选择关卡</div>
+      <div class="map-hint">点击节点选择模式　·　内圈 C 类线索型　外圈 G 类全局约束　中段混合档</div>
+      <div class="map-back">返回</div>
+      <div class="map-legend">混合档显示的是编号（G2+C2），全名在悬停提示里 —— 这是防遮挡的取舍</div>
+    </div></div>
+    <div class="note">
+      <b>现状是「三合一」：</b>单项变体、混合档、Mod 全都塞在同一张图里。<br>
+      <b>代价：</b>为了在 720p 内塞下 23 个节点且互不遮挡，节点被压到 64×48、
+      混合档只能显示编号、字号降到 12px；而且这里只画了 7 个混合节点——
+      若扩到 56 个，径向图在 720p 内<b>无法容纳</b>（均分 360° 后相邻弦距不足节点宽度）。
+      改成前面三页的排布后，每个页面都只装一种东西，各自都能用最合适的排布。
+    </div>
+  </div>
+</main>
+
+<div class="overlay" id="overlay">
+  <div class="popup">
+    <div class="pop-head">
+      <div class="pop-title" id="pop-title">经典 · 5×5</div>
+      <button class="pop-close" onclick="closePopup()">✕</button>
+    </div>
+    <div class="pop-body">
+      <div class="pop-left">
+        <div class="sizebar" id="sizebar"></div>
+        <div class="tiles" id="tiles"></div>
+      </div>
+      <div class="pop-right">
+        <div class="cap">通关统计</div>
+        <div class="stat" id="pop-stat">已通关 1 / 3</div>
+        <button class="play" onclick="closePopup()">继续游戏</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ================= 真实数据（来自 ui/variant_catalog.gd 的派生结果） ================= */
+const CLUES = [
+  {id:'4n',  name:'四邻',     tip:'C1', desc:'数字 = 上、下、左、右 4 个正交邻格中的雷数，不含对角，范围 0~4。'},
+  {id:'clock',name:'钟点',    tip:'C2', desc:'从正上方开始顺时针把 8 个邻格编号 1~8，数字 = 顺时针遇到的第一颗雷的编号；周围无雷显示 0。'},
+  {id:'hv',  name:'纵横分计', tip:'C3', desc:'显示两个数字 [正交雷数, 对角雷数]：前者只数上下左右，后者只数四个斜角，各 0~4。'},
+  {id:'fr',  name:'首雷',     tip:'C4', desc:'数字 = 从本格向右遇到的第一颗雷之前的安全格数量；右侧一路无雷显示 ∞。'},
+  {id:'loopruns',name:'环游程',tip:'C5',desc:'把 8 个邻格按环形顺序排列，数字 = 其中连续成段的雷的段数，范围 0~4。'},
+  {id:'distsum',name:'曼哈顿和',tip:'C6',desc:'正交邻格每颗雷记 1 分、对角邻格每颗雷记 2 分，数字为总分，范围 0~12。'},
+  {id:'sc',  name:'同色',     tip:'C7', desc:'数字 = 4 个对角邻格中「与本格同色」的雷数，范围 0~4。'},
+  {id:'knight',name:'骑士',   tip:'C8', desc:'数字 = 骑士走位 8 格雷数（任意窗口皆可自定义）。'},
+];
+const GLOBALS = [
+  {id:'mx', name:'镜像', tip:'G1', desc:'雷的分布左右镜像对称：左半边某格有雷，其镜像位置也必有雷。'},
+  {id:'rl', name:'相邻行锁',tip:'G2',desc:'任意相邻两行的雷数之差恰好等于 1。'},
+  {id:'pf', name:'局部禁形',tip:'G3',desc:'任意 2×2 的窗口内，雷的数量不超过 2。'},
+  {id:'qd', name:'四象', tip:'G4', desc:'去掉正中央的行与列后，四个象限的雷数彼此相等。'},
+  {id:'dt', name:'骨牌边界',tip:'G5',desc:'棋盘被骨牌（相邻两格一组）划分，每一组中恰好有 1 颗雷。'},
+  {id:'ep', name:'端点平衡',tip:'G6',desc:'最左一列与最右一列的雷数相等。'},
+  {id:'4c', name:'四向守恒',tip:'G7',desc:'按黑白染色后，黑格与白格上的雷数相等。'},
+];
+// 混合档：G_i 配 C_i（同序号），由 RuleSignature 判据筛选后自动生成
+const MIXED = GLOBALS.map((g,i)=>({
+  id:`${g.id}_${CLUES[i].id}`,
+  name:`${g.name}·${CLUES[i].name}`,
+  tip:`${g.tip}+${CLUES[i].tip}`,
+  desc:`${g.desc}　同时，数字含义为：${CLUES[i].desc}`
+}));
+const CORE = {id:'classic',name:'经典',tip:'C0',desc:'数字 = 周围 8 格（含对角）中的雷数，范围 0~8。'};
+
+/* 真实存在的 Mod 变体示例（加载后会自动进选关页）。三种创作路径各举一例。 */
+const MOD_SAMPLE = {
+  def: [
+    {id:'def_diag', name:'斜线雷数', tip:'Def 数据包', mod:true, by:'示例数据包',
+     desc:'数字只统计斜角 4 格中的雷数。纯 JSON 声明，不含代码。'},
+  ],
+  code: [
+    {id:'o4', name:'变径', tip:'代码 Mod', mod:true, by:'官方示例 o4',
+     desc:'每个数字统计的范围不一样：有的只统计周围一圈，有的统计到外面第二圈，属于哪一种不显示。'},
+    {id:'o5', name:'奇偶链', tip:'代码 Mod', mod:true, by:'官方示例 o5',
+     desc:'数字表示相邻格中雷数的奇偶性组合。'},
+  ],
+  wasm: [
+    {id:'o7', name:'黑盒算子', tip:'wasm Mod', mod:true, by:'社区作品',
+     desc:'外部编译的算子，走沙箱三道防线运行；规则细节由 Mod 自行定义。'},
+  ],
+};
+
+/* ================= 页面一：单项变体 ================= */
+const SECTIONS = [
+  {title:'经典基线',   note:'C0', items:[CORE], featured:true},
+  {title:'线索型 · 数字的含义', note:'C 类', items:CLUES},
+  {title:'全局约束 · 盘面结构', note:'G 类', items:GLOBALS},
+];
+
+/* 混合档 = 线索型 × 全局约束 的完整交叉（8 × 7 = 56 个）。
+   项目当前的 RuleFeasibility 真值查询结果：全部组合在 5×5 / 7×7 下数学可行。
+   对角线上那 7 个（同序号 G_i + C_i）是当前已经接入的，其余 49 个是新开放的。 */
+function mixedOf(clue, global){
+  return {id:`${global.id}_${clue.id}`, tip:`${global.tip}+${clue.tip}`,
+    name:`${global.name}·${clue.name}`,
+    desc:`${global.desc}　同时，数字含义为：${clue.desc}`,
+    diag: CLUES.indexOf(clue) === GLOBALS.indexOf(global)};
+}
+
+function buildGrid(){
+  const host = document.getElementById('sections');
+  host.innerHTML = '';
+  for(const sec of SECTIONS){
+    const wrap = document.createElement('section');
+    wrap.className = 'sec';
+    wrap.innerHTML = `<div class="sec-head"><span class="sec-title">${sec.title}</span>
+      <span class="sec-note">${sec.note} · ${sec.items.length} 个</span></div>`;
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+    for(const it of sec.items){
+      const c = document.createElement('div');
+      c.className = 'card' + (sec.featured ? ' featured' : '');
+      const chipCls = it.mod ? 'chip mod' : (it.id === 'classic' ? 'chip core' : 'chip');
+      c.innerHTML = `<div class="row"><span class="name">${it.name}</span>
+          <span class="${chipCls}">${it.tip}</span></div>
+        <div class="desc">${it.desc}</div>
+        <div class="cnt">已通关 1/3</div>`;
+      c.onclick = ()=> openPopup(it);
+      grid.appendChild(c);
+    }
+    wrap.appendChild(grid);
+    host.appendChild(wrap);
+  }
+}
+
+/* ---- 页面三：Mod（独立页）。空状态 / 按来源分组两种形态。 ---- */
+function buildMod(){
+  const host = document.getElementById('mod-host');
+  const on = document.getElementById('mod-toggle').checked;
+  host.innerHTML = '';
+  if(!on){
+    const e = document.createElement('div');
+    e.className = 'empty-state';
+    e.innerHTML = `<b>还没有加载任何 Mod</b>
+      把 Mod 目录放进 <code>user://mods/&lt;ascii_id&gt;/</code> 后重进本页即可。
+      支持三种形式：<code>defs/*.json</code> 数据包、GDScript 代码 Mod、wasm 黑盒 Mod。`;
+    host.appendChild(e);
+    return;
+  }
+  const groups = [
+    {title:'Def 数据包', note:'纯 JSON 声明', items:MOD_SAMPLE.def},
+    {title:'代码 Mod',   note:'完整 RulePlugin', items:MOD_SAMPLE.code},
+    {title:'wasm Mod',   note:'沙箱运行', items:MOD_SAMPLE.wasm},
+  ];
+  for(const g of groups){
+    if(g.items.length === 0) continue;
+    const wrap = document.createElement('section');
+    wrap.className = 'sec';
+    wrap.innerHTML = `<div class="sec-head"><span class="sec-title">${g.title}</span>
+      <span class="sec-note">${g.note} · ${g.items.length} 个</span></div>`;
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+    for(const it of g.items){
+      const c = document.createElement('div');
+      c.className = 'card';
+      c.innerHTML = `<div class="row"><span class="name">${it.name}</span>
+          <span class="chip mod">${it.tip}</span></div>
+        <div class="desc">${it.desc}</div>
+        <div class="cnt">${it.by} · 已通关 0/3</div>`;
+      c.onclick = ()=> openPopup(it);
+      grid.appendChild(c);
+    }
+    wrap.appendChild(grid);
+    host.appendChild(wrap);
+  }
+}
+
+/* ---- Excel 式交叉表：行 = 线索型（C），列 = 全局约束（G），
+       交叉格 = 该组合的混合档（点击直接开这一关） ---- */
+function buildMatrix(){
+  const wrap = document.createElement('section');
+  wrap.className = 'sec';
+  wrap.innerHTML = `<div class="sec-head"><span class="sec-title">混合档 · 线索 × 全局约束</span>
+    <span class="sec-note">行 C 类 × 列 G 类 · ${CLUES.length * GLOBALS.length} 个组合</span></div>`;
+
+  const box = document.createElement('div');
+  box.className = 'xl';
+  const tb = document.createElement('table');
+  tb.className = 'xl-table';
+
+  const thead = document.createElement('thead');
+  const hr = document.createElement('tr');
+  hr.innerHTML = '<th style="text-align:left">线索型 ＼ 全局约束</th>';
+  for(const g of GLOBALS){
+    const th = document.createElement('th');
+    th.innerHTML = `<span class="code">${g.tip}</span><span class="nm">${g.name}</span>`;
+    th.title = g.desc;
+    hr.appendChild(th);
+  }
+  thead.appendChild(hr); tb.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  for(const c of CLUES){
+    const tr = document.createElement('tr');
+    const th = document.createElement('th');
+    th.innerHTML = `<span style="color:var(--accent)">${c.tip}</span> ${c.name}`;
+    th.title = c.desc;
+    tr.appendChild(th);
+    for(const g of GLOBALS){
+      const m = mixedOf(c, g);
+      const td = document.createElement('td');
+      const cell = document.createElement('div');
+      cell.className = 'cell ' + (m.diag ? 'on-diag' : 'off-diag');
+      cell.innerHTML = m.name + (m.diag ? '<span class="tag">已接入</span>' : '');
+      cell.title = `${m.name}（${m.tip}）`;
+      cell.onclick = ()=> openPopup(m);
+      // Excel 式十字高亮
+      cell.onmouseenter = ()=>{
+        tr.classList.add('hot');
+        const idx = GLOBALS.indexOf(g);
+        tbody.querySelectorAll('tr').forEach(r=>{
+          const tds = r.querySelectorAll('td');
+          if(tds[idx]) tds[idx].classList.add('hot');
+        });
+      };
+      cell.onmouseleave = ()=>{
+        tr.classList.remove('hot');
+        tbody.querySelectorAll('td').forEach(td=> td.classList.remove('hot'));
+      };
+      td.appendChild(cell);
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+  tb.appendChild(tbody);
+  box.appendChild(tb);
+  wrap.appendChild(box);
+
+  const lg = document.createElement('div');
+  lg.className = 'xl-legend';
+  lg.innerHTML = `
+    <span class="k"><span class="kbox" style="border-color:rgba(78,169,107,.6)"></span>对角线上 7 格 = 旧的同序号配对（环形图时代只有这 7 个）</span>
+    <span class="k"><span class="kbox"></span>其余 49 格 = 交叉表放出的组合</span>
+    <span class="k">全 56 格经 <code>RuleFeasibility</code> 真值查询：5×5 / 7×7 下数学均可行</span>
+    <span class="k">点击任意格 = 直接进入该组合的选关弹窗</span>`;
+  wrap.appendChild(lg);
+  return wrap;
+}
+
+/* ---- 页面二：混合档（独立页）。两张表页内切换：约束×线索（56）/ 约束×约束（21 对） ---- */
+let mixedGG = false;
+
+function buildMixed(){
+  const host = document.getElementById('mixed-host');
+  host.innerHTML = '';
+
+  const bar = document.createElement('div');
+  bar.className = 'pgbar';
+  const hint = document.createElement('p');
+  hint.className = 'sub';
+  hint.textContent = mixedGG
+    ? '行 / 列 = 全局约束（G 类），右上三角格 = 两个约束同时生效（每对只出现一次）。点任意格直接开这一关。'
+    : '行 = 线索型（C 类），列 = 全局约束（G 类），交叉格 = 两者的混合档。点任意格直接开这一关。';
+  bar.appendChild(hint);
+  for(const spec of [[false, '1 约束 · 约束×线索'], [true, '2 约束 · 约束×约束']]){
+    const b = document.createElement('button');
+    b.className = 'sw' + (spec[0] === mixedGG ? ' on' : '');
+    b.textContent = spec[1];
+    b.onclick = ()=>{ mixedGG = spec[0]; buildMixed(); };
+    bar.appendChild(b);
+  }
+  host.appendChild(bar);
+  host.appendChild(mixedGG ? buildGGMatrix() : buildMatrix());
+}
+
+/* ---- 双约束（G×G）：行 / 列都是约束，只填右上三角（C(7,2) = 21 对，每对只出现一次）。
+       左下留白不是省略——每一对都已在右上出现，重复填只会让人以为还有第二组组合。 ---- */
+function buildGGMatrix(){
+  const wrap = document.createElement('section');
+  wrap.className = 'sec';
+  const total = GLOBALS.length * (GLOBALS.length - 1) / 2;
+  wrap.innerHTML = `<div class="sec-head"><span class="sec-title">混合档 · 约束 × 约束</span>
+    <span class="sec-note">C(${GLOBALS.length},2) = ${total} 对 · 每对只出现一次</span></div>`;
+
+  const box = document.createElement('div');
+  box.className = 'xl';
+  const tb = document.createElement('table');
+  tb.className = 'xl-table';
+  const thead = document.createElement('thead');
+  const hr = document.createElement('tr');
+  hr.innerHTML = '<th style="text-align:left">约束 ＼ 约束</th>';
+  for(const g of GLOBALS){
+    const th = document.createElement('th');
+    th.innerHTML = `<span class="code">${g.tip}</span><span class="nm">${g.name}</span>`;
+    th.title = g.desc;
+    hr.appendChild(th);
+  }
+  thead.appendChild(hr); tb.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  GLOBALS.forEach((g1, i)=>{
+    const tr = document.createElement('tr');
+    const th = document.createElement('th');
+    th.innerHTML = `<span style="color:var(--safe)">${g1.tip}</span> ${g1.name}`;
+    th.title = g1.desc;
+    tr.appendChild(th);
+    GLOBALS.forEach((g2, j)=>{
+      const td = document.createElement('td');
+      if(j <= i){ tr.appendChild(td); return; }   // 对角线（同约束重复）与左下（与右上同一对）
+      const cell = document.createElement('div');
+      const redundant = g1.id === 'mx' && g2.id === 'ep';
+      cell.className = 'cell ' + (redundant ? 'off-diag' : 'on-diag');
+      cell.innerHTML = `${g1.name}·${g2.name}` +
+        (redundant ? '<span class="tag" style="color:var(--dim)">冗余</span>' : '');
+      cell.title = redundant
+        ? `${g1.name}·${g2.name}：镜像逻辑蕴含端点平衡，后者完全冗余 → 不产生混合档`
+        : `${g1.name}·${g2.name}（点击开这一关）`;
+      if(!redundant) cell.onclick = ()=> openPopup({
+        id: `${g1.id}_${g2.id}`, tip: `${g1.tip}+${g2.tip}`,
+        name: `${g1.name}·${g2.name}`,
+        desc: `${g1.desc}　同时，${g2.desc}`});
+      td.appendChild(cell);
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  tb.appendChild(tbody); box.appendChild(tb); wrap.appendChild(box);
+
+  const lg = document.createElement('div');
+  lg.className = 'xl-legend';
+  lg.innerHTML = `
+    <span class="k">${total} 对经 <code>RuleSignature</code> 判据：1 对判冗余（<code>mx</code> 蕴含 <code>ep</code>）→ 20 个可玩</span>
+    <span class="k">尺寸级不可行比 G+C 常见（如 mx+rl 在 6×6 / 8×8 无解），但 20 个在 7×7 与 9×9 全部可行</span>
+    <span class="k">点击任意格 = 直接进入该组合的选关弹窗</span>`;
+  wrap.appendChild(lg);
+  return wrap;
+}
+
+/* ================= 视图 B：环形图谱（复现项目当前公式） ================= */
+function buildMap(){
+  const map = document.getElementById('map');
+  const W = 1280, H = 720;
+  const top = 78, bottom = H - 36, cy = (top + bottom) / 2;
+  const slots = 8;                                    // max(C 数, G 数)
+  const ringW = 64, minR = (ringW + 12) / (2 * Math.sin(Math.PI / slots));
+  const base = Math.min(W - 60, bottom - top);
+  const rOutMax = Math.min(cy - top - 24, H - 30 - cy - 24);
+  const clamp = (v,a,b)=> Math.max(a, Math.min(b, v));
+  const rOut = clamp(base * 0.47, minR + 156, Math.max(rOutMax, minR + 156));
+  const rIn  = clamp(base * 0.30, minR, rOut - 156);
+  const rMid = (rIn + rOut) / 2;
+  const cx = W / 2;
+
+  const put = (x, y, cls, html, data)=>{
+    const d = document.createElement('div');
+    d.className = 'node ' + cls;
+    d.style.left = x + 'px'; d.style.top = y + 'px';
+    d.innerHTML = html;
+    if(data) d.onclick = ()=> openPopup(data);
+    map.appendChild(d);
+  };
+  const ang = i => -Math.PI/2 + 2*Math.PI*i/slots;
+
+  // 中心
+  put(cx, cy, 'core', `<b>${CORE.name}</b><i>${CORE.tip}</i>`, CORE);
+  // 内圈 C / 外圈 G（同序号同角度）
+  CLUES.forEach((c,i)=>{
+    const a = ang(i);
+    put(cx + Math.cos(a)*rIn, cy + Math.sin(a)*rIn, 'ring', `<b>${c.name}</b><i>${c.tip}</i>`, c);
+  });
+  GLOBALS.forEach((g,i)=>{
+    const a = ang(i);
+    put(cx + Math.cos(a)*rOut, cy + Math.sin(a)*rOut, 'ring', `<b>${g.name}</b><i>${g.tip}</i>`, g);
+  });
+  // 混合档：挂在全局父节点的枝干线上（中段）
+  MIXED.forEach((m,i)=>{
+    const a = ang(i);
+    put(cx + Math.cos(a)*rMid, cy + Math.sin(a)*rMid, 'mixed',
+        `<b>${m.tip}</b>`, m);
+  });
+  // 枝干线
+  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('width', W); svg.setAttribute('height', H);
+  svg.style.position = 'absolute'; svg.style.left = 0; svg.style.top = 0;
+  GLOBALS.forEach((g,i)=>{
+    const a = ang(i);
+    const l = document.createElementNS('http://www.w3.org/2000/svg','line');
+    l.setAttribute('x1', cx); l.setAttribute('y1', cy);
+    l.setAttribute('x2', cx + Math.cos(a)*rOut); l.setAttribute('y2', cy + Math.sin(a)*rOut);
+    l.setAttribute('stroke', 'rgba(124,185,232,.35)'); l.setAttribute('stroke-width', '2');
+    svg.appendChild(l);
+  });
+  map.insertBefore(svg, map.firstChild);
+}
+
+/* ================= 弹窗 ================= */
+const SIZES = [5,6,7,8,9];
+let current = CORE, sizeIdx = 0, sel = 1;
+function openPopup(v){
+  current = v; sizeIdx = 0; sel = 1;
+  document.getElementById('overlay').classList.add('on');
+  renderPopup();
+}
+function closePopup(){ document.getElementById('overlay').classList.remove('on'); }
+function renderPopup(){
+  document.getElementById('pop-title').textContent =
+    `${current.name}（${current.tip}） · ${SIZES[sizeIdx]}×${SIZES[sizeIdx]}`;
+  const sb = document.getElementById('sizebar'); sb.innerHTML = '';
+  SIZES.forEach((s,i)=>{
+    const b = document.createElement('button');
+    b.className = 'size' + (i===sizeIdx ? ' on' : '');
+    b.textContent = `${s}×${s}`;
+    if(i===3 && current.id!=='classic'){ b.disabled = true; b.title='该变体在此尺寸下数学上无解'; }
+    b.onclick = ()=>{ sizeIdx = i; renderPopup(); };
+    sb.appendChild(b);
+  });
+  const th = document.getElementById('tiles'); th.innerHTML = '';
+  for(let i=0;i<20;i++){
+    const unlocked = i <= sel;
+    const t = document.createElement('div');
+    t.className = 'tile' + (i < sel ? ' cleared' : '') + (i === sel ? ' on' : '') + (unlocked ? '' : ' locked');
+    t.textContent = unlocked ? (i < sel ? (i+1)+' ✓' : (i+1)) : '🔒';
+    if(unlocked) t.onclick = ()=>{ sel = i; renderPopup(); };
+    th.appendChild(t);
+  }
+  document.getElementById('pop-stat').textContent = `已通关 ${sel} / 3`;
+}
+
+/* ================= 切换 ================= */
+document.querySelectorAll('.tab').forEach(t=>{
+  t.onclick = ()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+    document.querySelectorAll('.panel').forEach(x=>x.classList.remove('on'));
+    t.classList.add('on');
+    document.getElementById('panel-' + t.dataset.view).classList.add('on');
+    if(t.dataset.view === 'map') scaleMap();
+  };
+});
+document.getElementById('overlay').onclick = e=>{ if(e.target.id === 'overlay') closePopup(); };
+
+/* 把 1280×720 的图谱按容器宽度等比缩放 */
+function scaleMap(){
+  const map = document.getElementById('map');
+  const avail = Math.min(window.innerWidth - 80, 1280);
+  const k = avail / 1280;
+  map.style.transform = `scale(${k})`;
+  map.style.marginBottom = (720 * k - 720) + 'px';
+}
+window.onresize = scaleMap;
+
+document.getElementById('mod-toggle').onchange = buildMod;
+
+buildGrid(); buildMixed(); buildMod(); buildMap(); scaleMap();
+</script>
+</body>
+</html>

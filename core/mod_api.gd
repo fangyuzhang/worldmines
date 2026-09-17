@@ -140,6 +140,9 @@ func load_mod(dir_path: String) -> Dictionary:
 	# 加载入口
 	var instance: Object = null
 	var sandbox: WasmSandbox = null  # P0-T7：RUNTIME_WASM 的沙箱实例（三道防线）
+	# 本 mod 提供的 Def 规则（[{name, type}]）。运行期=def 的 mod 走 DefEngine 而非
+	# RuleRegistry，故它不会出现在变体表里——记下来才能在选关页如实展示「这个 mod 有什么」。
+	var own_defs: Array = []
 	var entry: Dictionary = manifest["entry"]
 	var runtime: String = entry["runtime"]
 	match runtime:
@@ -161,7 +164,7 @@ func load_mod(dir_path: String) -> Dictionary:
 			# 现用 ModLoader 把 <mod_dir>/defs/*.json 注册进共享 DefEngine。
 			var def_loader := ModLoader.new()
 			def_loader.engine = defs
-			def_loader.load_mod_dir(dir_path)
+			own_defs = def_loader.load_mod_dir(dir_path).get("defs", [])
 		ManifestParser.RUNTIME_WASM:
 			instance = null
 			# P0-T7：wasm 模块经沙箱三道防线（魔数/16MB/实例重置）加载。
@@ -203,6 +206,7 @@ func load_mod(dir_path: String) -> Dictionary:
 		"crash_count": 0,
 		"dir_path": dir_path,
 		"rules": [],  # P0-T5：本 mod 经 on_load 注册的规则 id（卸载时清理）
+		"defs": own_defs,  # RUNTIME_DEF：本 mod 注册进 DefEngine 的 [{name, type}]（供选关页展示）
 	}
 
 	# 调用 on_load 前快照 RuleRegistry + 共享 DefEngine，on_load 后对比——
@@ -292,7 +296,8 @@ func _rebuild_defs() -> void:
 		if str(entry.get("runtime", "")) == ManifestParser.RUNTIME_DEF:
 			var def_loader := ModLoader.new()
 			def_loader.engine = defs
-			def_loader.load_mod_dir(str(m.get("dir_path", "")))
+			# 顺手刷新该 mod 的 Def 清单（重建后 mod 记录里的 defs 必须与实际注册的一致）
+			m["defs"] = def_loader.load_mod_dir(str(m.get("dir_path", ""))).get("defs", [])
 
 
 ## 是否有某能力（R32：未声明 = 无权限；敏感能力还需运行时授权，§14.14）。

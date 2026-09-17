@@ -97,12 +97,14 @@ func _build_ui() -> void:
     _title_label = _section(vbox, "规则图鉴")
 
     _lines(vbox, _BASIC_LINES)
+    # 变体清单来自 VariantCatalog（从 RuleRegistry 实时派生）：
+    # 新增 knight / 新算子 / 已加载 Mod 会自动出现在图鉴里，无需再改本文件。
     _section(vbox, "一、线索型（数字的含义）")
-    for code in ["classic", "4n", "clock", "hv", "fr", "loopruns", "distsum", "sc"]:
-        _def_entry(vbox, code, "clue")
+    for e in VariantCatalog.entries(RulePlugin.KIND_CLUE):
+        _def_entry(vbox, str(e["id"]), "clue")
     _section(vbox, "二、布局型（全局约束）")
-    for code in VariantRegistry.GLOBAL_CONSTRAINTS:
-        _def_entry(vbox, code, "constraint")
+    for e in VariantCatalog.entries(RulePlugin.KIND_GLOBAL):
+        _def_entry(vbox, str(e["id"]), "constraint")
     _section(vbox, "三、组合规则")
     _lines(vbox, _COMBO_LINES)
 
@@ -138,14 +140,18 @@ func _lines(parent: Node, lines: Array) -> void:
         parent.add_child(lb)
 
 
-## 依据 VariantRegistry.definitions() 取名/难度，规则文字取本文件常量。
+## 名称 / 难度 / 规则文字一律取 VariantCatalog（唯一事实源）。
+## 旧表 CLUE_DESC / CONSTRAINT_DESC 只作为**兜底**：个别规则若未实现 describe()，
+## 仍沿用原有文案，避免出现空白条目。
 func _def_entry(parent: Node, code: String, kind: String) -> void:
-    var defs := VariantRegistry.definitions()
-    if not defs.has(code):
+    if VariantCatalog.rule_of(code) == null:
         return
-    var d: Dictionary = defs[code]
-    var desc: String = (CLUE_DESC if kind == "clue" else CONSTRAINT_DESC).get(code, "")
-    var text := "%s（%s）%s：%s" % [str(d["name"]), code, str(d["diff"]), desc]
+    var name := VariantCatalog.display_name(code)
+    var diff := VariantCatalog.difficulty(code)
+    var desc := VariantCatalog.rule_text(code)
+    if desc == "":
+        desc = (CLUE_DESC if kind == "clue" else CONSTRAINT_DESC).get(code, "")
+    var text := "%s（%s）%s：%s" % [name, code, diff, desc]
     if SPRITES.has(code):
         text += "\n　 小精灵「%s」：%s" % [SPRITES[code], SPRITE_LINES[code]]
     var lb := Label.new()
