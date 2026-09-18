@@ -516,7 +516,9 @@ func _os_table() -> Control:
 	wrap.add_theme_constant_override("separation", 10)
 	var obs := VariantCatalog.mixed_clue_ids()
 	var structs := VariantCatalog.mixed_global_ids()
-	_mixed_hint.text = "行 = 观测算子（O 类）　列 = 结构算子（S 类）　交叉格 = 两者同关（每关恰好 1 观测 + 1 结构）　·　点击任意格开这一关"
+	# 说明文字必须短：Label 的最小尺寸由文字撑出且 clip_text 只裁绘制不改最小尺寸——
+	# 长说明 + 右侧三按钮会把 bar 撑过视口宽度，产生横向滚动条（2026-09-18 实测根因）
+	_mixed_hint.text = "行 = 观测（O）　列 = 结构（S）　交叉格 = 两算子同关　·　点击任意格开这一关"
 
 	var table := _matrix_new(structs.size() + 1)
 	wrap.add_child(table)
@@ -540,7 +542,7 @@ func _ss_table() -> Control:
 	var wrap := VBoxContainer.new()
 	wrap.add_theme_constant_override("separation", 10)
 	var structs := VariantCatalog.mixed_global_ids()
-	_mixed_hint.text = "行 / 列 = 结构算子（S 类）　右上三角格 = 两个结构约束同关（GDD §5.1 允许结构 ≤2）　·　点击任意格开这一关"
+	_mixed_hint.text = "行 / 列 = 结构（S）　右上三角格 = 两结构同关　·　点击任意格开这一关"
 
 	var table := _matrix_new(structs.size() + 1)
 	wrap.add_child(table)
@@ -573,7 +575,7 @@ func _t4_table() -> Control:
 	var obs := VariantCatalog.mixed_clue_ids()
 	var cons := VariantCatalog.mixed_conserve_ids()
 	var structs := VariantCatalog.mixed_global_ids()
-	_mixed_hint.text = "行 = 观测算子（O 类）　列 = 守恒算子（Z 类）　格 = 再叠一个结构算子（按 GDD §10.1 循环指派）　·　点击任意格开这一关"
+	_mixed_hint.text = "行 = 观测（O）　列 = 守恒（Z）　格 = 再叠 1 结构（循环指派）　·　点击任意格开这一关"
 
 	if structs.is_empty() or cons.is_empty():
 		# 结构 / 守恒算子全未加载（无头环境）：画空表而不是除零崩
