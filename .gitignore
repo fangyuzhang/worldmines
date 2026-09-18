@@ -7,6 +7,10 @@
 .gdmcp/
 .logs/
 addons/.godot_ai_update/
+# GodotSteam GDExtension（含全平台 .so/.dll 二进制，体积大）不入库；
+# 获取方式与版本注意见《开放平台实施框架.md》§2。GDExtension 不依赖 plugin.cfg 启用，
+# 因此编辑器插件列表里已禁用其面板（当前 zip 为 4.4 版、面板脚本与 4.7.2 引擎不匹配会报错）。
+/addons/godotsteam/
 
 # 交付包与临时压缩包（体积大、可再生）
 *.zip
