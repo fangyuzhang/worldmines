@@ -209,6 +209,16 @@ static func _def_constraint_to_rule(engine: DefEngine, def_name: String) -> Stri
 	return ""
 
 
+## 供 UI 用：这个 Def 相当于哪个内置变体（"" = 映射不到 → 规则平台生成不了）。
+##
+## 为什么需要它：Def 的 window/aggregate/op 是**封闭枚举**，永远翻译成内置 8 线索 / 7 约束之一
+## （如 n4+sum ≡ 4n、symmetry_axis ≡ mx）。所以 Def 不是「新玩法」而是「声明式入口」——
+## Mod 页据此如实告诉玩家「你这个 Def 相当于哪个变体、去哪儿玩」，
+## 而不是给选关页塞一个与内置变体重复（或根本生成不出来）的死变体。
+static func def_to_rule(engine: DefEngine, def_name: String, is_clue: bool) -> String:
+	return _def_clue_to_rule(engine, def_name) if is_clue else _def_constraint_to_rule(engine, def_name)
+
+
 ##（Def 路径旧实现已删除：generate_with_engine 现在委托 generate_with_rules，
 ##  Def 的 window/aggregate/op 由 _def_clue_to_rule / _def_constraint_to_rule 翻译成规则 id。）
 
@@ -698,7 +708,7 @@ func _prune_clues_rules(oracle: RuleOracle, active: Dictionary, deadline: int, g
 ## 40% 密度下大部分线索必要（删不掉），二分退化成 ~2n 次验证反而更慢；顺序删除快 ~2 倍且
 ## 线索数更少（质量不降反升）。删除顺序与旧实现同为「行优先排序」，确定性一致。
 func _prune_sequential(oracle: RuleOracle, active: Dictionary, keys: Array, deadline: int,
-		grid_size: Vector2i, total_mines: int, values: Dictionary, state: Dictionary, masked: Dictionary = {}) -> void:
+		grid_size: Vector2i, total_mines: int, values: Dictionary, state: Dictionary, _masked: Dictionary = {}) -> void:
 	for p in keys:
 		if bool(state["reached"]) or Time.get_ticks_msec() > deadline:
 			return
@@ -729,7 +739,7 @@ func _prune_sequential(oracle: RuleOracle, active: Dictionary, keys: Array, dead
 ## 纯逻辑序贯演绎（无 Board 依赖）：每轮用 CP-SAT forced-cell 检测「被强制的格」，
 ## 翻安全格（新线索进 active）→ 确认雷 → 直到全盘确定（胜）或某轮无强制格（真二选一，败）。
 ## 这是替代「全盘枚举」的关键：序贯求解每次只做 O(自由格数) 次 assumption 探测。
-func _minimal_clue_count(oracle: RuleOracle, cur_active: Dictionary, known_mines: Array[Vector2i], masked: Dictionary, target: Vector2i, total_mines: int) -> int:
+func _minimal_clue_count(oracle: RuleOracle, cur_active: Dictionary, known_mines: Array[Vector2i], masked: Dictionary, target: Vector2i, _total_mines: int) -> int:
 	if cur_active.is_empty():
 		return 0
 	# unsat_core 方案：直接求「推出 target 格」所需的最少线索数（见 rule_cpsat.minimal_clue_count_unsat）。
