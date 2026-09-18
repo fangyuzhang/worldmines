@@ -165,6 +165,57 @@ func _build_extra_combos() -> Array:
 	return out
 
 
+## 口径自检（`limit_combos = -2`）：打印组合清单并判定「是不是官方三轴口径」，不生成任何关卡。
+##
+## 为什么需要它：量产唯一会导致「全批报废」的错误就是**在旧口径代码上跑** —— 产出的组合目录名
+## （`c_clock` / `4c_4n`）与选关页 `VariantCatalog.MODES[].id` 对不上，关卡**进库了也永远点不到**，
+## 而且全流程不报错（静默废品，最难查）。服务器/远程机开跑前用它一条命令确认，比人肉比对源码可靠。
+##
+## 判据三重（不只看组合数 —— 数字可能被误改，前缀与算子名骗不过去）：
+##   1. 组合总数 = 164（1 经典 + 22 T2 + 70 T3-C + 21 T3-F + 50 T4，GDD §10.1；变体池调整时同步改此数）；
+##   2. T2 单算子 id **无 c_/g_ 前缀**（旧口径是 c_o1/g_s1，与选关页的 o1/s1 差一个前缀）；
+##   3. 出现的算子全在官方三轴 + classic 之内（旧算子 knight/4n/clock… 或 Mod 污染即不过）。
+static func _print_axis_check(combos: Array, shard_count: int) -> void:
+	var allowed := {}
+	for a in OBS + STRUCT + CONSERVE:
+		allowed[str(a)] = true
+	var problems: Array = []
+	var prefixed: Array = []
+	var bad_ops := {}
+	for c in combos:
+		var cid := str(c["id"])
+		if cid.begins_with("c_") or cid.begins_with("g_"):
+			prefixed.append(cid)
+		for rid in ([c["clue"]] as Array) + (c.get("globals", []) as Array):
+			var r := str(rid)
+			if r != "classic" and not allowed.has(r):
+				bad_ops[r] = true
+	if combos.size() != 164:
+		problems.append("组合总数 %d，期望 164（1 经典 + 22 T2 + 70 T3-C + 21 T3-F + 50 T4）" % combos.size())
+	if not prefixed.is_empty():
+		problems.append("T2 单算子 id 带 c_/g_ 前缀 %d 个（%s …）—— 与选关页 MODES[].id 不一致，产物关卡进库后点不到" % [
+			prefixed.size(), ", ".join(prefixed.slice(0, mini(4, prefixed.size())))])
+	if not bad_ops.is_empty():
+		problems.append("出现非官方三轴算子（旧口径或 Mod 污染）: %s" % ", ".join(bad_ops.keys()))
+	print("=== 口径自检（limit=-2，不生成任何关卡）===")
+	print("  观测轴 %d 席: %s" % [OBS.size(), " ".join(OBS)])
+	print("  结构轴 %d 席: %s" % [STRUCT.size(), " ".join(STRUCT)])
+	print("  守恒轴 %d 席: %s" % [CONSERVE.size(), " ".join(CONSERVE)])
+	print("  组合总数: %d（本分片会跑到: %d）" % [combos.size(), shard_count])
+	# 抽样打印各段边界（清单构建顺序固定：0 经典 / 1~22 T2 / 23~92 T3-C / 93~113 T3-F / 114~163 T4）
+	for i in [0, 1, 22, 23, 93, 114, 163]:
+		if i < combos.size():
+			var c: Dictionary = combos[i]
+			print("   [%3d] %-14s clue=%-8s globals=%s" % [i, str(c["id"]), str(c["clue"]), str(c.get("globals", []))])
+	if problems.is_empty():
+		print("[口径自检] ✅ 官方三轴（新口径）—— 可以开始量产")
+	else:
+		print("[口径自检] ❌ 未通过：")
+		for p in problems:
+			print("     · %s" % p)
+		print("     多半是本机代码不是最新 —— 先 git pull 再重跑本自检。")
+
+
 ## 数学可行性预筛：统一走 RuleFeasibility 真值查询（CP-SAT + 缓存 + dt 骨牌重采样）。
 ## 曾经此处与 UI 各写一套预筛逻辑（UI 手写规则表、这里跳过 dt）——知识重复是 bug 温床，
 ## v2.9.3 收敛为唯一真值入口，新增/Mod 变体自动正确。
@@ -366,9 +417,19 @@ func _initialize() -> void:
 	# 额外组合（Mod/自定义规则）追加在内置组合之后（limit 不影响它们——limit 是冒烟用）
 	if _extra_combos_spec != "":
 		combos.append_array(_build_extra_combos())
-	# limit 语义：0=全部；>0=前 N 项（内置冒烟）；-1=仅额外组合（Mod 规则冒烟/量产的干净入口）
+	# limit 语义：0=全部；>0=前 N 项（内置冒烟）；-1=仅额外组合（Mod 规则冒烟/量产的干净入口）；
+	#            -2=**口径自检**：打印组合清单并判定是不是官方三轴口径，不生成任何关卡即退出。
 	if _limit_combos == -1:
 		combos = _build_extra_combos()
+	elif _limit_combos == -2:
+		# 判定必须用全量（分片前的 combos），另附注「本分片实际会跑到多少项」（与下方分片同算法）
+		var n_shard := 0
+		for i in combos.size():
+			if _shard_total <= 1 or i % _shard_total == _shard_idx:
+				n_shard += 1
+		_print_axis_check(combos, n_shard)
+		CliShutdown.request_exit(0)
+		return
 	elif _limit_combos > 0 and _limit_combos < combos.size():
 		combos.resize(_limit_combos)
 	# 分片并行：按组合下标取模切分（i % total == idx 归本进程），各进程写各自单元目录互不冲突。

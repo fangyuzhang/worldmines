@@ -47,6 +47,8 @@ var _bag: Dictionary = {}
 var _skipped_bad := 0
 var _skipped_dup := 0
 var _units_seen := 0
+var _non_official: Array = []   # 非官方目录名（旧口径 / 不符命名契约），整目录跳过
+var _bad_sizes: Array = []      # 尺寸目录名不认识的（如旧批次 `55`），整目录跳过
 
 
 func _initialize() -> void:
@@ -78,13 +80,20 @@ func _scan_source() -> void:
 		return
 	for combo_name in root.get_directories():
 		var mode := _normalize_mode(str(combo_name))
+		# 命名契约闸门：只有选关页认识的 mode 才允许入库（判据见 _is_official_mode）。
+		# 旧批次目录（`c_clock`→`clock` / `4c_4n` / `g_mx`→`mx`）在这里被挡下 —— 否则它们会
+		# 静默归档进 levels_lib 并写进 catalog：选关页看不到，却白占仓库几千个文件、关数也对不上。
+		if not _is_official_mode(mode):
+			_non_official.append(str(combo_name))
+			continue
 		var combo_dir := "%s/%s" % [_src, combo_name]
 		var cd := DirAccess.open(combo_dir)
 		if cd == null:
 			continue
 		for size_dir in cd.get_directories():
-			var side := int(str(size_dir))
+			var side := _parse_side(str(size_dir))
 			if side <= 0:
+				_bad_sizes.append("%s/%s" % [combo_name, size_dir])
 				continue
 			_scan_size(combo_dir, size_dir, mode, side)
 		print("[import]   %-16s → %s" % [combo_name, mode])
@@ -154,6 +163,40 @@ static func _normalize_mode(name: String) -> String:
 	return name
 
 
+## 官方 mode 白名单（命名契约的**可执行版本**，与选关页 `VariantCatalog.MODES[].id` 同源三轴）：
+##   classic | 单算子 o*/s*/z*/dt | T3-C 类 s*_o* | T3-F 类 s*_s* | T4 z*+s*+o*
+## 为什么必须挡：旧批次目录名（`4c_4n`、`c_clock`→`clock`、`g_mx`→`mx`）与任何手写错名都不该入库 ——
+## 它们要么是已移出主项目的旧算子、要么 mode 键与选关页对不上，混进库只造成「关数对不上、文件白占」。
+## 实测：旧批次 3537 关 / 81 组合在这道闸门后**全部被跳过**（此前会按 774 个集静默归档）。
+static func _is_official_mode(name: String) -> bool:
+	if name == "classic" or name == "dt":
+		return true
+	if VariantAxes.OBS.has(name) or VariantAxes.STRUCT.has(name) or VariantAxes.CONSERVE.has(name):
+		return true
+	var t4 := name.split("+", false)
+	if t4.size() == 3:
+		return VariantAxes.CONSERVE.has(str(t4[0])) and VariantAxes.STRUCT.has(str(t4[1])) \
+				and VariantAxes.OBS.has(str(t4[2]))
+	var pair := name.split("_", false)
+	if pair.size() == 2 and VariantAxes.STRUCT.has(str(pair[0])):
+		return VariantAxes.OBS.has(str(pair[1])) or VariantAxes.STRUCT.has(str(pair[1]))
+	return false
+
+
+## 尺寸目录名解析：只认规范写法 `5x5`（batch_all_variants.gd 产出）或 `5`（库内既有格式）。
+## 为什么不能直接 `int()`：**`int("5x5")` 的实测结果是 55，不是 5**（数字拼接）→ 关卡会被写进
+## `levels_lib/<mode>/55/`：选关页按 size=5 找 `5/`，永远看不到，纯垃圾文件（2026-09-19 实测）。
+## 纯数字分支只接受**单字符**（`5`~`9`）：`55` 这类歧义名宁可跳过并在报告里点名，也不猜。
+static func _parse_side(dir_name: String) -> int:
+	var s := dir_name.strip_edges()
+	if s.contains("x"):
+		var parts := s.split("x", false)
+		if parts.size() != 2 or int(parts[0]) != int(parts[1]):
+			return 0                    # 非方形（如 5x6）：库的尺寸键是单个 int，不支持
+		return int(parts[0])
+	return int(s) if s.is_valid_int() and s.length() == 1 else 0
+
+
 ## 写集文件，返回 {mode: {size: {tier: count}}}（本次实际落盘的）。
 func _write_sets() -> Dictionary:
 	var imported: Dictionary = {}
@@ -213,7 +256,7 @@ func _rebuild_catalog() -> void:
 		if sd == null:
 			continue
 		for size_dir in sd.get_directories():
-			var side := int(str(size_dir))
+			var side := _parse_side(str(size_dir))   # 与扫描侧同规则（防 `5x5` 被读成 55）
 			if side <= 0:
 				continue
 			var td := DirAccess.open("%s/%s" % [mode_dir, size_dir])
@@ -266,6 +309,12 @@ func _report(imported: Dictionary) -> void:
 				levels += int(imported[mode][side][tier])
 	print("[import] 本次导入 %d 个集 / %d 关；扫描单元 %d，坏关 %d，重复 %d" % [
 		sets, levels, _units_seen, _skipped_bad, _skipped_dup])
+	if not _non_official.is_empty():
+		print("[import] 非官方目录跳过 %d 个（不符命名契约，不入库；前 8: %s）" % [
+			_non_official.size(), ", ".join(_non_official.slice(0, mini(8, _non_official.size())))])
+	if not _bad_sizes.is_empty():
+		print("[import] 尺寸目录名不认识、跳过 %d 个（规范为 5x5 或 5；前 8: %s）" % [
+			_bad_sizes.size(), ", ".join(_bad_sizes.slice(0, mini(8, _bad_sizes.size())))])
 
 
 func _process(_delta: float) -> bool:
