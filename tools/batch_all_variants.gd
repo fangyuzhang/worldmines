@@ -41,9 +41,9 @@ const CliShutdown := preload("res://tools/cli_shutdown.gd")
 ## （HANDOFF 坑 #32：组合口径要锚静态常量，不能靠注册表实时内容）。
 ## 2026-09-18 换血：原列表是旧 16 变体（含 4n/sc/hv/fr/distsum/ep/4c），其中 7 个已移入
 ## `demo/mods/legacy_rules`（默认不加载）→ 照旧列表跑，本工具会大面积 skipped（静默少产）。
-const OBS := ["o1", "o2", "o3", "o4", "o5x", "o6", "o7", "o8", "o9", "o10"]
-const STRUCT := ["s1", "s2", "s3", "s4", "s5", "s6", "s7"]
-const CONSERVE := ["z1", "z2", "z3", "z4", "z5"]
+const OBS := VariantAxes.OBS
+const STRUCT := VariantAxes.STRUCT
+const CONSERVE := VariantAxes.CONSERVE
 # 兼容别名（旧引用点仍可用）
 const CLUES := OBS
 const GLOBALS := STRUCT

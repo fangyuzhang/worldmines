@@ -455,16 +455,21 @@ func _build_mixed_page() -> Control:
 
 	_mixed_hint = Label.new()
 	_mixed_hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# 说明文字很长（三张表各一句），不裁会让右侧切换按钮被推出视口
+	#（2026-09-18 截图复核：T4 按钮在 1280 下被右缘裁切）。裁断说明保按钮完整。
+	_mixed_hint.clip_text = true
 	_mixed_hint.add_theme_font_size_override("font_size", 13)
 	_mixed_hint.set_meta("secondary", true)
 	bar.add_child(_mixed_hint)
 
 	_mixed_btns.clear()   # 主题切换会整页重建，旧按钮引用必须丢弃
-	for spec in [["C 类 · 结构×观测", 0], ["F 类 · 结构×结构", 1], ["T4 · 结构×观测+守恒", 2]]:
+	# 文案与宽度按 1280 设计分辨率定：截图复核（2026-09-18）发现原「T4 · 结构×观测+守恒」
+	# 在 1280 下被窗口右缘裁切——按钮组与左侧说明文字同排，总宽超视口。缩文案 + 缩宽度。
+	for spec in [["C 类 · 结构×观测", 0], ["F 类 · 结构×结构", 1], ["T4 · 叠加守恒", 2]]:
 		var b := Button.new()
 		b.text = str(spec[0])
 		b.focus_mode = Control.FOCUS_NONE
-		b.custom_minimum_size = Vector2(198, 36)
+		b.custom_minimum_size = Vector2(184, 36)
 		b.pressed.connect(_on_mixed_switch.bind(int(spec[1])))
 		bar.add_child(b)
 		_mixed_btns.append(b)

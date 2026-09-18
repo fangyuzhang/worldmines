@@ -26,9 +26,9 @@ const GLOBAL_ORDER: Array = ["s1", "s2", "s3", "s4", "s5", "s6", "s7", "z1", "z2
 ## 代码里的 KIND_GLOBAL 是个筐，同时装 S 轴与 Z 轴（`pf` 是 S1、`mx` 是 Z1）。但 GDD §5.1
 ## 的硬限制是「观测恰 1 + 结构 ≤2 + 守恒 ≤1」——所以组合必须**按轴**配对，不能按 KIND 一锅端：
 ## 两个 Z 同关即「守恒 2 个」，直接违规（早先按 KIND 做的「约束×约束」表就踩了这个）。
-const OBS_IDS: Array = ["o1", "o2", "o3", "o4", "o5x", "o6", "o7", "o8", "o9", "o10"]
-const STRUCT_IDS: Array = ["s1", "s2", "s3", "s4", "s5", "s6", "s7"]
-const CONSERVE_IDS: Array = ["z1", "z2", "z3", "z4", "z5"]
+const OBS_IDS: Array = VariantAxes.OBS
+const STRUCT_IDS: Array = VariantAxes.STRUCT
+const CONSERVE_IDS: Array = VariantAxes.CONSERVE
 
 ## 不作为独立变体呈现的规则：
 ##   · `total_mines`：元规则（只是「总雷数」约束，不是玩法变体）；
