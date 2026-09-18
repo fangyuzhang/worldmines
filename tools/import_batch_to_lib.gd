@@ -304,6 +304,7 @@ func _write_sets() -> Dictionary:
 func _rebuild_catalog() -> void:
 	var catalog: Dictionary = {}
 	var total := 0
+	var thin: Array = []      # 薄集（<100 关）：设计口径「每集 100 关」的欠额，报告出来便于补齐
 	var md := DirAccess.open(LIB_DIR)
 	if md == null:
 		push_error("[import] levels_lib 打不开")
@@ -330,6 +331,8 @@ func _rebuild_catalog() -> void:
 				var n := _count_in_set("%s/%s/%s" % [mode_dir, size_dir, fn])
 				if n <= 0:
 					continue
+				if n < 100:
+					thin.append("%s/%s/%s=%d" % [mode, side, tier, n])
 				var by_size: Dictionary = catalog.get(mode, {})
 				var by_tier: Dictionary = by_size.get(str(side), {})
 				by_tier[tier] = n
@@ -338,6 +341,7 @@ func _rebuild_catalog() -> void:
 				total += n
 	if _dry:
 		print("[import] dry-run：catalog 将有 %d 席 / %d 关" % [catalog.size(), total])
+		_report_thin(thin)
 		return
 	var f := FileAccess.open(CATALOG_PATH, FileAccess.WRITE)
 	if f == null:
@@ -346,6 +350,15 @@ func _rebuild_catalog() -> void:
 	f.store_string(JSON.stringify({"catalog": catalog}, "  "))
 	f.close()
 	print("[import] catalog 已重建：%d 席 / %d 关" % [catalog.size(), total])
+	_report_thin(thin)
+
+
+## 薄集报告：设计口径「每集 100 关」，<100 的集就是欠额 —— 显式列出来（避免静默欠额）。
+func _report_thin(thin: Array) -> void:
+	if thin.is_empty():
+		return
+	print("[import] 薄集（<100 关）%d 个 —— 用 fill_level_lib 增量补齐（断点续跑只补未满单元）" % thin.size())
+	print("[import]   前 10: %s" % ", ".join(thin.slice(0, mini(10, thin.size()))))
 
 
 static func _count_in_set(path: String) -> int:

@@ -21,6 +21,9 @@
 #
 # 环境变量：GODOT=<godot 可执行路径>（缺省从 PATH 找 godot）；
 #           SHARDS / PER_TIER / SEED_MAX / TIMEOUT_COEF / STALL_MAX / OUT_DIR 亦可环境变量覆盖。
+#           **SEED_MAX=0（默认）= 自动 = max(40, PER_TIER×10)**——每单元种子上限；
+#           它才是「每集最多能有多少关」的硬上限（每 seed 至多 1 关），PerTier 只在上限内生效。
+#           服务器链实测：每档 100 关用 seed 上限 1200 上下。要压预算再显式给 SEED_MAX=200 之类。
 #
 # 为什么必须先口径自检：量产唯一会导致「全批报废」的错误是在**旧口径代码**上跑 ——
 # 产物组合目录名与选关页 MODES[].id 对不上，关卡进库了也永远点不到，且全程不报错。
@@ -32,7 +35,7 @@ set -euo pipefail
 
 SHARDS="${SHARDS:-2}"
 PER_TIER="${PER_TIER:-100}"
-SEED_MAX="${SEED_MAX:-40}"
+SEED_MAX="${SEED_MAX:-0}"
 TIMEOUT_COEF="${TIMEOUT_COEF:-6000}"
 STALL_MAX="${STALL_MAX:-60}"
 OUT_DIR="${OUT_DIR:-user://batch_all}"
@@ -55,7 +58,16 @@ fi
 [ -f project.godot ] || { echo "请在项目根目录（含 project.godot）运行本脚本" >&2; exit 1; }
 
 CORES="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)"
-echo "=== 环境：${CORES} 核 → ${SHARDS} 分片，每档 ${PER_TIER} 关 ==="
+# SeedMax=0（默认）→ 自动 = max(40, PER_TIER×10)。
+# 为什么：量产工具里 seed_max 是「**每单元（组合×尺寸）**的种子上限」，每个 seed 至多产 1 关，
+# 故要填满 4 档 × PER_TIER 需要 ~PER_TIER×10 次尝试（按实测进档率；服务器链实测每档 100 关用 1200 上下）。
+# 旧默认 40 会让每单元最多 40 关 → 集**永远填不满且不报错**（静默薄集，2026-09-19 修正）。
+# 要限定预算就显式给：SEED_MAX=1200 ./tools/fill_level_lib.sh
+if [ "$SEED_MAX" -le 0 ]; then
+  SEED_MAX=$(( PER_TIER * 10 ))
+  if [ "$SEED_MAX" -lt 40 ]; then SEED_MAX=40; fi
+fi
+echo "=== 环境：${CORES} 核 → ${SHARDS} 分片，每档 ${PER_TIER} 关，每单元 seed 上限 ${SEED_MAX} ==="
 if [ "$SHARDS" -gt "$CORES" ]; then
   echo "⚠️  分片数 $SHARDS > 核数 $CORES：多个 Godot 进程会互相抢 CPU，反而更慢。" >&2
   echo "   （已知教训：6 分片跑 2 核，44 分钟只完成 per_type=10 的小批量且大量 partial）" >&2

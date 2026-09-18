@@ -52,6 +52,51 @@ const GLOBALS := STRUCT
 ## 按候选回退决定（见 _initialize），此表仅提供尺寸遍历——禁止手写第二份雷数表。
 const SIZES := RuleFeasibility.CANDIDATES
 
+## 尺寸口径（《关卡集总表》的逐层尺寸政策，2026-09-19 固化进工具）：
+##   默认（T1 基准 / T2 观测 / T2 结构）      5×5–9×9
+##   守恒轴 z*（T2 守恒，表只收 7×7/8×8/9×9）  7×7–9×9
+##   变径 o4（表里变径行从 6×6 起）            6×6–9×9
+##   C 类 s*_o*（T3 C 类只收 7×7/8×8/9×9）     7×7–9×9
+##   F 类 s*_s*（T3 F 类只收 8×8/9×9）         8×8–9×9
+##   T4 z*+s*+o*（T4 只收 8×8/9×9）            8×8–9×9
+## 为什么放进工具：此前所有路径都按「全尺寸」跑 → z 轴 5×5/6×6 白产（表外，2026-09-19 发现，
+## 每个 z 算子 800 关 × 5 = 4000 关机时）。政策在此，**内置 164 组合路径与额外组合规格路径
+## （`classic+z1@5-9`）都受约束**——规格只做「缩小」，不能扩大政策范围。
+const SIDE_POLICY_FULL := [5, 6, 7, 8, 9]
+const SIDE_POLICY_NARROW := {
+	"z1": [7, 8, 9], "z2": [7, 8, 9], "z3": [7, 8, 9], "z4": [7, 8, 9], "z5": [7, 8, 9],
+	"o4": [6, 7, 8, 9],
+}
+
+
+## 某组合允许的尺寸（总表口径）。id 可能是规格串（额外组合路径 `x_classic_z1`）→
+## 统一按 (clue, globals) 归一出「单算子」，再查窄口径表。
+static func sides_for(combo: Dictionary) -> Array:
+	var clue := str(combo.get("clue", "classic"))
+	var gs: Array = combo.get("globals", [])
+	var single := ""
+	if gs.is_empty() and VariantAxes.OBS.has(clue):
+		single = clue
+	elif gs.size() == 1 and clue == "classic":
+		single = str(gs[0])
+	if single != "" and SIDE_POLICY_NARROW.has(single):
+		return SIDE_POLICY_NARROW[single]
+	if gs.size() == 2:
+		var ga := str(gs[0])
+		var gb := str(gs[1])
+		if clue == "classic" and VariantAxes.STRUCT.has(ga) and VariantAxes.STRUCT.has(gb):
+			return [8, 9]                                # F 类：结构_结构
+		if VariantAxes.OBS.has(clue):
+			var has_cons := VariantAxes.CONSERVE.has(ga) or VariantAxes.CONSERVE.has(gb)
+			var has_struct := VariantAxes.STRUCT.has(ga) or VariantAxes.STRUCT.has(gb)
+			if has_cons and has_struct:
+				return [8, 9]                            # T4：守恒+结构+观测（clue=观测, globals=[结构,守恒]）
+	if gs.size() >= 3:
+		return [8, 9]
+	if gs.size() == 1 and VariantAxes.OBS.has(clue):
+		return [7, 8, 9]                                 # C 类：结构_观测
+	return SIDE_POLICY_FULL
+
 var _out_dir := "user://batch_all"
 var _per_type := 10
 var _seed_max := 40
@@ -202,6 +247,7 @@ static func _print_axis_check(combos: Array, shard_count: int) -> void:
 	print("  结构轴 %d 席: %s" % [STRUCT.size(), " ".join(STRUCT)])
 	print("  守恒轴 %d 席: %s" % [CONSERVE.size(), " ".join(CONSERVE)])
 	print("  组合总数: %d（本分片会跑到: %d）" % [combos.size(), shard_count])
+	print("  尺寸政策（总表逐层口径）：默认 5-9｜守恒 z* 7-9｜变径 o4 6-9｜C 类 7-9｜F 类 8-9｜T4 8-9")
 	# 抽样打印各段边界（清单构建顺序固定：0 经典 / 1~22 T2 / 23~92 T3-C / 93~113 T3-F / 114~163 T4）
 	for i in [0, 1, 22, 23, 93, 114, 163]:
 		if i < combos.size():
@@ -462,7 +508,11 @@ func _initialize() -> void:
 				if _kr != null and _kr.has_method("set_k_public"):
 					_kr.call("set_k_public", _k_public == 1)
 		var combo_sides: Array = combo.get("sides", [])
+		var policy_sides: Array = sides_for(combo)
 		for side in SIZES:
+			# 尺寸政策（总表逐层口径）优先：规格只能「缩小」，不能扩大政策范围
+			if not policy_sides.has(side):
+				continue
 			if not combo_sides.is_empty() and not combo_sides.has(side):
 				continue
 			var mines: int = RuleFeasibility.standard_mines(side)

@@ -13,13 +13,19 @@ fill_level_lib.ps1 —— 一键补齐正式关卡库（量产 → 干跑报告 
   C 导入：import_batch_to_lib.gd —— 只补缺；catalog 全量重建（不会抹掉已有集）
 
 用法：
-  .\tools\fill_level_lib.ps1                # 默认 2 分片 / 每档 100 关
+  .\tools\fill_level_lib.ps1                # 默认 2 分片 / 每档 100 关 / seed 上限自动 1000
   .\tools\fill_level_lib.ps1 -Shards 8      # 按**核数**定：分片数不应超过 CPU 核数
   .\tools\fill_level_lib.ps1 -Smoke         # 冒烟：1 组合 / 每档 1 关 / seed_max 2，本地几十秒验管线
   .\tools\fill_level_lib.ps1 -SkipBatch     # 跳过量产：已有产物直接干跑+导入
   .\tools\fill_level_lib.ps1 -DryRunOnly    # 只看报告不导入
   .\tools\fill_level_lib.ps1 -Overwrite     # 覆盖已存在的集（默认只补缺，保护已有内容）
   .\tools\fill_level_lib.ps1 -Yes           # 跳过导入前确认
+  .\tools\fill_level_lib.ps1 -PerTier 20    # 两阶段：先 20 拿 22 席全覆盖，再 50/100 增量补
+
+⚠️ -SeedMax 的口径（2026-09-19 修正）：它是**每单元（组合×尺寸）的种子上限**，
+  每 seed 至多产 1 关 → 「每集最多多少关」由它封顶，-PerTier 只在上限内生效。
+  默认 0 = 自动 = max(40, PerTier×10)（服务器链实测：每档 100 关用 1200 上下）。
+  旧默认 40 配 -PerTier 100 = 每单元最多 40 关 → **集永远填不满且不报错**（静默薄集）。
 
 ⚠️ 分片数与核数（2026-09-19 实测教训）：
   分片 = 每片一个 Godot 进程，**超过核数就会互相抢 CPU，反而更慢**。
@@ -33,7 +39,7 @@ GODOT 路径：优先环境变量 $env:GODOT，否则用下方默认值（换机
 param(
     [int]$Shards = 2,
     [int]$PerTier = 100,
-    [int]$SeedMax = 40,
+    [int]$SeedMax = 0,
     [int]$TimeoutCoef = 6000,
     [switch]$Smoke,
     [switch]$SkipBatch,
@@ -68,6 +74,11 @@ try {
         $limit = 1; $perTier = 1; $seedMax = 2; $Shards = 1
         Write-Host "=== 冒烟模式：1 组合 / 每档 1 关 / seed_max 2 ===" -ForegroundColor Yellow
     }
+    # SeedMax=0（默认）→ 自动 = max(40, PerTier×10)。
+    # 为什么：量产工具里 seed_max 是「**每单元（组合×尺寸）**的种子上限」，每个 seed 至多产 1 关 →
+    # 填满 4 档 × PerTier 需 ~PerTier×10 次尝试（服务器链实测：每档 100 关用 1200 上下）。
+    # 旧默认 40 会让每单元最多 40 关 → 集永远填不满且**不报错**（静默薄集，2026-09-19 修正）。
+    if ($seedMax -le 0) { $seedMax = [Math]::Max(40, $perTier * 10) }
 
     if (-not $SkipBatch) {
         # 口径自检（开跑前闸门）：量产唯一会导致「全批报废」的错误是在旧口径代码上跑 ——
@@ -80,7 +91,7 @@ try {
         if ($chkRaw -notmatch "官方三轴") {
             Write-Error "口径自检未通过 —— 先 git pull 到含自检的版本，再重跑本脚本。"
         }
-        Write-Host "=== A 阶段：量产（$Shards 分片并行，每档 $perTier 关）===" -ForegroundColor Cyan
+        Write-Host "=== A 阶段：量产（$Shards 分片并行，每档 $perTier 关，每单元 seed 上限 $seedMax）===" -ForegroundColor Cyan
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
         $procs = @()
         for ($i = 0; $i -lt $Shards; $i++) {
