@@ -103,11 +103,15 @@ static func _ev(d: Dictionary) -> String:
 func _build_combos() -> Array:
 	var combos: Array = []
 	combos.append({"id": "classic", "clue": "classic", "globals": []})
-	# T2 单算子
+	# T2 单算子：id **就是规则 id 本身**，不加 c_/g_ 前缀。
+	# 必须与选关页 `VariantCatalog.MODES[].id` **逐字一致**——批量产出的目录名就是
+	# 入库后的 mode，而选关页按 mode 拼进度键；差一个前缀，关卡进库了也永远点不到
+	#（2026-09-18 实测两处不一致：这里是 c_o1/g_s1，目录里是 o1/s1）。
+	# 前缀本就冗余：轴信息由 id 自带（o*=观测 / s*=结构 / z*=守恒）。
 	for c in OBS:
-		combos.append({"id": "c_%s" % c, "clue": c, "globals": []})
+		combos.append({"id": c, "clue": c, "globals": []})
 	for g in STRUCT + CONSERVE:
-		combos.append({"id": "g_%s" % g, "clue": "classic", "globals": [g]})
+		combos.append({"id": g, "clue": "classic", "globals": [g]})
 	# T3 C 类：结构 × 观测
 	for s in STRUCT:
 		for c in OBS:
