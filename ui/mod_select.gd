@@ -122,11 +122,21 @@ func _rebuild_list() -> void:
 			_list_vbox.add_child(_make_mod_row(m))
 
 	# 自定义规则（自举式平台：mod 经 entry.gd 注册的 RulePlugin 线索规则）
+	#
+	# 官方三轴 22 席**本身也是 mod**（demo/mods/ 自举），所以它们也会出现在
+	# `custom_ids()` 里 —— 但它们的关卡内容随包预置在 `levels_lib/`，玩家不需要、
+	# 也不应该在这里重新生成（生成出的是「按种子的临时盘」，与库里正式关卡两套并存，
+	# 且 9×9 单盘可达十几秒）。官方席位若库里没有，选关页会**优雅降级**自动现生成，
+	# 所以这个入口也不需要。
+	# 不静默消失：末尾给一行说明（项目交互原则「此处不适用也要说明原因」）。
 	var custom := RuleRegistry.default().custom_ids()
+	var official := _official_seat_ids()
 	var has_rule := false
 	for rid in custom:
 		var rule: Object = RuleRegistry.default().resolve(StringName(rid))
 		if rule == null or rule.get_kind() != RulePlugin.KIND_CLUE:
+			continue
+		if official.has(str(rid)):
 			continue
 		if not has_rule:
 			var sec := Label.new()
@@ -135,7 +145,22 @@ func _rebuild_list() -> void:
 			_list_vbox.add_child(sec)
 			has_rule = true
 		_list_vbox.add_child(_make_rule_row(str(rid)))
+	if not official.is_empty():
+		var off_lb := Label.new()
+		off_lb.text = "官方变体（%d 席）的关卡随包内置，不在此列出；要玩请直接去选关页。" % official.size()
+		off_lb.add_theme_font_size_override("font_size", 14)
+		off_lb.set_meta("secondary", true)
+		_list_vbox.add_child(off_lb)
 	_apply_theme()
+
+
+## 官方三轴席位 id 集合 —— 这些席位的关卡内容随包预置（`levels_lib/`），
+## 不在模组页提供「重新生成」入口（否则玩家会生成出第二套与库并存的临时盘）。
+static func _official_seat_ids() -> Dictionary:
+	var out := {}
+	for id in VariantCatalog.OBS_IDS + VariantCatalog.STRUCT_IDS + VariantCatalog.CONSERVE_IDS:
+		out[str(id)] = true
+	return out
 
 
 func _make_mod_row(mod_name: String) -> VBoxContainer:
