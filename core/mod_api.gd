@@ -140,7 +140,60 @@ func _copy_code_mod(src: String, dst: String) -> bool:
 			return false
 		f.store_string(FileAccess.get_file_as_string(sp))
 		f.close()
+	# 子目录递归（levels/ 预生成关卡等数据目录——创意工坊分发单元的组成部分，
+	# 此前只复制顶层文件，带 levels/ 的 Mod 装出来缺关卡）
+	for sub in d.get_directories():
+		if not _copy_dir_recursive(src.path_join(str(sub)), dst.path_join(str(sub))):
+			return false
 	return true
+
+
+## 递归复制目录（含子目录；跳过 .uid 编辑器缓存）。仅支持文本文件——
+## 与 _copy_code_mod 同一限制（Mod 包当前全部为文本：json / gd）。
+func _copy_dir_recursive(src: String, dst: String) -> bool:
+	if DirAccess.make_dir_recursive_absolute(dst) != OK:
+		return false
+	var d := DirAccess.open(src)
+	if d == null:
+		return false
+	for f in d.get_files():
+		if str(f).ends_with(".uid"):
+			continue
+		var fo := FileAccess.open(dst.path_join(str(f)), FileAccess.WRITE)
+		if fo == null:
+			return false
+		fo.store_string(FileAccess.get_file_as_string(src.path_join(str(f))))
+		fo.close()
+	for sub in d.get_directories():
+		if not _copy_dir_recursive(src.path_join(str(sub)), dst.path_join(str(sub))):
+			return false
+	return true
+
+
+## 从本地文件夹安装 Mod（创意工坊「本地导入」的最小闭环；联网分发后续复用本入口）。
+## 校验：目录可读 + manifest.json 可解析 + id 合法非空；目标已存在则**拒绝**
+##（不覆盖——user://mods 里的目录可能承载玩家进度与已生成关卡，覆盖即毁数据）。
+## 返回 { ok, id, dir } 或 { ok:false, reason }。
+func install_from_dir(src: String) -> Dictionary:
+	var d := DirAccess.open(src)
+	if d == null:
+		return {"ok": false, "reason": "目录不存在或无法读取: %s" % src}
+	var manifest_path := src.path_join("manifest.json")
+	if not FileAccess.file_exists(manifest_path):
+		return {"ok": false, "reason": "缺少 manifest.json——不是有效的 Mod 目录（需含 manifest.json 与 entry.gd）"}
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(manifest_path))
+	if not (parsed is Dictionary):
+		return {"ok": false, "reason": "manifest.json 不是合法 JSON"}
+	var mod_id := str((parsed as Dictionary).get("id", "")).strip_edges()
+	if mod_id.is_empty() or mod_id.contains("/") or mod_id.contains("\\") or mod_id.contains("..") \
+			or mod_id.contains(":") or mod_id.contains(" "):
+		return {"ok": false, "reason": "manifest.json 的 id 非法: \"%s\"（需非空、无空格与路径符号）" % mod_id}
+	var dst := "%s/%s" % [MODS_DIR, mod_id]
+	if DirAccess.dir_exists_absolute(dst):
+		return {"ok": false, "reason": "已存在同名 Mod「%s」。为保护玩家数据不予覆盖；如需重装请先在模组页卸载" % mod_id}
+	if not _copy_code_mod(src, dst):
+		return {"ok": false, "reason": "复制失败（包不完整：缺 manifest.json / entry.gd？）"}
+	return {"ok": true, "id": mod_id, "dir": dst}
 
 
 ## 该 mod 是否为随包内置（官方算子）。选关页据此把官方算子当「内置变体」展示，而非玩家 Mod。

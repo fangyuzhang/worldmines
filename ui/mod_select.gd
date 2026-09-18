@@ -7,6 +7,7 @@ var _list_vbox: VBoxContainer
 # UI 冻结无进度不可取消——与 level_select 的 await+取消模式对齐）
 var _gen_cancel := false
 var _gen_dlg: PopupPanel = null
+var _import_dlg: FileDialog = null
 
 
 func _ready() -> void:
@@ -26,6 +27,15 @@ func _build_ui() -> void:
 	title.text = "模组管理"
 	title.add_theme_font_size_override("font_size", 28)
 	top.add_child(title)
+
+	# 本地导入：从文件夹安装 Mod（创意工坊「本地导入」最小闭环；联网上传后续接
+	# 同一个 ModAPI.install_from_dir 入口，无需改 UI 流程）
+	var imp := Button.new()
+	imp.text = "导入 Mod（文件夹）"
+	imp.focus_mode = Control.FOCUS_NONE
+	imp.custom_minimum_size = Vector2(190, 40)
+	imp.pressed.connect(_open_import_dialog)
+	top.add_child(imp)
 
 	# 返回按钮：统一右上角（独立定位）
 	var back := Button.new()
@@ -436,6 +446,28 @@ func _mod_board(mod_name: String) -> Dictionary:
 
 ## toast 统一走 UiToast（原先本页与 skin_browser / settings_panel / main_menu
 ## 各实现了一份同构的 Label+Timer，行为与配色已经开始分叉）。
+## 本地导入：从文件夹安装 Mod（创意工坊「本地导入」最小闭环）。
+## 真正的安装/校验逻辑在 ModAPI.install_from_dir（可 headless 测试），这里只负责选目录与提示。
+func _open_import_dialog() -> void:
+	if _import_dlg == null:
+		_import_dlg = FileDialog.new()
+		_import_dlg.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+		_import_dlg.access = FileDialog.ACCESS_FILESYSTEM
+		_import_dlg.title = "选择 Mod 文件夹（需含 manifest.json 与 entry.gd）"
+		_import_dlg.dir_selected.connect(_on_import_dir)
+		add_child(_import_dlg)
+	_import_dlg.popup_centered(Vector2i(760, 520))
+
+
+func _on_import_dir(path: String) -> void:
+	var r: Dictionary = ModAPI.install_from_dir(path)
+	if bool(r.get("ok", false)):
+		_toast("已导入 Mod「%s」，点「加载」启用" % str(r.get("id", "")), false)
+		_rebuild_list()
+	else:
+		_toast("导入失败：%s" % str(r.get("reason", "")))
+
+
 func _toast(msg: String, danger: bool = true) -> void:
 	UiToast.popup(self, msg, danger)
 
