@@ -9,6 +9,78 @@ var _gen_cancel := false
 var _gen_dlg: PopupPanel = null
 var _import_dlg: FileDialog = null
 
+## 「把想法告诉 AI，AI 写出 mod」的任务说明（拼进任务包文件头部）。
+## 安装路径在运行时用 globalize_path 动态填——玩家不需要知道自己机器上的 user:// 在哪。
+const AI_TASK_BRIEF := """【给 AI 的任务说明】
+你是本游戏（《世界扫雷》，Godot 4 变体扫雷解谜）的 Mod 开发助手。玩家想给自己的游戏加一个新变体 Mod。
+请按以下步骤工作：
+1. 通读下方《变体规则编写规范》——它包含完整契约、全部可用原语与已知坑。
+2. 听玩家用日常语言描述想法（玩家的下一条消息），然后按规范产出：
+   ① manifest.json 全文  ② entry.gd 全文
+   ③ 一段「正逆向一致性」说明（为什么 build_*_constraints 与正向计算是同一语义）
+   ④ 给玩家的验收步骤（按规范 §7）。
+3. 红线：只实现规则语义（RulePlugin 契约）。不要访问文件系统、网络、autoload，
+   不要任何与玩法无关的代码——这些代码过不了平台的加载确认与审核。
+4. 产出的两个文件，玩家会放到本机器的 Mod 目录（路径见下），然后在游戏的
+   「模组管理」页点「加载」即可玩。
+
+【本机器的 Mod 安装目录】
+%s
+
+【manifest.json 空白模板】
+{
+	"id": "my_rule",
+	"version": "1.0.0",
+	"api_version": "2.9",
+	"entry": { "runtime": "gdscript", "path": "entry.gd" }
+}
+（id 换成你的 Mod 名：小写、无空格、不与已有重复。）
+"""
+
+## 规范全文读不到时的内嵌精简版（导出包未包含 .md 的兜底）：最小可玩示例 + 命名契约 + 关键坑。
+const AI_GUIDE_MINIMAL := """《变体规则编写规范》精简版（完整版见游戏安装目录的 变体规则编写规范.md）
+
+一个 Mod = 一个文件夹，含两个文件：manifest.json（见上方模板）+ entry.gd（代码入口）。
+
+entry.gd 骨架（线索类）：
+    extends RefCounted
+
+    class MyRule:
+        extends RulePlugin
+        func get_rule_id() -> StringName:
+            return &"my_rule"
+        func get_kind() -> String:
+            return KIND_CLUE
+        func describe() -> Dictionary:
+            return {"name": "名字", "rule_text": "玩家看到的规则说明"}
+        # 正向：雷分布 -> 数字。mine_set: Dictionary(Vector2i -> true)
+        func compute_clue(mine_set: Dictionary, pos: Vector2i, grid_size: Vector2i) -> Variant:
+            ...
+        # 逆向：给定数字 -> 约束。b 为 RuleBuilder；value 即正向返回值
+        func build_clue_constraints(b: RuleBuilder, pos: Vector2i, value: Variant) -> void:
+            var nbs := b.neighbors(pos, DIRS)          # DIRS 自定义邻域 Vector2i 列表
+            b.add_eq(b.sum(b.cell_vars(nbs)), int(value))   # 计数型标准写法
+        # 值 0 时保证安全的邻格（连锁展开）；语义不成立就删掉这个方法
+        func zero_safe_neighbors(pos, grid_size, value = null) -> Array[Vector2i]:
+            if value != 0: return []
+            return RulePlugin.dirs_to_neighbors(pos, grid_size, DIRS)
+
+    func on_load() -> bool:
+        RuleRegistry.default().register(MyRule.new())
+        return true
+
+棋盘级约束类规则：get_kind() 返回 KIND_GLOBAL，实现 build_global_constraints(b)
+（可读 b.rows / b.cols / b.total_mines），可选实现 place_mines(rng, cols, rows, count)
+构造式布雷（一次成型，不许"随机撒+拒绝重采"，返回数量必须 == count，空数组=交给平台随机）。
+
+RuleBuilder 常用原语：cell_var(r,c)（注意行在前）/ cell_vars(数组) / bool_var() /
+sum(xs) / wsum(ws, xs) / add_eq / add_le / add_imp / add_iff / add_bool_or / not_lit / in_board(r,c)。
+
+命名契约：o*/s*/z* 是官方保留前缀；id 小写无空格无 + 号。
+常见坑：正逆向语义必须一致（平台会用随机布雷双向校验）；行列写反（cell_var(pos.y, pos.x)）；
+计数型线索建议 supports_mask() 返回 true 并实现 build_interval_constraints。
+"""
+
 
 func _ready() -> void:
 	add_to_group("themed")
@@ -40,6 +112,15 @@ func _build_ui() -> void:
 		imp.tooltip_text = "Web 版暂不支持本地导入，请在桌面版中使用"
 	imp.pressed.connect(_open_import_dialog)
 	top.add_child(imp)
+
+	# 「把想法告诉 AI，AI 写出 mod」的最短路径：一键生成自包含任务文件
+	#（完整编写规范 + 空白模板 + 本机安装路径），用户丢给任意 AI 即可产出可安装的 mod
+	var ai := Button.new()
+	ai.text = "AI Mod 任务包"
+	ai.focus_mode = Control.FOCUS_NONE
+	ai.custom_minimum_size = Vector2(170, 40)
+	ai.pressed.connect(_export_ai_task_pack)
+	top.add_child(ai)
 
 	# 返回按钮：统一右上角（独立定位）
 	var back := Button.new()
@@ -463,6 +544,34 @@ func _mod_board(mod_name: String) -> Dictionary:
 
 ## toast 统一走 UiToast（原先本页与 skin_browser / settings_panel / main_menu
 ## 各实现了一份同构的 Label+Timer，行为与配色已经开始分叉）。
+## 生成「AI Mod 任务包」：一份自包含文件（任务说明 + 完整编写规范 + 空白模板 +
+## **本机真实安装路径**），落到 user:// 并复制进剪贴板。玩家把它丢给任意 AI，
+## AI 不需要接触游戏源码即可产出可直接安装的 Mod。
+## 「简单到 AI 都会写」的关键不在 SDK 面多大，而在 AI 能否在玩家机器上**自举**——
+## 找到规范、读懂契约、装对位置；任务包把这三件事一次给全，还附上本机真实路径，
+## 等价于玩家「把游戏路径告诉 AI」，且不暴露任何源码。
+## 规范全文优先读 res://（开发期/导出包含时）；读不到回退内嵌精简版。
+func _export_ai_task_pack() -> void:
+	var guide := ""
+	if FileAccess.file_exists("res://变体规则编写规范.md"):
+		guide = FileAccess.get_file_as_string("res://变体规则编写规范.md")
+	if guide.is_empty():
+		guide = AI_GUIDE_MINIMAL
+	var brief := AI_TASK_BRIEF % ProjectSettings.globalize_path("user://mods")
+	var doc := "%s\n\n%s\n" % [brief, guide]
+	var path := "user://MOD_TASK_FOR_AI.txt"
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		_toast("任务包写盘失败: %s" % path)
+		return
+	f.store_string(doc)
+	f.close()
+	DisplayServer.clipboard_set(doc)
+	_toast("任务包已生成（内容已复制到剪贴板）：把剪贴板或该文件发给 AI，写完把两个文件放进上述 Mod 目录",
+			false)
+	OS.shell_open(ProjectSettings.globalize_path("user://"))
+
+
 ## 本地导入：从文件夹安装 Mod（创意工坊「本地导入」最小闭环）。
 ## 真正的安装/校验逻辑在 ModAPI.install_from_dir（可 headless 测试），这里只负责选目录与提示。
 func _open_import_dialog() -> void:
