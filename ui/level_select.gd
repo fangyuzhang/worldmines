@@ -671,8 +671,21 @@ func _combo_cell(mode_id: String, label: String) -> Button:
 		lines.append(VariantCatalog.rule_text(str(rid)))
 	if str(m["clue"]) != "classic":
 		lines.append(VariantCatalog.rule_text(str(m["clue"])))
-	if str(m.get("verdict", "ok")) == RuleSignature.WARN:
-		lines.append("⚠ 同轴叠加，可行域偏窄——部分尺寸无解，已由弹窗内的尺寸按钮禁用")
+	# 判据理由由签名表**实时两两推导**（R1~R5），不再写死泛化文案：补入官方 22 席签名后，
+	# 这里能给出具体依据（如 R2「同一作用域叠加」/ R3「对称群交集为空」），
+	# 且随签名表更新自动跟上（改了签名不必回来改文案）。
+	var ids: Array = [str(m["clue"])]
+	ids.append_array(m["globals"])
+	var why := ""
+	for i in ids.size():
+		for j in range(i + 1, ids.size()):
+			var v := RuleSignature.compat(str(ids[i]), str(ids[j]), _cur_size(),
+					LevelSequence.mine_count(SIZES[_size_idx]))
+			if str(v["verdict"]) == RuleSignature.WARN and why == "":
+				why = str(v["reason"])
+	if why != "":
+		lines.append("⚠ %s" % why)
+		lines.append("部分尺寸可能无解——弹窗内的尺寸按钮会自动禁用并切到最近可行尺寸")
 	lines.append("已通关 %d / %d" % [_cleared_total(mode_id), SIZES.size() * LEVELS_PER_SET])
 	btn.tooltip_text = "\n".join(lines)
 	btn.pressed.connect(_open_popup.bind(mi))

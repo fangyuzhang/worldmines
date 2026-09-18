@@ -61,7 +61,8 @@ const FORBID := "forbid"
 ## implies：本算子**逻辑蕴含**的其它算子 id（两者同时出现在同一关时，后者完全冗余 -> R4 forbid）。
 ## win：scope == WINDOW 时的窗口边长。
 static func table() -> Dictionary:
-	return {
+	# 基础表：内置换算子 + 轴 S 的设计期泛化名（`iso` / `notri` / `dense`… 保留，历史引用可能还在）
+	var t := {
 		# ---------- 轴 O：观测通道（作用在 f）----------
 		"classic":   {"obj": Obj.OBS, "scope": Scope.POINT, "win": 3, "sym": SYM_D4, "div": [], "implies": []},
 		"4n":        {"obj": Obj.OBS, "scope": Scope.POINT, "win": 3, "sym": SYM_D4, "div": [], "implies": []},
@@ -95,6 +96,47 @@ static func table() -> Dictionary:
 		"dt":        {"obj": Obj.COUNT, "scope": Scope.REGION, "win": 0, "sym": SYM_NONE,
 			"div": [[Div.EXACT_HALF, 2]], "implies": []},
 	}
+	return _with_official(t)
+
+
+## 官方 22 席（GDD §4）的签名 —— 为什么必须入表：
+## `compat()` 对未登记的 id 一律回退 `warn`（R0）。于是官方组合在混合档里只能显示泛化文案，
+## 更糟的是 **R4 蕴含 / R5 整除** 这两类真正该被禁止的组合推导不出来（会留下死格）。
+##
+## 与旧席位**同规则**的 5 席（`o8`=钟点 / `o10`=环游 / `z1`=镜像 / `z2`=相邻行锁 / `z3`=四象）
+## 直接**引用**旧签名而不是复制一份：它们是同一条规则的两份实现，代数身份必须永远一致
+## —— 引用能保证「改一处两处同步」，复制迟早漂移。
+## 其余 17 席按 GDD §4.2（观测）/ §4.4（结构）/ §4.5（守恒）的数学定义填写。
+static func _with_official(t: Dictionary) -> Dictionary:
+	# ---- 观测轴 O1~O10（win = 线索窗口边长；对穿/斜脉/射距跨行跨列，故 win 记 0）----
+	t["o1"]  = {"obj": Obj.OBS, "scope": Scope.POINT, "win": 3, "sym": SYM_D4, "div": [], "implies": []}   # 四条轴两端成雷：轴集合在 D4 下封闭
+	t["o2"]  = {"obj": Obj.OBS, "scope": Scope.POINT, "win": 3, "sym": SYM_D4, "div": [], "implies": []}   # 八邻域内比大小
+	t["o3"]  = {"obj": Obj.OBS, "scope": Scope.POINT, "win": 3, "sym": SYM_D4, "div": [], "implies": []}   # 八邻计数单调压缩
+	t["o4"]  = {"obj": Obj.OBS, "scope": Scope.POINT, "win": 5, "sym": SYM_D4, "div": [], "implies": []}   # 半径 2 = 5×5；隐藏半径不改对称性
+	t["o5x"] = {"obj": Obj.OBS, "scope": Scope.POINT, "win": 0, "sym": SYM_D4, "div": [], "implies": []}   # 两条对角线过本格，在 D4 下互换
+	t["o6"]  = {"obj": Obj.OBS, "scope": Scope.POINT, "win": 5, "sym": SYM_D4, "div": [], "implies": []}   # 二阶邻域 = 5×5
+	t["o7"]  = {"obj": Obj.OBS, "scope": Scope.POINT, "win": 3, "sym": SYM_D4, "div": [], "implies": []}   # 奇偶剥夺不改对称
+	t["o8"]  = t["clock"]
+	t["o9"]  = {"obj": Obj.OBS, "scope": Scope.ROW, "win": 1, "sym": SYM_D4, "div": [], "implies": []}     # 四向射线取最小（fr 是单向，故其 sym 为 NONE）
+	t["o10"] = t["loopruns"]
+
+	# ---- 结构轴 S1~S7 ----
+	t["s1"] = {"obj": Obj.LOCAL, "scope": Scope.WINDOW, "win": 2, "sym": SYM_D4, "div": [], "implies": []}   # 2×2 窗口 ≤2 雷
+	t["s2"] = {"obj": Obj.COUNT, "scope": Scope.GLOBAL, "win": 0, "sym": SYM_D4, "div": [], "implies": []}   # 一阶矩落在中心 ± 半格
+	t["s3"] = {"obj": Obj.TOPO, "scope": Scope.ADJ, "win": 0, "sym": SYM_D4, "div": [], "implies": []}       # 森林（无环）
+	t["s4"] = {"obj": Obj.COUNT, "scope": Scope.GLOBAL, "win": 0, "sym": SYM_D4, "div": [], "implies": []}   # 分层密度单调（层 = 到边界距离）
+	t["s5"] = {"obj": Obj.LOCAL, "scope": Scope.ROW, "win": 1, "sym": SYM_MIR_H, "div": [], "implies": []}   # 每行/列内连续
+	t["s6"] = {"obj": Obj.LOCAL, "scope": Scope.POINT, "win": 3, "sym": SYM_D4, "div": [], "implies": []}     # 每颗雷的八邻雷数为偶
+	t["s7"] = {"obj": Obj.TOPO, "scope": Scope.ADJ, "win": 0, "sym": SYM_D4, "div": [], "implies": []}       # 分量数恰 K（与 s3 同 scope → R2 warn，正是 GDD §5.3 的 J2）
+
+	# ---- 守恒轴 Z1~Z5 ----
+	t["z1"] = t["mx"]
+	t["z2"] = t["rl"]
+	t["z3"] = t["qd"]
+	t["z4"] = {"obj": Obj.COUNT, "scope": Scope.ROW, "win": 1, "sym": SYM_MIR_D, "div": [], "implies": []}   # 行 profile = 列 profile（转置不变）
+	t["z5"] = {"obj": Obj.COUNT, "scope": Scope.ROW, "win": 1,
+		"sym": SYM_MIR_H | SYM_MIR_V, "div": [], "implies": []}                                             # 各行雷数成等差
+	return t
 
 
 ## 兼容判决。size = Vector2i(cols, rows)，mines = 总雷数 N。
