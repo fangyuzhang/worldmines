@@ -510,6 +510,8 @@ func on_load() -> bool:
 34. **变体池收敛（2026-09-18，GDD 终版对齐）**：8 个终版之外的旧算子（`4n / sc / knight / fr / distsum / hv / ep / 4c`）已移入 `demo/mods/legacy_rules` 并列入 `ModAPI.BUNDLED_SKIP`（产品默认不加载，玩家在模组页自行启用）；选关页只显示官方 id，6 个与官方席位等价的实现（`clock / loopruns / pf / mx / rl / qd`）按 `HIDDEN_RULES` 隐藏但保留在注册表里。**测试进程由 `.gutconfig.json` 的 `pre_run_script`（`test/_pre_run.gd`）统一装配备用包**：它们以 mod 身份进注册表（`source="mod"` → 归 Mod 页），既不占单项变体页的 24 卡，也不进三轴 → 产品口径仍是终版。另注：`.gutconfig.json` 里**不要**写 `dirs`/`include_subdirs`，否则会盖掉命令行的 `-gtest`，把「跑一个文件」变成「跑全量」（实测踩过）。
 30. **Def 是规则平台的「声明式子集」，不是新玩法**（v3.3）：`DefEngine` 的 window/aggregate/op 是**封闭枚举**，`generate_with_engine` 本来就委托 `generate_with_rules`（先翻译成规则 id）。所以任何 mod Def 要么 ≡ 某个内置变体（`n4+sum ≡ 4n`、`symmetry_axis ≡ mx`），要么映射不到规则平台而**根本生成不出来**——「把 Def 做成独立选关页变体」这条路在技术上等于造重复项或死格（与 variant_catalog 注释里警告的同一件事）。碰「让 Def 出现在 X 界面」这类需求时先问三句：它等价于哪个内置变体？它的成品（关卡文件）落在哪？玩家在哪儿能玩到？
 
+35. **产物 mode 必须以关卡 JSON 为准，不能按目录名判（2026-09-19 取证）**：量产链（`batch_all_variants.gd` 的「额外组合」路径，参数如 `classic+s1@5-9`）产出的目录名是 `x_classic_s1` / `x_o10`，**与库内 mode id（`s1` / `o10`）不同名**。导入工具若按目录名做命名契约闸门，会把服务器 **15 批产物 100% 拒掉**（探针实测 14/14 被拒，形同整条链白跑）。正确做法：**mode 由关卡 JSON 的 `clue_rule` + `global_rules` 推导**（与《关卡集供给对账》同口径）——单算子 `o*/s*/z*`、C 类 `结构_观测`、F 类 `结构_结构`、T4 `守恒+结构+观测`；目录名只用于遍历，目录名识别仅作兼容（剥 `x_`/`c_`/`g_` 前缀与 `classic` 底座）。已修：`tools/import_batch_to_lib.gd`（`_mode_from_level`）+ 回归 `test/unit/test_import_batch.gd`（含 `x_*` 形态断言）。**教训**：凡「产物命名/布局」相关判据，先拿真实产物目录名跑一遍再做闸门。
+
 > v2.9.3 已完成全量交叉验证，42 项发现中 24 项已修、2 项误报推翻、1 项回滚。
 > 完整清单见 GDD `25_HANDOFF交接文档.md` §13.1（已修复）/ §13.2（未修复，含重构级与需拍板项）。
 

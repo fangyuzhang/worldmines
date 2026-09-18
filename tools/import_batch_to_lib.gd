@@ -15,11 +15,13 @@ extends SceneTree
 #   · --overwrite  覆盖已存在的 (mode,size,tier) 集；默认**只补缺**，不动已有的
 #   · --min=10   集内关卡数下限（低于此不建集，防半成品入库），默认 1
 #
-# **命名契约（最关键）**：目录名 = 选关页 `VariantCatalog.MODES[].id`，逐字一致：
-#     单算子 = 规则 id（o1 / s1 / z1）；C 类 = 结构_观测（s1_o1）；
-#     F 类 = 结构_结构（s1_s2）；T4 = 守恒+结构+观测（z1+s1+o1）。
-#   为兼容旧批次（2026-09-18 之前批量脚本用 c_/g_ 前缀）此处自动剥离前缀，
-#   但**新产出必须直接是上面的形式**（batch_all_variants.gd 已同步修正）。
+# **mode 口径（最关键，2026-09-19 修正）**：以**关卡 JSON 字段**为产物侧真相
+#   （`clue_rule` + `global_rules`），推导库内 mode id（= 选关页 MODES[].id）：
+#     单算子 = o1/s1/z1；C 类 = 结构_观测（s1_o1）；F 类 = 结构_结构（s1_s2）；
+#     T4 = 守恒+结构+观测（z1+s1+o1）；内置 = classic / dt。
+#   **不依赖目录命名**（与《关卡集供给对账》同口径）。历史形态全部自动兼容：
+#     量产链（额外组合路径）`x_classic_s1` / `x_o10`；内置路径 `o1` / `s1_o1`；
+#     旧批次 `c_o1` / `g_s1`。按目录名判会整批拒掉服务器 15 批产物（实测 14/14 被拒）。
 #
 # 安全设计：
 #   · catalog.json **全量重建**（扫盘上全部 levels_lib，而非只记本次导入）——
@@ -47,7 +49,9 @@ var _bag: Dictionary = {}
 var _skipped_bad := 0
 var _skipped_dup := 0
 var _units_seen := 0
-var _non_official: Array = []   # 非官方目录名（旧口径 / 不符命名契约），整目录跳过
+var _accepted := 0                  # 已收入 _bag 的关数（目录级进度打印用）
+var _skipped_non_official := 0      # 关卡 JSON 推导出非官方组合 → 跳过的关数
+var _non_official: Array = []       # 非官方组合的来源目录（去重，报告用）
 var _bad_sizes: Array = []      # 尺寸目录名不认识的（如旧批次 `55`），整目录跳过
 
 
@@ -73,33 +77,30 @@ func _initialize() -> void:
 
 
 ## 扫描 `src/<combo>/<size>/<tier>_<idx>.json`，收进 _bag。
+## 目录名**只用于遍历**——mode 由关卡 JSON 推导（见 `_mode_from_level`），
+## 因此 `x_classic_s1`（量产链）/ `o1`（内置路径）/ `c_o1`（旧批次）都能正确入库。
 func _scan_source() -> void:
 	var root := DirAccess.open(_src)
 	if root == null:
 		push_error("[import] 源目录打不开: %s" % _src)
 		return
 	for combo_name in root.get_directories():
-		var mode := _normalize_mode(str(combo_name))
-		# 命名契约闸门：只有选关页认识的 mode 才允许入库（判据见 _is_official_mode）。
-		# 旧批次目录（`c_clock`→`clock` / `4c_4n` / `g_mx`→`mx`）在这里被挡下 —— 否则它们会
-		# 静默归档进 levels_lib 并写进 catalog：选关页看不到，却白占仓库几千个文件、关数也对不上。
-		if not _is_official_mode(mode):
-			_non_official.append(str(combo_name))
-			continue
 		var combo_dir := "%s/%s" % [_src, combo_name]
 		var cd := DirAccess.open(combo_dir)
 		if cd == null:
 			continue
+		var accepted_before := _accepted
 		for size_dir in cd.get_directories():
 			var side := _parse_side(str(size_dir))
 			if side <= 0:
 				_bad_sizes.append("%s/%s" % [combo_name, size_dir])
 				continue
-			_scan_size(combo_dir, size_dir, mode, side)
-		print("[import]   %-16s → %s" % [combo_name, mode])
+			_scan_size(combo_dir, size_dir, side)
+		if _accepted > accepted_before:
+			print("[import]   %-20s → 收 %d 关" % [combo_name, _accepted - accepted_before])
 
 
-func _scan_size(combo_dir: String, size_dir: String, mode: String, side: int) -> void:
+func _scan_size(combo_dir: String, size_dir: String, side: int) -> void:
 	var list_dir := "%s/%s" % [combo_dir, size_dir]
 	var d := DirAccess.open(list_dir)
 	if d == null:
@@ -120,6 +121,13 @@ func _scan_size(combo_dir: String, size_dir: String, mode: String, side: int) ->
 		if lv.is_empty():
 			_skipped_bad += 1
 			continue
+		# mode 以关卡 JSON 为准（clue_rule + global_rules）；非官方组合（旧算子等）在此挡下。
+		var mode := _mode_from_level(lv)
+		if mode == "":
+			_skipped_non_official += 1
+			if not _non_official.has(combo_dir):
+				_non_official.append(combo_dir)
+			continue
 		_put(mode, side, tier, lv)
 
 
@@ -134,6 +142,7 @@ func _put(mode: String, side: int, tier: String, lv: Dictionary) -> void:
 			_skipped_dup += 1
 			return
 	arr.append(lv)
+	_accepted += 1
 	by_size[tier] = arr
 	by_mode[side] = by_size
 	_bag[mode] = by_mode
@@ -155,32 +164,81 @@ func _read_level(path: String) -> Dictionary:
 	return lv
 
 
-## 旧批次目录名 `c_o1` / `g_s1` → `o1` / `s1`（新产出直接就是后者，此处恒等）。
-static func _normalize_mode(name: String) -> String:
-	for pfx in ["c_", "g_"]:
-		if name.begins_with(pfx):
-			return name.substr(pfx.length())
-	return name
+## 关卡 JSON → 库内 mode id（**产物侧真相 = JSON 字段**，与《关卡集供给对账》同口径）。
+static func _mode_from_level(lv: Dictionary) -> String:
+	return _canonical_mode(str(lv.get("clue_rule", "")), lv.get("global_rules", []))
 
 
-## 官方 mode 白名单（命名契约的**可执行版本**，与选关页 `VariantCatalog.MODES[].id` 同源三轴）：
-##   classic | 单算子 o*/s*/z*/dt | T3-C 类 s*_o* | T3-F 类 s*_s* | T4 z*+s*+o*
-## 为什么必须挡：旧批次目录名（`4c_4n`、`c_clock`→`clock`、`g_mx`→`mx`）与任何手写错名都不该入库 ——
-## 它们要么是已移出主项目的旧算子、要么 mode 键与选关页对不上，混进库只造成「关数对不上、文件白占」。
-## 实测：旧批次 3537 关 / 81 组合在这道闸门后**全部被跳过**（此前会按 774 个集静默归档）。
+## (clue_rule, global_rules) → 库内 mode id；非官方组合返回 ""。
+## 与 `ui/variant_catalog.build_modes()` 的 id 构造一一对应：
+##   classic | o*（观测）| s*（结构）| z*（守恒）| dt（内置骨牌）| s_o（C 类）| s_s（F 类）| z+s+o（T4）
+static func _canonical_mode(clue: String, globals: Variant) -> String:
+	var gs: Array = []
+	if globals is Array:
+		for g in globals:
+			gs.append(str(g))
+	if gs.is_empty():
+		if clue == "classic" or VariantAxes.OBS.has(clue):
+			return clue
+		return ""
+	if gs.size() == 1:
+		var g1 := str(gs[0])
+		if clue == "classic":
+			if VariantAxes.STRUCT.has(g1) or VariantAxes.CONSERVE.has(g1) or g1 == "dt":
+				return g1
+			return ""
+		if VariantAxes.OBS.has(clue) and VariantAxes.STRUCT.has(g1):
+			return "%s_%s" % [g1, clue]                     # C 类：结构_观测
+		return ""
+	if gs.size() == 2:
+		var a := str(gs[0])
+		var b := str(gs[1])
+		if clue == "classic" and VariantAxes.STRUCT.has(a) and VariantAxes.STRUCT.has(b):
+			# F 类：结构_结构（按轴序归一，与构建侧 i<j 同序）
+			if VariantAxes.STRUCT.find(a) < VariantAxes.STRUCT.find(b):
+				return "%s_%s" % [a, b]
+			return "%s_%s" % [b, a]
+		if VariantAxes.OBS.has(clue):
+			var cons := a if VariantAxes.CONSERVE.has(a) else (b if VariantAxes.CONSERVE.has(b) else "")
+			var st := a if VariantAxes.STRUCT.has(a) else (b if VariantAxes.STRUCT.has(b) else "")
+			if cons != "" and st != "":
+				return "%s+%s+%s" % [cons, st, clue]       # T4：守恒+结构+观测
+		return ""
+	return ""
+
+
+## 官方 mode id 判定（推导结果自检；也用于目录名/规格串的兼容识别）。
 static func _is_official_mode(name: String) -> bool:
-	if name == "classic" or name == "dt":
-		return true
-	if VariantAxes.OBS.has(name) or VariantAxes.STRUCT.has(name) or VariantAxes.CONSERVE.has(name):
-		return true
-	var t4 := name.split("+", false)
-	if t4.size() == 3:
-		return VariantAxes.CONSERVE.has(str(t4[0])) and VariantAxes.STRUCT.has(str(t4[1])) \
-				and VariantAxes.OBS.has(str(t4[2]))
-	var pair := name.split("_", false)
+	return _canonical_mode_from_id(name) != ""
+
+
+## 目录名 / 规格串 → 库内 mode id；无法识别返回 ""。
+## 兼容三种历史形态：量产链额外组合 `x_classic_s1` / `x_o10`（剥 `x_` 与 `classic` 底座）、
+## 旧批次 `c_o1` / `g_s1`（剥一字母前缀）、内置路径 `o1` / `s1_o1` / `z1+s1+o1`（恒等）。
+## 实测：服务器 15 批产物目录全为 `x_*` 形态——**按旧判据会被 100% 拒掉**（2026-09-19 探针取证）。
+static func _canonical_mode_from_id(name: String) -> String:
+	var n := name
+	for pfx in ["x_", "c_", "g_"]:
+		if n.begins_with(pfx):
+			n = n.substr(pfx.length())
+			break
+	if n.begins_with("classic+"):
+		n = n.substr(8)
+	elif n.begins_with("classic_"):
+		n = n.substr(8)
+	if n == "classic" or n == "dt":
+		return n
+	if VariantAxes.OBS.has(n) or VariantAxes.STRUCT.has(n) or VariantAxes.CONSERVE.has(n):
+		return n
+	var t4 := n.split("+", false)
+	if t4.size() == 3 and VariantAxes.CONSERVE.has(str(t4[0])) \
+			and VariantAxes.STRUCT.has(str(t4[1])) and VariantAxes.OBS.has(str(t4[2])):
+		return n
+	var pair := n.split("_", false)
 	if pair.size() == 2 and VariantAxes.STRUCT.has(str(pair[0])):
-		return VariantAxes.OBS.has(str(pair[1])) or VariantAxes.STRUCT.has(str(pair[1]))
-	return false
+		if VariantAxes.OBS.has(str(pair[1])) or VariantAxes.STRUCT.has(str(pair[1])):
+			return n
+	return ""
 
 
 ## 尺寸目录名解析：只认规范写法 `5x5`（batch_all_variants.gd 产出）或 `5`（库内既有格式）。
@@ -309,9 +367,10 @@ func _report(imported: Dictionary) -> void:
 				levels += int(imported[mode][side][tier])
 	print("[import] 本次导入 %d 个集 / %d 关；扫描单元 %d，坏关 %d，重复 %d" % [
 		sets, levels, _units_seen, _skipped_bad, _skipped_dup])
-	if not _non_official.is_empty():
-		print("[import] 非官方目录跳过 %d 个（不符命名契约，不入库；前 8: %s）" % [
-			_non_official.size(), ", ".join(_non_official.slice(0, mini(8, _non_official.size())))])
+	if _skipped_non_official > 0:
+		print("[import] 非官方组合跳过 %d 关（按关卡 JSON 判定；来源目录 %d 个，前 8: %s）" % [
+			_skipped_non_official, _non_official.size(),
+			", ".join(_non_official.slice(0, mini(8, _non_official.size())))])
 	if not _bad_sizes.is_empty():
 		print("[import] 尺寸目录名不认识、跳过 %d 个（规范为 5x5 或 5；前 8: %s）" % [
 			_bad_sizes.size(), ", ".join(_bad_sizes.slice(0, mini(8, _bad_sizes.size())))])
