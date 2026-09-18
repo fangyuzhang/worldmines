@@ -173,3 +173,65 @@ static func quarantine() -> void:
             DirAccess.remove_absolute(bak)
         DirAccess.rename_absolute(MAIN, bak)
     clear_temp()
+
+
+# ============ 绘画草稿按关卡持久化（v3.3） ============
+#
+# 草稿独立于对局存档（save.json 是单槽，通关/换关即被覆盖）：
+# 按 level_path 哈希落 user://drawings/<md5>.json → 通关后重进本关草稿仍在。
+# 清除时机：玩家手动清空绘画（空数据 = 删除）、重开关卡（GameSession.restart）。
+# 「绘画草稿存入存档」关闭时不读不写（进入即全新开始）。
+
+const DRAWING_DIR := "user://drawings"
+
+
+static func _drawing_path(level_path: String) -> String:
+    return DRAWING_DIR + "/" + level_path.md5_text() + ".json"
+
+
+static func save_drawing(level_path: String, data: Dictionary) -> void:
+    if level_path == "":
+        return
+    var strokes_v: Variant = data.get("strokes", [])
+    if data.is_empty() or not (strokes_v is Array) or (strokes_v as Array).is_empty():
+        clear_drawing(level_path)  # 空草稿 = 清除（玩家手动清空绘画）
+        return
+    DirAccess.make_dir_recursive_absolute(DRAWING_DIR)
+    var f := FileAccess.open(_drawing_path(level_path), FileAccess.WRITE)
+    if f == null:
+        push_error("绘画草稿写入失败: " + level_path)
+        return
+    f.store_string(JSON.stringify(data))
+    f.close()
+
+
+static func load_drawing(level_path: String) -> Dictionary:
+    if level_path == "":
+        return {}
+    var p := _drawing_path(level_path)
+    if not FileAccess.file_exists(p):
+        return {}
+    var v: Variant = JSON.parse_string(FileAccess.get_file_as_string(p))
+    return v if v is Dictionary else {}
+
+
+static func clear_drawing(level_path: String) -> void:
+    if level_path == "":
+        return
+    var p := _drawing_path(level_path)
+    if FileAccess.file_exists(p):
+        DirAccess.remove_absolute(p)
+
+
+## 清空全部按关绘画草稿（v3.3：关闭「绘画草稿存入存档」开关时调用）。
+static func clear_all_drawings() -> void:
+    var dir := DirAccess.open(DRAWING_DIR)
+    if dir == null:
+        return  # 目录不存在 = 本来就没有草稿
+    dir.list_dir_begin()
+    var fname := dir.get_next()
+    while fname != "":
+        if not dir.current_is_dir() and fname.ends_with(".json"):
+            dir.remove(fname)
+        fname = dir.get_next()
+    dir.list_dir_end()

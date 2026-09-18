@@ -108,7 +108,10 @@ func start_level(path: String) -> bool:
     _hints.reset()
     _guard.reset()
     _last_save_ms = -100000  # 新对局首次翻格立即存
-    pending_drawing = {}  # 新对局：绘画清空
+    _move_history.clear()  # 新对局：操作撤销栈清空
+    # 绘画草稿按关卡持久化（v3.3）：开启「绘画草稿存入存档」→ 载入本关草稿
+    #（通关后重进仍在）；关闭 → 全新开始（草稿不载入、后续也不保存）。
+    pending_drawing = SaveCoordinator.load_drawing(path) if SettingsManager.drawing_in_save else {}
     _connect_board_signals()
     state = State.PLAYING
     # 关卡加载期就可能已达终局：reveal_initial 内部会调 _check_win，而当时信号尚未连接，
@@ -122,7 +125,9 @@ func start_level(path: String) -> bool:
 
 
 ## 重开当前关（R / HUD / 重新开始）。计时归零。
+## v3.3：重开 = 本关进度与绘画草稿一并清空（有草稿时确认弹窗会提示，可勾选「不再提示」）。
 func restart() -> void:
+    SaveCoordinator.clear_drawing(level_path)
     start_level(level_path)
 
 
@@ -148,6 +153,68 @@ func undo() -> bool:
     return true
 
 
+# ============ 操作撤销（v3.3：可一路撤销到关卡开始；与绘画撤销完全独立） ============
+#
+# 历史栈由 session 持有：每个玩家动作（reveal/toggle_flag）之前做全盘格状态快照，
+# 动作之后差分出「变化格子 → 之前状态」入栈。撤销 = 弹栈 + board.apply_cell_states 还原。
+# 终局步不入栈（判负另有 undo() 撤回通道）→ 栈内任何一步都可安全回退到 PLAYING。
+# 绘画撤销是 DrawingLayer 自己的栈（Ctrl+Z 仅在绘画模式生效），两者互不干扰。
+
+## 操作历史：Array of Dictionary（{pos: [state, starred]}），栈顶 = 最近一步。
+var _move_history: Array = []
+
+
+## 全盘格状态快照（撤销记录用）：{pos: [state, starred]}。
+func _snapshot_cells() -> Dictionary:
+    var snap := {}
+    if board == null or board.grid == null:
+        return snap
+    for p in board.grid.all_positions():
+        var c: Cell = board.grid.get_cell(p)
+        if c != null:
+            snap[p] = [c.state, c.starred]
+    return snap
+
+
+## 差分入栈：只记录状态真正变化过的格子；无变化 / 已终局不入栈。
+func _record_move(before: Dictionary) -> void:
+    if board == null or board.grid == null or board.state != Board.GameState.PLAYING:
+        return
+    var changes := {}
+    for p in board.grid.all_positions():
+        var c: Cell = board.grid.get_cell(p)
+        if c == null:
+            continue
+        var prev: Array = before.get(p, [Cell.State.HIDDEN, false])
+        if prev[0] != c.state or prev[1] != c.starred:
+            changes[p] = prev
+    if not changes.is_empty():
+        _move_history.append(changes)
+
+
+## 撤销上一步玩家操作（翻开 / 插旗 / ? 标记）。连按可一路退到关卡开始的状态。
+## 与绘画撤销（DrawingLayer 自有栈，仅绘画模式 Ctrl+Z）互相独立、互不影响。
+func undo_move() -> bool:
+    if state != State.PLAYING or board == null or _move_history.is_empty():
+        return false
+    var changes: Dictionary = _move_history.pop_back()
+    board.apply_cell_states(changes)
+    _maybe_autosave()
+    return true
+
+
+## 是否还有可撤销的操作（HUD 按钮状态用）。
+func can_undo_move() -> bool:
+    return state == State.PLAYING and board != null and not _move_history.is_empty()
+
+
+## 本关是否有已持久化的绘画草稿（重开确认弹窗的「草稿将清除」提示用）。
+func has_saved_draft() -> bool:
+    if SettingsManager == null or not SettingsManager.drawing_in_save:
+        return false
+    return not SaveCoordinator.load_drawing(level_path).is_empty()
+
+
 func reveal(pos: Vector2i) -> void:
     if state != State.PLAYING or board == null:
         return
@@ -164,7 +231,9 @@ func reveal(pos: Vector2i) -> void:
         AudioManager.play("flag")
         return
     _last_reveal_pos = pos
+    var before := _snapshot_cells()  # 撤销历史：记录本步之前的全盘格状态
     board.reveal(pos)
+    _record_move(before)
     # 判负由 game_lost 信号播爆炸声；此处只播普通翻开声
     if board.state != Board.GameState.LOST:
         AudioManager.play("reveal")
@@ -229,7 +298,9 @@ func toggle_flag(pos: Vector2i) -> void:
     var cell := board.grid.get_cell(pos)
     if cell.state != Cell.State.HIDDEN and cell.state != Cell.State.FLAGGED and cell.state != Cell.State.QUESTION:
         return
+    var before := _snapshot_cells()  # 撤销历史：记录本步之前的全盘格状态
     board.toggle_flag(pos)
+    _record_move(before)
     AudioManager.play("flag")
     _maybe_autosave()
 
@@ -359,7 +430,9 @@ func restore_from_save() -> bool:
     cursor = Vector2i.ZERO
     exploded_pos = Vector2i(-1, -1)
     _last_reveal_pos = Vector2i(-1, -1)
-    pending_drawing = meta.get("drawing", {})  # 恢复绘画数据
+    _move_history.clear()  # 恢复对局：撤销栈清空（历史只属于本进程内的操作序列）
+    # 恢复绘画数据：统一取按关草稿库（v3.3 起草稿真值来源；save.json 内 drawing 仅为旧档兼容）
+    pending_drawing = SaveCoordinator.load_drawing(path) if SettingsManager.drawing_in_save else {}
     state = State.PLAYING
     _connect_board_signals()
     # 恢复后的盘面可能已满足胜利条件（存档快照直接覆盖 state，不走 reveal），
@@ -401,7 +474,9 @@ func _finish(won: bool) -> void:
     var key := LevelSequence.progress_key(level_path)
     if won:
         ProgressStore.record_clear(key, elapsed)  # 通关进度（最佳用时取最小）
-        SaveCoordinator.clear_temp()
+        # 胜局 = 对局已完结，无可续进度 → 连 MAIN 一起清（MAIN 里残留的本局自动档
+        # 未带 ended 标记，留着会被下次启动的自动恢复误当成「未完成对局」复活）。
+        SaveCoordinator.clear()
     else:
         ProgressStore.record_attempt(key)  # 失败也算一次尝试
         if SettingsManager != null and SettingsManager.autosave_enabled:
@@ -411,7 +486,7 @@ func _finish(won: bool) -> void:
     game_ended.emit(won)
 
 
-# ============ 自动存档（§10.10.2：首次翻格立即，后续 5s 防抖） ============
+# ============ 自动存档（§10.10.2：首次翻格立即，后续 1s 防抖；绘画变化同通道） ============
 
 func _maybe_autosave() -> void:
     if SettingsManager == null or not SettingsManager.autosave_enabled:
@@ -420,14 +495,36 @@ func _maybe_autosave() -> void:
     # 此前放行 ENDED 会用无标记的常规档覆盖终局档 → 失败局可被「恢复」复活（SL 作弊通道）。
     if state != State.PLAYING:
         return
+    # 防御：level_path 为空 = 测试直赋 board 等非正常开局路径，写出的档必然无法恢复
+    #（restore_from_save 空路径即拒）→ 曾因此产生「存档已损坏」误报，直接跳过。
+    if level_path == "":
+        return
     var now := Time.get_ticks_msec()
-    if now - _last_save_ms < 5000:
+    # 1s 防抖（v3.2 由 5s 收紧）：翻格/插旗等动作后 1 秒内必落盘，
+    # 保证「随时退出 → 下次进来还是这个进度」；chord 连翻等爆发由防抖合并。
+    if now - _last_save_ms < 1000:
         return
     _last_save_ms = now
     SaveCoordinator.save(board, elapsed, level_path, _get_drawing())
 
 
-## 取当前绘画层数据（provider 未注册或数据为空则返回 {}）
+## 自动存档请求入口（供绘画层 changed 等外部信号触发；与 _maybe_autosave 同一防抖口径）。
+func request_autosave() -> void:
+    _maybe_autosave()
+
+
+## 立即落盘当前对局（忽略防抖；回主菜单/选关等主动离开对局时调用）。
+## 非 PLAYING / 无棋盘 / 无有效关卡路径 → 不写（与 _maybe_autosave 同口径）。
+func save_now() -> void:
+    if SettingsManager == null or not SettingsManager.autosave_enabled:
+        return
+    if state != State.PLAYING or board == null or level_path == "":
+        return
+    _last_save_ms = Time.get_ticks_msec()
+    SaveCoordinator.save(board, elapsed, level_path, _get_drawing())
+
+
+## 取当前绘画层数据（provider 未注册 / 用户关闭「绘画草稿存入存档」→ {}）
 ##
 ## ⚠️ 不能只判 `_drawing_provider.is_valid()`：provider 是 board_view 注册的闭包，
 ## 其宿主（board_view / 绘画层）被释放后，**Callable 本身仍是 valid**，
@@ -435,6 +532,8 @@ func _maybe_autosave() -> void:
 ## test_game_session_logic::test_t11b —— 前一个用例的 board_view 已释放）。
 ## 因此必须再验一次闭包宿主是否还活着。
 func _get_drawing() -> Dictionary:
+    if SettingsManager != null and not SettingsManager.drawing_in_save:
+        return {}
     if not _drawing_provider.is_valid():
         return {}
     var host: Object = _drawing_provider.get_object()

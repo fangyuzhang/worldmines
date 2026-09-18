@@ -64,6 +64,9 @@ func _build_ui() -> void:
     # 连携操作：一键展开（chord）+ 右键拖动插旗，与设置页同项（对局内可即时关闭）
     _add_check_row(vbox, "连携操作（一键展开 / 拖动插旗）",
         func(v: bool): SettingsManager.set_quick_actions(v), SettingsManager.quick_actions)
+    # 绘画草稿是否写入存档（与设置页同项）：关闭后存档不含草稿，恢复不还原
+    _add_check_row(vbox, "绘画草稿存入存档",
+        func(v: bool): SettingsManager.set_drawing_in_save(v), SettingsManager.drawing_in_save)
 
     # 提示模式（对标游戏 doc10 §3.2）：标准 / 弱提示 / 禁用
     var hint_row := HBoxContainer.new()

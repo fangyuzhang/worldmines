@@ -69,6 +69,13 @@ func _ready() -> void:
 	# 绘画数据采集回调交给 GameSession（依赖倒置：autoload 不持有 UI 节点类型）。
 	# 闭包读 board_view 自己的 _drawing 字段，取实时值；绘画层仅 _ready 创建一次，无需重复注册。
 	GameSession.set_drawing_provider(func(): return _drawing.get_save_data())
+	# v3.2/v3.3 存档内容自动保存：一笔画完/擦除/清空（changed）就落盘——
+	# ① 写入按关草稿库（通关重进草稿仍在；清空绘画 = 删除草稿文件）；
+	# ② 触发对局自动存档（走 1s 防抖）。关闭「绘画草稿存入存档」时两者都不触发。
+	_drawing.changed.connect(func():
+		if SettingsManager.drawing_in_save and GameSession.level_path != "":
+			SaveCoordinator.save_drawing(GameSession.level_path, _drawing.get_save_data())
+			GameSession.request_autosave())
 	# 双时序兼容：_ready 里手动调一次（恢复路径时 session 先开好、场景后进来）
 	_on_session_started()
 
@@ -105,6 +112,10 @@ func _on_session_started() -> void:
 ## 恢复对局时载入存档中的绘画；新对局则清空
 func _load_drawing() -> void:
 	if _drawing == null:
+		return
+	# 用户关闭「绘画草稿存入存档」→ 恢复也不还原草稿（与新存档不带 drawing 字段一致）
+	if SettingsManager != null and not SettingsManager.drawing_in_save:
+		_drawing.clear_strokes()
 		return
 	var pending: Dictionary = GameSession.pending_drawing
 	if pending is Dictionary and not pending.is_empty():
@@ -193,6 +204,8 @@ func _on_mouse_exited() -> void:
 func _layout() -> void:
 	if GameSession.board == null or GameSession.board.grid == null:
 		return
+	# `size`/`scale` 与 Control 自身属性同名（遮蔽告警）——局部只读使用，注解表达有意
+	@warning_ignore("shadowed_variable_base_class")
 	var size := GameSession.board.grid.size()  # Vector2i(cols, rows)
 	var cols: int = size.x
 	var rows: int = size.y
@@ -246,7 +259,9 @@ func _draw() -> void:
 	if session.board == null or session.board.grid == null:
 		return
 	var board: Board = session.board
+	@warning_ignore("shadowed_variable_base_class")
 	var size := board.grid.size()
+	@warning_ignore("shadowed_variable_base_class")
 	var scale := float(cell_px) / 48.0
 	var font := ThemeDB.fallback_font
 	var endgame: bool = board.state != Board.GameState.PLAYING
@@ -307,6 +322,7 @@ func _draw_reject() -> void:
 
 ## 提示高亮：结论格 safe=绿描边 / mine=红描边；依据线索格 accent 细描边。
 ## 推理文字由 HintPanel 浮动窗口显示（可拖拽/缩放/调字体），不在此绘制。
+@warning_ignore("shadowed_variable_base_class")
 func _draw_hint(scale: float, _font: Font) -> void:
 	if _hint_steps.is_empty():
 		return
@@ -332,6 +348,8 @@ func _draw_hint(scale: float, _font: Font) -> void:
 			draw_rect(srect, scol, false, 2.0)
 
 
+@warning_ignore("shadowed_variable_base_class")
+@warning_ignore("unused_parameter")
 func _draw_cell(pos: Vector2i, cell: Cell, rect: Rect2, scale: float, font: Font, endgame: bool) -> void:
 	match cell.state:
 		Cell.State.HIDDEN:
@@ -350,6 +368,7 @@ func _draw_cell(pos: Vector2i, cell: Cell, rect: Rect2, scale: float, font: Font
 
 
 ## 绘制翻开格的线索值（变体感知）：? 格 → "?"；HV 双值 → "A·B"；FR ∞ → "∞"；数字 0+（含 0 与大值，见 _draw_single_clue）。
+@warning_ignore("shadowed_variable_base_class")
 func _draw_clue_value(cell: Cell, rect: Rect2, scale: float, font: Font) -> void:
 	# 终极模式星号格（对标 doc10 §2.4）：值对玩家隐藏，只画星号
 	if cell.starred:
@@ -376,6 +395,7 @@ func _draw_clue_value(cell: Cell, rect: Rect2, scale: float, font: Font) -> void
 
 
 ## 单个线索值文本绘制（居中于给定矩形；半格高度时自动缩小字号）。
+@warning_ignore("shadowed_variable_base_class")
 func _draw_single_clue(v: Variant, rect: Rect2, scale: float, font: Font) -> void:
 	var text := ""
 	var col := ThemeManager.text()
@@ -407,12 +427,14 @@ func _draw_single_clue(v: Variant, rect: Rect2, scale: float, font: Font) -> voi
 ## 与 _draw_single_clue 同口径：x 不手动偏移，交给 width=rect.size.x + CENTER 居中。
 ## 历史 bug：既手动偏移 -fs*0.3 又传 width+CENTER → 双重居中，问号右偏近半格
 ##（48px 格子、fs=20 时偏 18px）。
+@warning_ignore("shadowed_variable_base_class")
 func _draw_question(rect: Rect2, scale: float, font: Font) -> void:
 	var fs := int(round(20.0 * scale))
 	draw_string(font, rect.position + Vector2(0, rect.size.y * 0.5 + fs * 0.35), "?", HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, fs, ThemeManager.text_secondary())
 
 
 ## §8.4.8 FLAGGED：HIDDEN 底 + 旗杆 draw_rect + 三角 draw_polygon（48px 基准坐标×scale）
+@warning_ignore("shadowed_variable_base_class")
 func _draw_flag(rect: Rect2, scale: float) -> void:
 	draw_rect(rect, ThemeManager.cell_hidden())
 	draw_rect(rect, ThemeManager.grid_line(), false, 1.0)
@@ -431,6 +453,7 @@ func _draw_flag(rect: Rect2, scale: float) -> void:
 
 
 ## 终局揭晓：全部雷位画雷体（圆 + 4 刺线）；引爆格先画 danger 底。
+@warning_ignore("shadowed_variable_base_class")
 func _draw_mines_reveal(board: Board, scale: float) -> void:
 	var exploded: Vector2i = GameSession.exploded_pos
 	var body_col := ThemeManager.mine_body()
@@ -645,12 +668,19 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	var board: Board = GameSession.board
 	if board == null or board.grid == null:
 		return
+	@warning_ignore("shadowed_variable_base_class")
 	var size := board.grid.size()
 	var cur: Vector2i = GameSession.cursor
 	var handled := true
 	match event.keycode:
 		KEY_R:
 			_confirm_restart()
+		KEY_Z:
+			# 游戏操作撤销（与绘画模式的 Ctrl+Z 撤销笔迹独立：绘画模式此处分流不到这）
+			if event.ctrl_pressed and not event.shift_pressed:
+				GameSession.undo_move()
+			else:
+				handled = false
 		KEY_F:
 			GameSession.toggle_flag(cur)
 		KEY_H:
@@ -825,6 +855,7 @@ func _pick(local_pos: Vector2) -> Vector2i:
 	var r := floori(rel.y / float(cell_px))
 	if GameSession.board == null or GameSession.board.grid == null:
 		return Vector2i(-1, -1)
+	@warning_ignore("shadowed_variable_base_class")
 	var size := GameSession.board.grid.size()
 	if c < 0 or c >= size.x or r < 0 or r >= size.y:
 		return Vector2i(-1, -1)

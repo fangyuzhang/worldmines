@@ -48,10 +48,38 @@ static func confirm_leave(parent: Node, on_ok: Callable) -> void:
 
 
 ## 重开当前关：R 键与 HUD「重开」共用，保证两处口径一致。
+## v3.3：本关有绘画草稿时提示「草稿也会被清除」；「不再提示」勾选后持久化，
+## 此后重开直接执行（不再弹任何确认）。
 static func confirm_restart(parent: Node, on_ok: Callable) -> void:
 	if GameSession.state != GameSession.State.PLAYING or GameSession.elapsed < TRIVIAL_SEC:
 		on_ok.call()
 		return
+	if SettingsManager != null and not SettingsManager.restart_confirm:
+		on_ok.call()
+		return
+	if parent == null or not parent.is_inside_tree():
+		on_ok.call()
+		return
 	var secs := int(GameSession.elapsed)
 	var tip := "重开会从头开始本关（当前已用时 %02d:%02d），确定吗？" % [secs / 60, secs % 60]
-	ask(parent, tip, "重开", "取消", on_ok)
+	if GameSession.has_saved_draft():
+		tip += "\n注意：重开后本关的绘画草稿也会被清除。"
+	var dlg := ConfirmationDialog.new()
+	dlg.dialog_text = tip
+	dlg.ok_button_text = "确定"
+	dlg.cancel_button_text = "取消"
+	dlg.exclusive = true
+	var chk := CheckBox.new()
+	chk.text = "不再提示"
+	dlg.add_child(chk)
+	parent.add_child(dlg)
+	dlg.confirmed.connect(func():
+		if chk.button_pressed and SettingsManager != null:
+			SettingsManager.set_restart_confirm(false)
+		on_ok.call())
+	# 关闭即释放（同 ask()：confirmed/canceled/close_requested 三路兜底）
+	dlg.confirmed.connect(dlg.queue_free)
+	dlg.canceled.connect(dlg.queue_free)
+	if dlg.has_signal("close_requested"):
+		dlg.close_requested.connect(dlg.queue_free)
+	dlg.popup_centered()

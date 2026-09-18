@@ -14,6 +14,9 @@ var autosave_enabled: bool = true
 var keyboard_enabled: bool = true
 var sfx_enabled: bool = true
 var drawing_opacity: float = 1.0  # 绘画层透明度 0.5~1.0
+## 绘画草稿是否写入存档（用户可选）：关闭后自动存档/终局存档不带 drawing 字段，
+## 恢复对局也不还原草稿（棋盘进度照常存取）。
+var drawing_in_save: bool = true
 var active_skin: String = ""      # 激活的皮肤 id（"" = 内置主题）
 # 提示浮动窗口（HintPanel）：位置 / 大小 / 字体大小
 var hint_font_size: int = 16
@@ -50,6 +53,8 @@ var fullscreen: bool = false
 #   · 右键拖动连续插旗
 # 默认开启；若真机反馈「误触太多」可在此关闭（两者绑定一个开关，避免设置项膨胀）。
 var quick_actions: bool = true
+# 重开确认弹窗：玩家在弹窗勾选「不再提示」后置 false，重开直接执行（v3.3）。
+var restart_confirm: bool = true
 
 
 func _ready() -> void:
@@ -75,6 +80,7 @@ func load_cfg() -> void:
     keyboard_enabled = _get_bool(cfg, "keyboard_enabled", true)
     sfx_enabled = _get_bool(cfg, "sfx_enabled", true)
     drawing_opacity = clampf(float(cfg.get_value("game", "drawing_opacity", 1.0)), 0.5, 1.0)
+    drawing_in_save = _get_bool(cfg, "drawing_in_save", true)
     active_skin = _get_str(cfg, "active_skin", "")
     hint_font_size = int(cfg.get_value("game", "hint_font_size", 16))
     hint_window_pos = cfg.get_value("game", "hint_window_pos", Vector2.ZERO)
@@ -87,6 +93,7 @@ func load_cfg() -> void:
     ult_auto_reveal = _get_bool(cfg, "ult_auto_reveal", false)
     fullscreen = _get_bool(cfg, "fullscreen", false)
     quick_actions = _get_bool(cfg, "quick_actions", true)
+    restart_confirm = _get_bool(cfg, "restart_confirm", true)
     # 注：AudioManager.enabled 的开机同步已移入 AudioManager._ready——本 autoload 注册序(4)
     # 早于 AudioManager(7)，此处反向引用会因 _ready 时序失败，导致持久化的音效开关开机不生效；
     # 且测试手工实例化 SettingsManager 调 load_cfg 时不应产生改写真实 AudioManager 的全局副作用。
@@ -111,6 +118,7 @@ func save() -> void:
     cfg.set_value("game", "keyboard_enabled", keyboard_enabled)
     cfg.set_value("game", "sfx_enabled", sfx_enabled)
     cfg.set_value("game", "drawing_opacity", drawing_opacity)
+    cfg.set_value("game", "drawing_in_save", drawing_in_save)
     cfg.set_value("game", "active_skin", active_skin)
     cfg.set_value("game", "hint_font_size", hint_font_size)
     cfg.set_value("game", "hint_window_pos", hint_window_pos)
@@ -123,6 +131,7 @@ func save() -> void:
     cfg.set_value("game", "ult_auto_reveal", ult_auto_reveal)
     cfg.set_value("game", "fullscreen", fullscreen)
     cfg.set_value("game", "quick_actions", quick_actions)
+    cfg.set_value("game", "restart_confirm", restart_confirm)
     cfg.save(PATH)
 
 
@@ -169,6 +178,15 @@ func set_drawing_opacity(v: float) -> void:
     drawing_opacity = clampf(v, 0.5, 1.0)
     save()
     settings_changed.emit()
+
+
+func set_drawing_in_save(v: bool) -> void:
+    drawing_in_save = v
+    save()
+    settings_changed.emit()
+    if not v:
+        # 关闭即删除已持久化的全部草稿（用户预期：关闭 = 不再保留任何草稿）
+        SaveCoordinator.clear_all_drawings()
 
 
 ## 仅应用不落盘（滑条拖动的 value_changed 每刻度触发——落盘放 drag_ended，避免一次拖动几十次全量写盘）
@@ -240,6 +258,11 @@ func set_quick_actions(v: bool) -> void:
     quick_actions = v
     save()
     settings_changed.emit()
+
+
+func set_restart_confirm(v: bool) -> void:
+    restart_confirm = v
+    save()
 
 
 ## 获取 root window。autoload 下 get_window() 在嵌入/多窗口场景可能返回非主窗口对象，

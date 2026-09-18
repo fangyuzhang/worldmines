@@ -11,6 +11,7 @@ var _keyboard_chk: CheckButton
 var _sfx_chk: CheckButton
 var _fullscreen_chk: CheckButton
 var _quick_chk: CheckButton
+var _drawing_save_chk: CheckButton
 
 
 func _ready() -> void:
@@ -94,6 +95,9 @@ func _build_ui() -> void:
     # 连携操作：一键展开（chord）+ 右键拖动插旗。默认开；误触多可关
     _quick_chk = _add_check_row(vbox, "连携操作（一键展开 / 拖动插旗）",
         func(v: bool): SettingsManager.set_quick_actions(v))
+    # 绘画草稿是否写入存档：关闭后存档不含草稿，恢复对局也不还原
+    _drawing_save_chk = _add_check_row(vbox, "绘画草稿存入存档",
+        func(v: bool): SettingsManager.set_drawing_in_save(v))
 
     # 行 6：通关进度（清除，二次确认）
     var row6 := HBoxContainer.new()
@@ -116,6 +120,7 @@ func _build_ui() -> void:
     _sfx_chk.button_pressed = SettingsManager.sfx_enabled
     _fullscreen_chk.button_pressed = SettingsManager.fullscreen
     _quick_chk.button_pressed = SettingsManager.quick_actions
+    _drawing_save_chk.button_pressed = SettingsManager.drawing_in_save
 
     _apply_theme()
 

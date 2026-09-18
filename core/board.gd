@@ -624,6 +624,22 @@ func restore_cell_states(revealed: Array, flagged: Array) -> void:
                                 grid.get_cell(pos).state = Cell.State.FLAGGED
 
 
+## 撤销恢复通道（v3.3 新增，纯增量不改既有接口）：按 {pos: [state, starred]} 逐格恢复。
+## 与 restore_cell_states 同性质的引擎公共恢复 API——历史栈由 session 层持有，
+## 每步记录「变化格子 → 该步之前的状态」，撤销时交回本函数还原并广播 cell_state_changed。
+func apply_cell_states(changes: Dictionary) -> void:
+        for pos in changes:
+                if grid == null or not grid.in_board(pos):
+                        continue
+                var cell: Cell = grid.get_cell(pos)
+                if cell == null:
+                        continue
+                var before: Array = changes[pos]
+                cell.state = before[0]
+                cell.starred = before[1]
+                cell_state_changed.emit(pos)
+
+
 ## 判胜补评估（公共入口）：恢复对局等场景下盘面可能已满足胜利条件。
 ## 内部委托 _check_win（PLAYING 态守卫 + win_condition 策略）。
 func evaluate_win() -> void:

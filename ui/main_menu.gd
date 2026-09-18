@@ -1,10 +1,15 @@
-# main_menu.gd —— 主菜单 + 崩溃恢复弹窗【plan1.1 §10.7.7-①】
-# 文案唯一来源 §8.5：标题「世界扫雷」，按钮 开始游戏/设置/退出，
-# 恢复弹窗「检测到未完成对局，是否恢复？」确认「恢复」取消「放弃」。
+# main_menu.gd —— 主菜单 + 未完成对局自动恢复【plan1.1 §10.7.7-①】
+# 文案唯一来源 §8.5：标题「世界扫雷」，按钮 开始游戏/设置/退出。
+# v3.2：检测到未完成对局不再弹窗询问，直接自动恢复；无法恢复时隔离备份 + toast。
 extends Control
 
 # 教程覆盖层用 preload 而非 class_name 引用（headless 下新全局类不在 .godot 缓存里，见坑表 #26）
 const TutorialOverlayScript := preload("res://ui/tutorial_overlay.gd")
+
+## 自动恢复进程级门控：每次启动只在**首次进入主菜单**时尝试一次。
+## 必须用 static（场景节点会随切页重建，实例字段保不住）——否则「暂停→回主菜单」
+## 会立刻又被自动恢复弹回对局，用户永远到不了主菜单。
+static var _auto_restore_done := false
 
 
 func _ready() -> void:
@@ -43,7 +48,6 @@ func _build_ui() -> void:
 
 var _title_label: Label
 var _vbox: VBoxContainer
-var _buttons: Array = []
 
 
 func _on_button(cap: String) -> void:
@@ -73,30 +77,33 @@ func _open_tutorial() -> void:
 
 # ============ 崩溃恢复检测（验收项 3） ============
 
+## 自动恢复（v3.2）：MAIN 里存在未终局的进行中对局就直接续上，不再弹窗询问。
+## 触发源不再只看 TEMP 崩溃残留——主动退出 / 回主菜单（save_now 落盘）后下次启动同样恢复。
+## 恢复失败（坏档 / 异常残留档）→ 隔离 .bak + toast，留在主菜单（§10.7.4）。
+## 原弹窗流程的历史问题：测试或异常路径写出的残档（如 level_path 为空）走到「恢复」
+## 一律报「存档已损坏」，玩家被无效弹窗打断；现在能恢复就静默恢复，不能就安静隔离。
 func _check_crash_restore() -> void:
-    if not SaveCoordinator.has_crash_leftover():
+    if _auto_restore_done:
         return
-    var dialog := ConfirmationDialog.new()
-    dialog.dialog_text = "检测到未完成对局，是否恢复？"
-    dialog.ok_button_text = "恢复"
-    dialog.cancel_button_text = "放弃"
-    dialog.confirmed.connect(_on_restore_yes)
-    dialog.canceled.connect(func(): SaveCoordinator.clear())
-    # 关闭即释放（v3.1）：对话框不 queue_free 会随复用累积隐藏节点
-    dialog.visibility_changed.connect(func():
-        if not dialog.visible:
-            dialog.queue_free())
-    add_child(dialog)
-    dialog.popup_centered()
-
-
-func _on_restore_yes() -> void:
+    _auto_restore_done = true
+    var d := SaveCoordinator.load_save()
+    if d.is_empty():
+        # TEMP 残留但读不出 → 真坏档，隔离（保留原崩溃检测口径）
+        if SaveCoordinator.has_crash_leftover():
+            SaveCoordinator.quarantine()
+            _toast("存档无法恢复，已隔离备份")
+        return
+    var meta_v: Variant = d.get("metadata", {})
+    var meta: Dictionary = meta_v if meta_v is Dictionary else {}
+    if bool(meta.get("ended", false)):
+        return  # 终局盘不可恢复（失败局 SL 复活禁令，见 restore_from_save 同口径）
     if GameSession.restore_from_save():
-        get_tree().change_scene_to_file("res://ui/board_view.tscn")
+        # 注：本函数在 _ready 调用链里执行，此刻根节点正忙于增删子节点，
+        # 直接 change_scene_to_file 会报「Parent node is busy」（remove_child 被拒）——延后到帧末执行。
+        get_tree().change_scene_to_file.call_deferred("res://ui/board_view.tscn")
     else:
-        # 坏档：隔离 .bak + toast，留在主菜单（§10.7.4）
         SaveCoordinator.quarantine()
-        _toast("存档已损坏，已隔离备份")
+        _toast("存档无法恢复，已隔离备份")
 
 
 # ============ toast（场景内顶部 Label + Timer，2s 自动消失；文案 §8.5） ============

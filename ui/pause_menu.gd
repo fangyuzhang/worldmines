@@ -7,6 +7,8 @@
 # 与 settings_popup 同构：PopupPanel + PanelContainer 承载主题样式。
 extends PopupPanel
 
+## 对外信号：请求重开本关（面板自身不处理导航，交给宿主接线；暂无接线者）
+@warning_ignore("unused_signal")
 signal restart_requested
 
 var _panel: PanelContainer
@@ -37,6 +39,7 @@ func _build_ui() -> void:
     vbox.custom_minimum_size = Vector2(300, 0)
     margin.add_child(vbox)
 
+    @warning_ignore("shadowed_variable_base_class")
     var title := Label.new()
     title.text = "已暂停"
     title.add_theme_font_size_override("font_size", 26)
@@ -60,13 +63,15 @@ func _build_ui() -> void:
         UiConfirm.confirm_leave(get_tree().current_scene, func():
             hide()
             _resume()
-            SaveCoordinator.clear()
+            # v3.2：离开对局不再删档——立即落盘当前进度（含绘画草稿），
+            # 下次进入本关/下次启动时自动恢复（存档内容自动保存）。
+            GameSession.save_now()
             get_tree().change_scene_to_file("res://ui/level_select.tscn")))
     _add_button(vbox, "主菜单", func():
         UiConfirm.confirm_leave(get_tree().current_scene, func():
             hide()
             _resume()
-            SaveCoordinator.clear()
+            GameSession.save_now()
             get_tree().change_scene_to_file("res://ui/main_menu.tscn")))
 
     _apply_theme()

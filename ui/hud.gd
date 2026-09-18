@@ -46,6 +46,7 @@ func _ready() -> void:
 
     _add_button("暂停", "暂停 / 继续（Esc）", func(): _toggle_pause())
     _hint_btn = _add_button("提示", "一步直推（H）", func(): GameSession.request_hint())
+    _add_button("撤销", "撤销上一步翻开/插旗（Ctrl+Z），可一路退到开局", func(): GameSession.undo_move())
     _add_button("设置", "对局内设置", func(): _open_settings())
     _add_button("重开", "重新开始本关（R）", func():
         UiConfirm.confirm_restart(self, func(): GameSession.restart()))

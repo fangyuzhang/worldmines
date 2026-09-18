@@ -94,9 +94,12 @@ static func bind_hover(control: Control, scale_to: float) -> void:
 static func _lift_to(control: Control, scale_to: float) -> void:
 	if not is_instance_valid(control):
 		return
-	var old: Tween = control.get_meta("_ui_hover_tween", null)
-	if old != null and old.is_valid():
-		old.kill()
+	# get_meta 在键不存在时会打印 ERROR（即使传了 default）→ 先 has_meta 判断，
+	# 否则调试器每次首次悬停都刷一条「no 'meta' values with the key '_ui_hover_tween'」。
+	if control.has_meta("_ui_hover_tween"):
+		var old: Tween = control.get_meta("_ui_hover_tween")
+		if old != null and old.is_valid():
+			old.kill()
 	control.pivot_offset = control.size * 0.5
 	var tw := control.create_tween()
 	tw.set_trans(Tween.TRANS_QUAD)
