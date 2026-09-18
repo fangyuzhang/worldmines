@@ -462,7 +462,10 @@ func unload_mod(mod_id: String) -> Dictionary:
 		RuleRegistry.default().unregister(StringName(str(rid)))
 	_mods.erase(mod_id)
 	_rebuild_defs()  # DefEngine 无 unregister，卸载后重建（内置 + 剩余 Def mod）
+	# 专属卸载事件（审计 L2）：此前复用 MOD_LOADED + payload 区分，订阅方容易漏判；
+	# 旧事件保留过渡期（已有订阅方不破），新代码请订阅 MOD_UNLOADED。
 	events.emit(EventBus.MOD_LOADED, {"id": mod_id, "unloaded": true})
+	events.emit(EventBus.MOD_UNLOADED, {"id": mod_id})
 	return {"ok": true, "reason": ""}
 
 

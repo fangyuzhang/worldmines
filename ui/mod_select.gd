@@ -196,10 +196,23 @@ func _make_mod_row(mod_name: String) -> VBoxContainer:
 	btn.pressed.connect(func():
 		if ModAPI.list_mods().has(mod_name):
 			ModAPI.unload_mod(mod_name)
-		else:
-			var r: Dictionary = ModAPI.load_mod("user://mods/%s" % mod_name)
-			if not r.get("ok", false):
-				_toast("加载失败：%s" % r.get("reason", ""))
+			_rebuild_list()
+			return
+		# 代码 Mod 无沙箱（审计 H1）：GDScript 入口加载即以游戏全部权限执行。
+		# 加载前二次确认——工坊上线前作者与来源无法核实，玩家有权知道自己在同意什么。
+		if FileAccess.file_exists("user://mods/%s/entry.gd" % mod_name):
+			UiConfirm.ask(self,
+					"「%s」是代码 Mod：加载后它将以本游戏的全部权限运行（可读写文件）。\n只加载你信任来源的 Mod。确定加载吗？" % mod_name,
+					"信任并加载", "取消",
+					func():
+						var r2: Dictionary = ModAPI.load_mod("user://mods/%s" % mod_name)
+						if not r2.get("ok", false):
+							_toast("加载失败：%s" % r2.get("reason", ""))
+						_rebuild_list())
+			return
+		var r: Dictionary = ModAPI.load_mod("user://mods/%s" % mod_name)
+		if not r.get("ok", false):
+			_toast("加载失败：%s" % r.get("reason", ""))
 		_rebuild_list())
 	row.add_child(btn)
 	block.add_child(row)

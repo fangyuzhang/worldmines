@@ -59,6 +59,7 @@ static func _collect_levels(dir_path: String, out: Array[String]) -> void:
 
 
 ## 关卡变体中文名（无 variant 字段视为经典；支持混合码 "布局+线索"）。
+## 旧码查 VariantRegistry；新口径 id（官方三轴/mod 规则）查 VariantCatalog（审计 L1 收敛）。
 static func get_variant_name(path: String) -> String:
     var d: Variant = _parse_file(path)
     if d is Dictionary and d.has("variant"):
@@ -66,6 +67,10 @@ static func get_variant_name(path: String) -> String:
         var def := VariantRegistry.resolve(code)
         if not def.is_empty():
             return str(def["name"])
+        # 新口径兜底：display_name 对未注册 id 退回 id 本身——拼错/已卸载时
+        # 如实显示 id，而不是误标「经典」误导玩家
+        var nm := VariantCatalog.display_name(code)
+        return nm
     return "经典"
 
 
@@ -88,7 +93,17 @@ static func classify_variant(path: String) -> String:
         return "经典"
     var def := VariantRegistry.resolve(code)
     if def.is_empty():
-        return "经典"
+        # 新口径兜底（审计 L1）：官方三轴/mod 规则 id 不在旧码表 → 按 VariantCatalog 分类；
+        # 都查不到 → 如实标「未知变体」，绝不冒充「经典」（错误 id 误导玩家更糟）
+        if VariantCatalog.clue_ids().has(code):
+            return "线索型"
+        if VariantCatalog.global_ids().has(code):
+            return "布局型"
+        if code.contains("+"):
+            return "混合"
+        if code.contains("_"):
+            return "一布局一线索"
+        return "未知变体"
     if int(def.get("clue2", -1)) >= 0:
         return "线索混合"
     if int(def.get("constraint2", -1)) >= 0:
