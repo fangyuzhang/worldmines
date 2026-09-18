@@ -15,6 +15,10 @@
 # 若提示 Permission denied：用 `bash tools/fill_level_lib.sh ...` 调用即可
 #（Windows 上的 git 不记录可执行位，克隆到 Linux 后本文件可能没有 +x）。
 #
+# ⚠️ 远程跑必须挂住会话：ssh 直连时用 nohup 或 screen/tmux，否则断线即被杀（几小时的活白跑）：
+#   nohup bash tools/fill_level_lib.sh -t 20 > run.log 2>&1 &
+#   # 或：tmux new -s fill 'bash tools/fill_level_lib.sh -t 20'
+#
 # 环境变量：GODOT=<godot 可执行路径>（缺省从 PATH 找 godot）；
 #           SHARDS / PER_TIER / SEED_MAX / TIMEOUT_COEF / STALL_MAX / OUT_DIR 亦可环境变量覆盖。
 #
