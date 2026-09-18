@@ -34,6 +34,10 @@ func _build_ui() -> void:
 	imp.text = "导入 Mod（文件夹）"
 	imp.focus_mode = Control.FOCUS_NONE
 	imp.custom_minimum_size = Vector2(190, 40)
+	if OS.has_feature("web"):
+		# Web 导出无文件系统访问权限（审计 M3）：禁用并说明，不让入口静默失效
+		imp.disabled = true
+		imp.tooltip_text = "Web 版暂不支持本地导入，请在桌面版中使用"
 	imp.pressed.connect(_open_import_dialog)
 	top.add_child(imp)
 

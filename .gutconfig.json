@@ -1,3 +1,4 @@
 {
-	"pre_run_script": "res://test/_pre_run.gd"
+	"pre_run_script": "res://test/_pre_run.gd",
+	"failure_error_types": ["engine", "gut"]
 }

@@ -33,22 +33,29 @@ static func list_levels() -> Array[String]:
 
 
 ## 扫描已加载 mod 的关卡目录 user://mods/*/levels/*.json。
+## 递归扫描（审计 M4）：install_from_dir 会递归复制 levels/sub/ 嵌套结构，
+## 播放侧若只扫顶层，嵌套关卡会**静默不可见**——两侧必须对称。
 static func list_mod_levels() -> Array[String]:
     var out: Array[String] = []
     for mod_name in ModAPI.list_mods():
-        var dir_path := "user://mods/%s/levels" % mod_name
-        var dir := DirAccess.open(dir_path)
-        if dir == null:
-            continue
-        dir.list_dir_begin()
-        var fname := dir.get_next()
-        while fname != "":
-            if not dir.current_is_dir() and fname.ends_with(".json"):
-                out.append(dir_path.path_join(fname))
-            fname = dir.get_next()
-        dir.list_dir_end()
+        _collect_levels("user://mods/%s/levels" % mod_name, out)
     out.sort()
     return out
+
+
+static func _collect_levels(dir_path: String, out: Array[String]) -> void:
+    var dir := DirAccess.open(dir_path)
+    if dir == null:
+        return
+    dir.list_dir_begin()
+    var fname: String = dir.get_next()
+    while fname != "":
+        if dir.current_is_dir() and not fname.begins_with("."):
+            _collect_levels(dir_path.path_join(fname), out)
+        elif fname.ends_with(".json"):
+            out.append(dir_path.path_join(fname))
+        fname = dir.get_next()
+    dir.list_dir_end()
 
 
 ## 关卡变体中文名（无 variant 字段视为经典；支持混合码 "布局+线索"）。
@@ -96,7 +103,16 @@ static func classify_variant(path: String) -> String:
 static func _parse_file(path: String) -> Variant:
     if not FileAccess.file_exists(path):
         return null
-    var text := FileAccess.get_file_as_string(path)
+    var f := FileAccess.open(path, FileAccess.READ)
+    if f == null:
+        return null
+    # 超大文件前置拦截（审计 L4）：全文读入前先查大小
+    if f.get_length() > MAX_FILE_BYTES:
+        f.close()
+        push_error("关卡文件超过大小上限（%d bytes）: %s" % [MAX_FILE_BYTES, path])
+        return null
+    var text := f.get_as_text()
+    f.close()
     return JSON.parse_string(text)
 
 
@@ -110,6 +126,14 @@ static func load_level(path: String) -> Board:
     return _validate_and_build(d, path)
 
 
+## 关卡规模上限（审计 H2）：几百字节的恶意/损坏 JSON 声明超大 rows×cols 会让
+## Board 网格分配打爆内存或冻结主线程——导入的 mod 关卡与未来工坊关卡**完全不受信任**。
+## 本项目最大 9×9，64×64 已留足余量。
+const MAX_CELLS := 64 * 64
+## 关卡 JSON 文件大小上限（审计 L4：全文读入前先挡超大文件）。
+const MAX_FILE_BYTES := 2 * 1024 * 1024
+
+
 static func _validate_and_build(d: Dictionary, path: String) -> Board:
     # 结构字段
     if not (d.has("size") and d["size"] is Dictionary):
@@ -120,14 +144,20 @@ static func _validate_and_build(d: Dictionary, path: String) -> Board:
     if rows <= 0 or cols <= 0:
         push_error("关卡尺寸非法: " + path)
         return null
+    if rows * cols > MAX_CELLS:
+        push_error("关卡规模超上限（%d 格 > %d）: %s" % [rows * cols, MAX_CELLS, path])
+        return null
     var total_mines: int = int(d.get("total_mines", -1))
     # 允许 0 雷关卡（引擎支持：翻开全部非雷格即胜），此前 <=0 的硬拒绝比引擎能力更紧。
     if total_mines < 0 or total_mines >= rows * cols:
         push_error("关卡雷数非法: " + path)
         return null
 
-    # 雷位：界内、无重复
+    # 雷位：界内、无重复、长度上限（审计 H2）
     var mines: Array = d.get("mines", [])
+    if mines.size() > MAX_CELLS:
+        push_error("雷位数组超长: " + path)
+        return null
     if mines.size() != total_mines:
         push_error("雷位数与 total_mines 不符: " + path)
         return null

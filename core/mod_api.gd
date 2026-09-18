@@ -138,7 +138,10 @@ func _copy_code_mod(src: String, dst: String) -> bool:
 		var f := FileAccess.open(dst.path_join(fname), FileAccess.WRITE)
 		if f == null:
 			return false
-		f.store_string(FileAccess.get_file_as_string(sp))
+		# 字节复制（审计 M1）：store_string 走文本转码会破坏二进制（.wasm/.png），
+		# 装出来的 wasm 过不了魔数校验。mod 资源一律按原始字节搬运。
+		var bytes := FileAccess.get_file_as_bytes(sp)
+		f.store_buffer(bytes)
 		f.close()
 	# 子目录递归（levels/ 预生成关卡等数据目录——创意工坊分发单元的组成部分，
 	# 此前只复制顶层文件，带 levels/ 的 Mod 装出来缺关卡）
@@ -162,7 +165,7 @@ func _copy_dir_recursive(src: String, dst: String) -> bool:
 		var fo := FileAccess.open(dst.path_join(str(f)), FileAccess.WRITE)
 		if fo == null:
 			return false
-		fo.store_string(FileAccess.get_file_as_string(src.path_join(str(f))))
+		fo.store_buffer(FileAccess.get_file_as_bytes(src.path_join(str(f))))
 		fo.close()
 	for sub in d.get_directories():
 		if not _copy_dir_recursive(src.path_join(str(sub)), dst.path_join(str(sub))):
@@ -263,7 +266,22 @@ func scan_mods() -> Array[String]:
 
 ## 加载一个 Mod 目录。返回 { ok, mod_id, rejected, reason }。
 ## dir_path：含 manifest.json 的 Mod 目录；或旧 Def 数据包目录（仅 defs/，自动补内存 manifest）。
+## 重入保护（审计 M2）：mod 的 on_load 里可以再调 ModAPI.load_mod/unload_mod，
+## 嵌套加载会让 _mods 出现半初始化状态（外层尚未写完记录、内层先改同表）。
+## 加载流程期间拒绝重入；异常路径也会复位（result 先取再清标志）。
+var _loading := false
+
+
 func load_mod(dir_path: String) -> Dictionary:
+	if _loading:
+		return {"ok": false, "reason": "加载流程进行中，拒绝重入（on_load 内不得嵌套调用 load_mod/unload_mod）"}
+	_loading = true
+	var result := _load_mod_impl(dir_path)
+	_loading = false
+	return result
+
+
+func _load_mod_impl(dir_path: String) -> Dictionary:
 	var manifest_path := dir_path.path_join("manifest.json")
 	var manifest_text: String
 	if FileAccess.file_exists(manifest_path):
@@ -308,8 +326,10 @@ func load_mod(dir_path: String) -> Dictionary:
 	match runtime:
 		ManifestParser.RUNTIME_GDScript:
 			var script_path := dir_path.path_join(str(entry["path"])).simplify_path()
-			# 防路径逃逸：解析后必须仍位于 Mod 目录内
-			if not script_path.begins_with(dir_path.simplify_path()):
+			# 防路径逃逸：解析后必须仍位于 Mod 目录内。
+			# begins_with 必须带目录分隔符——纯字符串前缀会把 user://mods/foo
+			# 判成 sibling 目录 user://mods/foo_evil/… 的合法根（审计 H3）。
+			if not script_path.begins_with(dir_path.simplify_path().trim_suffix("/") + "/"):
 				return {"ok": false, "reason": "入口路径逃逸 Mod 目录: %s" % entry["path"]}
 			var script: Variant = load(script_path)
 			if script == null:
@@ -330,7 +350,8 @@ func load_mod(dir_path: String) -> Dictionary:
 			# P0-T7：wasm 模块经沙箱三道防线（魔数/16MB/实例重置）加载。
 			# 与 gdscript 同款防路径逃逸：解析后必须仍位于 Mod 目录内。
 			var wasm_path := dir_path.path_join(str(entry["path"])).simplify_path()
-			if not wasm_path.begins_with(dir_path.simplify_path()):
+			# begins_with 必须带目录分隔符（审计 H3，同 gdscript 分支）。
+			if not wasm_path.begins_with(dir_path.simplify_path().trim_suffix("/") + "/"):
 				return {"ok": false, "reason": "wasm 路径逃逸 Mod 目录: %s" % entry["path"]}
 			var wasm_file := FileAccess.open(wasm_path, FileAccess.READ)
 			if wasm_file == null:
