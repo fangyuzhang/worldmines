@@ -56,9 +56,15 @@ func test_official_axes_constructive_smoke() -> void:
 		if level.is_empty():
 			continue
 		assert_eq(level["mines"].size(), level["total_mines"], "%s 雷数应一致" % code)
-	# 待查（与 2026-09-18 的变体池收敛无关）：s1 局部禁形在 7×7 / 12 雷下构造式无产出——
-	# 同参数下 o1/o2/o7 均正常，故不是入口问题；疑为 s1 布雷器覆盖不足或该组合序贯可解性不达标。
-	pending("s1 局部禁形的构造式在 7×7/12 雷下无产出，待查（见 HANDOFF）")
+
+	# 结构轴算子走**约束位置**：s1 是 KIND_GLOBAL（约束），不是线索。
+	# 曾经把它当 clue 传（`generate_with_rules("s1", [], …)`）→ 生成器找不到这个线索规则、
+	# 一路返回空，看上去像「该算子产不出关卡」，白查了一轮（temp probe 实测：它的布雷器
+	# 完全正常，7×7/12 → 12 颗、8×8/26 → 26 颗，纯属参数放错位置）。
+	var s1_level := gen.generate_with_rules("classic", ["s1"], Vector2i(7, 7), 12, 7)
+	assert_false(s1_level.is_empty(), "classic+s1（结构轴约束）应能构造式生成非空关卡")
+	if not s1_level.is_empty():
+		assert_eq(s1_level["mines"].size(), s1_level["total_mines"], "classic+s1 雷数应一致")
 
 
 func test_classic_constructive_many_seeds() -> void:
