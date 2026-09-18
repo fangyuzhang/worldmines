@@ -29,6 +29,8 @@ addons/.godot_ai_update/
 __pycache__/
 /tools/_*.gd
 /tools/_*.gd.uid
+/tools/_*.tscn
+/tools/_*.tscn.uid
 /tools/_*.ps1
 /tools/_*.py
 /tools/_*.sh
