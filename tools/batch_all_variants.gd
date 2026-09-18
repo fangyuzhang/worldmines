@@ -35,8 +35,18 @@ extends SceneTree
 #   · 分析入口：跑完后 collect_report.py（本地）拉回汇总。
 const CliShutdown := preload("res://tools/cli_shutdown.gd")
 
-const CLUES := ["classic", "4n", "clock", "hv", "fr", "loopruns", "distsum", "sc"]
-const GLOBALS := ["mx", "rl", "pf", "qd", "dt", "ep", "4c"]
+## 官方三轴算子清单（GDD §4）。
+## **唯一事实源是 `ui/variant_catalog.gd` 的 OBS_IDS / STRUCT_IDS / CONSERVE_IDS 三个静态常量**；
+## 工具层不引 UI 类，故此处保留同源副本 —— 变体池调整时两处必须一起改
+## （HANDOFF 坑 #32：组合口径要锚静态常量，不能靠注册表实时内容）。
+## 2026-09-18 换血：原列表是旧 16 变体（含 4n/sc/hv/fr/distsum/ep/4c），其中 7 个已移入
+## `demo/mods/legacy_rules`（默认不加载）→ 照旧列表跑，本工具会大面积 skipped（静默少产）。
+const OBS := ["o1", "o2", "o3", "o4", "o5x", "o6", "o7", "o8", "o9", "o10"]
+const STRUCT := ["s1", "s2", "s3", "s4", "s5", "s6", "s7"]
+const CONSERVE := ["z1", "z2", "z3", "z4", "z5"]
+# 兼容别名（旧引用点仍可用）
+const CLUES := OBS
+const GLOBALS := STRUCT
 ## 尺寸清单与雷数真值源（v3.0，GDD §8.1）：直接引用 RuleFeasibility.CANDIDATES
 ##（key = 边长，value = 候选雷数列表）。单元循环的「请求雷数」由 resolve_mines
 ## 按候选回退决定（见 _initialize），此表仅提供尺寸遍历——禁止手写第二份雷数表。
@@ -81,19 +91,38 @@ static func _ev(d: Dictionary) -> String:
 	return JSON.stringify(d)
 
 
-## 组合清单：92 项 {id, clue, globals}。
+## 组合清单（{id, clue, globals}），**按 GDD §10.1 的分层口径**重建：
+##   经典      1 项
+##   T2 单算子  观测 10 + 结构 7 + 守恒 5 = 22 项
+##   T3 C 类   结构 × 观测 = 7 × 10 = 70 项
+##   T3 F 类   结构 × 结构 = C(7,2) = 21 项
+##   T4        结构 × 观测 + 1 守恒 = 5 × 10 = 50 项（结构按循环指派，与
+##             `VariantCatalog.conserved_all()` 同源）
+## 合计 164 项。**不再有「任意两约束」那类组合**——它把 S 轴与 Z 轴混在一起，
+## 会造出「两个守恒同关」，违反 GDD §5.1 硬限制 3（守恒 ≤ 1）。
 func _build_combos() -> Array:
 	var combos: Array = []
-	for c in CLUES:
+	combos.append({"id": "classic", "clue": "classic", "globals": []})
+	# T2 单算子
+	for c in OBS:
 		combos.append({"id": "c_%s" % c, "clue": c, "globals": []})
-	for g in GLOBALS:
+	for g in STRUCT + CONSERVE:
 		combos.append({"id": "g_%s" % g, "clue": "classic", "globals": [g]})
-	for g in GLOBALS:
-		for c in CLUES:
-			combos.append({"id": "%s_%s" % [g, c], "clue": c, "globals": [g]})
-	for i in GLOBALS.size():
-		for j in range(i + 1, GLOBALS.size()):
-			combos.append({"id": "%s_%s" % [GLOBALS[i], GLOBALS[j]], "clue": "classic", "globals": [GLOBALS[i], GLOBALS[j]]})
+	# T3 C 类：结构 × 观测
+	for s in STRUCT:
+		for c in OBS:
+			combos.append({"id": "%s_%s" % [s, c], "clue": c, "globals": [s]})
+	# T3 F 类：结构 × 结构（每对只出现一次）
+	for i in STRUCT.size():
+		for j in range(i + 1, STRUCT.size()):
+			combos.append({"id": "%s_%s" % [STRUCT[i], STRUCT[j]],
+				"clue": "classic", "globals": [STRUCT[i], STRUCT[j]]})
+	# T4：结构 × 观测 + 1 守恒（结构按 (观测序 + 守恒序) mod 7 循环指派）
+	for z in CONSERVE.size():
+		for i in OBS.size():
+			var s4: String = STRUCT[(i + z) % STRUCT.size()]
+			combos.append({"id": "%s+%s+%s" % [CONSERVE[z], s4, OBS[i]],
+				"clue": OBS[i], "globals": [s4, CONSERVE[z]]})
 	return combos
 
 
