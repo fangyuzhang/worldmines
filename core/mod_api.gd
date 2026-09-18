@@ -196,13 +196,16 @@ func install_from_dir(src: String, dst_name: String = "") -> Dictionary:
 		return {"ok": false, "reason": "manifest.json 的 id 非法: \"%s\"（需非空、无空格与路径符号）" % mod_id}
 	# dst_name：安装目录名覆盖（工坊读取侧用它装到 workshop_<fileid>/，与手动导入区分）。
 	# 缺省用 manifest.id（手动导入路径逐字节不变）。
-	var name := dst_name.strip_edges() if dst_name != "" else mod_id
-	if name != mod_id and (name.is_empty() or name.contains("/") or name.contains("\\")
-			or name.contains("..") or name.contains(":") or name.contains(" ")):
-		return {"ok": false, "reason": "安装目录名非法: \"%s\"" % name}
-	var dst := "%s/%s" % [MODS_DIR, name]
+	# 变量名不能叫 name：ModAPI extends Node，Node.name 是基类属性，
+	# 局部变量同名会触发 SHADOWED_VARIABLE_BASE_CLASS（Godot 编辑器报错）
+	var dst_mod_dir := dst_name.strip_edges() if dst_name != "" else mod_id
+	if dst_mod_dir != mod_id and (dst_mod_dir.is_empty() or dst_mod_dir.contains("/")
+			or dst_mod_dir.contains("\\") or dst_mod_dir.contains("..")
+			or dst_mod_dir.contains(":") or dst_mod_dir.contains(" ")):
+		return {"ok": false, "reason": "安装目录名非法: \"%s\"" % dst_mod_dir}
+	var dst := "%s/%s" % [MODS_DIR, dst_mod_dir]
 	if DirAccess.dir_exists_absolute(dst):
-		return {"ok": false, "reason": "已存在同名 Mod「%s」。为保护玩家数据不予覆盖；如需重装请先在模组页卸载" % name}
+		return {"ok": false, "reason": "已存在同名 Mod「%s」。为保护玩家数据不予覆盖；如需重装请先在模组页卸载" % dst_mod_dir}
 	if not _copy_code_mod(src, dst):
 		return {"ok": false, "reason": "复制失败（包不完整：缺 manifest.json / entry.gd？）"}
 	return {"ok": true, "id": mod_id, "dir": dst}
@@ -340,10 +343,12 @@ func _load_mod_impl(dir_path: String) -> Dictionary:
 			# 判成 sibling 目录 user://mods/foo_evil/… 的合法根（审计 H3）。
 			if not script_path.begins_with(dir_path.simplify_path().trim_suffix("/") + "/"):
 				return {"ok": false, "reason": "入口路径逃逸 Mod 目录: %s" % entry["path"]}
-			var script: Variant = load(script_path)
-			if script == null:
+			# 不能叫 script：Object.script 是基类属性（ModAPI extends Node），
+			# 同名局部变量触发 SHADOWED_VARIABLE_BASE_CLASS
+			var script_res: Variant = load(script_path)
+			if script_res == null:
 				return {"ok": false, "reason": "入口脚本加载失败: %s" % script_path}
-			instance = script.new()
+			instance = script_res.new()
 			if instance == null:
 				return {"ok": false, "reason": "入口脚本实例化失败"}
 		ManifestParser.RUNTIME_DEF:
