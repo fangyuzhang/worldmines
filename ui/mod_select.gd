@@ -122,6 +122,29 @@ func _build_ui() -> void:
 	ai.pressed.connect(_export_ai_task_pack)
 	top.add_child(ai)
 
+	# 创意工坊同步（P1 读取侧）：只在装了 GodotSteam 时出现；Steam 不可用（无客户端/无 appid）
+	# 时同步会返回可读原因并 toast 提示——不崩不弹错（降级逻辑见 core/steam_workshop.gd）
+	if SteamWorkshop.plugin_present():
+		var ws := SteamWorkshop.new()
+		var wbtn := Button.new()
+		wbtn.text = "同步创意工坊"
+		wbtn.focus_mode = Control.FOCUS_NONE
+		wbtn.custom_minimum_size = Vector2(170, 40)
+		wbtn.tooltip_text = "把创意工坊订阅的 Mod 同步到本地（需 Steam 客户端运行；已装的不覆盖）"
+		wbtn.pressed.connect(func():
+			var ir: Dictionary = ws.init()
+			if not bool(ir.get("ok", false)):
+				_toast("Steam 不可用：%s（需从 Steam 启动游戏，或本机运行 Steam 客户端）" % str(ir.get("reason", "")))
+				return
+			var sr: Dictionary = ws.poll_subscriptions(ModAPI)
+			var errs: Array = sr.get("errors", [])
+			_toast("工坊同步：新增 %d · 已存在 %d · 失败 %d%s" % [
+					(sr.get("synced", []) as Array).size(), (sr.get("skipped", []) as Array).size(),
+					errs.size(), ("" if errs.is_empty() else "（%s）" % str(errs[0]))],
+					not bool(sr.get("ok", false)))
+			_rebuild_list())
+		top.add_child(wbtn)
+
 	# 返回按钮：统一右上角（独立定位）
 	var back := Button.new()
 	back.text = "返回"

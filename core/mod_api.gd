@@ -180,7 +180,7 @@ func _copy_dir_recursive(src: String, dst: String) -> bool:
 ## 校验：目录可读 + manifest.json 可解析 + id 合法非空；目标已存在则**拒绝**
 ##（不覆盖——user://mods 里的目录可能承载玩家进度与已生成关卡，覆盖即毁数据）。
 ## 返回 { ok, id, dir } 或 { ok:false, reason }。
-func install_from_dir(src: String) -> Dictionary:
+func install_from_dir(src: String, dst_name: String = "") -> Dictionary:
 	var d := DirAccess.open(src)
 	if d == null:
 		return {"ok": false, "reason": "目录不存在或无法读取: %s" % src}
@@ -194,9 +194,15 @@ func install_from_dir(src: String) -> Dictionary:
 	if mod_id.is_empty() or mod_id.contains("/") or mod_id.contains("\\") or mod_id.contains("..") \
 			or mod_id.contains(":") or mod_id.contains(" "):
 		return {"ok": false, "reason": "manifest.json 的 id 非法: \"%s\"（需非空、无空格与路径符号）" % mod_id}
-	var dst := "%s/%s" % [MODS_DIR, mod_id]
+	# dst_name：安装目录名覆盖（工坊读取侧用它装到 workshop_<fileid>/，与手动导入区分）。
+	# 缺省用 manifest.id（手动导入路径逐字节不变）。
+	var name := dst_name.strip_edges() if dst_name != "" else mod_id
+	if name != mod_id and (name.is_empty() or name.contains("/") or name.contains("\\")
+			or name.contains("..") or name.contains(":") or name.contains(" ")):
+		return {"ok": false, "reason": "安装目录名非法: \"%s\"" % name}
+	var dst := "%s/%s" % [MODS_DIR, name]
 	if DirAccess.dir_exists_absolute(dst):
-		return {"ok": false, "reason": "已存在同名 Mod「%s」。为保护玩家数据不予覆盖；如需重装请先在模组页卸载" % mod_id}
+		return {"ok": false, "reason": "已存在同名 Mod「%s」。为保护玩家数据不予覆盖；如需重装请先在模组页卸载" % name}
 	if not _copy_code_mod(src, dst):
 		return {"ok": false, "reason": "复制失败（包不完整：缺 manifest.json / entry.gd？）"}
 	return {"ok": true, "id": mod_id, "dir": dst}
