@@ -201,9 +201,10 @@ static func entries(kind: String) -> Array[Dictionary]:
 ##
 ## 硬限制（GDD §5.1）：每关观测恰 1 个、结构 ≤2、守恒 ≤1 —— 本表每组恰 1 观测 + 1 结构。
 ##
-## 判据走 RuleSignature.compat：官方 22 席的签名尚未入表 → 一律回退 warn（不拦），
-## 与 GDD「J2 警告但全量生产」的口径一致（§5.3 例：无环 × 分量数K 判 J2 警告，照样在产）。
-## 逻辑冗余（R4）/ 整除无解（R5）一旦补进签名表，会自动在此被排除。
+## 判据走 RuleSignature.compat：官方 22 席签名已入表（2026-09-18，commit `20e0021`）——
+## R4 逻辑冗余 / R5 整除无解会在此被**真实排除**；其余为 J1 正交或 J2 警告
+## （警告照常产出，与 GDD §5.3「J2 警告但全量生产」一致。此处注释此前写着「尚未入表」，
+## 是签名补全前的旧描述，已更正）。
 static func mixed_all(size: Vector2i, mines: int) -> Array[Dictionary]:
 	var obs := _available_of(OBS_IDS)          # 行轴
 	var structs := _available_of(STRUCT_IDS)   # 列轴
