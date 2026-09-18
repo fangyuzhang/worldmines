@@ -53,6 +53,9 @@ var defs := DefEngine.new()                # §14.7 Def 注册表（内置 8 线
 
 # mod_id(String) -> { manifest, capabilities, instance, state, crash_count, dir_path }
 var _mods: Dictionary = {}
+## UI 挂载点收集表（P4 / 框架 §5）：slot -> Array[{mod_id, label, body}]。
+## 数据来自 manifest.ui_mounts（纯数据声明），on_load 成功后登记，卸载自动摘除。
+var _ui_mounts: Dictionary = {}
 
 # 敏感能力运行时授权（§14.14，R32：未授权 = 无权限）
 var grants := CapabilityGrant.new()
@@ -417,6 +420,11 @@ func _load_mod_impl(dir_path: String) -> Dictionary:
 			owned_rules.append(id)
 	_mods[mod_id]["rules"] = owned_rules
 
+	# UI 挂载点收集（P4 / 框架 §5）：manifest.ui_mounts 是**纯数据**声明
+	#（[{slot, label, body}]，点击只弹说明文本）。数据挂载不构成权限面，故无需
+	# UI_INJECT 授权；真正需要授权的是「代码注入 UI」，仍走敏感能力路径。
+	_collect_ui_mounts(mod_id, manifest)
+
 	events.emit(EventBus.MOD_LOADED, {"id": mod_id})
 	return {"ok": true, "mod_id": mod_id, "rejected": cap_result["rejected"]}
 
@@ -461,6 +469,16 @@ func unload_mod(mod_id: String) -> Dictionary:
 	for rid in mod.get("rules", []):
 		RuleRegistry.default().unregister(StringName(str(rid)))
 	_mods.erase(mod_id)
+	# UI 挂载随卸载一并摘除（P4）：不留孤儿挂载（keys() 返回副本，边遍历边改字典安全）
+	for slot in _ui_mounts.keys():
+		var kept: Array = []
+		for it in (_ui_mounts[slot] as Array):
+			if str((it as Dictionary).get("mod_id", "")) != mod_id:
+				kept.append(it)
+		if kept.is_empty():
+			_ui_mounts.erase(slot)
+		else:
+			_ui_mounts[slot] = kept
 	_rebuild_defs()  # DefEngine 无 unregister，卸载后重建（内置 + 剩余 Def mod）
 	# 专属卸载事件（审计 L2）：此前复用 MOD_LOADED + payload 区分，订阅方容易漏判；
 	# 旧事件保留过渡期（已有订阅方不破），新代码请订阅 MOD_UNLOADED。
@@ -482,6 +500,30 @@ func _rebuild_defs() -> void:
 			def_loader.engine = defs
 			# 顺手刷新该 mod 的 Def 清单（重建后 mod 记录里的 defs 必须与实际注册的一致）
 			m["defs"] = def_loader.load_mod_dir(str(m.get("dir_path", ""))).get("defs", [])
+
+
+## 收集某 Mod 的 UI 挂载声明（纯数据）。非法项**静默跳过**——
+## 不因一个坏挂载项拒绝整个 Mod（挂载是装饰，不该拖垮功能）。
+func _collect_ui_mounts(mod_id: String, manifest: Dictionary) -> void:
+	var raw: Variant = manifest.get("ui_mounts", [])
+	if not (raw is Array):
+		return
+	for item in (raw as Array):
+		if not (item is Dictionary):
+			continue
+		var d: Dictionary = item
+		var slot := str(d.get("slot", "")).strip_edges()
+		var label := str(d.get("label", "")).strip_edges()
+		if slot == "" or label == "":
+			continue
+		var arr: Array = _ui_mounts.get(slot, [])
+		arr.append({"mod_id": mod_id, "label": label, "body": str(d.get("body", ""))})
+		_ui_mounts[slot] = arr
+
+
+## 某挂载点的全部挂载项（[{mod_id, label, body}]），宿主 UI 据此渲染。
+func ui_mounts(slot: String) -> Array:
+	return _ui_mounts.get(slot, [])
 
 
 ## 是否有某能力（R32：未声明 = 无权限；敏感能力还需运行时授权，§14.14）。

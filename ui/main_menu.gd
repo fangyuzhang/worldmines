@@ -43,6 +43,8 @@ func _build_ui() -> void:
         btn.pressed.connect(_on_button.bind(cap))
         vbox.add_child(btn)
     _title_label = title
+    # Mod 纯数据挂载点（P4）：显示在按钮列末尾；无挂载时不产生任何节点
+    UiMounts.append(vbox, UiMounts.SLOT_MAIN_MENU, self)
     _apply_theme()
 
 
