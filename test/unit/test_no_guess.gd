@@ -11,6 +11,21 @@ extends GutTest
 const SIZE := Vector2i(5, 5)
 const MINES := 4
 
+## 本测试直赋 GameSession.board 后调 reveal()，会触发 _maybe_autosave——
+## 若不关自动存档，会把 level_path="" 的档写进真实 user://，
+## 下次启动游戏误报「存档已损坏」（v3.2 事故溯源结论）。
+var _saved_autosave: bool = true
+
+
+func before_all() -> void:
+	_saved_autosave = SettingsManager.autosave_enabled
+	SettingsManager.autosave_enabled = false
+
+
+func after_all() -> void:
+	SettingsManager.autosave_enabled = _saved_autosave
+	SaveCoordinator.clear()  # 双保险：清可能残留的测试档
+
 
 func _try_generate(clue_id: String, globals: Array) -> Dictionary:
 	var gen := PuzzleGenerator.new()

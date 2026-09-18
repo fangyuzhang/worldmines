@@ -70,24 +70,62 @@ func test_g2_hidden_for_manual_level() -> void:
 			"胜利局不提供撤回")
 
 
-# G3：失败终局 → 生成关卡给「跳过本关」；胜利给的是「下一关」，不该同时给跳过
+# G3：失败终局 → 生成关卡给「跳过本关」（可点）；胜利给的是「下一关」，不该同时给跳过
 func test_g3_skip_button_only_on_loss() -> void:
-	var btn := _button("跳过本关")
-	assert_not_null(btn, "终局页应有「跳过本关」入口")
+	assert_not_null(_button("跳过本关"), "终局页应有「跳过本关」入口")
 	GameSession.level_path = GEN_LEVEL
 	_go._on_game_ended(false)
-	assert_true(btn.visible, "失败 + 存在下一关 → 应显示跳过")
+	assert_true(_go._skip_btn.visible, "失败 + 存在下一关 → 应显示跳过")
+	assert_false(_go._skip_btn.disabled, "有下一关时可点")
+	assert_eq(_go._skip_btn.text, "跳过本关")
 	_go._on_game_ended(true)
-	assert_false(btn.visible, "胜利已有「下一关」，不再给跳过")
+	assert_false(_go._skip_btn.visible, "胜利已有「下一关」，不再给跳过")
 
 
-# G4：最后一关失败 → 没有下一关可跳（跳过无处可去，按钮必须隐藏）
-func test_g4_skip_hidden_on_last_level() -> void:
-	var last := "user://gen_levels/classic_5_%d.json" % (LevelSequence.LEVELS_PER_SET - 1)
+# G4：**真·最后一关** = 最大尺寸（9×9）的末关：入口仍显示（置灰 + 说明原因）
+# 早先的实现是直接隐藏，实测反馈「按需求该有的按钮凭空不见了」——没出路和没按钮，
+# 前者至少告诉了玩家为什么。注意 5×5 的末关**已不是终点**：它接 6×6（见 G7）。
+func test_g4_skip_disabled_only_at_very_last_level() -> void:
+	var last := "user://gen_levels/classic_%d_%d.json" % [
+			int(LevelSequence.SIZES[-1]), LevelSequence.LEVELS_PER_SET - 1]
 	GameSession.level_path = last
-	assert_false(LevelSequence.has_skip_target(last), "最后一关无跳过目标")
+	assert_false(LevelSequence.has_skip_target(last), "最大尺寸的末关才是真终点")
 	_go._on_game_ended(false)
-	assert_false(_button("跳过本关").visible, "无下一关时不得显示跳过")
+	assert_true(_go._skip_btn.visible, "真末关也应显示该入口")
+	assert_true(_go._skip_btn.disabled, "但不可点：没有下一关可跳")
+	assert_true(_go._skip_btn.text.contains("最后一关"),
+			"并说明原因而不是留个灰按钮：%s" % _go._skip_btn.text)
+
+
+# G7：跨尺寸推进 —— 5×5 打完接 6×6 第 1 关；按钮把目标尺寸写在脸上
+func test_g7_advance_crosses_size() -> void:
+	var last5 := "user://gen_levels/classic_5_%d.json" % (LevelSequence.LEVELS_PER_SET - 1)
+	assert_eq(LevelSequence.advance_path(last5), "user://gen_levels/classic_6_0.json",
+			"5×5 末关的下一关应是 6×6 第 1 关")
+	assert_eq(int(LevelSequence.advance(last5).get("size", 0)), 6, "advance 应带下一尺寸")
+	GameSession.level_path = last5
+	_go._on_game_ended(false)
+	assert_false(_go._skip_btn.disabled, "跨尺寸后跳过仍可用（有下一关）")
+	# 胜利侧：has_next 要求当前关已通关，先补一笔真实进度（本文件 after_each 会还原）
+	ProgressStore.record_clear(LevelSequence.progress_key(last5), 1.0)
+	_go._on_game_ended(true)
+	assert_true(_go._next_btn.visible, "胜利时「下一关」应指向下一尺寸")
+	assert_true(_go._next_btn.text.contains("6×6"),
+			"按钮文案标出目标尺寸：%s" % _go._next_btn.text)
+
+
+# G6：跳过后回头通关 → 目标键已修（见 P9），这里锁「意图带 auto_start」这条链路：
+# 终局页不自己生成关卡，而是要求选关页「领到意图后直接开局」，
+# 否则玩家点「下一关」只是回到选关页，还得再点一次（实测反馈：这不叫「到下一关」）。
+func test_g6_focus_intent_carries_auto_start() -> void:
+	LevelSequence.request_focus("4n", 5)
+	assert_false(bool(LevelSequence.take_focus().get("auto_start", false)),
+			"普通交接默认只翻页，不自动开局")
+	LevelSequence.request_focus("4n", 5, true)
+	var f := LevelSequence.take_focus()
+	assert_true(bool(f.get("auto_start", false)), "「下一关 / 跳过本关」应要求自动开局")
+	assert_eq(str(f["mode"]), "4n")
+	assert_eq(int(f["size"]), 5)
 
 
 # G5：跳过 → 记录 skipped（不算通关），且目标指向下一关
