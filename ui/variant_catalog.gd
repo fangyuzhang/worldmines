@@ -16,12 +16,27 @@
 class_name VariantCatalog
 extends RefCounted
 
-## 线索型规则的展示顺序（仅排序用；不在表里的新规则自动追加）。
-const CLUE_ORDER: Array = ["classic", "4n", "clock", "hv", "fr", "loopruns", "distsum", "sc", "knight"]
-## 全局约束的展示顺序。
-const GLOBAL_ORDER: Array = ["mx", "rl", "pf", "qd", "dt", "ep", "4c"]
-## 不作为独立变体呈现的规则（元规则：它只是「总雷数」约束，不是玩法变体）。
-const HIDDEN_RULES: Array = ["total_mines"]
+## 观测轴展示顺序（GDD §4.1~4.2）：O0 经典（底座）+ 官方观测十席。
+const CLUE_ORDER: Array = ["classic", "o1", "o2", "o3", "o4", "o5x", "o6", "o7", "o8", "o9", "o10"]
+## 结构与守恒轴展示顺序（GDD §4.4 / §4.5）：S1~S7 + Z1~Z5。
+## 末尾的 `dt`（骨牌）是**唯一保留的旧单算子**：只单独成关，不进任何组合轴（见下方三轴常量）。
+const GLOBAL_ORDER: Array = ["s1", "s2", "s3", "s4", "s5", "s6", "s7", "z1", "z2", "z3", "z4", "z5", "dt"]
+
+## ==== 三轴切分（GDD §4.1）====
+## 代码里的 KIND_GLOBAL 是个筐，同时装 S 轴与 Z 轴（`pf` 是 S1、`mx` 是 Z1）。但 GDD §5.1
+## 的硬限制是「观测恰 1 + 结构 ≤2 + 守恒 ≤1」——所以组合必须**按轴**配对，不能按 KIND 一锅端：
+## 两个 Z 同关即「守恒 2 个」，直接违规（早先按 KIND 做的「约束×约束」表就踩了这个）。
+const OBS_IDS: Array = ["o1", "o2", "o3", "o4", "o5x", "o6", "o7", "o8", "o9", "o10"]
+const STRUCT_IDS: Array = ["s1", "s2", "s3", "s4", "s5", "s6", "s7"]
+const CONSERVE_IDS: Array = ["z1", "z2", "z3", "z4", "z5"]
+
+## 不作为独立变体呈现的规则：
+##   · `total_mines`：元规则（只是「总雷数」约束，不是玩法变体）；
+##   · 6 个与官方席位**等价**的旧内置实现（`clock`=O8 钟点 / `loopruns`=O10 环游 /
+##     `pf`=S1 局部禁形 / `mx`=Z1 镜像 / `rl`=Z2 相邻行锁 / `qd`=Z3 四象）——
+##     选关页只显示官方 id（与 GDD 编号一致），避免同一规则出现两次。
+##     实现本身保留（RuleFeasibility / RuleCpSat 等仍按这些 id 工作）。
+const HIDDEN_RULES: Array = ["total_mines", "clock", "loopruns", "pf", "mx", "rl", "qd"]
 
 
 ## 当前注册表里全部线索型规则 id（按展示顺序）。
@@ -93,43 +108,45 @@ static func _is_bundled_rule(rule_id: String) -> bool:
 	return OFFICIAL_RULE_IDS.has(rule_id)
 
 
-## 混合档的行轴：参与配对的**内置**线索型（不含经典——中心基线与自身组合没有信息量）。
-## 交叉表的行序 = 此顺序，故它同时决定表长什么样。
+## 混合档的**观测轴**（交叉表的行）：官方观测十席（GDD §4.2）。
+## 不含 O0 经典——基线与自身组合没有信息量。
+## 轴用**静态常量**而非注册表派生：口径由 GDD 决定，注册表只决定「此刻能不能玩」
+## （官方 Mod 未加载只影响 is_available，不影响表结构）。
 static func mixed_clue_ids() -> Array[String]:
-	var all := _builtin_ids_of_kind(RulePlugin.KIND_CLUE)
 	var out: Array[String] = []
-	for c in all:
-		if c != "classic":
-			out.append(c)
+	out.assign(OBS_IDS)
 	return out
 
 
-## 混合档的列轴：参与配对的**内置**全局约束（交叉表的列序）。
+## 混合档的**结构轴**（交叉表的列）：官方结构七席（GDD §4.4）。
+## 注意命名：此处「global」指 KIND_GLOBAL（结构 + 守恒的统称），故列轴只取 S 轴；
+## 守恒走 mixed_conserve_ids()（T4，且每关至多 1 个——GDD §5.1 硬限制 3）。
 static func mixed_global_ids() -> Array[String]:
-	return _builtin_ids_of_kind(RulePlugin.KIND_GLOBAL)
+	var out: Array[String] = []
+	out.assign(STRUCT_IDS)
+	return out
 
 
-## 混合组合只在**内置**规则间配对。
-## 原因：Mod 算子的构造式布雷 / 可行性尚未经过量产验证（`place_mines` 基类默认返回空），
-## 让它们进混合档会成倍产生「点了生成不出来」的死节点。等单个 Mod 变体在独立档验证过
-## 生成质量后，再考虑放开。
-static func _builtin_ids_of_kind(kind: String) -> Array[String]:
-	var reg := RuleRegistry.default()
-	var matched: Array[String] = []
-	for id in reg.builtin_ids():
-		if HIDDEN_RULES.has(id):
-			continue
-		var r := reg.resolve(StringName(id))
-		if r == null or not r.has_method("get_kind"):
-			continue
-		if str(r.call("get_kind")) == kind:
-			matched.append(id)
-	var ordered: Array[String] = []
-	var pref: Array = CLUE_ORDER if kind == RulePlugin.KIND_CLUE else GLOBAL_ORDER
-	for p in pref:
-		if matched.has(p):
-			ordered.append(p)
-	return ordered
+## 混合档的**守恒轴**（T4「守恒叠加」的第三个算子）：官方守恒五席（GDD §4.5）。
+static func mixed_conserve_ids() -> Array[String]:
+	var out: Array[String] = []
+	out.assign(CONSERVE_IDS)
+	return out
+
+
+## 该规则此刻是否可用（已注册）。无头环境（-s 工具 / 测试）没有 autoload，
+## 官方 22 席不会自动加载 —— 组合表据此跳过不可用条目，避免留下「点了生成不出来」的死格。
+static func is_available(rule_id: String) -> bool:
+	return RuleRegistry.default().resolve(StringName(rule_id)) != null
+
+
+## 按轴序取**可用**的 id（跳过未注册，保持轴顺序）。
+static func _available_of(ids: Array) -> Array[String]:
+	var out: Array[String] = []
+	for id in ids:
+		if is_available(str(id)):
+			out.append(str(id))
+	return out
 
 
 ## 展示名：优先 describe()["name"]，其次旧 VariantRegistry 表，最后退回 id 本身。
@@ -178,63 +195,96 @@ static func entries(kind: String) -> Array[Dictionary]:
 	return out
 
 
-# ============ 混合组合（G + C）============
+# ============ 混合档一：结构 × 观测（GDD §10.1 T3 C 类）============
 
-## 全部「全局约束 × 线索型」组合（v3.2 起为完整交叉：8 线索 × 7 约束 = 56 个）。
+## 全部「结构 × 观测」组合（7 结构 × 10 观测 = 70 对，GDD §10.1 T3 C 类）。
 ##
-## 旧实现每个 G 只配一个 C（共 7 个）——那是**径向图「每条枝干只能挂一个」的排布限制**，
-## 不是规则的限制：规则本身就是「约束 + 线索」的正交组合，交叉表正好对应它的代数结构。
-## 改为交叉表后 56 个组合全部可达（选关页「混合档」页即此表）。
+## 硬限制（GDD §5.1）：每关观测恰 1 个、结构 ≤2、守恒 ≤1 —— 本表每组恰 1 观测 + 1 结构。
 ##
-## 实测（RuleSignature 判据 + RuleFeasibility 真值查询，5×5 与 7×7）：
-##   56 个组合**无一判 forbid**，全部数学可行 → 没有死格；
-##   pf（局部禁形）列全部为 warn（同作用域叠加，可行域偏窄、生成更慢），标记但不拦。
+## 判据走 RuleSignature.compat：官方 22 席的签名尚未入表 → 一律回退 warn（不拦），
+## 与 GDD「J2 警告但全量生产」的口径一致（§5.3 例：无环 × 分量数K 判 J2 警告，照样在产）。
+## 逻辑冗余（R4）/ 整除无解（R5）一旦补进签名表，会自动在此被排除。
 static func mixed_all(size: Vector2i, mines: int) -> Array[Dictionary]:
-	var clues := mixed_clue_ids()      # 行轴（= 交叉表的行序）
-	var globals := mixed_global_ids()  # 列轴（= 交叉表的列序）
+	var obs := _available_of(OBS_IDS)          # 行轴
+	var structs := _available_of(STRUCT_IDS)   # 列轴
 	var out: Array[Dictionary] = []
-	for c in clues:
-		for g in globals:
-			var v := RuleSignature.compat(g, c, size, mines)
+	for c in obs:
+		for s in structs:
+			var v := RuleSignature.compat(s, c, size, mines)
 			if str(v["verdict"]) == RuleSignature.FORBID:
-				continue  # 逻辑冗余 / 矛盾：直接不产生，避免「点了生成不出来」的死格
+				continue  # 逻辑冗余 / 矛盾：不产生，避免「点了生成不出来」的死格
 			out.append({
-				"id": "%s_%s" % [g, c],
+				"id": "%s_%s" % [s, c],
 				"clue": c,
-				"globals": [g],
-				"parents": [g, c],
+				"globals": [s],
+				"parents": [s, c],
 				# 组合判据（ok / warn）：交叉表格子据此标注「可行域偏窄」
 				"verdict": str(v["verdict"]),
 			})
 	return out
 
 
-# ============ 混合组合（G + G，双约束）============
+# ============ 混合档二：结构 × 结构（GDD §10.1 T3 F 类）============
 
-## 全部「全局约束 × 全局约束」组合（C(7,2) = 21 对，判 forbid 的不产生）。
+## 全部「结构 × 结构」组合（C(7,2) = 21 对，GDD §10.1 T3 F 类）。
 ##
-## 与 mixed_all 同源同构：clue 走 classic（不加线索），globals 是两个约束。
-## 判据走 RuleSignature.compat：a==b 判 forbid 天然处理对角线；R4 蕴含判冗余
-## （mx 逻辑蕴含 ep → mx+ep 不产生，二者同关时 ep 完全冗余、没有信息增量）。
-##
-## 实测（RuleFeasibility 真值查询，5~9 全尺寸）：21 对中 mx+ep 判 forbid → **20 个可玩**；
-## 尺寸级不可行比 G+C 常见（mx+rl 的 6×6/8×8、rl+qd 的 5×5/6×6、qd+dt 的 5×5/8×8），
-## 但 20 个在 7×7 与 9×9 全部可行——弹窗的「尺寸按钮禁用 + 自动切到最近可行尺寸」已覆盖。
+## 结构算子**允许 ≤2 个**（GDD §5.1 硬限制 2），所以这张表是唯一允许多约束同关的地方；
+## 守恒轴仍是每关 ≤1（单独走 T4），故此处只有 S 轴配对——**不是**早先那种「任意两约束配对」。
+## 同轴配对多为 J2 警告（§5.3：无环 × 分量数K 同约束雷的图拓扑，可行域收窄但可生产）。
 static func gg_all(size: Vector2i, mines: int) -> Array[Dictionary]:
-	var globals := mixed_global_ids()
+	var structs := _available_of(STRUCT_IDS)
 	var out: Array[Dictionary] = []
-	for i in globals.size():
-		for j in range(i + 1, globals.size()):
-			var g1: String = globals[i]
-			var g2: String = globals[j]
-			var v := RuleSignature.compat(g1, g2, size, mines)
+	for i in structs.size():
+		for j in range(i + 1, structs.size()):
+			var s1: String = structs[i]
+			var s2: String = structs[j]
+			var v := RuleSignature.compat(s1, s2, size, mines)
 			if str(v["verdict"]) == RuleSignature.FORBID:
-				continue  # 逻辑冗余 / 矛盾（如 mx 蕴含 ep）：不产生，避免死格
+				continue  # 逻辑冗余 / 矛盾：不产生，避免死格
 			out.append({
-				"id": "%s_%s" % [g1, g2],
+				"id": "%s_%s" % [s1, s2],
 				"clue": "classic",
-				"globals": [g1, g2],
-				"parents": [g1, g2],
+				"globals": [s1, s2],
+				"parents": [s1, s2],
+				"verdict": str(v["verdict"]),
+			})
+	return out
+
+
+# ============ 混合档三：守恒叠加（GDD §10.1 T4）============
+
+## T4「结构 × 观测 + 1 守恒」共 50 组（5 守恒 × 10 观测）。
+##
+## 结构按 GDD §10.1 的**循环构造**选取：第 z 个守恒的第 i 组 = 结构 ((i+z) mod 7) + 观测 i。
+## 循环而非全交叉是有意的——全交叉会炸成 350 组，远超 GDD 的 50 组口径
+## （§10.2：T4 = 150 关卡集 = 50 组 × 3 档）。
+static func conserved_all(size: Vector2i, mines: int) -> Array[Dictionary]:
+	if STRUCT_IDS.is_empty():
+		return []
+	var obs := _available_of(OBS_IDS)
+	var structs := _available_of(STRUCT_IDS)
+	var cons := _available_of(CONSERVE_IDS)
+	var out: Array[Dictionary] = []
+	for z in CONSERVE_IDS.size():
+		var g: String = str(CONSERVE_IDS[z])
+		if not cons.has(g):
+			continue
+		for i in OBS_IDS.size():
+			var c: String = str(OBS_IDS[i])
+			if not obs.has(c):
+				continue
+			var s: String = str(STRUCT_IDS[(i + z) % STRUCT_IDS.size()])
+			if not structs.has(s):
+				continue
+			var ids: Array[String] = [g, s, c]
+			var v := RuleSignature.compat_all(ids, size, mines)
+			if str(v["verdict"]) == RuleSignature.FORBID:
+				continue
+			out.append({
+				"id": "%s+%s+%s" % [g, s, c],
+				"clue": c,
+				"globals": [s, g],
+				"parents": [g, s, c],
 				"verdict": str(v["verdict"]),
 			})
 	return out
@@ -284,45 +334,72 @@ static func build_modes(size: Vector2i, mines: int) -> Array:
 			"source": "mod" if is_mod_rule(gid) else "builtin",
 		})
 
-	# 混合档：完整交叉（8 线索 × 7 约束），顺序与交叉表一致（按线索分行、约束分列）
-	var pairs := mixed_all(size, mines)
-	var g_index := {}
-	for j in globals.size():
-		g_index[globals[j]] = j + 1
-	var c_index := {}
-	for i in clues.size():
-		c_index[clues[i]] = i
-	for p in pairs:
-		var g: String = str((p as Dictionary)["globals"][0])
-		var c: String = str((p as Dictionary)["clue"])
+	# 混合档轴（编号用 S / O / Z 前缀，与 GDD 的三轴编号一致）
+	var structs := mixed_global_ids()
+	var obs := mixed_clue_ids()
+	var cons := mixed_conserve_ids()
+	var s_index := {}
+	for j in structs.size():
+		s_index[structs[j]] = j + 1
+	var o_index := {}
+	for i in obs.size():
+		o_index[obs[i]] = i + 1
+	var z_index := {}
+	for k in cons.size():
+		z_index[cons[k]] = k + 1
+
+	# 混合档一（T3 C 类）：结构 × 观测，顺序与交叉表一致（按观测分行、结构分列）
+	for p in mixed_all(size, mines):
+		var d: Dictionary = p
+		var s: String = str((d["globals"] as Array)[0])
+		var c: String = str(d["clue"])
 		out.append({
-			"id": str((p as Dictionary)["id"]),
-			"name": "%s·%s" % [display_name(g), display_name(c)],
+			"id": str(d["id"]),
+			"name": "%s·%s" % [display_name(s), display_name(c)],
 			"kind": "mixed",
 			"clue": c,
-			"globals": [g],
-			"parents": [g, c],
-			"verdict": str((p as Dictionary).get("verdict", RuleSignature.OK)),
-			"tip": "G%d+C%d" % [int(g_index.get(g, 0)), int(c_index.get(c, 0))],
+			"globals": [s],
+			"parents": d["parents"],
+			"verdict": str(d.get("verdict", RuleSignature.OK)),
+			"tip": "S%d+O%d" % [int(s_index.get(s, 0)), int(o_index.get(c, 0))],
 			"enabled": true,
 			"source": "builtin",
 		})
 
-	# 双约束档（G+G）：C(7,2) 完整配对，顺序与上三角表的行/列一致
+	# 混合档二（T3 F 类）：结构 × 结构，每对只出现一次（上三角）
 	for p in gg_all(size, mines):
 		var d: Dictionary = p
-		var gids: Array = d["globals"]
-		var g1: String = str(gids[0])
-		var g2: String = str(gids[1])
+		var sids: Array = d["globals"]
+		var s1: String = str(sids[0])
+		var s2: String = str(sids[1])
 		out.append({
 			"id": str(d["id"]),
-			"name": "%s·%s" % [display_name(g1), display_name(g2)],
+			"name": "%s·%s" % [display_name(s1), display_name(s2)],
 			"kind": "mixed",
 			"clue": "classic",
-			"globals": gids,
-			"parents": gids,
+			"globals": sids,
+			"parents": d["parents"],
 			"verdict": str(d.get("verdict", RuleSignature.OK)),
-			"tip": "G%d+G%d" % [int(g_index.get(g1, 0)), int(g_index.get(g2, 0))],
+			"tip": "S%d+S%d" % [int(s_index.get(s1, 0)), int(s_index.get(s2, 0))],
+			"enabled": true,
+			"source": "builtin",
+		})
+
+	# 混合档三（T4）：结构 × 观测 + 1 守恒（循环构造，50 组）
+	for p in conserved_all(size, mines):
+		var d: Dictionary = p
+		var z: String = str((d["parents"] as Array)[0])
+		var s: String = str((d["globals"] as Array)[0])
+		var c: String = str(d["clue"])
+		out.append({
+			"id": str(d["id"]),
+			"name": "%s·%s·%s" % [display_name(c), display_name(s), display_name(z)],
+			"kind": "mixed",
+			"clue": c,
+			"globals": d["globals"],
+			"parents": d["parents"],
+			"verdict": str(d.get("verdict", RuleSignature.OK)),
+			"tip": "Z%d+S%d+O%d" % [int(z_index.get(z, 0)), int(s_index.get(s, 0)), int(o_index.get(c, 0))],
 			"enabled": true,
 			"source": "builtin",
 		})

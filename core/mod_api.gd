@@ -34,8 +34,13 @@ const MODS_DIR := "user://mods"
 ## （O/S/Z 全部经 mod 注册，游戏本体内只有内置 8 线索 + 7 约束），选关页表现为「找不到关卡」。
 ## 启动时把本目录下的 Mod 安装到 user://mods 并加载（幂等：已安装不覆盖，玩家改动优先）。
 const BUNDLED_MODS_DIR := "res://demo/mods"
-## 不自举的目录：设计档案（o5 三角）/ 未达标变体（o5b 真盘零产）/ 示例 Mod（留给模组页演示）。
-const BUNDLED_SKIP: Array = ["o5_sanjiao", "o5b_duijiao", "custom_rule_mod", "hpair_rule_mod"]
+## 不自举的目录：
+##   · 设计档案（o5 三角，已被斜脉 `o5x` 替换）/ 未达标变体（o5b 真盘零产）；
+##   · 示例 Mod（留给模组页演示）；
+##   · 遗留单算子包（8 个终版 GDD 之外的旧变体，2026-09-18 从内置表移出）——
+##     默认不加载、不进选关页组合轴，玩家想要就在模组页自行加载（加载后按普通 Mod 变体展示）。
+const BUNDLED_SKIP: Array = ["o5_sanjiao", "o5b_duijiao", "custom_rule_mod", "hpair_rule_mod",
+		"legacy_rules"]
 ## 自举安装成功的 mod id 集合（is_bundled / is_bundled_rule 查询用）。
 var _bundled: Dictionary = {}
 

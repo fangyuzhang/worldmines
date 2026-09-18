@@ -162,6 +162,9 @@ func _consume_pending_focus() -> void:
 		if str(MODES[i]["id"]) != mode_id:
 			continue
 		_show_tab(_page_of(MODES[i]))   # 先翻到该变体所在的页，再开它的弹窗
+		if _page_of(MODES[i]) == PAGE_MIXED:
+			# 混合档有三张表：不切到目标那张，弹窗会开在一个看不见的表上
+			_on_mixed_switch(_mixed_tab_of(MODES[i]))
 		var size_i: int = SIZES.find(want_size)
 		_open_popup(i)
 		if size_i >= 0:
@@ -273,6 +276,24 @@ func _page_of(m: Dictionary) -> int:
 	if str(m.get("source", "builtin")) == "mod":
 		return PAGE_MOD   # Mod 变体一律进 Mod 页（按来源分组，与它是线索还是约束无关）
 	return PAGE_SINGLE
+
+
+## 混合档三张表各自的归属：按组合携带的**算子轴**判定，而不是按 id 字符串猜。
+##   T4（tab 2）   = 带守恒算子（z*）
+##   F 类（tab 1） = 两个结构算子（s* + s*）
+##   C 类（tab 0） = 结构 + 观测（其余全部）
+func _mixed_tab_of(m: Dictionary) -> int:
+	var gs: Array = m.get("globals", [])
+	var has_conserve := false
+	var struct_count := 0
+	for g in gs:
+		if VariantCatalog.CONSERVE_IDS.has(str(g)):
+			has_conserve = true
+		elif VariantCatalog.STRUCT_IDS.has(str(g)):
+			struct_count += 1
+	if has_conserve:
+		return 2
+	return 1 if struct_count == 2 else 0
 
 
 ## 重建三页内容（Mod 加载 / 卸载、主题切换、首次进入时调用）。
@@ -396,20 +417,25 @@ func _card_tooltip(m: Dictionary) -> String:
 
 # ---------- 页二：混合档（线索 × 全局约束 交叉表） ----------
 
-## 交叉表：行 = 线索型（C 类），列 = 全局约束（G 类），交叉格 = 两者的混合变体。
-## 表本身就是索引：想找「和骑士有关的组合」看一行，想找「镜像类的」看一列——
-## 56 个组合不需要搜索框。排布交给 GridContainer，故天然不会出现节点互相遮挡。
+## 三张混合档交叉表（轴不同，不是「叠几个约束」的数量差别）。
+## 表本身就是索引：想找「带射距的组合」看一行，想找「无环类的」看一列——
+## 141 组不需要搜索框。排布交给 GridContainer，故天然不会出现节点互相遮挡。
 # 交叉格 / 表头尺寸：行首 130 + 7 列 × 142 + 列间距 7×6 = 1166 → 加页边距 44 后
 # 仍能完整放进 1280 设计分辨率（不留横向滚动条）。窄窗口由 _make_page_shell(true) 兜底。
 const CELL_W := 142
 const ROW_HEAD_W := 130
 
 
-## 混合档页有两种表，用右上角开关切换：
-##   ① 约束 × 线索   行 = C 类、列 = G 类（56 格）；
-##   ② 约束 × 约束   行 / 列都是 G 类，只填右上三角（C(7,2) = 21 对，每对只出现一次）。
-## 两者共用同一套表头 / 格子 / 进度渲染，切换只换轴与格子来源。
-var _mixed_gg := false
+## 混合档页有三张表，用右上角开关切换：
+##   ① T3 C 类  行 = 观测 O（10）、列 = 结构 S（7）  → 70 组（每关：1 观测 + 1 结构）
+##   ② T3 F 类  行 / 列 = 结构 S，只填右上三角      → 21 组（每关：2 结构）
+##   ③ T4      行 = 观测 O（10）、列 = 守恒 Z（5）  → 50 组（每关：再叠 1 守恒）
+## 为什么不能把「约束」当一类：代码的 KIND_GLOBAL 同时装 S 轴与 Z 轴（pf 是 S1、mx 是 Z1），
+## 而 GDD §5.1 的硬限制是「观测恰 1 + 结构 ≤2 + 守恒 ≤1」——两个 Z 同关即犯规，
+## 所以守恒必须单独成表（早先按 KIND 做的「约束 × 约束」表正是踩了这个）。
+## 三张表共用同一套表头 / 格子 / 进度渲染，切换只换轴与格子来源。
+const MIXED_TABS := 3
+var _mixed_tab := 0
 var _mixed_host: VBoxContainer = null
 var _mixed_hint: Label = null
 var _mixed_btns: Array[Button] = []
@@ -422,7 +448,7 @@ func _build_mixed_page() -> Control:
 	vb.add_theme_constant_override("separation", 12)
 	margin.add_child(vb)
 
-	# 顶部：说明（随表切换重写）+ 两张表的切换开关
+	# 顶部：说明（随表切换重写）+ 三张表的切换开关
 	var bar := HBoxContainer.new()
 	bar.add_theme_constant_override("separation", 10)
 	vb.add_child(bar)
@@ -434,12 +460,12 @@ func _build_mixed_page() -> Control:
 	bar.add_child(_mixed_hint)
 
 	_mixed_btns.clear()   # 主题切换会整页重建，旧按钮引用必须丢弃
-	for spec in [["1 约束 · 约束×线索", false], ["2 约束 · 约束×约束", true]]:
+	for spec in [["C 类 · 结构×观测", 0], ["F 类 · 结构×结构", 1], ["T4 · 结构×观测+守恒", 2]]:
 		var b := Button.new()
 		b.text = str(spec[0])
 		b.focus_mode = Control.FOCUS_NONE
-		b.custom_minimum_size = Vector2(176, 36)
-		b.pressed.connect(_on_mixed_switch.bind(bool(spec[1])))
+		b.custom_minimum_size = Vector2(198, 36)
+		b.pressed.connect(_on_mixed_switch.bind(int(spec[1])))
 		bar.add_child(b)
 		_mixed_btns.append(b)
 		UiTheme.bind_hover(b, 1.04)
@@ -451,8 +477,8 @@ func _build_mixed_page() -> Control:
 	return shell[0]
 
 
-func _on_mixed_switch(gg: bool) -> void:
-	_mixed_gg = gg
+func _on_mixed_switch(tab: int) -> void:
+	_mixed_tab = tab
 	_fill_mixed_table()
 
 
@@ -461,74 +487,117 @@ func _fill_mixed_table() -> void:
 		return
 	for c in _mixed_host.get_children():
 		c.queue_free()
-	_mixed_host.add_child(_gg_table() if _mixed_gg else _gc_table())
+	match _mixed_tab:
+		1: _mixed_host.add_child(_ss_table())
+		2: _mixed_host.add_child(_t4_table())
+		_: _mixed_host.add_child(_os_table())
 	for i in _mixed_btns.size():
-		_style_choice(_mixed_btns[i], (i == 1) == _mixed_gg)
+		_style_choice(_mixed_btns[i], i == _mixed_tab)
 
 
-## 表一：约束 × 线索（行 C / 列 G，8 × 7 = 56 格）。
-func _gc_table() -> Control:
-	var wrap := VBoxContainer.new()
-	wrap.add_theme_constant_override("separation", 10)
-	var clues := VariantCatalog.mixed_clue_ids()
-	var globals := VariantCatalog.mixed_global_ids()
-	_mixed_hint.text = "行 = 线索型（C 类）　列 = 全局约束（G 类）　交叉格 = 两者叠加的混合变体　·　点击任意格开这一关"
-
+## 空表骨架：三张表共用（列数含行首）。表整体居中（默认左贴会右侧多出余量）。
+func _matrix_new(columns: int) -> GridContainer:
 	var table := GridContainer.new()
-	table.columns = globals.size() + 1
+	table.columns = columns
 	table.add_theme_constant_override("h_separation", 6)
 	table.add_theme_constant_override("v_separation", 6)
-	table.size_flags_horizontal = Control.SIZE_SHRINK_CENTER   # 表整体居中（默认左贴会右侧多出余量）
+	table.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	return table
+
+
+## 表一（T3 C 类）：结构 × 观测。行 = 观测 O1~O10，列 = 结构 S1~S7。
+func _os_table() -> Control:
+	var wrap := VBoxContainer.new()
+	wrap.add_theme_constant_override("separation", 10)
+	var obs := VariantCatalog.mixed_clue_ids()
+	var structs := VariantCatalog.mixed_global_ids()
+	_mixed_hint.text = "行 = 观测算子（O 类）　列 = 结构算子（S 类）　交叉格 = 两者同关（每关恰好 1 观测 + 1 结构）　·　点击任意格开这一关"
+
+	var table := _matrix_new(structs.size() + 1)
 	wrap.add_child(table)
+	table.add_child(_matrix_corner("观测 ＼ 结构"))
+	for j in structs.size():
+		table.add_child(_matrix_head("S%d" % (j + 1), structs[j], false))
+	for i in obs.size():
+		table.add_child(_matrix_head("O%d" % (i + 1), obs[i], true))
+		for sid in structs:
+			table.add_child(_combo_cell("%s_%s" % [sid, obs[i]],
+					"%s·%s" % [VariantCatalog.display_name(obs[i]), VariantCatalog.display_name(sid)]))
 
-	# 表头行：左上角占位 + 每个全局约束一列
-	table.add_child(_matrix_corner("线索型 ＼ 全局约束"))
-	for j in globals.size():
-		table.add_child(_matrix_head("G%d" % (j + 1), globals[j], false))
-	# 每个线索型一行：行首 + 每列一格
-	for i in clues.size():
-		table.add_child(_matrix_head("C%d" % (i + 1), clues[i], true))
-		for gid in globals:
-			table.add_child(_matrix_cell(clues[i], gid))
-
-	wrap.add_child(_matrix_note("共 %d 个组合（%d 线索 × %d 约束）　·　全部经可行性真值查询：数学均可行" % [
-			clues.size() * globals.size(), clues.size(), globals.size()]))
+	wrap.add_child(_matrix_note("共 %d 组（%d 观测 × %d 结构，GDD §10.1 T3 C 类）　·　跨轴作用对象不同 → 判据恒为 J1 正交" % [
+			obs.size() * structs.size(), obs.size(), structs.size()]))
 	return wrap
 
 
-## 表二：约束 × 约束（行 / 列都是 G，21 对只出现一次 → 只填右上三角）。
-## 左下留白不是省略：每一对都已在右上出现，重复填只会让人以为还有第二组组合。
-func _gg_table() -> Control:
+## 表二（T3 F 类）：结构 × 结构。每对只出现一次 → 只填右上三角（C(7,2) = 21）。
+## 左下留白不是省略：每一对都已在右上出现，重复填只会让人以为还有第二组。
+func _ss_table() -> Control:
 	var wrap := VBoxContainer.new()
 	wrap.add_theme_constant_override("separation", 10)
-	var globals := VariantCatalog.mixed_global_ids()
-	_mixed_hint.text = "行 / 列 = 全局约束（G 类）　右上三角格 = 两个约束同时生效（每对只出现一次）　·　点击任意格开这一关"
+	var structs := VariantCatalog.mixed_global_ids()
+	_mixed_hint.text = "行 / 列 = 结构算子（S 类）　右上三角格 = 两个结构约束同关（GDD §5.1 允许结构 ≤2）　·　点击任意格开这一关"
 
-	var table := GridContainer.new()
-	table.columns = globals.size() + 1
-	table.add_theme_constant_override("h_separation", 6)
-	table.add_theme_constant_override("v_separation", 6)
-	table.size_flags_horizontal = Control.SIZE_SHRINK_CENTER   # 表整体居中（与约束×线索表一致）
+	var table := _matrix_new(structs.size() + 1)
 	wrap.add_child(table)
-
-	table.add_child(_matrix_corner("约束 ＼ 约束"))
-	for j in globals.size():
-		table.add_child(_matrix_head("G%d" % (j + 1), globals[j], false))
-	for i in globals.size():
-		table.add_child(_matrix_head("G%d" % (i + 1), globals[i], true))
-		for j in globals.size():
+	table.add_child(_matrix_corner("结构 ＼ 结构"))
+	for j in structs.size():
+		table.add_child(_matrix_head("S%d" % (j + 1), structs[j], false))
+	for i in structs.size():
+		table.add_child(_matrix_head("S%d" % (i + 1), structs[i], true))
+		for j in structs.size():
 			if j > i:
-				table.add_child(_gg_cell(globals[i], globals[j]))
+				table.add_child(_combo_cell("%s_%s" % [structs[i], structs[j]],
+						"%s·%s" % [VariantCatalog.display_name(structs[i]),
+							VariantCatalog.display_name(structs[j])]))
 			else:
 				# 对角线（同一约束不可重复）与左下（与右上同一对）都不产生组合
 				table.add_child(_matrix_blank())
 
-	var pairs := globals.size() * (globals.size() - 1) / 2
-	var alive := VariantCatalog.gg_all(Vector2i(SIZES[_size_idx], SIZES[_size_idx]),
-			LevelSequence.mine_count(SIZES[_size_idx])).size()
-	wrap.add_child(_matrix_note("共 %d 对（C(%d,2)）　·　%d 个可玩（判逻辑冗余的不产生，格子置灰）　·　部分尺寸无解由弹窗内的尺寸按钮自动禁用" % [
-			pairs, globals.size(), alive]))
+	var pairs := structs.size() * (structs.size() - 1) / 2
+	var alive := VariantCatalog.gg_all(_cur_size(), LevelSequence.mine_count(SIZES[_size_idx])).size()
+	wrap.add_child(_matrix_note("共 %d 对（C(%d,2)，GDD §10.1 T3 F 类）　·　%d 组当前可用　·　同轴配对多为 J2 警告（可行域收窄但可生产）" % [
+			pairs, structs.size(), alive]))
 	return wrap
+
+
+## 表三（T4）：结构 × 观测 + 1 守恒。行 = 观测 O1~O10，列 = 守恒 Z1~Z5；
+## 结构搭档按 GDD §10.1 的循环构造指派 ((观测序 + 守恒序) mod 7)，与目录同源。
+func _t4_table() -> Control:
+	var wrap := VBoxContainer.new()
+	wrap.add_theme_constant_override("separation", 10)
+	var obs := VariantCatalog.mixed_clue_ids()
+	var cons := VariantCatalog.mixed_conserve_ids()
+	var structs := VariantCatalog.mixed_global_ids()
+	_mixed_hint.text = "行 = 观测算子（O 类）　列 = 守恒算子（Z 类）　格 = 再叠一个结构算子（按 GDD §10.1 循环指派）　·　点击任意格开这一关"
+
+	if structs.is_empty() or cons.is_empty():
+		# 结构 / 守恒算子全未加载（无头环境）：画空表而不是除零崩
+		wrap.add_child(_matrix_note("结构或守恒算子尚未加载，暂无可列出的 T4 组合"))
+		return wrap
+
+	var table := _matrix_new(cons.size() + 1)
+	wrap.add_child(table)
+	table.add_child(_matrix_corner("观测 ＼ 守恒"))
+	for j in cons.size():
+		table.add_child(_matrix_head("Z%d" % (j + 1), cons[j], false))
+	for i in obs.size():
+		table.add_child(_matrix_head("O%d" % (i + 1), obs[i], true))
+		for z in cons.size():
+			var s: String = str(structs[(i + z) % structs.size()])
+			table.add_child(_combo_cell("%s+%s+%s" % [cons[z], s, obs[i]],
+					"%s·%s·%s" % [VariantCatalog.display_name(obs[i]),
+						VariantCatalog.display_name(s), VariantCatalog.display_name(cons[z])]))
+
+	var alive := VariantCatalog.conserved_all(_cur_size(), LevelSequence.mine_count(SIZES[_size_idx])).size()
+	wrap.add_child(_matrix_note("共 %d 组（%d 守恒 × %d 观测，GDD §10.1 T4）　·　%d 组当前可用　·　结构搭档按循环指派，每组的结构搭档不重复" % [
+			cons.size() * obs.size(), cons.size(), obs.size(), alive]))
+	return wrap
+
+
+## 当前尺寸（方盘）：SIZES 只存边长。
+func _cur_size() -> Vector2i:
+	var side: int = SIZES[_size_idx]
+	return Vector2i(side, side)
 
 
 func _matrix_corner(text: String) -> Control:
@@ -575,63 +644,35 @@ func _matrix_head(code: String, rule_id: String, is_row: bool) -> Control:
 	return lb
 
 
-## 交叉格：该线索 × 该约束的混合变体。点开即进它自己的选关弹窗。
-func _matrix_cell(clue_id: String, global_id: String) -> Button:
-	var mode_id := "%s_%s" % [global_id, clue_id]
+## 组合格（三张混合档表共用）：按 mode_id 从目录取信息，tooltip / 进度全自动。
+## label 由调用方按轴拼（表里已知轴，不必反查目录）。
+func _combo_cell(mode_id: String, label: String) -> Button:
 	var btn := Button.new()
-	var mi: int = int(_mode_index.get(mode_id, -1))
-	btn.text = "%s·%s" % [VariantCatalog.display_name(global_id), VariantCatalog.display_name(clue_id)]
+	btn.text = label
 	btn.custom_minimum_size = Vector2(CELL_W, 48)
 	btn.clip_text = true   # 名称再长也不许撑宽格子（撑宽会把整表挤到横向滚动）
 	# 交叉格开焦点 → 鼠标点一下就「进入」键盘/手柄导航，之后方向键可在表格内走格
-	# （GridContainer 的相邻兄弟正是几何相邻格，Godot 自动推导四向邻居，
-	#  上下 = 换线索、左右 = 换约束）。其余按钮仍 FOCUS_NONE，沿用项目「鼠标优先」设计。
+	# （GridContainer 的相邻兄弟正是几何相邻格，Godot 自动推导四向邻居）。
+	# 其余按钮仍 FOCUS_NONE，沿用项目「鼠标优先」设计。
 	btn.focus_mode = Control.FOCUS_ALL
 	btn.add_theme_font_size_override("font_size", 12)
 	btn.set_meta("cell_btn", true)
 	_style_card(btn)
-	if mi < 0:
-		# 组合被判 forbid（逻辑冗余/矛盾）→ 不产生条目：占位显示、不可点，避免死格
-		btn.disabled = true
-		btn.tooltip_text = "%s·%s\n该组合逻辑冗余或矛盾，不产生混合档" % [
-				VariantCatalog.display_name(global_id), VariantCatalog.display_name(clue_id)]
-		return btn
-	var m: Dictionary = MODES[mi]
-	var lines: Array[String] = ["%s（%s）" % [str(m["name"]), str(m["tip"])],
-			VariantCatalog.rule_text(global_id), VariantCatalog.rule_text(clue_id)]
-	if str(m.get("verdict", "ok")) == RuleSignature.WARN:
-		lines.append("⚠ 该组合的可行域偏窄（约束与线索作用域叠加），生成更慢")
-	lines.append("已通关 %d / %d" % [_cleared_total(mode_id), SIZES.size() * LEVELS_PER_SET])
-	btn.tooltip_text = "\n".join(lines)
-	btn.pressed.connect(_open_popup.bind(mi))
-	UiTheme.bind_hover(btn, 1.04)
-	_attach_progress(btn, mode_id)
-	return btn
-
-
-## 双约束格：两条全局约束同时生效（线索走经典）。与 _matrix_cell 同构，只是轴不同。
-func _gg_cell(g1: String, g2: String) -> Button:
-	var mode_id := "%s_%s" % [g1, g2]
-	var btn := Button.new()
 	var mi: int = int(_mode_index.get(mode_id, -1))
-	btn.text = "%s·%s" % [VariantCatalog.display_name(g1), VariantCatalog.display_name(g2)]
-	btn.custom_minimum_size = Vector2(CELL_W, 48)
-	btn.clip_text = true   # 名称再长也不许撑宽格子（撑宽会把整表挤到横向滚动）
-	btn.focus_mode = Control.FOCUS_ALL   # 与约束×线索表一致：方向键可在三角表内走格
-	btn.add_theme_font_size_override("font_size", 12)
-	btn.set_meta("cell_btn", true)
-	_style_card(btn)
 	if mi < 0:
-		# 判 forbid（逻辑冗余 / 矛盾，如 mx 蕴含 ep）→ 不产生条目：置灰占位，避免死格
+		# 该组合此刻不产生：算子未加载（无头环境 / Mod 未装）或判 forbid（逻辑冗余）。
+		# 占位置灰而不是省略——省略会让行列错位，也看不出「这里本该有一格」。
 		btn.disabled = true
-		btn.tooltip_text = "%s·%s\n两个约束叠加时后者完全冗余，不产生混合档" % [
-				VariantCatalog.display_name(g1), VariantCatalog.display_name(g2)]
+		btn.tooltip_text = "%s\n该组合当前不可用（算子未加载，或叠加后逻辑冗余）" % label
 		return btn
 	var m: Dictionary = MODES[mi]
-	var lines: Array[String] = ["%s（%s）" % [str(m["name"]), str(m["tip"])],
-			VariantCatalog.rule_text(g1), VariantCatalog.rule_text(g2)]
+	var lines: Array[String] = ["%s（%s）" % [str(m["name"]), str(m["tip"])]]
+	for rid in (m["globals"] as Array):
+		lines.append(VariantCatalog.rule_text(str(rid)))
+	if str(m["clue"]) != "classic":
+		lines.append(VariantCatalog.rule_text(str(m["clue"])))
 	if str(m.get("verdict", "ok")) == RuleSignature.WARN:
-		lines.append("⚠ 两条全局约束叠加，可行域偏窄——部分尺寸无解，已由弹窗内的尺寸按钮禁用")
+		lines.append("⚠ 同轴叠加，可行域偏窄——部分尺寸无解，已由弹窗内的尺寸按钮禁用")
 	lines.append("已通关 %d / %d" % [_cleared_total(mode_id), SIZES.size() * LEVELS_PER_SET])
 	btn.tooltip_text = "\n".join(lines)
 	btn.pressed.connect(_open_popup.bind(mi))
