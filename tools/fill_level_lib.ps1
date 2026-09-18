@@ -70,6 +70,16 @@ try {
     }
 
     if (-not $SkipBatch) {
+        # 口径自检（开跑前闸门）：量产唯一会导致「全批报废」的错误是在旧口径代码上跑 ——
+        # 产物组合目录名与选关页 MODES[].id 对不上，关卡进库了也点不到，且全程不报错。
+        Write-Host "=== 口径自检（不生成关卡）===" -ForegroundColor Cyan
+        $chkRaw = & $GODOT --headless --path . -s tools/batch_all_variants.gd -- `
+            user://batch_all $perTier $seedMax -2 0 $Shards 2>&1 | Out-String
+        $chkRaw | Select-String -Pattern "观测轴|结构轴|守恒轴|组合总数|口径自检" |
+            ForEach-Object { $_.Line }
+        if ($chkRaw -notmatch "官方三轴") {
+            Write-Error "口径自检未通过 —— 先 git pull 到含自检的版本，再重跑本脚本。"
+        }
         Write-Host "=== A 阶段：量产（$Shards 分片并行，每档 $perTier 关）===" -ForegroundColor Cyan
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
         $procs = @()
