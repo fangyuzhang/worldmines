@@ -26,6 +26,13 @@ func _feasible(globals: Array, side: int) -> bool:
 
 
 func _probe(clue: String, globals: Array, side: int, fails: Array[String]) -> void:
+	# 写死的 id 列表会随变体池收敛而过期（2026-09-18 旧算子移出主项目、改由 legacy_rules 提供）：
+	# 未加载的算子不算「预算失败」——否则失败清单会变成「规则没注册」的假信号。
+	if not VariantCatalog.is_available(clue):
+		return
+	for g in globals:
+		if not VariantCatalog.is_available(str(g)):
+			return
 	var level: Dictionary = PuzzleGenerator.new().generate_with_rules(
 		clue, globals, Vector2i(side, side), MINES[side], 201000, 0, 50, null,
 		_ui_timeout(side))

@@ -66,6 +66,11 @@ func _sample_levels() -> Array:
 		if level.is_empty():
 			continue
 		var rid := str(level.get("clue_rule", "?"))
+		# 历史生成物：user://probe40 里的关卡可能是**已移出主项目的旧算子**生成的
+		# （4n/sc/ep… 现由 demo/mods/legacy_rules 提供，默认不加载）→ 规则不在场时跳过，
+		# 否则整批抽样都会被算成「加载失败」。想让它们重新可玩：在模组页加载 legacy_rules。
+		if RuleRegistry.default().resolve(StringName(rid)) == null:
+			continue
 		if not by_rule.has(rid):
 			by_rule[rid] = []
 		if (by_rule[rid] as Array).size() < 2:

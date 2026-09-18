@@ -26,13 +26,14 @@ func after_each() -> void:
 
 
 func test_focus_opens_popup_for_requested_mode() -> void:
-	LevelSequence.request_focus("sc", 7)
+	# 取样用官方观测席 o1（旧算子 sc 已移出主项目，见 legacy_rules）
+	LevelSequence.request_focus("o1", 7)
 	# 注意：不能写 var ls := ...（Godot 4.7 对 load().instantiate() 无法推断类型，见坑表 #18）
 	var ls = load("res://ui/level_select.tscn").instantiate()
 	add_child_autofree(ls)
 
-	assert_eq(ls._mode_idx, _mode_index_of(ls, "sc"), "应自动展开「同色 sc」的关卡弹窗")
-	assert_ne(ls._mode_idx, -1, "sc 必须存在于目录中")
+	assert_eq(ls._mode_idx, _mode_index_of(ls, "o1"), "应自动展开「对穿 o1」的关卡弹窗")
+	assert_ne(ls._mode_idx, -1, "o1 必须存在于目录中")
 	assert_eq(ls._size_idx, SIZE7_IDX, "尺寸应切到请求值 7×7")
 	assert_not_null(ls._overlay, "弹窗应已打开而不是停在节点图")
 

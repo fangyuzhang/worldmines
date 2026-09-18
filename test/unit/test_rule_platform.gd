@@ -86,11 +86,12 @@ func test_ir_eval_liar_pattern() -> void:
 
 func test_clue_rules_ir_matches_compute() -> void:
 	# 语义等价强测试：A 的全部线索值固化成 IR，在任意 B 下求值
-	# ⟺ 每一格的线索值在 A/B 下完全一致。覆盖全部 9 个线索型规则。
+	# ⟺ 每一格的线索值在 A/B 下完全一致。覆盖**当前在册的全部线索型规则**——
+	# 遍历来源是变体目录（唯一事实源），不再写死 id 列表（写死的必然随变体池收敛而过期）。
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 42
 	var reg := RuleRegistry.default()
-	for rule_id in ["classic", "4n", "sc", "knight", "clock", "fr", "distsum", "hv"]:
+	for rule_id in VariantCatalog.clue_ids():
 		var rule: Object = reg.resolve(StringName(rule_id))
 		for _t in 8:
 			var a := _random_mine_set(rng, GS, 0.3)
@@ -309,8 +310,14 @@ func test_generate_all_clue_rules() -> void:
 	if not RuleCpSat.available():
 		pending("C# 后端不可用（跳过）")
 		return
-	# 全部线索型规则走自举式生成路径（fr 因序贯可解性差且需射线语义，单列不在此测）
-	for rule_id in ["classic", "4n", "sc", "knight", "distsum", "clock", "loopruns", "hv"]:
+	# 遍历**官方观测轴**（静态常量 = GDD 口径），而不是「注册表里所有 clue」：
+	# 后者会把其它测试残留注册的试验规则也卷进来，用例顺序一变就误报
+	# （2026-09-18：某文件注册的 broken_global 残留下来，让本测试断言「应能生成」失败）。
+	# 尺寸口径按 GDD §8.2：变径 o4 在 5×5 **停用**——中心格半径 2 邻域恰为全盘去心，
+	# 其数字恒等于总雷数（直接泄密），故不参与 5×5 小盘遍历。
+	for rule_id in VariantCatalog.OBS_IDS:
+		if rule_id == "o4":
+			continue
 		var level := _try_generate(rule_id, [], Vector2i(5, 5), 4, 8)
 		assert_false(level.is_empty(), "%s 应能在 8 个种子内生成" % rule_id)
 		if level.is_empty():
@@ -323,8 +330,12 @@ func test_generate_global_rules() -> void:
 	if not RuleCpSat.available():
 		pending("C# 后端不可用（跳过）")
 		return
-	# 全部全局约束规则走自举式生成路径（dt 骨牌为实例状态，只验证可生成不做唯一复验）
-	for gid in ["mx", "pf", "rl", "qd", "ep", "4c", "dt"]:
+	# 遍历**官方结构 + 守恒轴**（静态常量），同样避开注册表里的残留试验规则。
+	# dt 骨牌为实例状态，只验证可生成不做唯一复验；z5 等差行带整除契约（GDD §8.1：
+	# 7×7 需 7 的倍数雷），5×5 / 4 雷本就不满足 → 它单列验证，不在此循环。
+	for gid in VariantCatalog.mixed_global_ids() + VariantCatalog.mixed_conserve_ids() + ["dt"]:
+		if gid == "z5":
+			continue
 		var level := _try_generate("classic", [gid], Vector2i(5, 5), 4, 8)
 		assert_false(level.is_empty(), "classic+%s 应能在 8 个种子内生成" % gid)
 		if level.is_empty():
@@ -538,7 +549,11 @@ func test_registry_builtin_vs_custom() -> void:
 	var reg := RuleRegistry.default()
 	var bi := reg.builtin_ids()
 	assert_true(bi.has("classic"), "内置应含 classic")
-	assert_true(bi.has("knight"), "内置应含 knight")
+	# knight 已于 2026-09-18 移出内置表（收进 demo/mods/legacy_rules；测试进程由 _pre_run 装配）
+	# → 它现在是 **mod 身份**：应落在 custom_ids 而不是 builtin_ids。
+	assert_false(bi.has("knight"), "knight 已移出内置表（备用包以 mod 身份提供）")
+	assert_true(reg.custom_ids().has("knight"), "knight 应作为 mod 注册规则出现")
+	assert_true(reg.resolve(&"knight") != null, "knight 仍须可用（引擎原语仍按 id 工作）")
 	assert_false(reg.custom_ids().has("classic"), "custom 不应含内置 classic")
 	reg.register(HarvestDemoRule.new())
 	assert_true(reg.custom_ids().has("harvest_demo"), "custom 应包含 mod 注册的规则")

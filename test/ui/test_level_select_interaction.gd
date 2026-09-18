@@ -133,26 +133,29 @@ func test_ls1_three_pages_are_built() -> void:
 	assert_eq(_view._pages.size(), 3, "应有三个页面（单项变体 / 混合档 / Mod）")
 
 	var single := _count_meta_buttons(_view._pages[_view.PAGE_SINGLE], "card_btn")
-	# 2026-09-18：官方 22 席算子（随包内置 Mod）并入单项变体页为一等变体——
-	# 经典 1 + 线索 18（内置 8 + 官方 O 系 10）+ 全局 19（内置 7 + 官方 S/Z 12）= 38
-	assert_eq(single, 38, "单项变体页：经典 1 + 线索 18 + 全局约束 19 = 38 张卡片（含官方算子）")
-	assert_eq(_count_meta_buttons(_view._pages[_view.PAGE_MIXED], "cell_btn"), 8 * 7,
-			"混合档默认表：8 线索 × 7 约束 = 56 个交叉格")
+	# 2026-09-18 起按 GDD 终版 §4 收敛变体池：单项页 = 经典 1 + 官方观测 10 + 结构守恒 13
+	# （s1~s7 结构 + z1~z5 守恒 + dt 骨牌）= 24 张。
+	# 旧算子（4n/sc/knight/fr/distsum/hv/ep/4c）已移入 legacy_rules Mod（默认不加载）；
+	# 与官方席位等价的 6 个内置实现（clock/loopruns/pf/mx/rl/qd）按 HIDDEN_RULES 隐藏。
+	assert_eq(single, 24, "单项变体页：经典 1 + 观测 10 + 结构守恒 13 = 24 张卡片")
+	assert_eq(_count_meta_buttons(_view._pages[_view.PAGE_MIXED], "cell_btn"), 7 * 10,
+			"混合档默认表（T3 C 类）：7 结构 × 10 观测 = 70 个交叉格")
 
 	var per_page := {0: 0, 1: 0, 2: 0}
 	for m in _view.MODES:
 		per_page[_view._page_of(m)] += 1
 	assert_eq(per_page[_view.PAGE_SINGLE], single, "单项页卡片数应与目录一致")
 
-	# 混合档有两张表（同页切换）：约束×线索（56 格）+ 约束×约束（C(7,2) 对）。
-	# 契约：两张表里**可点**的格子合起来 = 目录里的全部混合档（判冗余的格子置灰、不算入口）。
-	var clickable := _count_clickable_cells(_view._pages[_view.PAGE_MIXED])
+	# 混合档有三张表（同页切换）：T3 C 类（70）+ T3 F 类（C(7,2) = 21）+ T4（50）。
+	# 契约：三张表里**可点**的格子合起来 = 目录里的全部混合档（判冗余 / 未加载的格子置灰，不算入口）。
 	_view._show_tab(_view.PAGE_MIXED)
-	_view._on_mixed_switch(true)
-	await get_tree().process_frame
-	await get_tree().process_frame
-	clickable += _count_clickable_cells(_view._pages[_view.PAGE_MIXED])
-	assert_eq(clickable, per_page[_view.PAGE_MIXED], "两张表合起来应覆盖目录里的全部混合档")
+	var clickable := 0
+	for tab in _view.MIXED_TABS:
+		_view._on_mixed_switch(tab)
+		await get_tree().process_frame
+		await get_tree().process_frame
+		clickable += _count_clickable_cells(_view._pages[_view.PAGE_MIXED])
+	assert_eq(clickable, per_page[_view.PAGE_MIXED], "三张表合起来应覆盖目录里的全部混合档")
 
 
 # LS2：演示预设只存在于内存 —— 不得污染 user://progress.json
@@ -189,13 +192,23 @@ func test_ls4_pending_focus_opens_matching_popup() -> void:
 	assert_not_null(v2._overlay, "弹窗应处于打开状态")
 
 
-# LS6：混合档的焦点交接 → 必须先翻到混合档页（否则弹窗开在一个看不见的页上）
-func test_ls6_pending_focus_on_mixed_switches_page() -> void:
-	LevelSequence.request_focus("mx_4n", 5)   # 镜像 × 四邻
+# LS6：混合档的焦点交接 → 必须先翻到混合档页**和它所在的那张表**
+# （混合档现在有三张表：只翻页不切表，弹窗会开在一个看不见的表上）
+func test_ls6_pending_focus_on_mixed_switches_page_and_tab() -> void:
+	LevelSequence.request_focus("s3_o5x", 5)   # 结构 × 观测（T3 C 类）
 	var v2 = load("res://ui/level_select.tscn").instantiate()
 	add_child_autofree(v2)
 	assert_eq(v2._tab, v2.PAGE_MIXED, "混合档的下一关意图应先翻到混合档页")
+	assert_eq(v2._mixed_tab, 0, "C 类组合应切到第一张表")
 	assert_ne(v2._mode_idx, -1, "并展开它的选关弹窗")
+
+	# T4 组合（带守恒算子）必须切到第三张表。id 里的结构搭档由 GDD §10.1 的循环构造决定：
+	# 观测 o5x 是第 5 席（i=4）、守恒 z1 是第 1 席（z=0）→ 结构 = STRUCT_IDS[(4+0) mod 7] = s5
+	LevelSequence.request_focus("z1+s5+o5x", 5)
+	var v3 = load("res://ui/level_select.tscn").instantiate()
+	add_child_autofree(v3)
+	assert_eq(v3._mixed_tab, 2, "T4 组合应切到守恒叠加表")
+	assert_ne(v3._mode_idx, -1, "并展开它的选关弹窗")
 
 
 # LS7：Mod 页签的可见性与「是否装了 Mod」一致；无 Mod 时该页不可达且显示空状态
@@ -229,8 +242,8 @@ func test_ls9_mod_variant_lands_on_mod_page() -> void:
 	var mi: int = int(v2._mode_index.get("x2diag", -1))
 	assert_eq(v2._page_of(v2.MODES[mi]), v2.PAGE_MOD, "Mod 变体应归 Mod 页")
 	assert_gte(_count_meta_buttons(v2._pages[v2.PAGE_MOD], "card_btn"), 1, "Mod 页应有它的卡片")
-	# 38 = 经典 1 + 线索 18 + 全局 19（含官方算子）；**玩家 Mod 变体（x2diag）仍不得混入**
-	assert_eq(_count_meta_buttons(v2._pages[v2.PAGE_SINGLE], "card_btn"), 38,
+	# 24 = 经典 1 + 观测 10 + 结构守恒 13（GDD 终版 §4 口径）；**玩家 Mod 变体（x2diag）仍不得混入**
+	assert_eq(_count_meta_buttons(v2._pages[v2.PAGE_SINGLE], "card_btn"), 24,
 			"单项变体页含官方算子、但不应混进玩家 Mod 变体（位置必须稳定）")
 	assert_true(_has_label_containing(v2._pages[v2.PAGE_MOD], "代码 Mod"),
 			"分组标题应标出该 Mod 的创作形式")
@@ -292,43 +305,60 @@ func test_ls14_generated_mod_levels_are_listed() -> void:
 		assert_true(str(btn.tooltip_text).contains("直接开始"), "tooltip 应说明点击即开局")
 
 
-# LS11：双约束表（约束 × 约束）——上三角结构、冗余格置灰、真值贯通到弹窗
-func test_ls11_gg_matrix_and_feasibility() -> void:
+# LS11：混合档三张表的轴与结构契约（T3 C 类 / T3 F 类 / T4）+ 可行性真值贯通
+func test_ls11_mixed_three_tables_and_feasibility() -> void:
 	var v2 = load("res://ui/level_select.tscn").instantiate()
 	add_child_autofree(v2)
-	assert_true(v2._mode_index.has("mx_rl"), "双约束组合应进变体表")
-	var mi: int = int(v2._mode_index.get("mx_rl", -1))
-	var m: Dictionary = v2.MODES[mi]
-	assert_eq(str(m["clue"]), "classic", "双约束不加线索（线索走经典）")
-	assert_eq((m["globals"] as Array).size(), 2, "应携带两条全局约束")
-	assert_eq(v2._page_of(m), v2.PAGE_MIXED, "双约束属混合档页")
-	assert_false(v2._mode_index.has("mx_ep"),
-			"mx 逻辑蕴含 ep（后者冗余），判 forbid 的组合不应产生条目")
 
+	# C 类（第一张表）：结构 × 观测 —— 每关恰 1 观测 + 1 结构（GDD §5.1 硬限制 1、2）
+	assert_true(v2._mode_index.has("s3_o5x"), "C 类组合（结构 × 观测）应进变体表")
+	var c: Dictionary = v2.MODES[int(v2._mode_index["s3_o5x"])]
+	assert_eq(str(c["clue"]), "o5x", "C 类组合应带观测算子")
+	assert_eq((c["globals"] as Array).size(), 1, "C 类组合恰带 1 个结构算子")
+	assert_eq(v2._mixed_tab_of(c), 0, "C 类组合属第一张表")
+
+	# F 类（第二张表）：结构 × 结构 —— 结构允许 2 个（硬限制 2 的上界），但不叠加观测
+	assert_true(v2._mode_index.has("s3_s5"), "F 类组合（结构 × 结构）应进变体表")
+	var f: Dictionary = v2.MODES[int(v2._mode_index["s3_s5"])]
+	assert_eq(str(f["clue"]), "classic", "F 类组合不加观测（线索走经典）")
+	assert_eq(v2._mixed_tab_of(f), 1, "F 类组合属第二张表")
+
+	# T4（第三张表）：结构 × 观测 + 1 守恒。id 里的结构搭档由 GDD §10.1 的循环构造决定：
+	# 观测 o5x 是第 5 席（i=4）、守恒 z1 是第 1 席（z=0）→ 结构 = STRUCT_IDS[(4+0) mod 7] = s5
+	assert_true(v2._mode_index.has("z1+s5+o5x"), "T4 组合应进变体表")
+	var t4: Dictionary = v2.MODES[int(v2._mode_index["z1+s5+o5x"])]
+	assert_eq(v2._mixed_tab_of(t4), 2, "T4 组合属第三张表")
+
+	# 硬限制 3：守恒算子每关至多 1 个 —— 全表扫描，任何组合都不得出现两个 z*
+	# （早先按 KIND_GLOBAL 一锅端做的「约束 × 约束」表正是踩了这条）
+	for m in v2.MODES:
+		var z := 0
+		for g in (m as Dictionary).get("globals", []):
+			if VariantCatalog.CONSERVE_IDS.has(str(g)):
+				z += 1
+		assert_true(z <= 1, "%s 含 %d 个守恒算子（硬限制 3：≤1）" % [str((m as Dictionary)["id"]), z])
+
+	# 格子结构：C 类 7×10 全交叉、F 类只填右上三角、T4 5×10 全交叉
 	v2.anchor_right = 0.0
 	v2.anchor_bottom = 0.0
 	v2.size = Vector2(1280, 720)
 	v2._show_tab(v2.PAGE_MIXED)
-	v2._on_mixed_switch(true)
-	await get_tree().process_frame
-	await get_tree().process_frame
-	assert_eq(_count_meta_buttons(v2._pages[v2.PAGE_MIXED], "cell_btn"), 7 * 6 / 2,
-			"双约束表：C(7,2) = 21 对（含 1 格判冗余的置灰占位）")
-	assert_eq(_count_clickable_cells(v2._pages[v2.PAGE_MIXED]), 20, "其中 20 对可玩")
+	var expect := [7 * 10, 7 * 6 / 2, 5 * 10]
+	for tab in v2.MIXED_TABS:
+		v2._on_mixed_switch(tab)
+		await get_tree().process_frame
+		await get_tree().process_frame
+		assert_eq(_count_meta_buttons(v2._pages[v2.PAGE_MIXED], "cell_btn"), int(expect[tab]),
+				"第 %d 张表应有 %d 格" % [tab, int(expect[tab])])
+		# 官方席位全部已加载 → 三张表不该有置灰格（置灰只在算子未加载 / 判 forbid 时出现）
+		assert_eq(_count_clickable_cells(v2._pages[v2.PAGE_MIXED]), int(expect[tab]),
+				"第 %d 张表的格子应全部可点（算子已加载、无冗余组合）" % tab)
 
-	var rects: Array = []
-	_collect_rects(v2._pages[v2.PAGE_MIXED], "cell_btn", rects)
-	assert_eq(rects.size(), 21, "21 格都应参与布局（含置灰格）")
-	_assert_no_overlap(rects, "双约束表格子")
-	var max_x := 0.0
-	for r in rects:
-		max_x = maxf(max_x, r.end.x)
-	assert_true(max_x <= 1280.0, "双约束表不得超出 1280 设计分辨率右侧（实际 %.1f）" % max_x)
-
-	# 尺寸级可行性的真值贯通：mx+rl 在 6×6 全候选无解、7×7 可行
-	# （G+G 的尺寸级不可行比 G+C 常见，弹窗靠尺寸按钮禁用 + 自动切最近可行尺寸兜住）
-	assert_false(v2._mode_feasible(m, 6), "mx+rl 在 6×6 全候选无解")
-	assert_true(v2._mode_feasible(m, 7), "mx+rl 在 7×7 可行")
+	# 可行性真值贯通：官方席位的可行性由 RuleFeasibility 真值查询给出（无手写 UNSAT 表），
+	# 弹窗的尺寸按钮据此禁用 + 自动切到最近可行尺寸。
+	var res := RuleFeasibility.resolve_mines("o5x", ["s3"], 7)
+	assert_ne(int(res["mines"]), -1, "s3+o5x 在 7×7 应有可用雷数")
+	assert_true(v2._mode_feasible(c, 7), "同一结论应贯通到弹窗的尺寸判定")
 
 
 # LS12：失败终局「跳过本关」在选关页的四层联动
@@ -416,7 +446,7 @@ func test_ls5_cards_do_not_overlap() -> void:
 		await get_tree().process_frame
 		var rects: Array = []
 		_collect_rects(v2._pages[v2.PAGE_SINGLE], "card_btn", rects)
-		assert_eq(rects.size(), 38, "%s：单项变体页应有 38 张卡片（含官方算子）" % vp)
+		assert_eq(rects.size(), 24, "%s：单项变体页应有 24 张卡片（GDD 终版口径）" % vp)
 		_assert_no_overlap(rects, "%s 单项变体卡片" % vp)
 		for r in rects:
 			assert_true(r.size.x > 0.0 and r.size.y > 0.0, "%s：卡片不得为零尺寸" % vp)
@@ -439,7 +469,7 @@ func test_ls5_cards_do_not_overlap() -> void:
 					"%s：卡片组应左右居中（左 %.1fpx / 右 %.1fpx）" % [vp, pad_left, pad_right])
 
 
-# LS8：交叉表的格子互不重叠，且整表能放进设计分辨率（1280 宽不留横向滚动条）
+# LS8：三张交叉表的格子都不得互相重叠，且整表能放进设计分辨率（1280 宽不留横向滚动条）
 func test_ls8_matrix_cells_do_not_overlap() -> void:
 	var v2 = load("res://ui/level_select.tscn").instantiate()
 	add_child_autofree(v2)
@@ -447,17 +477,23 @@ func test_ls8_matrix_cells_do_not_overlap() -> void:
 	v2.anchor_bottom = 0.0
 	v2.size = Vector2(1280, 720)
 	v2._show_tab(v2.PAGE_MIXED)
-	await get_tree().process_frame
-	await get_tree().process_frame
-	var rects: Array = []
-	_collect_rects(v2._pages[v2.PAGE_MIXED], "cell_btn", rects)
-	assert_eq(rects.size(), 56, "交叉表应有 56 个格子")
-	_assert_no_overlap(rects, "交叉表格子")
-	# 列宽 × 列数 + 行首 + 列间距 + 页边距 ≤ 1280：否则右边一列会被裁掉
-	var max_x := 0.0
-	for r in rects:
-		max_x = maxf(max_x, r.end.x)
-	assert_true(max_x <= 1280.0, "交叉表不得超出 1280 设计分辨率右侧（实际 %.1f）" % max_x)
+	# 三张表的格子数：C 类 7×10、F 类 C(7,2)、T4 5×10
+	var expect := [7 * 10, 7 * 6 / 2, 5 * 10]
+	for tab in v2.MIXED_TABS:
+		v2._on_mixed_switch(tab)
+		await get_tree().process_frame
+		await get_tree().process_frame
+		var rects: Array = []
+		_collect_rects(v2._pages[v2.PAGE_MIXED], "cell_btn", rects)
+		assert_eq(rects.size(), int(expect[tab]),
+				"第 %d 张表应有 %d 个格子" % [tab, int(expect[tab])])
+		_assert_no_overlap(rects, "第 %d 张表的交叉格" % tab)
+		# 列宽 × 列数 + 行首 + 列间距 + 页边距 ≤ 1280：否则右边一列会被裁掉
+		var max_x := 0.0
+		for r in rects:
+			max_x = maxf(max_x, r.end.x)
+		assert_true(max_x <= 1280.0,
+				"第 %d 张表不得超出 1280 设计分辨率右侧（实际 %.1f）" % [tab, max_x])
 
 
 # ---- Mod 关卡的小工具 ----

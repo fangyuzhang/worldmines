@@ -34,6 +34,20 @@ func _load_json(path: String) -> Dictionary:
 	return data if data is Dictionary else {}
 
 
+## 该关卡引用的规则是否全部在场。probe40 是**历史探测题库**：其中不少关卡由已移出主项目的
+## 旧算子生成（如 4c_4n），现由 demo/mods/legacy_rules 提供且默认不加载 → 规则缺席时直接跳过：
+## 既不误报「生成失败 / 加载失败」，也不让 LevelLoader 抛 push_error 污染后面的用例。
+func _rules_present(level: Dictionary) -> bool:
+	var reg := RuleRegistry.default()
+	var clue := str(level.get("clue_rule", ""))
+	if clue != "" and reg.resolve(StringName(clue)) == null:
+		return false
+	for g in level.get("global_rules", []):
+		if reg.resolve(StringName(str(g))) == null:
+			return false
+	return true
+
+
 func _value_equal(a: Variant, b: Variant) -> bool:
 	if a is Array and b is Array:
 		if (a as Array).size() != (b as Array).size():
@@ -91,6 +105,11 @@ func test_probe40_seed_reproducibility() -> void:
 		var level := _load_json(files[i])
 		if level.is_empty():
 			continue
+		# 历史生成物：probe40 里的关卡可能是**已移出主项目的旧算子**生成的（如 4c_4n 组合，
+		# 现由 demo/mods/legacy_rules 提供，默认不加载）→ 规则不在场时跳过：否则生成必然为空，
+		# 被误记成「双生成之一为空」的可复现性 bug（真正原因是规则未注册）。
+		if not _rules_present(level):
+			continue
 		var params := [
 			str(level["clue_rule"]), level["global_rules"],
 			Vector2i(int(level["size"]["cols"]), int(level["size"]["rows"])),
@@ -139,6 +158,11 @@ func test_probe40_production_load_roundtrip() -> void:
 		var level := _load_json(path)
 		if level.is_empty():
 			fails.append(path.get_file() + " (JSON 解析失败)")
+			continue
+		# 同上：规则不在场的历史关卡跳过。**必须在 load_level 之前判断**——一旦让它进到
+		# LevelLoader 就会 push_error，而 GUT 把 push_error 归到「当时正在跑的测试」，
+		# 于是错误会飘到后面十几个毫不相干的用例上（2026-09-18 排障踩过这个坑）。
+		if not _rules_present(level):
 			continue
 		var b: Board = LevelLoader.load_level(path)
 		if b == null:

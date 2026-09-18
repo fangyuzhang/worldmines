@@ -26,19 +26,23 @@ func test_c1_page_builds() -> void:
 	assert_true(_all_text(page).contains("规则图鉴"), "应含标题「规则图鉴」")
 
 
-# C2：覆盖全部 15 个内置变体码（名称与难度取自 VariantRegistry）
+# C2：覆盖目录里的全部观测/线索变体码。
+# 来源是变体目录（唯一事实源）而不是 VariantRegistry 的写死 15 码表：
+# 那张表早已与实际注册的算子脱节（2026-09-18 变体池按 GDD 终版收敛后更明显）。
 func test_c2_covers_all_variant_codes() -> void:
 	var page := _page()
 	var text := _all_text(page)
-	for code in VariantRegistry.all_codes():
+	var codes := VariantCatalog.clue_ids()
+	assert_true(codes.size() > 0, "目录里应有观测 / 线索变体")
+	for code in codes:
 		assert_true(text.contains(code), "图鉴应收录变体码：%s" % code)
 
 
-# C3：7 个全局约束全部收录
+# C3：结构 / 守恒约束全部收录
 func test_c3_covers_all_constraints() -> void:
 	var page := _page()
 	var text := _all_text(page)
-	for code in VariantRegistry.GLOBAL_CONSTRAINTS:
+	for code in VariantCatalog.global_ids():
 		assert_true(text.contains(code), "图鉴应收录约束码：%s" % code)
 
 

@@ -9,8 +9,19 @@ func after_each() -> void:
 	_cleanup_code_mod()
 
 
-## 用 mod Def（内置 DefEngine 的 4n + mx）生成关卡 → 规则平台加载 → 线索值一致。
+## Def 声明式子集（window / aggregate 均为封闭枚举）能表达的恰好是「四邻 n4 / 同色 diag /
+## 镜像 axis」这三位旧算子。它们已于 2026-09-18 移出主项目（收进 demo/mods/legacy_rules，
+## 默认不自举）→ 规则不在场时这两条 Def 翻译链无意义：直接 pending，而不是误判成「生成失败」。
+func _legacy_ready() -> bool:
+	var reg := RuleRegistry.default()
+	return reg.resolve(&"4n") != null and reg.resolve(&"sc") != null
+
+
+## 用 mod Def（DefEngine 的 4n + mx）生成关卡 → 规则平台加载 → 线索值一致。
 func test_mod_level_generate_and_load() -> void:
+	if not _legacy_ready():
+		pending("Def→4n 翻译链依赖 legacy_rules（旧算子已移出主项目，模组页可加载）")
+		return
 	var gen := PuzzleGenerator.new()
 	var level := gen.generate_from_def("4n", "mx", Vector2i(5, 5), 5, 1)
 	assert_false(level.is_empty(), "mod 关卡应生成")
@@ -34,6 +45,9 @@ func test_mod_level_generate_and_load() -> void:
 
 ## 无约束 mod 关卡（仅线索 Def）也能生成 + 加载。
 func test_mod_level_clue_only() -> void:
+	if not _legacy_ready():
+		pending("Def→sc 翻译链依赖 legacy_rules（旧算子已移出主项目，模组页可加载）")
+		return
 	var gen := PuzzleGenerator.new()
 	var level := gen.generate_from_def("sc", "", Vector2i(5, 5), 5, 1)
 	assert_false(level.is_empty(), "仅线索 Def 的 mod 关卡应生成")

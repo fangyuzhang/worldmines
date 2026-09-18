@@ -7,6 +7,15 @@
 extends GutTest
 
 
+## 保底清理：假 Mod 规则若因断言中断而没走到注销，会让**后续用例与其它测试文件**
+## 看到多出来一个变体（「变体数 == 16」这类断言就会红）。
+## 观察到 1 次「test/ui 单跑 123 个用例时 1 红、随后不复现」的偶发，疑因在此。
+func after_each() -> void:
+	var reg := RuleRegistry.default()
+	if reg.resolve(&"__fake_mod_rule__") != null:
+		reg.unregister(&"__fake_mod_rule__")
+
+
 # V1：目录必须覆盖注册表里全部内置线索型规则（排除元规则）
 func test_v1_covers_all_builtin_clue_rules() -> void:
 	var listed := VariantCatalog.clue_ids()
@@ -41,9 +50,24 @@ func test_v2_covers_all_builtin_global_rules() -> void:
 	assert_eq(missing.size(), 0, "全局约束漏进目录：%s" % ", ".join(missing))
 
 
-# V3：knight 必须在目录里（它就是当年被手写表漏掉的那一个）
-func test_v3_knight_is_listed() -> void:
-	assert_true(VariantCatalog.clue_ids().has("knight"), "knight 已注册，目录必须包含")
+# V3：官方三轴 22 席必须在目录里；终版之外的旧算子必须**不在**
+# （2026-09-18 起变体池按 GDD 终版 §4 收敛：8 个旧算子已移入 demo/mods/legacy_rules，默认不加载）
+func test_v3_official_axes_are_listed_and_legacy_are_out() -> void:
+	for id in ["o1", "o4", "o5x", "o10"]:
+		assert_true(VariantCatalog.clue_ids().has(id), "官方观测席 %s 已注册，目录必须包含" % id)
+	for id in ["s1", "s7", "z1", "z5"]:
+		assert_true(VariantCatalog.global_ids().has(id), "官方结构/守恒席 %s 已注册，目录必须包含" % id)
+	for id in ["4n", "sc", "knight", "fr", "distsum", "hv", "ep", "4c"]:
+		assert_false(VariantCatalog.OBS_IDS.has(id) or VariantCatalog.STRUCT_IDS.has(id)
+				or VariantCatalog.CONSERVE_IDS.has(id),
+				"终版之外的旧算子 %s 不得进入三轴（也就不会进任何混合档组合）" % id)
+	# 与官方席位等价的 6 个内置实现：选关页隐藏（只显示官方 id），但实现本身必须留在注册表里
+	for id in ["clock", "loopruns", "pf", "mx", "rl", "qd"]:
+		assert_true(RuleRegistry.default().resolve(StringName(id)) != null,
+				"%s 的实现应保留（RuleFeasibility 等按 id 直接引用）" % id)
+		assert_false(VariantCatalog.OBS_IDS.has(id) or VariantCatalog.STRUCT_IDS.has(id)
+				or VariantCatalog.CONSERVE_IDS.has(id),
+				"%s 与官方席位等价，不进任何组合轴" % id)
 
 
 # V4：元规则 total_mines 不能作为独立变体出现
@@ -54,7 +78,7 @@ func test_v4_meta_rule_is_hidden() -> void:
 
 # V5：名称与规则文字能取到（图鉴依赖 describe()）
 func test_v5_display_name_and_text() -> void:
-	for id in ["classic", "4n", "mx", "pf"]:
+	for id in ["classic", "o1", "s1", "z1", "dt"]:
 		assert_ne(VariantCatalog.display_name(id), id,
 				"%s 应能取到中文名（而不是退回 id）" % id)
 		assert_false(VariantCatalog.rule_text(id).is_empty(), "%s 应有规则说明文字" % id)
