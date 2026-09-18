@@ -39,6 +39,11 @@ const MIXED_CLUES := ["4n", "sc", "distsum", "clock", "hv", "loopruns"]
 var _gen := PuzzleGenerator.new()
 
 
+## ⚠️ 口径提示（2026-09-18，本文件属**归档**工具）：
+## 下面遍历的 `VariantRegistry.all_codes()` 是**旧 16 变体**，其中 7 个已移入
+## `demo/mods/legacy_rules`（列入 BUNDLED_SKIP，默认不加载）→ 直接跑会大面积失败。
+## 按终版口径量产请用 `tools/batch_all_variants.gd`（官方三轴，164 组合，
+## 且已支持命令行限流 / 分片 / 断点续跑）。
 func _initialize() -> void:
 	var report: Array = []
 	var total := 0

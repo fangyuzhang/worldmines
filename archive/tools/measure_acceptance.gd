@@ -14,6 +14,11 @@ var _gen := PuzzleGenerator.new()
 var _result := {}
 
 
+## ⚠️ 口径提示（2026-09-18，本文件属**归档**工具）：
+## 默认遍历的 `VariantRegistry.all_codes()` 是**旧 16 变体**，其中 7 个已移入
+## `demo/mods/legacy_rules`（列入 BUNDLED_SKIP，默认不加载）→ 直接跑会大面积失败。
+## 按终版口径量产请用 `tools/batch_all_variants.gd`（官方三轴，164 组合）；
+## 若确实要用本工具，请用命令行参数显式传官方 id（`o1` / `s1` / `z1` …）。
 func _initialize() -> void:
 	var codes: Array = []
 	var args := OS.get_cmdline_user_args()
