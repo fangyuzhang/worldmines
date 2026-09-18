@@ -66,6 +66,13 @@ func test_official_axes_constructive_smoke() -> void:
 	if not s1_level.is_empty():
 		assert_eq(s1_level["mines"].size(), s1_level["total_mines"], "classic+s1 雷数应一致")
 
+	# generate_constructive（旧变体码入口）也要能吃官方席位：不在旧表时按 KIND 路由，
+	# 调用方不必自己判别「该当线索还是当约束」（派生于上面踩的那个坑）。
+	var via_entry_o := gen.generate_constructive("o1", Vector2i(7, 7), 12, 7)
+	assert_false(via_entry_o.is_empty(), "generate_constructive 应支持官方观测席 o1（按 KIND 路由到线索位）")
+	var via_entry_s := gen.generate_constructive("s1", Vector2i(7, 7), 12, 7)
+	assert_false(via_entry_s.is_empty(), "generate_constructive 应支持官方结构席 s1（按 KIND 路由到约束位）")
+
 
 func test_classic_constructive_many_seeds() -> void:
 	# 多 seed 稳定性：classic 构造式成功率应 >50%

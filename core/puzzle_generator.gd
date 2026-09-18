@@ -79,7 +79,16 @@ func _constraint_to_rule_id(constraint: int) -> String:
 func generate_constructive(variant_code: String, size: Vector2i, mine_count: int, seed: int, mask_count: int = 0) -> Dictionary:
 	var def: Dictionary = VariantRegistry.resolve(variant_code)
 	if def.is_empty():
-		return {}
+		# 不在旧变体码表里 → 官方 22 席 / Mod 算子：按 **KIND** 路由到规则平台入口。
+		# KIND 决定参数位置（HANDOFF 坑 #33）：线索放第一个参数，结构 / 守恒放 globals
+		# —— 放反了会一路返回空，症状与「这个算子产不出关卡」一模一样。
+		# 这样批量 / 存档 / 量产工具不必各自判别算子类别，直接喂 id 即可。
+		var rule: Object = RuleRegistry.default().resolve(StringName(variant_code))
+		if rule == null or not rule.has_method("get_kind"):
+			return {}
+		if str(rule.call("get_kind")) == RulePlugin.KIND_CLUE:
+			return generate_with_rules(variant_code, [], size, mine_count, seed, mask_count)
+		return generate_with_rules("classic", [variant_code], size, mine_count, seed, mask_count)
 	var clue: int = def["clue"]
 	var constraint: int = def["constraint"]
 	# DT 已底座化（DtRule.place_mines 布雷 + dominoes 落盘 + 加载同步），单约束走规则平台即可。
