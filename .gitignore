@@ -23,6 +23,9 @@ addons/.godot_ai_update/
 /_*.py
 /_*.sh
 /_staged_levels/
+# 白名单：暂存目录的 Godot 跳过标记必须入库（否则重建 _staged_levels 时
+# UTF-16 对比快照/全局类冲突会重新刷屏编辑器——2026-09-18 事故）
+!/_staged_levels/.gdignore
 __pycache__/
 /tools/_*.gd
 /tools/_*.gd.uid
