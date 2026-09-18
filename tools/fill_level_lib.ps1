@@ -13,18 +13,25 @@ fill_level_lib.ps1 —— 一键补齐正式关卡库（量产 → 干跑报告 
   C 导入：import_batch_to_lib.gd —— 只补缺；catalog 全量重建（不会抹掉已有集）
 
 用法：
-  .\tools\fill_level_lib.ps1                # 默认 4 分片 / 每档 100 关
-  .\tools\fill_level_lib.ps1 -Shards 8      # 机器更强就多分片（9×9 重线索单关可达 ~200s）
+  .\tools\fill_level_lib.ps1                # 默认 2 分片 / 每档 100 关
+  .\tools\fill_level_lib.ps1 -Shards 8      # 按**核数**定：分片数不应超过 CPU 核数
   .\tools\fill_level_lib.ps1 -Smoke         # 冒烟：1 组合 / 每档 1 关 / seed_max 2，本地几十秒验管线
   .\tools\fill_level_lib.ps1 -SkipBatch     # 跳过量产：已有产物直接干跑+导入
   .\tools\fill_level_lib.ps1 -DryRunOnly    # 只看报告不导入
   .\tools\fill_level_lib.ps1 -Overwrite     # 覆盖已存在的集（默认只补缺，保护已有内容）
   .\tools\fill_level_lib.ps1 -Yes           # 跳过导入前确认
 
+⚠️ 分片数与核数（2026-09-19 实测教训）：
+  分片 = 每片一个 Godot 进程，**超过核数就会互相抢 CPU，反而更慢**。
+  已知算力参考：腾讯云 S5.MEDIUM2（2 核 2 GiB）→ 只能 -Shards 2，且内存不允许开到 3 片；
+  该机 9/12 那批用了 6 分片跑 2 核，44 分钟只完成 per_type=10 的小批量且大量 partial。
+  时间量级（2 核 / per_tier=100 全量）：单进程 30~45h、2 分片 15~22h；
+  建议两阶段：先 -PerTier 20（3~4.5h 拿到 22 席全覆盖），再 -PerTier 50 增量补（断点续跑只补未满单元）。
+
 GODOT 路径：优先环境变量 $env:GODOT，否则用下方默认值（换机器改这里）。
 #>
 param(
-    [int]$Shards = 4,
+    [int]$Shards = 2,
     [int]$PerTier = 100,
     [int]$SeedMax = 40,
     [int]$TimeoutCoef = 6000,
@@ -43,6 +50,17 @@ if (-not (Test-Path (Join-Path $proj "project.godot"))) { Write-Error "项目路
 
 Push-Location $proj
 try {
+    # 核数校验（教训固化）：分片超过核数 = 多个 Godot 互相抢 CPU，反而更慢
+    $cores = [Environment]::ProcessorCount
+    if ($Shards -gt $cores) {
+        Write-Host ("⚠️ 分片数 {0} > 本机核数 {1}：多进程会互相抢 CPU 反而更慢（9/12 那批用 6 分片跑 2 核就是这个坑）。建议 -Shards {1}。" -f $Shards, $cores) -ForegroundColor Yellow
+        if (-not $Yes) {
+            $ans2 = Read-Host ("仍按 {0} 分片继续？(y/N)" -f $Shards)
+            if ($ans2 -notmatch "^[yY]") { Write-Host "已取消。" -ForegroundColor Yellow; return }
+        }
+    } elseif ($Shards -gt 1) {
+        Write-Host ("本机 {0} 核 → {1} 分片" -f $cores, $Shards) -ForegroundColor DarkGray
+    }
     $limit = 0
     $perTier = $PerTier
     $seedMax = $SeedMax
