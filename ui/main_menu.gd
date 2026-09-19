@@ -108,7 +108,25 @@ func _check_crash_restore() -> void:
         return  # 终局盘不可恢复也不提示（失败局 SL 复活禁令，见 restore_from_save 同口径）
     # 有未完成对局 → 只提示，不跳转（不用 GameSession.restore_from_save：留给选关页按需恢复，
     # 避免主菜单就把对局状态恢复进内存、玩家却去玩别的关）
-    _toast("有一局未完成的对局，从选关页进入同一关可继续", false)
+    _toast(_saved_level_hint(str(meta.get("level_path", ""))), false)
+
+
+## 把存档里的关卡路径转成一句可读提示。库关卡路径形如
+## `<PLAY_DIR>/<mode>_<size>_<tier>_<idx>.json`，可解析出「变体 · 尺寸 · 档」；
+## 其他命名（生成关等）一律走兜底文案 —— 不猜，乱猜的提示比笼统更糟。
+func _saved_level_hint(level_path: String) -> String:
+    var fallback := "有一局未完成的对局，从选关页进入同一关可继续。"
+    var parts := level_path.get_file().get_basename().split("_")
+    if parts.size() < 4:
+        return fallback
+    var mode := str(parts[0])
+    var side := str(parts[1])
+    var tier := str(parts[2])
+    if not side.is_valid_int() or not Difficulty.TIERS.has(tier):
+        return fallback
+    return "有一局未完成的对局：%s · %s×%s · %s。从选关页进入同一关可继续。" % [
+        VariantCatalog.display_name(mode), side, side,
+        str(Difficulty.TIERS[tier].get("label", tier))]
 
 
 # ============ toast（场景内顶部 Label + Timer，2s 自动消失；文案 §8.5） ============
