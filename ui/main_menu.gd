@@ -79,11 +79,18 @@ func _open_tutorial() -> void:
 
 # ============ 崩溃恢复检测（验收项 3） ============
 
-## 自动恢复（v3.2）：MAIN 里存在未终局的进行中对局就直接续上，不再弹窗询问。
-## 触发源不再只看 TEMP 崩溃残留——主动退出 / 回主菜单（save_now 落盘）后下次启动同样恢复。
-## 恢复失败（坏档 / 异常残留档）→ 隔离 .bak + toast，留在主菜单（§10.7.4）。
-## 原弹窗流程的历史问题：测试或异常路径写出的残档（如 level_path 为空）走到「恢复」
-## 一律报「存档已损坏」，玩家被无效弹窗打断；现在能恢复就静默恢复，不能就安静隔离。
+## 启动时的存档处理（2026-09-19 改）：**不再自动进入对局** —— 无论如何都留在主菜单，
+## 由玩家自己从选关页重新选择。
+##
+## 为什么改：原 v3.2 行为是「有未终局对局就直接续上，不弹窗」（触发源包括非正常退出，
+## 如点窗口叉号 / Alt+F4，也包括主动退出与回主菜单）。结果是玩家下次打开游戏**直接跳回
+## 那一关**，想换关或先看菜单都被跳过，观感像「游戏没退出干净」。
+##
+## 存档本身**保留不删**：玩家从选关页点进同一关时，`LevelSelect._try_resume_saved`
+## 会自动续上未完成进度（含重开窗口后的续档），进度不会丢。
+##
+## 坏档照旧隔离并提示（§10.7.4）；终局盘不恢复也不提示（失败局 SL 复活禁令，见
+## restore_from_save 同口径）。有未完成对局时只给一条轻提示，让玩家知道进度还在。
 func _check_crash_restore() -> void:
     if _auto_restore_done:
         return
@@ -98,14 +105,10 @@ func _check_crash_restore() -> void:
     var meta_v: Variant = d.get("metadata", {})
     var meta: Dictionary = meta_v if meta_v is Dictionary else {}
     if bool(meta.get("ended", false)):
-        return  # 终局盘不可恢复（失败局 SL 复活禁令，见 restore_from_save 同口径）
-    if GameSession.restore_from_save():
-        # 注：本函数在 _ready 调用链里执行，此刻根节点正忙于增删子节点，
-        # 直接 change_scene_to_file 会报「Parent node is busy」（remove_child 被拒）——延后到帧末执行。
-        get_tree().change_scene_to_file.call_deferred("res://ui/board_view.tscn")
-    else:
-        SaveCoordinator.quarantine()
-        _toast("存档无法恢复，已隔离备份")
+        return  # 终局盘不可恢复也不提示（失败局 SL 复活禁令，见 restore_from_save 同口径）
+    # 有未完成对局 → 只提示，不跳转（不用 GameSession.restore_from_save：留给选关页按需恢复，
+    # 避免主菜单就把对局状态恢复进内存、玩家却去玩别的关）
+    _toast("有一局未完成的对局，从选关页进入同一关可继续", false)
 
 
 # ============ toast（场景内顶部 Label + Timer，2s 自动消失；文案 §8.5） ============
