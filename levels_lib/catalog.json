@@ -53,221 +53,228 @@
     },
     "o1": {
       "5": {
-        "easy": 50,
-        "intro": 50
+        "easy": 26,
+        "intro": 70
       },
       "6": {
-        "easy": 50,
-        "intro": 50,
-        "normal": 4
+        "easy": 19,
+        "intro": 67,
+        "normal": 16
       },
       "7": {
-        "easy": 200,
-        "hard": 3,
-        "intro": 50,
-        "normal": 54
+        "easy": 59,
+        "hard": 22,
+        "intro": 115,
+        "normal": 82
       },
       "8": {
-        "easy": 200,
-        "hard": 4,
-        "intro": 50,
-        "normal": 94
+        "easy": 59,
+        "hard": 64,
+        "intro": 117,
+        "normal": 89
       },
       "9": {
-        "easy": 150,
-        "hard": 1,
-        "intro": 50,
-        "normal": 19
+        "easy": 37,
+        "hard": 71,
+        "intro": 59,
+        "normal": 35
       }
     },
     "o10": {
       "5": {
-        "easy": 100,
+        "easy": 56,
         "hard": 1,
-        "intro": 100,
-        "normal": 21
+        "intro": 144,
+        "normal": 22
       },
       "6": {
-        "easy": 100,
-        "hard": 3,
-        "intro": 100,
-        "normal": 91
+        "easy": 77,
+        "hard": 10,
+        "intro": 151,
+        "normal": 56
       },
       "7": {
-        "easy": 100,
-        "hard": 11,
-        "intro": 100,
-        "normal": 100
+        "easy": 76,
+        "hard": 22,
+        "intro": 138,
+        "normal": 75
       },
       "8": {
-        "easy": 100,
-        "hard": 5,
-        "intro": 100,
-        "normal": 100
+        "easy": 111,
+        "hard": 33,
+        "intro": 65,
+        "normal": 96
       },
       "9": {
-        "easy": 100,
-        "hard": 10,
-        "intro": 100,
-        "normal": 100
+        "easy": 93,
+        "hard": 45,
+        "intro": 73,
+        "normal": 98
       }
     },
     "o2": {
       "5": {
-        "easy": 100,
+        "easy": 98,
         "hard": 38,
-        "normal": 100
+        "intro": 33,
+        "normal": 106
       },
       "6": {
-        "easy": 100,
-        "hard": 100,
-        "normal": 100
+        "easy": 88,
+        "hard": 28,
+        "intro": 17,
+        "normal": 167
       },
       "7": {
-        "easy": 100,
-        "hard": 100,
-        "normal": 100
+        "easy": 57,
+        "hard": 71,
+        "normal": 164
       },
       "8": {
-        "easy": 100,
-        "hard": 70,
-        "normal": 100
+        "easy": 31,
+        "hard": 94,
+        "normal": 142
       }
     },
     "o3": {
       "5": {
-        "easy": 50,
+        "easy": 39,
         "hard": 1,
-        "intro": 50,
-        "normal": 21
+        "intro": 43,
+        "normal": 37
       },
       "6": {
-        "easy": 50,
-        "hard": 4,
-        "intro": 50,
+        "easy": 39,
+        "hard": 28,
+        "intro": 37,
         "normal": 39
       },
       "7": {
-        "easy": 100,
-        "hard": 9,
-        "intro": 50,
-        "normal": 58
+        "easy": 58,
+        "hard": 70,
+        "intro": 37,
+        "normal": 54
       },
       "8": {
-        "easy": 100,
-        "hard": 24,
-        "intro": 50,
-        "normal": 60
+        "easy": 62,
+        "hard": 81,
+        "intro": 24,
+        "normal": 62
       },
       "9": {
-        "easy": 50,
-        "hard": 23,
-        "intro": 41,
-        "normal": 50
+        "easy": 34,
+        "hard": 56,
+        "intro": 16,
+        "normal": 49
       }
     },
     "o4": {
       "6": {
-        "easy": 100,
-        "hard": 64,
-        "intro": 100,
-        "normal": 100
+        "easy": 19,
+        "hard": 100,
+        "intro": 101,
+        "normal": 144
       },
       "7": {
         "easy": 100,
-        "hard": 100,
-        "intro": 100,
-        "normal": 100
+        "hard": 152,
+        "intro": 101,
+        "normal": 139
       },
       "8": {
-        "easy": 100,
-        "hard": 100,
+        "easy": 30,
+        "hard": 217,
         "intro": 100,
-        "normal": 100
+        "normal": 146
       },
       "9": {
-        "easy": 100,
-        "hard": 95,
-        "intro": 100,
-        "normal": 100
+        "easy": 38,
+        "hard": 188,
+        "intro": 39,
+        "normal": 130
       }
     },
     "o5x": {
       "5": {
-        "easy": 100,
-        "intro": 100,
-        "normal": 2
+        "easy": 25,
+        "intro": 162,
+        "normal": 15
       },
       "6": {
-        "easy": 100,
-        "intro": 100,
-        "normal": 1
+        "easy": 32,
+        "intro": 145,
+        "normal": 17
       },
       "7": {
-        "easy": 100,
-        "intro": 100,
-        "normal": 3
+        "easy": 14,
+        "hard": 20,
+        "intro": 146,
+        "normal": 23
       },
       "8": {
-        "easy": 100,
-        "intro": 100
+        "easy": 21,
+        "hard": 45,
+        "intro": 99,
+        "normal": 32
       },
       "9": {
-        "easy": 100,
-        "intro": 100
+        "easy": 27,
+        "hard": 59,
+        "intro": 68,
+        "normal": 39
       }
     },
     "o8": {
       "5": {
         "easy": 100,
         "hard": 2,
-        "intro": 100,
+        "intro": 298,
         "normal": 100
       },
       "6": {
         "easy": 100,
-        "intro": 100,
+        "intro": 300,
         "normal": 100
       },
       "7": {
         "easy": 100,
         "hard": 3,
-        "intro": 100,
+        "intro": 303,
         "normal": 100
       },
       "8": {
         "easy": 100,
         "hard": 19,
-        "intro": 100,
+        "intro": 319,
         "normal": 100
       },
       "9": {
         "easy": 100,
         "hard": 2,
-        "intro": 100,
+        "intro": 302,
         "normal": 100
       }
     },
     "o9": {
       "5": {
         "easy": 4,
-        "intro": 100
+        "intro": 104
       },
       "6": {
         "easy": 7,
-        "intro": 100
+        "intro": 107
       },
       "7": {
         "easy": 1,
-        "intro": 100
+        "intro": 101
       },
       "8": {
-        "easy": 3,
-        "intro": 100
+        "easy": 12,
+        "intro": 89
       },
       "9": {
-        "easy": 2,
-        "intro": 100
+        "easy": 16,
+        "intro": 85
       }
     }
   }
