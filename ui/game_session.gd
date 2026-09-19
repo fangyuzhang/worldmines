@@ -36,6 +36,10 @@ var timer_started: bool = false
 var cursor: Vector2i = Vector2i.ZERO
 var exploded_pos: Vector2i = Vector2i(-1, -1)  # 判负引爆格，终局高亮用
 var state: int = State.IDLE
+## 最近一次终局的胜负（覆盖层可能在终局之后才实例化——如「开局即胜」的盘在 start_level
+## 内就 _finish，而 game_over 覆盖层要等 board_view._ready 才创建——那时 game_ended 早已
+## emit 过，覆盖层只能靠本字段补显结算，见 game_over.gd 的 _ready 自同步）。
+var last_result_won := false
 ## 提示充能累计（秒）。委托给 HintCoordinator 持有（hud.gd 等外部读取入口不变）。
 var hint_charge_left: float:
     get: return _hints.charge_left
@@ -467,6 +471,9 @@ func _on_game_lost() -> void:
 
 ## 终局处置（§10.10.2）：胜 → 不存 + clear_temp；负 → 存终局盘（autosave 时）+ clear_temp。
 func _finish(won: bool) -> void:
+    # 记录终局结果：覆盖层可能在终局之后才实例化（board_view._ready 里才创建 game_over），
+    # 那时 game_ended 已 emit 过，覆盖层靠本字段补显结算（game_over.gd 自同步）。
+    last_result_won = won
     state = State.ENDED
     # 进度写「序列键」而不是 level_path：选关页打勾/解锁与 LevelSequence.has_next
     # 都按序列键读取。历史上这里传 level_path（user://gen_levels/*.json），

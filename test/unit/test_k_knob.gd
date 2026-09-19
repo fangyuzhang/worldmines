@@ -53,10 +53,13 @@ func test_o4_k_public_true_default_no_flag() -> void:
 
 func test_gen_opts_entry_equivalent() -> void:
 	# 参数对象化入口（评审 C1）：generate_with_opts 与位置参数逐位等价
+	# 注：v4.0 起生成器有「开局即胜门禁」（初始线索覆盖全部非雷格 = 死盘 → 拒收），
+	# 原 5×5/10 雷 + 遮蔽 3 因「遮蔽格不许删」结构上必须给全线索 → 该配置全 seed 被拒，
+	# 故本用例改用 7×7/14 雷（有剪枝空间）。
 	var a: Dictionary = PuzzleGenerator.new().generate_with_rules(
-		"o5", [], Vector2i(5, 5), 10, 7, 3, 50, null, 120_000, 0.0, 1, 0, true)
+		"o5", [], Vector2i(7, 7), 14, 3, 3, 50, null, 120_000, 0.0, 1, 0, true)
 	var b: Dictionary = PuzzleGenerator.new().generate_with_opts({
-		"clue_rule_id": "o5", "size": Vector2i(5, 5), "mine_count": 10, "seed": 7,
+		"clue_rule_id": "o5", "size": Vector2i(7, 7), "mine_count": 14, "seed": 3,
 		"mask_count": 3, "timeout_ms": 120_000, "mask_pre": true})
 	assert_false(a.is_empty(), "位置参数应可生成")
 	assert_false(b.is_empty(), "opts 入口应可生成")

@@ -695,6 +695,7 @@ func _initialize() -> void:
 			var u_prune_empty := 0
 			var u_verify_fail := 0
 			var u_timeout := 0
+			var u_prewon := 0  # 开局即胜被门禁丢弃的候选数（puzzle_generator 4.5 节）
 			var u_t0 := Time.get_ticks_msec()
 			var max_diff_seen := -1.0
 			var unreachable := false
@@ -726,6 +727,7 @@ func _initialize() -> void:
 				u_prune_empty += int(s.get("prune_empty", 0))
 				u_verify_fail += int(s.get("verify_fail", 0))
 				u_timeout += int(s.get("timeout", 0))
+				u_prewon += int(s.get("prewon", 0))
 				if level.is_empty():
 					u_empty += 1
 					# 超时启发式：耗时贴到超时上限 → 大概率是删线索/CP-SAT 超时被杀（非真无解）
@@ -821,7 +823,7 @@ func _initialize() -> void:
 				"made": made, "tried": u_tried, "empty": u_empty, "tier_empty": u_tier,
 				"proof_fail": u_proof, "dup": u_dup, "similar": u_sim,
 				"attempts": u_attempts, "brep_fail": u_brep_fail, "prune_empty": u_prune_empty,
-				"verify_fail": u_verify_fail, "timeout": u_timeout,
+				"verify_fail": u_verify_fail, "timeout": u_timeout, "prewon": u_prewon,
 				"mines": mines, "mines_fallback": mines_fallback,
 				"per_tier": _per_tier, "by_tier": made_by_tier, "full_stall": u_full_stall,
 				"peak_miss": u_peak_miss, "peak_hist": peak_hist,

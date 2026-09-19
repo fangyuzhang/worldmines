@@ -417,13 +417,22 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 		if not v_ok:
 			last_call_stats["verify_fail"] = int(last_call_stats["verify_fail"]) + 1
 			continue
+		# 4.5 开局即胜门禁（v4.0 补齐，legacy 生成器同类门禁「settle 后不得开局即赢」）：
+		# 初始线索覆盖全部非雷格 ⇒ 引擎加载时即满足胜利条件（unknown == remaining_mines）
+		# ⇒ 玩家看到「全开却无结算」的死盘（真实用户 bug：98 关这样的盘进了库）。
+		# 遮蔽盘同理：? 格状态也是 REVEALED，判胜口径视其为已知 → 全遮蔽盘同样当场判胜。
+		# 实测：o5@5×5/10 雷 + 遮蔽 3 因「遮蔽格不许删」结构上必须给全线索 → 该配置全 seed 被拒，
+		# 属预期（该盘面本就不该产出），产线改大盘面即可（7×7/14 雷起有剪枝空间）。
+		var total_cells := topology.cell_count() if topology != null else rows * cols
+		if total_cells - active.size() == mine_total:
+			last_call_stats["prewon"] = int(last_call_stats.get("prewon", 0)) + 1
+			continue
 		# 5. 输出（规则关卡 JSON；播放接线见 Board 集成，本路径先供生成/验证/工坊）
 		var level := _build_level_from_rules(clue_rule_id, global_rule_ids, rows, cols, mines, active, masked, seed, topology)
 		# 难度画像落盘（4 组难度常量体系的筛选依据；Board 加载不读，纯元数据）。
 		# 线索覆盖度一并记录：对同尺寸同密度的题，线索越少玩家信息越少 = 越难。
 		var prof := difficulty_from_stats(diff_stats)
 		prof["clue_count"] = active.size()
-		var total_cells := topology.cell_count() if topology != null else rows * cols
 		var non_mine := maxi(1, total_cells - mine_total)
 		prof["clue_ratio"] = snappedf(float(active.size()) / float(non_mine), 0.01)
 		prof["target_difficulty"] = target_difficulty  # 生成标签（对标 L 字段：记录「照着哪档参数生成」）

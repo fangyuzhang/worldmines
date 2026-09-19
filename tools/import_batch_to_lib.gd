@@ -15,6 +15,8 @@ extends SceneTree
 #   · --overwrite  覆盖已存在的 (mode,size,tier) 集；默认**只补缺**，不动已有的
 #   · --min=10   集内关卡数下限（低于此不建集，防半成品入库），默认 1
 #   · --no-window-check  跳过「集内档位 vs 实测峰值」一致性校验（仅用于导入旧口径关卡）
+#   · --allow-prewon    放行「开局即胜」死盘（revealed 覆盖全部非雷格 → 加载即判 WON；默认拒收，
+#                       这类盘玩家看到的是「全开却无结算」的死盘——真实用户 bug）
 #   · --prune    清掉「本轮未产出」的残留集：只删 levels_lib/<mode>/<size>/ 下的四档名 json
 #                （不删目录、不删 catalog）；库内重标（retier_stock.py）后用它清错档残留。
 #                建议**只与 --overwrite 同时用**：单独用时「已存在被跳过」的集会被误判为未产出。
@@ -48,6 +50,7 @@ var _dry := false
 var _overwrite := false
 var _min_levels := 1
 var _no_window_check := false      # --no-window-check：跳过窗口一致性校验（仅导入旧口径关卡用）
+var _allow_prewon := false         # --allow-prewon：放行「开局即胜」死盘（默认关闭，见 _prewon_ok）
 var _prune := false                # --prune：清「本轮未产出」残留集（库内重标后清错档残留）
 
 ## mode -> size -> tier -> Array[level]
@@ -56,6 +59,8 @@ var _skipped_bad := 0
 var _skipped_dup := 0
 var _skipped_mismatch := 0         # v4.0 窗口一致性：集内档位 ≠ 实测峰值（防错档入库）
 var _mismatch: Array = []          # 不匹配明细（报告列前 8 条）
+var _skipped_prewon := 0           # v4.0 开局即胜门禁：revealed 覆盖全部非雷格 → 拒收（死盘）
+var _prewon: Array = []            # 拒收明细（报告列前 8 条，含集名）
 var _units_seen := 0
 var _accepted := 0                  # 已收入 _bag 的关数（目录级进度打印用）
 var _skipped_non_official := 0      # 关卡 JSON 推导出非官方组合 → 跳过的关数
@@ -84,6 +89,8 @@ func _initialize() -> void:
 			_min_levels = maxi(1, int(s.substr(6)))
 		elif s == "--no-window-check":
 			_no_window_check = true
+		elif s == "--allow-prewon":
+			_allow_prewon = true
 		elif s == "--prune":
 			_prune = true
 		elif not s.begins_with("--"):
@@ -160,6 +167,12 @@ func _scan_size(combo_dir: String, size_dir: String, side: int) -> void:
 				(_mismatch as Array).append("%s：档位 %s 但峰值 %s" % [
 					fn, tier, str((lv.get("difficulty_profile", {}) as Dictionary).get("max_complexity", -1))])
 			continue
+		if not _prewon_ok(lv):
+			_skipped_prewon += 1
+			if (_prewon as Array).size() < 8:
+				(_prewon as Array).append("%s/%s：revealed %d ≥ 非雷格 %d（开局即胜死盘）" % [
+					list_dir, fn, (lv.get("revealed", []) as Array).size(), _non_mine_count(lv)])
+			continue
 		_put(mode, side, tier, lv)
 
 
@@ -172,6 +185,28 @@ func _window_ok(lv: Dictionary, tier: String) -> bool:
 	var dp: Dictionary = lv.get("difficulty_profile", {})
 	var peak_tier := Difficulty.tier_of_profile(dp)
 	return peak_tier == tier
+
+
+## v4.0 开局即胜门禁：revealed 覆盖全部非雷格 ⇒ Board 加载时 unknown == remaining_mines ⇒
+## 即判 WON，而结算覆盖层尚未实例化（信号丢失）→ 玩家看到「全开却无结算、点不动」的
+## 死盘（真实用户 bug，重开一样）——这类盘默认拒收，不得入库。
+## 与窗口校验同级但**独立开关**：--allow-prewon 显式放行（不影响 --no-window-check 语义）。
+func _prewon_ok(lv: Dictionary) -> bool:
+	if _allow_prewon:
+		return true
+	return (lv.get("revealed", []) as Array).size() < _non_mine_count(lv)
+
+
+## 非雷格数 = 格子数 − 实际雷数（len(mines) 优先，缺失回退 total_mines）。
+## 与 Board 判胜口径、retier_stock.py 的 terminal_at_load 同一算法（三处必须一致）。
+func _non_mine_count(lv: Dictionary) -> int:
+	var sz: Dictionary = lv.get("size", {})
+	var cells: int = int(sz.get("cols", 0)) * int(sz.get("rows", 0))
+	var mines: Array = lv.get("mines", [])
+	var mine_n: int = mines.size()
+	if mine_n <= 0:
+		mine_n = int(lv.get("total_mines", 0))
+	return maxi(1, cells - mine_n)
 
 
 ## 收一关进 _bag（按 seed 去重）。
@@ -497,6 +532,9 @@ func _report(imported: Dictionary) -> void:
 	if _skipped_mismatch > 0:
 		print("[import] 不匹配跳过 %d 关（集内档位 ≠ 实测峰值；前 8: %s）" % [
 			_skipped_mismatch, ", ".join(_mismatch.slice(0, mini(8, _mismatch.size())))])
+	if _skipped_prewon > 0:
+		print("[import] 开局即胜死盘拒收 %d 关（revealed 覆盖全部非雷格；加 --allow-prewon 可放行；前 8: %s）" % [
+			_skipped_prewon, ", ".join(_prewon.slice(0, mini(8, _prewon.size())))])
 	if _skipped_non_official > 0:
 		print("[import] 非官方组合跳过 %d 关（按关卡 JSON 判定；来源目录 %d 个，前 8: %s）" % [
 			_skipped_non_official, _non_official.size(),

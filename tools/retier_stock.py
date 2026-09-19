@@ -10,6 +10,7 @@
     <out>/<combo>/<side>x<side>/<tier>_<idx>.json
     <over-dir>/.../over_<idx>.json        # peak >= 21 超纲盘（不得混进四档目录）
     <unknown-dir>/.../unknown_<idx>.json  # 无 max_complexity 的盘
+    <prewon-dir>/.../prewon_<idx>.json    # 加载即终局（开局即胜/负）的死盘（不得混进四档目录）
 
 两种输入布局都支持：
   · 单关文件：一个 json = 一关（既有行为，不变）；
@@ -25,7 +26,7 @@
     python tools/retier_stock.py --src A,B --limit 200     # 冒烟：只处理前 200 个源文件
     python tools/retier_stock.py --src levels_lib --out _staged_levels/relib   # 库内重标
 
-说明：--out / --over-dir / --unknown-dir 属于**同一次运行**的输出组 —— 重跑以「最近一次运行」
+说明：--out / --over-dir / --unknown-dir / --prewon-dir 属于**同一次运行**的输出组 —— 重跑以「最近一次运行」
 为快照覆盖同组目录里的旧产物（差集清理，同源重跑零删除）；不同数据集请配独立输出目录。
 输出根必须在 --src 之外（互包含会被拒绝运行；库内重标天然满足：levels_lib 与 _staged_levels 不相交）。
 
@@ -59,14 +60,16 @@ OVER_MIN = 21  # >=21 超纲：不属于任何档
 REQUIRED_FIELDS = ("mines", "revealed", "size", "total_mines")
 
 # 分流盘文件名前缀。为什么不用四档名：import_batch_to_lib.gd 只认 <tier>_<idx>（tier∈四档），
-# 超纲/无画像盘若借档名落盘会被原样导入成错误档内容 —— 用 over_/unknown_ 前缀，入库工具自然忽略。
-PSEUDO_TIERS = ("over", "unknown")
+# 超纲/无画像/加载即终局盘若借档名落盘会被原样导入成错误档内容
+# —— 用 over_/unknown_/prewon_ 前缀，入库工具自然忽略。
+PSEUDO_TIERS = ("over", "unknown", "prewon")
 ARTIFACT_PREFIXES = frozenset(TIERS) | frozenset(PSEUDO_TIERS)
 
 DEFAULT_SRC = "_staged_levels"
 DEFAULT_OUT = os.path.join("_staged_levels", "retiered")
 DEFAULT_OVER = os.path.join("_staged_levels", "retiered_over")
 DEFAULT_UNKNOWN = os.path.join("_staged_levels", "retiered_unknown")
+DEFAULT_PREWON = os.path.join("_staged_levels", "retiered_prewon")
 
 REPORT_NAME = "retier_report.json"
 MAX_SAMPLE = 5  # 报告里带的前 N 个样例路径
@@ -195,6 +198,58 @@ def valid_peak(lv):
     return f if math.isfinite(f) else None
 
 
+def _cell_count(lv):
+    """格子数（cols × rows）；size 缺失/非法返回 0（判据层兜底，不在此判坏文件）。"""
+    sz = lv.get("size")
+    if isinstance(sz, dict) and _intlike(sz.get("cols")) and _intlike(sz.get("rows")):
+        return int(sz["cols"]) * int(sz["rows"])
+    return 0
+
+
+def _mine_count(lv):
+    """该关实际雷数：len(mines) 优先（产物侧真相——引擎判胜/判负用的就是实际雷位数），
+    mines 缺失/非数组时回退 total_mines。"""
+    ms = lv.get("mines")
+    if isinstance(ms, list):
+        return len(ms)
+    tm = lv.get("total_mines")
+    return int(tm) if _intlike(tm) else 0
+
+
+def terminal_at_load(lv):
+    """关卡是否「加载即终局」（开局即胜 / 开局即负）——与 Board / WinCondition 同口径。
+
+    为什么单独分流：这类盘在游戏里是**死盘**——引擎在加载期就满足终局条件
+    （结算覆盖层尚未实例化、信号丢失 → 真实用户 bug「全开却无结算、点不动」，
+    重开一样），且画像峰值恒 0（加载即结束，没有任何推理步）→ 按旧流程会错落进
+    intro 档入库误导玩家。判据（照 Board 实际行为）：
+      · 开局即胜：revealed 覆盖全部非雷格 ⇒ 加载期 _check_win 即判 WON
+        （win_condition.is_won 的第二个条件：unknown_cells == remaining_mines）；
+      · 开局即负：revealed 含雷格 ⇒ board.reveal_initial 直接判 LOST
+        （游戏侧 LevelLoader 会拒载这种盘；产物/工坊数据里同样要隔离）。
+    非雷格数 = 格子数 − 实际雷数（mines 的 len，缺失回退 total_mines）。
+    """
+    rev = lv.get("revealed")
+    if not isinstance(rev, list):
+        return False
+    non_mine = _cell_count(lv) - _mine_count(lv)
+    if non_mine <= 0:
+        return False  # 异常盘（非正非雷格数）：不在此分流，交给后续判坏/丢弃
+    if len(rev) >= non_mine:
+        return True
+    mine_keys = set()
+    ms = lv.get("mines")
+    if isinstance(ms, list):
+        for m in ms:
+            if isinstance(m, dict) and "r" in m and "c" in m:
+                mine_keys.add((int(m["r"]), int(m["c"])))
+    for rv in rev:
+        if isinstance(rv, dict) and "r" in rv and "c" in rv:
+            if (int(rv["r"]), int(rv["c"])) in mine_keys:
+                return True
+    return False
+
+
 def walk_json(root):
     """递归收集 root 下所有 *.json（不区分大小写后缀）。"""
     out = []
@@ -292,6 +347,15 @@ def _classify_one(lv, src, ctx, recs, bad, unknown, nonsquare):
         # 非方形盘：库的尺寸键是单个 int（见 import 工具的 _parse_side），装不下 -> 跳过。
         nonsquare.append((src, "size=%dx%d" % (cols, rows)))
         return
+    # 加载即终局的死盘（开局即胜/负）不参与档位分类：峰值恒 0，否则会错落进 intro 档入库。
+    # 判据先于 over/tier 判定、独立输出根隔离（理由见 terminal_at_load 的文档串）。
+    if terminal_at_load(lv):
+        rec = {"src": src, "bucket": "prewon", "combo": _combo_from_ctx(lv, ctx),
+               "side": side, "tier": "prewon", "peak": peak, "rounds": rounds_of(lv)}
+        if ctx is not None:
+            rec["payload"] = lv
+        recs.append(rec)
+        return
     combo = _combo_from_ctx(lv, ctx)
     rounds = rounds_of(lv)
     if peak >= OVER_MIN:
@@ -354,7 +418,7 @@ def classify(files):
 # ===========================================================================
 def guard_roots(srcs, roots):
     """写盘/清理前最后防线。为什么宁拒不跑：清理不可逆，必须在任何删除动作之前
-    把「--out 指进源目录 / 指到项目根 / 三个根互相嵌套」这几类手滑全部挡在门外。"""
+    把「--out 指进源目录 / 指到项目根 / 四个根互相嵌套」这几类手滑全部挡在门外。"""
     for flag, root in roots.items():
         for s in srcs:
             if contains(root, s) or contains(s, root):
@@ -367,7 +431,7 @@ def guard_roots(srcs, roots):
         for j in range(i + 1, len(ks)):
             a, b = roots[ks[i]], roots[ks[j]]
             if contains(a, b) or contains(b, a):
-                die("%s 与 %s 相互包含；三个输出根必须相互独立（防清理交叉误伤）" % (ks[i], ks[j]))
+                die("%s 与 %s 相互包含；四个输出根必须相互独立（防清理交叉误伤）" % (ks[i], ks[j]))
 
 
 def is_artifact_relpath(rel):
@@ -495,6 +559,7 @@ def verify(written, roots):
     actual = {b: 0 for b in roots}
     by_tier = {t: 0 for t in TIERS}
     by_combo = {}
+    by_prewon = {}  # prewon 根按 combo 计数（报告的 by_prewon 口径，磁盘实测）
     by_pair = {}
     minmax = {t: None for t in TIERS}
     hist = {}
@@ -565,13 +630,21 @@ def verify(written, roots):
                     v("over 盘峰值缺失或 < %d：%s" % (OVER_MIN, p))
                     continue
                 hist[_peak_key(peak)] = hist.get(_peak_key(peak), 0) + 1
-            else:  # unknown
+            elif bucket == "unknown":
                 if pre != "unknown":
                     v("unknown 根出现非 unknown 前缀：%s" % p)
                     continue
                 if peak is not None:
                     v("unknown 盘却有有效峰值 %s：%s" % (_peak_key(peak), p))
                     continue
+            else:  # prewon：加载即终局的死盘，重验判据必须仍成立（防清理/搬运后混入普通盘）
+                if pre != "prewon":
+                    v("prewon 根出现非 prewon 前缀：%s" % p)
+                    continue
+                if not terminal_at_load(lv):
+                    v("prewon 盘不满足「加载即终局」判据：%s" % p)
+                    continue
+                by_prewon[combo_dir] = by_prewon.get(combo_dir, 0) + 1
 
     for b in roots:  # 数量对账：写盘计划 vs 磁盘实测
         if expected[b] != actual[b]:
@@ -590,6 +663,7 @@ def verify(written, roots):
         "violations": violations,
         "by_tier": by_tier,
         "by_combo": by_combo,
+        "by_prewon": by_prewon,
         "by_pair": by_pair,
         "minmax": minmax,
         "hist": hist,
@@ -647,6 +721,8 @@ def main(argv=None):
     ap.add_argument("--out", default=DEFAULT_OUT, help="重标输出根（默认 %(default)s）")
     ap.add_argument("--over-dir", default=DEFAULT_OVER, help="peak>=21 超纲盘输出根（默认 %(default)s）")
     ap.add_argument("--unknown-dir", default=DEFAULT_UNKNOWN, help="无 max_complexity 盘输出根（默认 %(default)s）")
+    ap.add_argument("--prewon-dir", default=DEFAULT_PREWON,
+                    help="加载即终局（开局即胜/负）死盘输出根（默认 %(default)s）")
     ap.add_argument("--limit", type=int, default=0, help="只处理前 N 个源文件（0=不限；冒烟用）")
     args = ap.parse_args(argv)
     if args.limit < 0:
@@ -655,7 +731,8 @@ def main(argv=None):
     srcs = expand_srcs(args.src)
     roots = {"main": os.path.abspath(args.out),
              "over": os.path.abspath(args.over_dir),
-             "unknown": os.path.abspath(args.unknown_dir)}
+             "unknown": os.path.abspath(args.unknown_dir),
+             "prewon": os.path.abspath(args.prewon_dir)}
     guard_roots(srcs, roots)
 
     files, total_scanned = collect_files(srcs, args.limit)
@@ -677,10 +754,12 @@ def main(argv=None):
         print("[retier] 集文件: %d 个 → 展开 %d 关（按单关处理；combo/side 优先取集字段）"
               % (stats["set_files"], stats["levels_from_sets"]))
     cnt = {b: sum(1 for r in recs if r["bucket"] == b) for b in roots}
-    print("[retier] 分流: 主输出 %d | over %d | unknown %d | 非方形丢弃 %d | 坏文件 %d"
-          % (cnt["main"], cnt["over"], cnt["unknown"], len(nonsquare), len(bad)))
+    print("[retier] 分流: 主输出 %d | over %d | unknown %d | prewon（加载即终局） %d | 非方形丢弃 %d | 坏文件 %d"
+          % (cnt["main"], cnt["over"], cnt["unknown"], cnt["prewon"], len(nonsquare), len(bad)))
     over_any = [(r["src"],) for r in recs if r["bucket"] == "over"]
-    for tag, lst in (("坏文件", bad), ("无画像", unknown), ("非方形", nonsquare), ("超纲", over_any)):
+    prewon_any = [(r["src"],) for r in recs if r["bucket"] == "prewon"]
+    for tag, lst in (("坏文件", bad), ("无画像", unknown), ("非方形", nonsquare),
+                     ("超纲", over_any), ("prewon死盘", prewon_any)):
         if lst:
             print("[retier] %s样例（前 %d）: %s"
                   % (tag, min(len(lst), MAX_SAMPLE), ", ".join(rel_samples(lst))))
@@ -688,8 +767,8 @@ def main(argv=None):
     groups = plan_groups(recs)
     planned = planned_paths(groups, roots)
     cleaned = clean_output_roots(roots, planned)
-    print("[retier] 清理输出根过期产物: out=%d, over=%d, unknown=%d 个 json（同源重跑应为 0）"
-          % (cleaned["main"], cleaned["over"], cleaned["unknown"]))
+    print("[retier] 清理输出根过期产物: out=%d, over=%d, unknown=%d, prewon=%d 个 json（同源重跑应为 0）"
+          % (cleaned["main"], cleaned["over"], cleaned["unknown"], cleaned["prewon"]))
 
     written = write_planned(groups, roots)
     vres = verify(written, roots)
@@ -703,10 +782,12 @@ def main(argv=None):
         "total_out": vres["actual"]["main"],
         "skipped_over": vres["actual"]["over"],
         "skipped_unknown": vres["actual"]["unknown"],
+        "skipped_prewon": vres["actual"]["prewon"],      # 加载即终局（开局即胜/负）死盘数
         "skipped_nonsquare": len(nonsquare),
         "skipped_bad": len(bad),
         "by_tier": vres["by_tier"],
         "by_combo": vres["by_combo"],
+        "by_prewon": vres["by_prewon"],                  # prewon 死盘按 combo 计数（磁盘实测）
         "peak_minmax_by_tier": vres["minmax"],
         "peak_histogram": {k: vres["hist"][k]
                            for k in sorted(vres["hist"], key=lambda x: float(x))},
@@ -715,10 +796,12 @@ def main(argv=None):
         "out_root": roots["main"],
         "over_root": roots["over"],
         "unknown_root": roots["unknown"],
+        "prewon_root": roots["prewon"],
         "bad_samples": rel_samples(bad),
         "unknown_samples": rel_samples(unknown),
         "nonsquare_samples": rel_samples(nonsquare),
         "over_samples": rel_samples(over_any),
+        "prewon_samples": rel_samples(prewon_any),
         "self_check": {
             "ok": vres["ok"],
             "violation_count": vres["violation_count"],

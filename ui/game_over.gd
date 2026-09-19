@@ -87,6 +87,11 @@ func _ready() -> void:
     if not GameSession.session_restored.is_connected(_on_hide):
         GameSession.session_restored.connect(_on_hide)
     visible = false
+    # 关卡加载期就可能已达终局（如「revealed 覆盖全部非雷格」的盘：加载即满足胜利条件），
+    # 而此时本覆盖层尚未实例化、game_ended 早已 emit 过 → 信号丢失，玩家看到的是「全开却无结算」的死盘。
+    # 因此就绪时必须按会话当前状态补显一次结算。
+    if GameSession.state == GameSession.State.ENDED:
+        _on_game_ended(GameSession.last_result_won)
     _apply_theme()
 
 
@@ -156,6 +161,12 @@ func _on_skip_level() -> void:
 
 ## 重新开始 / 撤回后隐藏终局覆盖层。
 func _on_hide() -> void:
+    # 会话已终局时不隐藏（开局即胜盘：start_level 内 _finish 先于 session_started.emit，
+    # 结算刚被 _on_game_ended 显示）——隐藏会把它抹掉，这正是「重开→死盘」的另一半根因。
+    # 按会话状态补显一次结算，与 _ready 自同步同口径。
+    if GameSession.state == GameSession.State.ENDED:
+        _on_game_ended(GameSession.last_result_won)
+        return
     visible = false
 
 
