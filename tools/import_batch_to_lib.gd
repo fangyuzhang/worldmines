@@ -14,6 +14,7 @@ extends SceneTree
 #   · --dry-run  只报告不写盘（先跑这个看看会导入什么）
 #   · --overwrite  覆盖已存在的 (mode,size,tier) 集；默认**只补缺**，不动已有的
 #   · --min=10   集内关卡数下限（低于此不建集，防半成品入库），默认 1
+#   · --no-window-check  跳过「集内档位 vs 实测峰值」一致性校验（仅用于导入旧口径关卡）
 #
 # **mode 口径（最关键，2026-09-19 修正）**：以**关卡 JSON 字段**为产物侧真相
 #   （`clue_rule` + `global_rules`），推导库内 mode id（= 选关页 MODES[].id）：
@@ -43,11 +44,14 @@ var _src := "user://batch_all"
 var _dry := false
 var _overwrite := false
 var _min_levels := 1
+var _no_window_check := false      # --no-window-check：跳过窗口一致性校验（仅导入旧口径关卡用）
 
 ## mode -> size -> tier -> Array[level]
 var _bag: Dictionary = {}
 var _skipped_bad := 0
 var _skipped_dup := 0
+var _skipped_mismatch := 0         # v4.0 窗口一致性：集内档位 ≠ 实测峰值（防错档入库）
+var _mismatch: Array = []          # 不匹配明细（报告列前 8 条）
 var _units_seen := 0
 var _accepted := 0                  # 已收入 _bag 的关数（目录级进度打印用）
 var _skipped_non_official := 0      # 关卡 JSON 推导出非官方组合 → 跳过的关数
@@ -71,6 +75,8 @@ func _initialize() -> void:
 			_overwrite = true
 		elif s.begins_with("--min="):
 			_min_levels = maxi(1, int(s.substr(6)))
+		elif s == "--no-window-check":
+			_no_window_check = true
 		elif not s.begins_with("--"):
 			_src = s
 
@@ -134,7 +140,24 @@ func _scan_size(combo_dir: String, size_dir: String, side: int) -> void:
 			if not _non_official.has(combo_dir):
 				_non_official.append(combo_dir)
 			continue
+		if not _window_ok(lv, tier):
+			_skipped_mismatch += 1
+			if (_mismatch as Array).size() < 8:
+				(_mismatch as Array).append("%s：档位 %s 但峰值 %s" % [
+					fn, tier, str((lv.get("difficulty_profile", {}) as Dictionary).get("max_complexity", -1))])
+			continue
 		_put(mode, side, tier, lv)
+
+
+## v4.0 窗口一致性：集内档位必须与实测峰值一致（防错档入库）。
+## 为什么必须校验：量产/重标两条来源都可能把旧口径文件混进来（文件名 hard_01 而峰值只有 3），
+## 一旦入库，玩家会在"噩梦"档遇到浅盘，且全流程不报错。
+func _window_ok(lv: Dictionary, tier: String) -> bool:
+	if _no_window_check:
+		return true
+	var dp: Dictionary = lv.get("difficulty_profile", {})
+	var peak_tier := Difficulty.tier_of_profile(dp)
+	return peak_tier == tier
 
 
 ## 收一关进 _bag（按 seed 去重）。
@@ -283,9 +306,15 @@ func _write_sets() -> Dictionary:
 				if FileAccess.file_exists(dst) and not _overwrite:
 					print("[import]   跳过（已存在）: %s（用 --overwrite 覆盖）" % rel)
 					continue
+				# v4.0：集内按深度（峰值）升序、同深度按轮数升序——由浅入深，与档位口径一致
 				arr.sort_custom(func(a, b):
-					return float((a as Dictionary).get("difficulty", 0.0)) \
-							< float((b as Dictionary).get("difficulty", 0.0)))
+					var da: Dictionary = (a as Dictionary).get("difficulty_profile", {})
+					var db: Dictionary = (b as Dictionary).get("difficulty_profile", {})
+					var pa := int(da.get("max_complexity", 0))
+					var pb := int(db.get("max_complexity", 0))
+					if pa != pb:
+						return pa < pb
+					return int(da.get("rounds", 0)) < int(db.get("rounds", 0)))
 				var doc := {"mode": mode, "size": side, "tier": tier,
 					"count": arr.size(), "levels": arr}
 				if not _dry:
@@ -386,6 +415,9 @@ func _report(imported: Dictionary) -> void:
 				levels += int(imported[mode][side][tier])
 	print("[import] 本次导入 %d 个集 / %d 关；扫描单元 %d，坏关 %d，重复 %d" % [
 		sets, levels, _units_seen, _skipped_bad, _skipped_dup])
+	if _skipped_mismatch > 0:
+		print("[import] 不匹配跳过 %d 关（集内档位 ≠ 实测峰值；前 8: %s）" % [
+			_skipped_mismatch, ", ".join(_mismatch.slice(0, mini(8, _mismatch.size())))])
 	if _skipped_non_official > 0:
 		print("[import] 非官方组合跳过 %d 关（按关卡 JSON 判定；来源目录 %d 个，前 8: %s）" % [
 			_skipped_non_official, _non_official.size(),

@@ -97,12 +97,14 @@ func _initialize() -> void:
 			ok += 1
 			var prof: Dictionary = level.get("difficulty_profile", {})
 			var d := float(prof.get("difficulty", -1.0))
-			var t := ""
+			# v4.0：档位按峰值定（回退旧标量口径以兼容存量产物）
+			var t := Difficulty.tier_of_profile(prof)
+			if t == "":
+				t = Difficulty.tier_of(d)
 			if d >= 0.0:
 				profiled += 1
-				t = Difficulty.tier_of(d)
-				if tiers.has(t):
-					tiers[t] += 1
+			if tiers.has(t):
+				tiers[t] += 1
 			# 冗余线索诊断（症状提示，不判死）：clue_ratio 高 = 删线索不充分 → 假 easy 倾向。
 			# 2026-09-16：改「相对口径」——先收集，末尾按（尺寸 × 档）分组对比（_report_clue_ratio）。
 			var cr := float(prof.get("clue_ratio", 0.0))

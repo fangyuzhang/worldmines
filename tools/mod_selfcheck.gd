@@ -76,8 +76,12 @@ func _initialize() -> void:
 			problems += 1
 			print("  %dx%d: 生成成功但 ProofLog 复核不过（%s）" % [side, side, str(log.get("reason", "?"))])
 			continue
-		var diff := float(level.get("difficulty_profile", {}).get("difficulty", -1.0))
-		var tier := Difficulty.tier_of(diff)
+		var prof: Dictionary = level.get("difficulty_profile", {})
+		var diff := float(prof.get("difficulty", -1.0))
+		# v4.0：档位按峰值定（回退旧标量口径以兼容存量产物）
+		var tier := Difficulty.tier_of_profile(prof)
+		if tier == "":
+			tier = Difficulty.tier_of(diff)
 		feasible_sizes.append("%dx%d" % [side, side])
 		print("  %dx%d=%d雷: OK（%.1fs，difficulty=%.2f tier=%s）" % [
 			side, side, mines, cost, diff, tier if tier != "" else "未进档"])
