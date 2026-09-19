@@ -138,8 +138,11 @@ static func materialize(mode: String, size: int, tier: String, idx: int) -> Stri
 	if lv.is_empty():
 		return ""
 	var src_mtime := FileAccess.get_modified_time("%s/%s/%d/%s.json" % [DIR, mode, size, tier])
+	# 严格大于才跳过：mtime 精度通常只有秒，若集文件与物化文件在同一秒产生，
+	# `>=` 会把「集随后又被更新（同一秒内）」也判成最新 → 玩家玩到旧盘。
+	# 宁可多写一次，也不能出现过期数据（原「每次都重写」的意图在此保留）。
 	if src_mtime > 0 and FileAccess.file_exists(path) \
-			and FileAccess.get_modified_time(path) >= src_mtime:
+			and FileAccess.get_modified_time(path) > src_mtime:
 		return path
 	if DirAccess.make_dir_recursive_absolute(PLAY_DIR) != OK:
 		return ""

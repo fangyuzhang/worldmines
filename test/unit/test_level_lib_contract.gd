@@ -107,16 +107,24 @@ func test_lib_levels_match_their_mode_and_tier() -> void:
 		var t: Dictionary = Difficulty.TIERS[str(row["tier"])]
 		var lo := float(t["min"])
 		var hi := float(t["max"])
-		for lv in _read_json(str(row["path"])).get("levels", []):
-			var lvv: Dictionary = lv
+		# **抽样**：逐关断言在满额库（164 组合 × 5 尺寸 × 4 档 = 3280 集）上会把全量测试拖垮
+		# （库每大一轮、断言数就线性膨胀），而这几条检查的失败模式是「整集系统性错」——
+		# 每集抽首/中/末三关即可暴露（集按难度升序，两端 + 中段覆盖最广）。
+		var levels: Array = _read_json(str(row["path"])).get("levels", [])
+		if levels.is_empty():
+			continue
+		var picks: Array = [0, levels.size() / 2, levels.size() - 1]
+		for pi in picks:
+			var lvv: Dictionary = levels[int(pi)]
 			var got_g: Array = (lvv.get("global_rules", []) as Array).duplicate()
 			got_g.sort()
 			assert_eq(str(lvv.get("clue_rule", "")), str(exp["clue"]),
-				"%s 的 clue_rule 与 mode 不符（选中 A 会玩到 B）" % row["path"])
-			assert_eq(got_g, exp_g, "%s 的 global_rules 与 mode 不符" % row["path"])
+				"%s[%d] 的 clue_rule 与 mode 不符（选中 A 会玩到 B）" % [row["path"], int(pi)])
+			assert_eq(got_g, exp_g, "%s[%d] 的 global_rules 与 mode 不符" % [row["path"], int(pi)])
 			var d := float(lvv.get("difficulty", -1.0))
 			assert_true(d >= lo and d < hi,
-				"%s 有一关 difficulty=%.3f 不在 %s 区间 [%.2f, %.2f)" % [row["path"], d, row["tier"], lo, hi])
+				"%s[%d] 的 difficulty=%.3f 不在 %s 区间 [%.2f, %.2f)" % [
+					row["path"], int(pi), d, row["tier"], lo, hi])
 
 
 func test_lib_levels_can_be_loaded_by_board() -> void:
@@ -151,6 +159,30 @@ func test_lib_total_size_is_reported() -> void:
 	var mb := float(total) / 1048576.0
 	gut.p("库体量: %d 个集 / %.2f MB（约 %.0f 字节/集）" % [sets, mb, float(total) / maxf(1.0, float(sets))])
 	assert_true(total > 0, "库应非空")
+
+
+func test_lib_sampled_levels_are_sequentially_solvable() -> void:
+	## 库的**质量底线**：玩家点进去的盘必须能靠推理走完，不能是「必猜」盘。
+	## 抽样极少量（每档只取一集的首关）——ProofLog.build 是 CP-SAT 演绎，单盘数百 ms 级，
+	## 全量跑会拖垮测试；而这四条断言守的是「整批生成时门禁失效」这类系统性事故。
+	## 注：它同时受墙钟超时影响（超时也返回 solved=false），故只抽样、不追求覆盖。
+	var checked := 0
+	var mined := {}
+	for s in _lib_sets():
+		var row: Dictionary = s
+		var key := str(row["tier"])
+		if mined.has(key):
+			continue
+		mined[key] = true
+		var levels: Array = _read_json(str(row["path"])).get("levels", [])
+		if levels.is_empty():
+			continue
+		var lv: Dictionary = levels[0]
+		var log: Dictionary = ProofLog.build(lv)
+		assert_true(bool(log.get("solved", false)),
+			"%s 首关序贯不可解（reason=%s）——库里不该有必猜的盘" % [row["path"], str(log.get("reason", ""))])
+		checked += 1
+	assert_true(checked > 0, "应至少抽到一关")
 
 
 func test_lib_catalog_counts_match_sets() -> void:
