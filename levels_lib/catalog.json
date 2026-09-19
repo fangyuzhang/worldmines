@@ -57,17 +57,17 @@
     "o1": {
       "5": {
         "easy": 26,
-        "intro": 70
+        "intro": 61
       },
       "6": {
         "easy": 19,
-        "intro": 67,
+        "intro": 65,
         "normal": 16
       },
       "7": {
         "easy": 59,
         "hard": 22,
-        "intro": 115,
+        "intro": 114,
         "normal": 82
       },
       "8": {
@@ -197,12 +197,12 @@
     "o5x": {
       "5": {
         "easy": 25,
-        "intro": 162,
+        "intro": 141,
         "normal": 15
       },
       "6": {
         "easy": 32,
-        "intro": 145,
+        "intro": 143,
         "normal": 17
       },
       "7": {
@@ -243,21 +243,21 @@
     },
     "o9": {
       "5": {
-        "intro": 104
+        "intro": 75
       },
       "6": {
-        "intro": 107
+        "intro": 97
       },
       "7": {
-        "intro": 101
+        "intro": 89
       },
       "8": {
         "easy": 12,
-        "intro": 89
+        "intro": 78
       },
       "9": {
         "easy": 16,
-        "intro": 85
+        "intro": 84
       }
     }
   },
