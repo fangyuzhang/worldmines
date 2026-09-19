@@ -57,7 +57,8 @@ func _build_ui() -> void:
     vbox.add_child(row1)
 
     # 开关行
-    _ripple_chk = _add_check_row(vbox, "翻开涟漪动效", func(v: bool): SettingsManager.set_ripple_enabled(v), SettingsManager.ripple_enabled)
+    # 翻开动效总闸（波浪 + 后续单格 pop）：唯一开关，标签即语义
+    _ripple_chk = _add_check_row(vbox, "翻开动效（波浪 / 单格）", func(v: bool): SettingsManager.set_ripple_enabled(v), SettingsManager.ripple_enabled)
     _hover_chk = _add_check_row(vbox, "悬停邻域高亮", func(v: bool): SettingsManager.set_hover_highlight(v), SettingsManager.hover_highlight)
     _autosave_chk = _add_check_row(vbox, "自动存档", func(v: bool): SettingsManager.set_autosave_enabled(v), SettingsManager.autosave_enabled)
     _keyboard_chk = _add_check_row(vbox, "键盘操作", func(v: bool): SettingsManager.set_keyboard_enabled(v), SettingsManager.keyboard_enabled)

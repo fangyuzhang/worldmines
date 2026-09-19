@@ -8,6 +8,8 @@ signal settings_changed
 const PATH := "user://settings.cfg"
 
 var theme_mode: String = "system"  # "system" | "dark" | "light"
+## 翻开动效**总闸**（波浪涟漪 + 后续单格 pop 都归它管）：关则翻开不播任何动效；默认开。
+## ★ 这是唯一的翻开动效开关，不要再新加第二层同类开关（用户只想要一个）。
 var ripple_enabled: bool = true
 var hover_highlight: bool = true
 var autosave_enabled: bool = true

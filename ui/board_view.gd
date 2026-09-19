@@ -187,7 +187,8 @@ func _on_cell_changed(pos: Vector2i) -> void:
 	if GameSession.board != null and GameSession.board.grid != null:
 		var cell := GameSession.board.grid.get_cell(pos)
 		if cell != null and cell.state == Cell.State.REVEALED:
-			if SettingsManager != null and SettingsManager.ripple_enabled:
+			# 总闸（翻开动效）关闭时连批次都不登记，逻辑上不可能产生波浪/单格 pop。
+			if _reveal_effects_enabled():
 				_queue_reveal_batch(pos)
 	queue_redraw()
 
@@ -267,6 +268,10 @@ func _layout() -> void:
 func _process(_delta: float) -> void:
 	var now_ms := Time.get_ticks_msec()
 	var dirty := false
+	# 总开关关闭：立刻丢弃在途波浪与缓存 → 下一次重绘即静止态（无收缩、无高亮残留）。
+	if not _reveal_effects_enabled() and not _ripples.is_empty():
+		_clear_wave_state()
+		dirty = true
 	if _hint_until_ms > 0 and now_ms >= _hint_until_ms:
 		# 高亮描边到期只清高亮；推理文字窗口保留（盘面变化时才清）
 		_hint_steps = []
@@ -322,6 +327,11 @@ func _draw() -> void:
 	var scale := float(cell_px) / 48.0
 	var font := ThemeDB.fallback_font
 	var endgame: bool = board.state != Board.GameState.PLAYING
+	# 总开关状态：关闭时本帧走静止绘制路径（无收缩/无脉冲/线色原值）。
+	# 这里再兜底清一次在途波浪，保证任何重绘入口（窗口缩放/主题切换/测试直调）都无残留。
+	var effects_on := _reveal_effects_enabled()
+	if not effects_on and not _ripples.is_empty():
+		_clear_wave_state()
 
 	for r in size.y:
 		for c in size.x:
@@ -333,11 +343,11 @@ func _draw() -> void:
 				continue
 			var rect := Rect2(board_origin + Vector2(c, r) * cell_px, Vector2(cell_px, cell_px))
 			# 波浪几何（§8.4.5）：受波及格原地收缩（0 间隙禁位移/放大；直接改绘制矩形，免矩阵）
-			var rrect: Rect2 = _ripple_rect_for(pos, rect)
+			var rrect: Rect2 = _ripple_rect_for(pos, rect) if effects_on else rect
 			_draw_cell(pos, cell, rrect, scale, font, endgame)
 
 	# 波浪颜色脉冲（0 间隙方案：位移/放大被禁 → 颜色通道增强）
-	if not endgame:
+	if not endgame and effects_on:
 		_draw_wave_color_pulse()
 
 	# 网格线独立绘制遍（本方案主通道）：必须晚于填充与脉冲，且几何取自**原格矩形**——
@@ -546,11 +556,37 @@ func _draw_hover_highlight(center_pos: Vector2i, with_neighbors: bool) -> void:
 			draw_rect(nrect, ThemeManager.hover_neighbor_overlay())
 
 
+# ============ 翻开动效开关（总闸 + 波浪细项） ============
+
+## 翻开动效总闸（波浪 + 后续单格 pop）判定：唯一读点，后续单格 pop 复用本函数。
+## 唯一开关即 SettingsManager.ripple_enabled（语义已扩展为总闸，界面标签「翻开动效（波浪 / 单格）」）。
+## 读取刻意用 get_node_or_null 而非直接引用 autoload 名 `SettingsManager`：
+## headless / 单测环境若未注册该 autoload，直接引用会在脚本解析期就报错；
+## 这里把「设置系统缺失」一律按默认（开）处理，绝不抛错。
+func _reveal_effects_enabled() -> bool:
+	var sm: Node = get_node_or_null("/root/SettingsManager")
+	if sm == null:
+		return true
+	var v: Variant = sm.get("ripple_enabled")
+	return bool(v) if v is bool else true
+
+
+## 丢弃全部波浪与几何缓存（新对局 / 关掉总开关时复用）。
+## 缓存必须同步清空——否则绘制层会残留收缩与线色高亮（收尾无残留是硬约束）。
+func _clear_wave_state() -> void:
+	_ripples.clear()
+	_ripple_cache.clear()
+	_ripple_cache_ms = -1
+
+
 # ============ 开格波浪（§8.4.5 重写：图距离分环 + 相位差；0 间隙只走收缩/颜色通道） ============
 
 ## 以 start 为环 0 起点构建一条波浪：RippleRings 按图距离分环 → 逐环延迟 → cover 渐隐。
 ## 环内顺序不影响观感（同环延迟相同）；0 间隙下禁用位移与放大。
 func _start_wave(start: Vector2i) -> void:
+	# 双保险：即便调用方（如 _settle_reveal_batch）没拦，关闭时也绝不建立波浪。
+	if not _reveal_effects_enabled():
+		return
 	var board: Board = GameSession.board
 	if board == null or board.grid == null:
 		return
@@ -657,7 +693,7 @@ func _rebuild_ripple_cache(at_ms: int = -1) -> void:
 
 ## 波浪颜色脉冲：受波及格按 WP * 0.55 * waveE 叠加高亮色（峰值约 0.41，双主题可见）。
 func _draw_wave_color_pulse() -> void:
-	if _ripples.is_empty():
+	if _ripples.is_empty() or not _reveal_effects_enabled():
 		return
 	if _ripple_cache_ms != Time.get_ticks_msec():
 		_rebuild_ripple_cache()
@@ -682,7 +718,7 @@ func _draw_grid_lines() -> void:
 	var board_size: Vector2i = board.grid.size()
 	var line := ThemeManager.grid_line()
 	var glow := _wave_glow_color()
-	var has_wave := not _ripples.is_empty()
+	var has_wave := not _ripples.is_empty() and _reveal_effects_enabled()
 	if has_wave and _ripple_cache_ms != Time.get_ticks_msec():
 		_rebuild_ripple_cache()
 	for r in board_size.y:

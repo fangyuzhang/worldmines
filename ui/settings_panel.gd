@@ -1,6 +1,7 @@
-# settings_panel.gd —— 设置面板（6 项开关 + 通关进度清除，实时生效 + 持久化）【plan1.1 §10.7.7-⑥】
-# 文案 §8.5：标题「设置」，6 项开关 = 主题模式（跟随系统/深色/亮色）、
-# 翻开涟漪动效、悬停邻域高亮、自动存档、键盘操作、音效；外加「通关进度 → 清除…」（二次确认）；按钮「返回」。
+# settings_panel.gd —— 设置面板（开关项 + 通关进度清除，实时生效 + 持久化）【plan1.1 §10.7.7-⑥】
+# 文案 §8.5：标题「设置」，开关 = 主题模式（跟随系统/深色/亮色）、
+# 翻开动效（波浪 / 单格）、悬停邻域高亮、自动存档、键盘操作、音效、全屏、连携操作、绘画草稿入档；
+# 外加「通关进度 → 清除…」（二次确认）；按钮「返回」。
 extends Control
 
 var _theme_opt: OptionButton
@@ -79,7 +80,8 @@ func _build_ui() -> void:
     vbox.add_child(row1)
 
     # 行 2~5：四开关
-    _ripple_chk = _add_check_row(vbox, "翻开涟漪动效",
+    # 翻开动效总闸（波浪 + 后续单格 pop）：这是唯一开关，标签即语义
+    _ripple_chk = _add_check_row(vbox, "翻开动效（波浪 / 单格）",
         func(v: bool): SettingsManager.set_ripple_enabled(v))
     _hover_chk = _add_check_row(vbox, "悬停邻域高亮",
         func(v: bool): SettingsManager.set_hover_highlight(v))
