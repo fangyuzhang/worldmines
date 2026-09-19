@@ -36,13 +36,10 @@ static func filter_by_tier(levels: Array, tier: String) -> Array:
 	var t: Dictionary = TIERS.get(tier, {})
 	if t.is_empty():
 		return levels.duplicate()
-	var lo := float(t["min"])
-	var hi := float(t["max"])
 	var out: Array = []
 	for lv in levels:
 		var dp: Dictionary = lv.get("difficulty_profile", {})
-		var d := float(dp.get("difficulty", 0.0))
-		if d >= lo and d < hi:
+		if Difficulty.tier_of_profile(dp) == tier:
 			out.append(lv)
 	return out
 
@@ -68,3 +65,46 @@ static func generate_tiered(gen: Object, clue_rule_id: String, globals: Array, s
 			best = lv
 			best_diff = d
 	return best
+
+
+## 深度窗口（v4.0，2026-09-19）：以「峰值 = 单步最大必要线索数」定档。
+## 依据：52,988 关实测——窗口占比 44.1/22.8/21.7/11.1%，峰值随尺寸单调增长、与长度近似独立。
+## 为什么不用标量 difficulty 定档：它与「步数」秩相关 0.923、与峰值仅 0.475（测长度而非深度）。
+const PEAK_WINDOWS := {
+	"intro":  {"label": "入门", "min": 0,  "max": 2},
+	"easy":   {"label": "普通", "min": 3,  "max": 4},
+	"normal": {"label": "困难", "min": 5,  "max": 8},
+	"hard":   {"label": "噩梦", "min": 9,  "max": 20},
+}
+const PEAK_OVER := 21  ## >= 此值 = 「超纲」（机器级），不进任何档
+
+
+## 峰值 → 档位；超纲/无画像返回 ""。
+static func tier_of_peak(peak: int) -> String:
+	if peak < 0 or peak >= PEAK_OVER:
+		return ""
+	for id in PEAK_WINDOWS:
+		var w: Dictionary = PEAK_WINDOWS[id]
+		if peak >= int(w["min"]) and peak <= int(w["max"]):
+			return id
+	return ""
+
+
+## 读 difficulty_profile 定档（无 max_complexity → ""）。
+static func tier_of_profile(dp: Dictionary) -> String:
+	if dp.is_empty() or not dp.has("max_complexity"):
+		return ""
+	return tier_of_peak(int(dp.get("max_complexity", -1)))
+
+
+## 窗口谓词（量产 / 自举平台的验收判据）：闭区间 [lo, hi]。
+static func in_window(peak: int, lo: int, hi: int) -> bool:
+	return peak >= lo and peak <= hi
+
+
+## 档位 → 窗口 [min, max]（Vector2i）。
+static func tier_range(tier: String) -> Vector2i:
+	var w: Dictionary = PEAK_WINDOWS.get(tier, {})
+	if w.is_empty():
+		return Vector2i(-1, -1)
+	return Vector2i(int(w["min"]), int(w["max"]))
