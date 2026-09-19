@@ -596,6 +596,35 @@ git push origin main
 
 ---
 
+## 2.9 执行状态与验收记录（2026-09-19 执行完毕）
+
+| 任务 | 状态 | 提交 | 证据 |
+|---|---|---|---|
+| 1 窗口判据进 core | ✅ | `f9caa13` + `01564a4` | 单测 4+3 项全绿；复审修复：既有 fixture 补 `max_complexity`、`PEAK_WINDOWS↔TIERS` parity 守卫、null 防御 |
+| 2 量产窗口参数 | ✅ | `348b477` | s1@8 窗口 9-20：命中 7/60≈11.7%、产出 peak=9/10/9 全在窗口内、`by_tier` 仅 hard；坏格式 exit=1；`-1` 回显"不限"；续跑 0.1s 跳过 |
+| 2 复审 I1–I4 加固 | ✅ | 同上 | 解析期校验 + 启动回显；`_window_tiers_full` 收工；`_unit_full` 窗口分支；脏目录拒跑；null 对齐 |
+| 3 存量重标 | ✅ | `8e156ef` | 8 目录 15,035 关 → 主输出 14,973（over 35 / bad 27）；四档 min/max 恰等于窗口；独立抽验 397 关零越界 |
+| 4 入库校验 | ✅ | `46f6f20` | 正例不匹配 0；反例（peak=3 命名 hard_01）被拦并给明细；`--no-window-check` 放行 |
+| 4b 跨工具口径统一 | ✅ | 同上 | verify_batch / mod_selfcheck / batch_generate 改峰值优先 + 无峰值回退标量 |
+| 5 UI 标签 | ✅ | `a24bdbb` | tile 显示"深度N"；`Difficulty.tier_text` 成为唯一档位文案源（main_menu 也统一） |
+| 6 提示预算 | ✅ | 同上 | 噩梦 3 / 困难 5 / 普通·入门不限；无画像回退标量 |
+| 7 自举平台生成入口 | ✅ | `6cbe96a` | 窗口验收 + 进度 + 连续 60 次窗口外止损 + 档案兜底提示 |
+| 8 能力档案 + 作者文档 | ✅ | 同上 | CLI 实跑 classic+z1@5×5：6 候选 1.1s、可达 入门/普通、档案结构正确；作者文档补「难度口径 v4.0」 |
+| 9-1 全量回归 | ✅ | — | `verify_all.ps1`：dotnet OK / unit 512 全过 / ui 126 全过 / integration 16 过 +1 risky → **ALL GREEN** |
+| 9-2 存量重标入库（首批） | ✅ | `544cc45` | 112 集 / 8,978 关入库（坏关 0、不匹配 0、seed 重复跳过 5,945）；catalog 重建 **10 席 / 10,409 关**（入门 4,178 / 普通 2,072 / 困难 2,608 / **噩梦 1,551**） |
+| 9-3 服务器窗口补产 | ⏸ **延迟**（有据） | — | 服务器 2 核**满载**（load 2.52，两条链各 98% CPU、1天5小时/14小时）→ 不插队。已交付一键启动器 `tools/run_window_production.sh`（含参数位与运维注意），待现有链结束后执行 |
+
+### 遗留与后续
+
+| 项 | 说明 | 建议 |
+|---|---|---|
+| 薄集 118 个（<100 关） | 首批迁移只覆盖本地 harvest 来源（o1–o10 家族）；classic/dt/z*/s* 席仍稀疏 | 用 `run_window_production.sh` 按窗口补产填满；classic 席需专门来源 |
+| 服务器补产 | 见 9-3 | 链结束后跑 `bash tools/run_window_production.sh o4_nm "9-20" "o4@5-9" user://batch_w4_o4 100 1200 o4_bianjing` |
+| `batch_generate.gd` 的 `_stats["tiers"]` 缺 `intro` 键 | 既有缺口（本次未扩大范围） | 顺手补上并加断言 |
+| 首轮新脚本加载失败 | 新 `class_name` 需一次导入注册才可见 | 无需处理；CI 里跑一次 `--headless --path . --quit` 预热即可 |
+
+---
+
 ## 3. 风险与回滚
 
 | 风险 | 缓解 | 回滚 |
