@@ -16,14 +16,15 @@ func test_tier_of() -> void:
 
 
 ## 筛选：给定一批含 difficulty_profile 的关卡，按档位筛出正确的子集。
+# v4.0：档位判据改为峰值深度（max_complexity）；difficulty 仅作紧凑度画像保留。
 func test_filter_by_tier() -> void:
 	var levels := [
-		{"name": "x", "difficulty_profile": {"difficulty": 0.1}},
-		{"name": "a", "difficulty_profile": {"difficulty": 0.5}},
-		{"name": "b", "difficulty_profile": {"difficulty": 1.0}},
-		{"name": "c", "difficulty_profile": {"difficulty": 1.8}},
-		{"name": "d", "difficulty_profile": {"difficulty": 2.5}},
-		{"name": "e", "difficulty_profile": {"difficulty": 3.9}},
+		{"name": "x", "difficulty_profile": {"max_complexity": 1, "difficulty": 0.1}},
+		{"name": "a", "difficulty_profile": {"max_complexity": 3, "difficulty": 0.5}},
+		{"name": "b", "difficulty_profile": {"max_complexity": 3, "difficulty": 1.0}},
+		{"name": "c", "difficulty_profile": {"max_complexity": 5, "difficulty": 1.8}},
+		{"name": "d", "difficulty_profile": {"max_complexity": 10, "difficulty": 2.5}},
+		{"name": "e", "difficulty_profile": {"max_complexity": 10, "difficulty": 3.9}},
 	]
 	var intro := Difficulty.filter_by_tier(levels, "intro")
 	assert_eq(intro.size(), 1, "intro 应筛出 1 条（0.1）")

@@ -32,3 +32,11 @@ func test_filter_by_tier_uses_peak() -> void:
 	]
 	assert_eq(Difficulty.filter_by_tier(lv, "hard").size(), 1)
 	assert_eq(int(Difficulty.filter_by_tier(lv, "hard")[0]["difficulty_profile"]["max_complexity"]), 10)
+	var intro := Difficulty.filter_by_tier(lv, "intro")
+	assert_eq(intro.size(), 1, "峰值 1 的盘应归 intro（旧口径会误判 hard）")
+	assert_eq(int(intro[0]["difficulty_profile"]["max_complexity"]), 1)
+
+func test_more_boundaries() -> void:
+	assert_eq(Difficulty.tier_range("nope"), Vector2i(-1, -1))       # 未知档位
+	assert_false(Difficulty.in_window(21, 9, 20))                    # 上界外侧
+	assert_eq(Difficulty.filter_by_tier([{"difficulty_profile": {}}], "nope").size(), 1)  # 未知 tier → 原样返回

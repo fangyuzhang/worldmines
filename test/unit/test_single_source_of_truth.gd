@@ -36,3 +36,12 @@ func test_tier_order_matches_difficulty_tiers() -> void:
 	## 档位名单漂移的直接后果见文件头（batch_merge 漏 intro 静默丢档）
 	assert_eq(LevelLibrary.TIER_ORDER, Difficulty.TIERS.keys(),
 		"TIER_ORDER 与 Difficulty.TIERS 漂移（档位名单应与 core/difficulty.gd 同源）")
+
+
+func test_peak_windows_match_tiers() -> void:
+	## PEAK_WINDOWS（v4 判据）与 TIERS（紧凑度画像）是同一套档位的两份副本，必须同增同减
+	assert_eq(Difficulty.PEAK_WINDOWS.keys(), Difficulty.TIERS.keys(),
+		"PEAK_WINDOWS 与 TIERS 档位名单漂移（同一套档位 id，必须同增同减）")
+	for id in Difficulty.TIERS:
+		assert_eq(Difficulty.PEAK_WINDOWS[id]["label"], Difficulty.TIERS[id]["label"],
+			"%s 档 label 两份副本漂移" % id)

@@ -1,4 +1,6 @@
 # difficulty.gd —— 难度分档（P0-B）
+# v4.0（2026-09-19）起：玩家档位改用「峰值深度」口径（见文件末 PEAK_WINDOWS / tier_of_peak）；
+# 下述标量 difficulty 口径保留作「紧凑度画像」与回退路径，不再用于定档。
 # 难度度量 = 序贯演绎的紧凑度 difficulty（Σ(1/批量)，见 puzzle_generator.difficulty_from_stats）。
 # 分档基于实际 difficulty 区间（精确），而非生成时的 target（target 是删线索的粗粒度下限，
 # 二分删块会让 difficulty 跳跃，target 无法精确命中）。
@@ -94,7 +96,10 @@ static func tier_of_peak(peak: int) -> String:
 static func tier_of_profile(dp: Dictionary) -> String:
 	if dp.is_empty() or not dp.has("max_complexity"):
 		return ""
-	return tier_of_peak(int(dp.get("max_complexity", -1)))
+	var mc: Variant = dp.get("max_complexity")
+	if mc == null:
+		return ""
+	return tier_of_peak(int(mc))
 
 
 ## 窗口谓词（量产 / 自举平台的验收判据）：闭区间 [lo, hi]。

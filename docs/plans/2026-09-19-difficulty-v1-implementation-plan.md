@@ -100,7 +100,7 @@ func test_filter_by_tier_uses_peak() -> void:
 **Step 2: 跑测试看失败**
 
 ```bash
-godot --headless --path . -s addons/gut/gut_cmdln.gd -gdir res://test/unit -gexit -gtest=test_peak_tier.gd
+godot --headless --path . -s addons/gut/gut_cmdln.gd -gdir res://test/unit -gexit
 ```
 Expected: FAIL（`tier_of_peak` 未定义）
 
@@ -159,7 +159,9 @@ static func tier_range(tier: String) -> Vector2i:
 			out.append(lv)
 ```
 
-**Step 4: 跑测试看通过**（同 Step 2 命令）→ Expected: PASS 4/4
+**Step 4: 跑测试看通过**（同 Step 2 命令，目录级）→ Expected: PASS 4/4
+
+> 必须目录级回归：只跑新文件会掩盖对既有测试的破坏（真实教训：test_difficulty_tiers 的 fixture 当时没有 max_complexity）。
 
 **Step 5: 提交**
 
