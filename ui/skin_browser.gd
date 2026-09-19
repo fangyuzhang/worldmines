@@ -18,7 +18,11 @@ func _ready() -> void:
 
 
 func _build_ui() -> void:
-	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# ⚠️ 本页根节点**不要**设 PRESET_FULL_RECT：本页是 TabContainer 的一个页，
+	# 铺满会把**页签栏一并盖住**（Control 默认 mouse_filter=STOP）→ 切到本页后
+	# 点不到其他页签、等于「回不去」（2026-09-20 实测 bug）。
+	# TabContainer 会自动把子节点拉伸到内容区大小，无需自己锚定；内部 VBox 再铺满本页即可。
+	custom_minimum_size = Vector2(0, 480)   # 给滚动网格一个下限，避免皮肤少时网格被压扁
 	var vbox := VBoxContainer.new()
 	vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	vbox.offset_left = 16

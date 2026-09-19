@@ -45,6 +45,12 @@ var _sfx_chk: CheckButton
 # ---- 数据页 ----
 var _drawing_save_chk: CheckButton
 
+## 面板固定尺寸（v3.5）：TabContainer 的默认尺寸随当前页内容变化（玩法页 8 项 vs
+## 音效页 1 项），外面又是 CenterContainer 居中 → 切页时尺寸连位置一起漂移。
+## 钉死这个尺寸后，切页只换内容、外框不动；内容超出由各页 ScrollContainer 顶上。
+## 高 520 是权衡：能完整装下最长的玩法页（含小节标题），再高会顶到标题栏与返回按钮。
+const PANEL_SIZE := Vector2(820, 520)
+
 ## 界面缩放档位（与 SettingsManager.ui_scale 一一对应）
 const UI_SCALES := [1.0, 1.25, 1.5]
 const UI_SCALE_LABELS := ["100%", "125%", "150%"]
@@ -91,6 +97,11 @@ func _build_ui() -> void:
     center.add_child(_panel)
 
     var tabs := TabContainer.new()
+    # 固定面板尺寸（v3.5）：TabContainer 的默认尺寸**由当前页内容决定** —— 玩法页 8 项、
+    # 音效页 1 项，切页时面板忽大忽小，外面又是 CenterContainer 居中，于是尺寸连着位置
+    # 一起漂移（玩家视角：换个选项卡整个界面就抖一下）。显式钉死尺寸后，切页只换内容、
+    # 不动外框。内容超出由各页自带的 ScrollContainer 顶上（见 _make_page）。
+    tabs.custom_minimum_size = PANEL_SIZE
     _panel.add_child(tabs)
 
     # 页签顺序 = 玩家使用频次：画面 / 玩法（高频）→ 音效 / 皮肤 / 数据（低频）
@@ -108,20 +119,30 @@ func _build_ui() -> void:
     var data_page := _make_page("数据")
     tabs.add_child(data_page)
 
-    _build_video_page(video_page)
-    _build_play_page(play_page)
-    _build_audio_page(audio_page)
-    _build_data_page(data_page)
+    # 注：_make_page 返回外层 ScrollContainer，往里填行走它的第 0 个子节点（VBoxContainer）
+    _build_video_page(video_page.get_child(0) as VBoxContainer)
+    _build_play_page(play_page.get_child(0) as VBoxContainer)
+    _build_audio_page(audio_page.get_child(0) as VBoxContainer)
+    _build_data_page(data_page.get_child(0) as VBoxContainer)
 
     _apply_theme()
 
 
-## 建立一页（VBoxContainer，页签名即容器名）；皮肤页是独立 .tscn，不经此函数。
-func _make_page(page_name: String) -> VBoxContainer:
+## 建立一页：外层 ScrollContainer + 内层 VBoxContainer（返回内层，调用方往上填行）。
+## 页签名挂在**外层**（TabContainer 按子节点 name 取页签名）。
+##
+## 为什么每页都要包一层滚动：面板尺寸已固定（见 _build_ui 的 tabs.custom_minimum_size），
+## 而各页项数差别很大（玩法页 8 项、音效页 1 项）。不包滚动的话，高页会被裁掉且
+## **没有任何办法访问被裁掉的部分**——固定尺寸一旦配上不定长内容，滚动就是必需品。
+func _make_page(page_name: String) -> ScrollContainer:
+    var scroll := ScrollContainer.new()
+    scroll.name = page_name
     var vbox := VBoxContainer.new()
-    vbox.name = page_name
+    vbox.name = page_name + "_inner"
     vbox.add_theme_constant_override("separation", 14)
-    return vbox
+    vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    scroll.add_child(vbox)
+    return scroll
 
 
 # ============================ 画面 ============================
