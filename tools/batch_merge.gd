@@ -28,11 +28,11 @@ func _initialize() -> void:
 
 	# 汇总各分片的关卡 + 统计
 	# 四档缺一不可：曾漏掉 "intro"，而同文件下方的遍历按四档走、`if by_tier.has(tier)` 一挡
-# → **intro 关在合并阶段被静默丢弃**（2026-09-19 架构审计发现）。档位名单应与
-# core/difficulty.gd 的 TIERS 同源，勿手写。
-var by_tier := {"intro": [], "easy": [], "normal": [], "hard": []}
+	# → **intro 关在合并阶段被静默丢弃**（2026-09-19 架构审计发现）。档位名单应与
+	# core/difficulty.gd 的 TIERS 同源，勿手写。下面 agg 的 tiers 计数同理（同一事故的第二处）。
+	var by_tier := {"intro": [], "easy": [], "normal": [], "hard": []}
 	var agg := {"total": 0, "ok": 0, "fail": 0, "dup": 0, "cross_dup": 0,
-		"tiers": {"easy": 0, "normal": 0, "hard": 0}, "elapsed_ms": 0}
+		"tiers": {"intro": 0, "easy": 0, "normal": 0, "hard": 0}, "elapsed_ms": 0}
 	var seen := {}  # 跨分片去重：不同 seed 撞出同一盘时只留第一次出现
 
 	for shard in shards:
