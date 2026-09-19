@@ -24,6 +24,16 @@ const WAVE_COVER := 0.24      # 波及格数上限 = 总格数 × COVER（连续
 const WAVE_MAX_RINGS := 4     # 扩散层数上限（安全 + 收尾时长可控）
 const WAVE_PULSE_MAX := 0.55  # 颜色脉冲相对 WP 的系数
 
+## 单格翻开 pop 参数（动效规范两件套之「单格 pop」，与 0 格波浪并存）。
+##   POP_WD 单格时长秒 · POP_SCALE_MIN 起始收缩比
+## 规范初值：p = clamp((now-t0)/0.20, 0, 1)；e = sin(PI*p/2)（单调缓出）；
+##           scale = 0.86 + 0.14*e；color = lerp(未翻开色, 已翻开色, e)。
+## ⚠️ 关键约束（否则会压到邻格）：本项目格子间隙 = 0（cell_px 即格宽、网格线居中于格缝）。
+## 规范原式的过冲项 `+ 0.10 * sin(PI*p)` 峰值可达 1.07 —— 零间隙下必然越线压住邻格。
+## 故**砍掉过冲项**：scale 严格落在 [0.86, 1.0]，只收缩、永不超过 1.0。
+const POP_WD := 0.20           # 单格 pop 时长（秒）：0.20s 内 scale 0.86→1.0、颜色插值完毕
+const POP_SCALE_MIN := 0.86    # 起始收缩比例（0.86 收缩起 → 1.0 归位；上界恒为 1.0）
+
 # 用 preload 而非全局类名：新增脚本的全局类缓存未必在加载本场景前刷新，
 # 直接用 `RippleRings` 会解析失败（单元测试首跑已复现）。纯静态方法，preload 等价。
 const RIPPLE_RINGS := preload("res://core/ripple_rings.gd")
@@ -43,6 +53,15 @@ var _batch_scheduled := false
 ## 大盘下变成 O(格子数 × 涟漪数)/帧。改为每帧只算一次几何，绘制时查表。
 var _ripple_cache: Dictionary = {}
 var _ripple_cache_ms: int = -1
+
+## 单格 pop 登记表：Vector2i -> 该格本次翻开的起始时刻(ms)。
+## 每次收到该格翻开事件就登记一次（泛洪时每格各一次，与波浪并存）。
+## pop 结束（超过 POP_WD）后由 _cull_pops 从表中移除 → 不会无限增长。
+var _pops: Dictionary = {}
+## pop 逐帧缓存（Vector2i -> {"s": 缩放, "e": 缓出进度 0..1}）。
+## 与 _ripple_cache 同范式：按 ms 重建、绘制只查表。两套缓存独立，互不覆盖。
+var _pop_cache: Dictionary = {}
+var _pop_cache_ms: int = -1
 
 ## 提示高亮（一步直推）：结论格描边 + 依据格描边（推理文字见 HintPanel 浮动窗口）
 var _hint_steps: Array = []
@@ -127,6 +146,9 @@ func _on_session_started() -> void:
 	_batch_scheduled = false
 	_ripple_cache.clear()
 	_ripple_cache_ms = -1
+	_pops.clear()
+	_pop_cache.clear()
+	_pop_cache_ms = -1
 	_clear_hint()
 	_clear_reject()
 	_load_drawing()
@@ -189,8 +211,20 @@ func _on_cell_changed(pos: Vector2i) -> void:
 		if cell != null and cell.state == Cell.State.REVEALED:
 			# 总闸（翻开动效）关闭时连批次都不登记，逻辑上不可能产生波浪/单格 pop。
 			if _reveal_effects_enabled():
+				# 单格 pop：每次翻开该格都登记一次（数字格/任意单格都有反馈）。
+				# 泛洪时每个被翻开的格子都会各走一次本分支 → 每格各有一次 pop，与波浪并存。
+				_register_pop(pos)
 				_queue_reveal_batch(pos)
 	queue_redraw()
+
+
+## 登记一次单格 pop（记录起始时刻）。同一格重复 emit 只保留最新一次起算时刻。
+## 复用「登记表 + _process 重算 + 按 ms 缓存」范式（不引入 Tween / 节点）。
+## 总闸由调用方 _on_cell_changed 把关；此处只负责登记并唤醒逐帧回调。
+func _register_pop(pos: Vector2i) -> void:
+	_pops[pos] = float(Time.get_ticks_msec())
+	_pop_cache_ms = -1
+	_request_frames()
 
 
 ## 把一个「已翻开」格登记进本帧泛洪批次（去重）。首个登记者负责安排延迟结算。
@@ -268,8 +302,9 @@ func _layout() -> void:
 func _process(_delta: float) -> void:
 	var now_ms := Time.get_ticks_msec()
 	var dirty := false
-	# 总开关关闭：立刻丢弃在途波浪与缓存 → 下一次重绘即静止态（无收缩、无高亮残留）。
-	if not _reveal_effects_enabled() and not _ripples.is_empty():
+	# 总开关关闭：立刻丢弃在途波浪/单格 pop 与缓存 → 下一次重绘即静止态
+	#（无收缩、无高亮残留；pop 清掉后该格 scale 回 1.0、颜色走状态色）。
+	if not _reveal_effects_enabled() and (not _ripples.is_empty() or not _pops.is_empty()):
 		_clear_wave_state()
 		dirty = true
 	if _hint_until_ms > 0 and now_ms >= _hint_until_ms:
@@ -286,10 +321,15 @@ func _process(_delta: float) -> void:
 		_cull_waves(now_ms)
 		_ripple_cache_ms = -1  # 每帧时钟推进 → 缓存作废，绘制时按当前 ms 重算
 		dirty = true
+	# 单格 pop：与波浪同帧驱动、互不覆盖；结束后从登记表移除（防无限增长）。
+	if not _pops.is_empty():
+		_cull_pops(now_ms)
+		_pop_cache_ms = -1
+		dirty = true
 	if dirty:
 		queue_redraw()
 	# 无动画时彻底关掉逐帧回调：静态棋盘不需要每帧醒来
-	if _ripples.is_empty() and _hint_until_ms < 0 and _reject_until_ms < 0:
+	if _ripples.is_empty() and _pops.is_empty() and _hint_until_ms < 0 and _reject_until_ms < 0:
 		set_process(false)
 
 
@@ -314,6 +354,27 @@ func _cull_waves(now_ms: int) -> bool:
 	return true
 
 
+## 淘汰已结束（超过 POP_WD）的单格 pop。返回是否发生了变化。
+## 结束后从登记表移除 → 表不无限增长；移除后该格查不到 pop → scale 恰为 1.0（无残留）。
+## 抽成带参函数：测试可注入时钟验证收尾，不依赖真实时间。
+func _cull_pops(now_ms: int) -> bool:
+	if _pops.is_empty():
+		return false
+	var before := _pops.size()
+	var dur_ms: float = POP_WD * 1000.0
+	# 不用 Dictionary.filter（本引擎版本无此方法）：手工保留未结束项。
+	var kept := {}
+	for pos in _pops:
+		if float(now_ms) - float(_pops[pos]) < dur_ms:
+			kept[pos] = _pops[pos]
+	if kept.size() == before:
+		return false
+	_pops = kept
+	if _pops.is_empty():
+		_pop_cache.clear()
+	return true
+
+
 # ============ 渲染（§8.4.8 逐格绘制，全部色值经 ThemeManager） ============
 
 func _draw() -> void:
@@ -328,9 +389,9 @@ func _draw() -> void:
 	var font := ThemeDB.fallback_font
 	var endgame: bool = board.state != Board.GameState.PLAYING
 	# 总开关状态：关闭时本帧走静止绘制路径（无收缩/无脉冲/线色原值）。
-	# 这里再兜底清一次在途波浪，保证任何重绘入口（窗口缩放/主题切换/测试直调）都无残留。
+	# 这里再兜底清一次在途波浪/单格 pop，保证任何重绘入口（窗口缩放/主题切换/测试直调）都无残留。
 	var effects_on := _reveal_effects_enabled()
-	if not effects_on and not _ripples.is_empty():
+	if not effects_on and (not _ripples.is_empty() or not _pops.is_empty()):
 		_clear_wave_state()
 
 	for r in size.y:
@@ -342,9 +403,11 @@ func _draw() -> void:
 			if cell == null:
 				continue
 			var rect := Rect2(board_origin + Vector2(c, r) * cell_px, Vector2(cell_px, cell_px))
-			# 波浪几何（§8.4.5）：受波及格原地收缩（0 间隙禁位移/放大；直接改绘制矩形，免矩阵）
-			var rrect: Rect2 = _ripple_rect_for(pos, rect) if effects_on else rect
-			_draw_cell(pos, cell, rrect, scale, font, endgame)
+			# 翻开动效几何：波浪 + 单格 pop **相乘**（s_total = s_pop × s_wave）。
+			# 两者都 ≤1.0 → 零间隙下相乘只会更小、天然不可能压到邻格。关闭总闸时走原矩形。
+			var rrect: Rect2 = _reveal_rect_for(pos, rect) if effects_on else rect
+			# pop 颜色插值进度（0→1；无 pop = 1.0 = 状态色），供 _draw_cell 混色
+			_draw_cell(pos, cell, rrect, scale, font, endgame, _pop_progress(pos) if effects_on else 1.0)
 
 	# 波浪颜色脉冲（0 间隙方案：位移/放大被禁 → 颜色通道增强）
 	if not endgame and effects_on:
@@ -421,7 +484,7 @@ func _draw_hint(scale: float, _font: Font) -> void:
 
 @warning_ignore("shadowed_variable_base_class")
 @warning_ignore("unused_parameter")
-func _draw_cell(pos: Vector2i, cell: Cell, rect: Rect2, scale: float, font: Font, endgame: bool) -> void:
+func _draw_cell(pos: Vector2i, cell: Cell, rect: Rect2, scale: float, font: Font, endgame: bool, pop_e: float = 1.0) -> void:
 	match cell.state:
 		Cell.State.HIDDEN:
 			draw_rect(rect, ThemeManager.cell_hidden())
@@ -431,7 +494,12 @@ func _draw_cell(pos: Vector2i, cell: Cell, rect: Rect2, scale: float, font: Font
 			draw_rect(rect, ThemeManager.cell_hidden())
 			_draw_question(rect, scale, font)
 		Cell.State.REVEALED:
-			draw_rect(rect, ThemeManager.cell_revealed())
+			# 单格 pop 的颜色通道：由「瞬变」改为 0.20s 内 未翻开色 → 已翻开色 插值。
+			# pop_e = sin(PI*p/2) ∈ [0,1]；无 pop（静止/未登记）时传 1.0 → 精确取状态色。
+			var base := ThemeManager.cell_revealed()
+			if pop_e < 1.0:
+				base = ThemeManager.cell_hidden().lerp(base, pop_e)
+			draw_rect(rect, base)
 			_draw_clue_value(cell, rect, scale, font)
 
 
@@ -571,12 +639,72 @@ func _reveal_effects_enabled() -> bool:
 	return bool(v) if v is bool else true
 
 
-## 丢弃全部波浪与几何缓存（新对局 / 关掉总开关时复用）。
-## 缓存必须同步清空——否则绘制层会残留收缩与线色高亮（收尾无残留是硬约束）。
+## 丢弃全部翻开动效状态（波浪 + 单格 pop）与几何缓存（新对局 / 关掉总开关时复用）。
+## 缓存必须同步清空——否则绘制层会残留收缩与线色高亮（收尾无残留是硬约束）；
+## pop 清空后该格查不到记录 → scale 回 1.0、颜色走状态色（同样无残留）。
 func _clear_wave_state() -> void:
 	_ripples.clear()
 	_ripple_cache.clear()
 	_ripple_cache_ms = -1
+	_pops.clear()
+	_pop_cache.clear()
+	_pop_cache_ms = -1
+
+
+# ============ 单格 pop（动效规范两件套之一；与波浪**相乘**合成） ============
+
+## 合成波浪 + pop 的绘制矩形：先取波浪收缩，再叠加 pop 收缩（两次都是绕中心相乘）。
+## s_total = s_pop × s_wave，两者都落在 [0,1] → 相乘只会更小，零间隙下天然不可能压到邻格。
+func _reveal_rect_for(pos: Vector2i, rect: Rect2) -> Rect2:
+	return _pop_rect_for(pos, _ripple_rect_for(pos, rect))
+
+
+## pop 活跃期返回原地收缩后的绘制矩形（在传入矩形上绕中心乘 s_pop）；否则原样返回。
+func _pop_rect_for(pos: Vector2i, rect: Rect2) -> Rect2:
+	var s := _pop_scale_at(pos)
+	if s >= 1.0:
+		return rect
+	var half: Vector2 = rect.size * 0.5 * s
+	var cpos: Vector2 = rect.position + rect.size * 0.5
+	return Rect2(cpos - half, half * 2.0)
+
+
+## 该格当前 pop 缩放：POP_SCALE_MIN + (1-POP_SCALE_MIN)*e（e 单调缓出）。
+## 无记录（未登记 / 已结束被淘汰）→ 1.0（静止态，恒 <= 1.0）。at_ms 仅供测试注入时钟。
+func _pop_scale_at(pos: Vector2i, at_ms: int = -1) -> float:
+	var rec := _pop_rec(pos, at_ms)
+	return float(rec["s"]) if not rec.is_empty() else 1.0
+
+
+## 该格 pop 颜色插值进度 e ∈ [0,1]；无记录 → 1.0（= 已翻开色，静止态）。
+## at_ms 仅供测试注入时钟。
+func _pop_progress(pos: Vector2i, at_ms: int = -1) -> float:
+	var rec := _pop_rec(pos, at_ms)
+	return float(rec["e"]) if not rec.is_empty() else 1.0
+
+
+## 查该格 pop 缓存记录（必要时按当前/注入时钟重算）。无记录返回空字典。
+func _pop_rec(pos: Vector2i, at_ms: int = -1) -> Dictionary:
+	if _pops.is_empty():
+		return {}
+	var now_ms := at_ms if at_ms > 0 else Time.get_ticks_msec()
+	if _pop_cache_ms != now_ms:
+		_rebuild_pop_cache(now_ms)
+	return _pop_cache.get(pos, {})
+
+
+## 重算 pop 缩放/进度缓存。at_ms 仅供测试注入时钟（<= 0 → 真实时钟）。
+## p = clamp((now - t0)/POP_WD, 0, 1)；e = sin(PI*p/2)（单调缓出 0→1）；
+## s = POP_SCALE_MIN + (1-POP_SCALE_MIN)*e ∈ [0.86, 1.0]（已砍过冲项，见 POP_WD 注释）。
+func _rebuild_pop_cache(at_ms: int = -1) -> void:
+	_pop_cache.clear()
+	_pop_cache_ms = at_ms if at_ms > 0 else Time.get_ticks_msec()
+	var now_ms := _pop_cache_ms
+	var dur_ms: float = POP_WD * 1000.0
+	for pos in _pops:
+		var p: float = clampf(float(now_ms - float(_pops[pos])) / dur_ms, 0.0, 1.0)
+		var e: float = sin(PI * p * 0.5)
+		_pop_cache[pos] = {"e": e, "s": POP_SCALE_MIN + (1.0 - POP_SCALE_MIN) * e}
 
 
 # ============ 开格波浪（§8.4.5 重写：图距离分环 + 相位差；0 间隙只走收缩/颜色通道） ============
