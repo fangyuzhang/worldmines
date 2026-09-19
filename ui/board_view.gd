@@ -12,10 +12,33 @@ var board_origin: Vector2 = Vector2.ZERO
 ## 鼠标悬停格（-1,-1 = 无）
 var hover_pos: Vector2i = Vector2i(-1, -1)
 
-## 涟漪动效队列（§8.4.5）：{pos: Vector2i, t0: float（ msec ）， k: int 级联序号}
+## 开格波浪参数（§8.4.5；0 间隙棋盘：波浪的本质是**相位差**，不是位移）。
+##   WS 每环延迟秒 · WD 单格时长秒 · GLOW 网格线高亮上限 · WP 颜色脉冲权重
+##   SHRINK 填充收缩幅度 · COVER 波及范围比例 · MAX_RINGS 扩散层数上限
+const WAVE_WS := 0.040        # 每环延迟（秒）：环 0/1 同时开始，环 2 起逐环错开
+const WAVE_WD := 0.30         # 单格时长（秒）：waveE = sin(PI*t/WD)，唯一能精确回到 0
+const WAVE_GLOW := 0.85       # 网格线混向高亮色的强度上限（本方案主通道）
+const WAVE_WP := 0.75         # 颜色脉冲权重：峰值 alpha = WP * WAVE_PULSE_MAX
+const WAVE_SHRINK := 0.04     # 填充原地收缩幅度（0 间隙下禁位移/放大）
+const WAVE_COVER := 0.24      # 波及格数上限 = 总格数 × COVER（连续参数，跨环按 frac 衰减）
+const WAVE_MAX_RINGS := 4     # 扩散层数上限（安全 + 收尾时长可控）
+const WAVE_PULSE_MAX := 0.55  # 颜色脉冲相对 WP 的系数
+
+# 用 preload 而非全局类名：新增脚本的全局类缓存未必在加载本场景前刷新，
+# 直接用 `RippleRings` 会解析失败（单元测试首跑已复现）。纯静态方法，preload 等价。
+const RIPPLE_RINGS := preload("res://core/ripple_rings.gd")
+
+## 开格波浪：同一时间最多一条（新波浪覆盖旧波浪，天然防叠加）。
+## 每条记录 = { pos 环0起点, t0 触发时刻ms, ring_of{格->环}, amp_of{格->振幅},
+##              total_rings 最后一环, ring_sizes 各环格数, cells / target 供渐隐校验 }
 var _ripples: Array = []
-var _ripple_window_start_ms: int = -1
-## 涟漪逐帧缓存（Vector2i -> {"s": 缩放} / {"off": 平移}）。
+## 泛洪批次识别（规范硬规则一：只有 0 格泛洪引发的联动才播波浪）。
+## 一次同步泛洪会连发多个 cell_state_changed，单格翻开只发一个；故先攒本帧「唯一格集合」，
+## call_deferred 到同步 emit 全部结束后再结算——此时才能判定是单格还是联动。
+var _pending_batch: Array = []
+var _pending_seen: Dictionary = {}
+var _batch_scheduled := false
+## 波浪逐帧缓存（Vector2i -> {"s": 填充缩放, "g": 波浪强度 0..1}）。
 ## 原实现对每个格子 O(1) 扫描整个涟漪队列（连锁翻开时可达数十条），
 ## 大盘下变成 O(格子数 × 涟漪数)/帧。改为每帧只算一次几何，绘制时查表。
 var _ripple_cache: Dictionary = {}
@@ -99,7 +122,9 @@ var _pause_menu: PopupPanel
 func _on_session_started() -> void:
 	_connect_board()
 	_ripples.clear()
-	_ripple_window_start_ms = -1
+	_pending_batch.clear()
+	_pending_seen.clear()
+	_batch_scheduled = false
 	_ripple_cache.clear()
 	_ripple_cache_ms = -1
 	_clear_hint()
@@ -156,20 +181,39 @@ func _connect_board() -> void:
 
 func _on_cell_changed(pos: Vector2i) -> void:
 	_clear_hint()  # 盘面变化 → 旧推理结论失效
-	# 涟漪触发：任意格子 revealed 状态变更（含连锁翻开）
-	if GameSession.board == null:
-		return
-	var cell := GameSession.board.grid.get_cell(pos)
-	if cell != null and cell.state == Cell.State.REVEALED:
-		if SettingsManager != null and SettingsManager.ripple_enabled:
-			var now_ms := Time.get_ticks_msec()
-			if now_ms - _ripple_window_start_ms > 400:
-				_ripple_window_start_ms = now_ms
-				_ripples.clear()  # 上一波动画窗口关闭，新窗口从 k=0 重新计
-			_ripples.append({"pos": pos, "t0": now_ms, "k": _ripples.size()})
-			_ripple_cache_ms = -1
-			_request_frames()
+	# 波浪触发：只认「0 格泛洪引发的联动」（规范硬规则一），单格翻开不播。
+	# 判定方案：一次同步泛洪会连发 N 个 cell_state_changed，单格翻开只发 1 个 →
+	# 按「本帧唯一格数」判定即可，无需改动 core/board.gd（保持最小改动、不碰核心）。
+	if GameSession.board != null and GameSession.board.grid != null:
+		var cell := GameSession.board.grid.get_cell(pos)
+		if cell != null and cell.state == Cell.State.REVEALED:
+			if SettingsManager != null and SettingsManager.ripple_enabled:
+				_queue_reveal_batch(pos)
 	queue_redraw()
+
+
+## 把一个「已翻开」格登记进本帧泛洪批次（去重）。首个登记者负责安排延迟结算。
+func _queue_reveal_batch(pos: Vector2i) -> void:
+	if _pending_seen.has(pos):
+		return
+	# 终极模式 _star_new_revealed 会对同一格重复 emit；去重后单格翻开仍只算 1 → 不会误判泛洪。
+	_pending_seen[pos] = true
+	_pending_batch.append(pos)
+	if not _batch_scheduled:
+		_batch_scheduled = true
+		call_deferred("_settle_reveal_batch")
+
+
+## 同步泛洪全部 emit 结束后结算：唯一格数 >= 2 才算联动 → 以首个格为环 0 起点播波浪。
+## 单格（数字格/雷格）翻开时唯一格数 = 1 → 不产生波浪。
+func _settle_reveal_batch() -> void:
+	_batch_scheduled = false
+	var batch := _pending_batch
+	_pending_batch = []
+	_pending_seen = {}
+	if batch.size() < 2:
+		return
+	_start_wave(batch[0])
 
 
 ## 无猜-专家档：翻开请求被拒绝（该格无法纯逻辑推出）。
@@ -232,12 +276,10 @@ func _process(_delta: float) -> void:
 		_reject_pos = Vector2i(-1, -1)
 		_reject_until_ms = -1
 		dirty = true
-	# 涟漪存在期间持续重绘；队列清空即停止（§8.4.5 性能条款）
+	# 波浪存在期间持续重绘；队列清空即停止（§8.4.5 性能条款）
 	if not _ripples.is_empty():
-		_ripples = _ripples.filter(func(rp): return now_ms - rp["t0"] < 400)
-		if _ripples.is_empty():
-			_ripple_window_start_ms = -1
-		_ripple_cache_ms = -1  # 队列变了（含超时淘汰）→ 缓存作废
+		_cull_waves(now_ms)
+		_ripple_cache_ms = -1  # 每帧时钟推进 → 缓存作废，绘制时按当前 ms 重算
 		dirty = true
 	if dirty:
 		queue_redraw()
@@ -246,10 +288,25 @@ func _process(_delta: float) -> void:
 		set_process(false)
 
 
-## 有动画要做时唤醒逐帧回调（由涟漪/提示/拒绝反馈各自调用）。
+## 有动画要做时唤醒逐帧回调（由波浪/提示/拒绝反馈各自调用）。
 func _request_frames() -> void:
 	if not is_processing():
 		set_process(true)
+
+
+## 淘汰已结束（超过总时长）的波浪。返回是否发生了变化。
+## 抽成带参函数：测试可注入时钟验证「结束后精确回到静止态」，不依赖真实时间。
+func _cull_waves(now_ms: int) -> bool:
+	if _ripples.is_empty():
+		return false
+	var before := _ripples.size()
+	_ripples = _ripples.filter(func(rp): return float(now_ms) - float(rp["t0"]) < float(rp["total_ms"]))
+	if _ripples.size() == before:
+		return false
+	if _ripples.is_empty():
+		# 波浪结束：必须清缓存，否则绘制层会残留高亮（收尾无残留是硬约束）
+		_ripple_cache.clear()
+	return true
 
 
 # ============ 渲染（§8.4.8 逐格绘制，全部色值经 ThemeManager） ============
@@ -275,13 +332,17 @@ func _draw() -> void:
 			if cell == null:
 				continue
 			var rect := Rect2(board_origin + Vector2(c, r) * cell_px, Vector2(cell_px, cell_px))
-			# 涟漪几何（§8.4.5）：中心格缩放弹跳 / 邻格向远离中心平移（直接改绘制矩形，免矩阵）
+			# 波浪几何（§8.4.5）：受波及格原地收缩（0 间隙禁位移/放大；直接改绘制矩形，免矩阵）
 			var rrect: Rect2 = _ripple_rect_for(pos, rect)
 			_draw_cell(pos, cell, rrect, scale, font, endgame)
 
-	# 邻格颜色微闪（§8.4.5：深色 5% 提亮 / 亮色 5% 压暗）
+	# 波浪颜色脉冲（0 间隙方案：位移/放大被禁 → 颜色通道增强）
 	if not endgame:
-		_draw_ripple_flashes()
+		_draw_wave_color_pulse()
+
+	# 网格线独立绘制遍（本方案主通道）：必须晚于填充与脉冲，且几何取自**原格矩形**——
+	# 填充收缩时线不动，「网格永远笔直」成为结构性保证。
+	_draw_grid_lines()
 
 	# 终局揭晓（非 PLAYING）：全部雷位画雷体 + 引爆格 danger 底
 	if endgame:
@@ -354,16 +415,13 @@ func _draw_cell(pos: Vector2i, cell: Cell, rect: Rect2, scale: float, font: Font
 	match cell.state:
 		Cell.State.HIDDEN:
 			draw_rect(rect, ThemeManager.cell_hidden())
-			draw_rect(rect, ThemeManager.grid_line(), false, 1.0)
 		Cell.State.FLAGGED:
 			_draw_flag(rect, scale)
 		Cell.State.QUESTION:
 			draw_rect(rect, ThemeManager.cell_hidden())
-			draw_rect(rect, ThemeManager.grid_line(), false, 1.0)
 			_draw_question(rect, scale, font)
 		Cell.State.REVEALED:
 			draw_rect(rect, ThemeManager.cell_revealed())
-			draw_rect(rect, ThemeManager.grid_line(), false, 1.0)
 			_draw_clue_value(cell, rect, scale, font)
 
 
@@ -437,7 +495,6 @@ func _draw_question(rect: Rect2, scale: float, font: Font) -> void:
 @warning_ignore("shadowed_variable_base_class")
 func _draw_flag(rect: Rect2, scale: float) -> void:
 	draw_rect(rect, ThemeManager.cell_hidden())
-	draw_rect(rect, ThemeManager.grid_line(), false, 1.0)
 	var x: float = rect.position.x
 	var y: float = rect.position.y
 	# 旗杆 Rect2(x+22, y+10, 2, 18)
@@ -489,9 +546,76 @@ func _draw_hover_highlight(center_pos: Vector2i, with_neighbors: bool) -> void:
 			draw_rect(nrect, ThemeManager.hover_neighbor_overlay())
 
 
-# ============ 涟漪动效（§8.4.5：150ms 中心弹跳 / 200ms 邻格平移 / 50ms 级联 / ≤400ms） ============
+# ============ 开格波浪（§8.4.5 重写：图距离分环 + 相位差；0 间隙只走收缩/颜色通道） ============
 
-## pos 参与活跃涟漪时返回调整后的绘制矩形（中心缩放 / 邻格位移），否则原样返回。
+## 以 start 为环 0 起点构建一条波浪：RippleRings 按图距离分环 → 逐环延迟 → cover 渐隐。
+## 环内顺序不影响观感（同环延迟相同）；0 间隙下禁用位移与放大。
+func _start_wave(start: Vector2i) -> void:
+	var board: Board = GameSession.board
+	if board == null or board.grid == null:
+		return
+	var board_size: Vector2i = board.grid.size()
+	# 拓扑无关：邻接关系由 grid 提供（矩形 8 邻 / 异形邻接表皆可）。
+	var rings: Array = RIPPLE_RINGS.build(start, board_size, board.grid.get_neighbors, WAVE_MAX_RINGS)
+	if rings.is_empty():
+		return
+	var total_cells := 0
+	for ring in rings:
+		total_cells += (ring as Array).size()
+	# cover 是连续参数：波及格数达到 总格数 × COVER 即停；跨过目标的那一环按
+	# frac = (target - 已累计) / 环内格数 衰减振幅，避免「多一格就整环全亮」的阶跃。
+	var target: int = maxi(int(floor(float(total_cells) * WAVE_COVER)), 1)
+	var ring_of := {}
+	var amp_of := {}
+	var ring_sizes: Array = []
+	var cum := 0
+	var last_ring := 0
+	for i in rings.size():
+		var ring: Array = rings[i]
+		var n: int = ring.size()
+		if n <= 0:
+			continue
+		var frac := 1.0
+		if cum + n > target:
+			frac = clampf(float(target - cum) / float(n), 0.0, 1.0)
+		if frac > 0.0:
+			for p in ring:
+				ring_of[p] = i
+				amp_of[p] = frac
+			ring_sizes.append(n)
+			last_ring = i
+		cum += n
+		if cum >= target:
+			break
+	if ring_of.is_empty():
+		return
+	# 新波浪覆盖旧波浪：同一时间只有一条，天然满足「泛洪进行中不叠加新波浪」。
+	_ripples.clear()
+	_ripples.append({
+		"pos": start,
+		"t0": float(Time.get_ticks_msec()),
+		"ring_of": ring_of,
+		"amp_of": amp_of,
+		"total_rings": last_ring,
+		"ring_sizes": ring_sizes,
+		"cells": ring_of.size(),
+		"target": target,
+		# 总时长 = 最后一环的起始延迟 + 单格时长（_process 依此淘汰，保证结束后无残留）
+		"total_ms": (RIPPLE_RINGS.delay_of(last_ring, WAVE_WS) + WAVE_WD) * 1000.0,
+	})
+	_ripple_cache_ms = -1
+	_request_frames()
+
+
+## 波浪高亮色（从主题派生，禁止硬编码 RGB）：以翻开底色为底向主题强调色提亮。
+## 深浅两种模式下都明显「比网格线亮」，且随主题/皮肤切换自动跟随。
+func _wave_glow_color() -> Color:
+	var c: Color = ThemeManager.cell_revealed().lerp(ThemeManager.accent(), 0.7)
+	c.a = 1.0
+	return c
+
+
+## pos 处于活跃波浪时返回「原地收缩」后的绘制矩形；否则原样返回。
 ## 几何每帧统一算一次（_rebuild_ripple_cache），此处只查表——避免 O(格子数 × 涟漪数)。
 func _ripple_rect_for(pos: Vector2i, rect: Rect2) -> Rect2:
 	if _ripples.is_empty():
@@ -501,63 +625,78 @@ func _ripple_rect_for(pos: Vector2i, rect: Rect2) -> Rect2:
 	var e: Dictionary = _ripple_cache.get(pos, {})
 	if e.is_empty():
 		return rect
-	if e.has("s"):
-		# 中心格：缩放 1.0 → 1.15 → 1.0，150ms（矩形绕中心缩放）
-		var half: Vector2 = rect.size * 0.5 * float(e["s"])
-		var cpos: Vector2 = rect.position + rect.size * 0.5
-		return Rect2(cpos - half, half * 2.0)
-	# 邻格：向远离中心方向平移（按格子尺寸缩放，200ms）
-	return Rect2(rect.position + (e["off"] as Vector2), rect.size)
+	# 0 间隙棋盘禁位移与放大（会压到邻格）：只做绕中心的原地收缩。
+	var half: Vector2 = rect.size * 0.5 * float(e["s"])
+	var cpos: Vector2 = rect.position + rect.size * 0.5
+	return Rect2(cpos - half, half * 2.0)
 
 
-## 重算涟漪几何缓存。命中语义与原实现一致：**首个**影响到该格的涟漪决定它的形变。
-func _rebuild_ripple_cache() -> void:
+## 重算波浪几何/强度缓存。at_ms 仅供测试注入时钟（<= 0 → 用真实时钟）。
+## 时间轴：t = (now - t0)/1000 - delay_of(环)，waveE = sin(PI*clamp(t/WD,0,1))*振幅。
+## waveE 是唯一能精确回到 0 的曲线 → 动画收尾绝不残留（s 回 1.0、线色回原值）。
+func _rebuild_ripple_cache(at_ms: int = -1) -> void:
 	_ripple_cache.clear()
-	_ripple_cache_ms = Time.get_ticks_msec()
-	if _ripples.is_empty() or GameSession.board == null or GameSession.board.grid == null:
-		return
-	var now_ms := _ripple_cache_ms
-	var dirs := [Vector2i(0, -1), Vector2i(1, -1), Vector2i(1, 0), Vector2i(1, 1),
-			Vector2i(0, 1), Vector2i(-1, 1), Vector2i(-1, 0), Vector2i(-1, -1)]
-	for rp in _ripples:
-		var t: float = (float(now_ms - rp["t0"]) - 50.0 * rp["k"]) / 1000.0
-		if t < 0.0:
-			continue
-		var center: Vector2i = rp["pos"]
-		if not _ripple_cache.has(center):
-			var tc: float = clampf(t / 0.15, 0.0, 1.0)
-			_ripple_cache[center] = {"s": 1.0 + 0.15 * sin(PI * tc)}
-		var tn: float = clampf(t / 0.2, 0.0, 1.0)
-		var amp: float = 3.0 * (float(cell_px) / 48.0) * sin(PI * tn)
-		for d in dirs:
-			var np: Vector2i = center + d
-			if _ripple_cache.has(np) or not GameSession.board.grid.in_board(np):
-				continue
-			var dir: Vector2 = (Vector2(np.x, np.y) - Vector2(center.x, center.y)).normalized()
-			_ripple_cache[np] = {"off": dir * amp}
-
-
-## 邻格颜色微闪：深色模式叠加 5% 提亮 / 亮色模式叠加 5% 压暗（§8.4.5）。
-func _draw_ripple_flashes() -> void:
+	_ripple_cache_ms = at_ms if at_ms > 0 else Time.get_ticks_msec()
 	if _ripples.is_empty():
 		return
-	var now_ms := Time.get_ticks_msec()
-	var flash := Color(1, 1, 1, 0.05)
-	if ThemeManager.mode == "light":
-		flash = Color(0, 0, 0, 0.05)
+	var now_ms := _ripple_cache_ms
 	for rp in _ripples:
-		var t: float = (float(now_ms - rp["t0"]) - 50.0 * rp["k"]) / 1000.0
-		if t < 0.0 or t > 0.2:
+		var t0: float = float(rp["t0"])
+		var ring_of: Dictionary = rp["ring_of"]
+		var amp_of: Dictionary = rp["amp_of"]
+		for pos in ring_of:
+			var ring: int = int(ring_of[pos])
+			var t: float = float(now_ms - t0) / 1000.0 - RIPPLE_RINGS.delay_of(ring, WAVE_WS)
+			var e: float = sin(PI * clampf(t / WAVE_WD, 0.0, 1.0)) * float(amp_of.get(pos, 1.0))
+			if e <= 0.0:
+				continue  # t<=0（未开始）或 t>=WD（已结束）→ 不入缓存 = 精确静止态
+			if _ripple_cache.has(pos):
+				continue  # 命中语义：首条影响该格的波浪决定其形变
+			_ripple_cache[pos] = {"s": 1.0 - WAVE_SHRINK * e, "g": e}
+
+
+## 波浪颜色脉冲：受波及格按 WP * 0.55 * waveE 叠加高亮色（峰值约 0.41，双主题可见）。
+func _draw_wave_color_pulse() -> void:
+	if _ripples.is_empty():
+		return
+	if _ripple_cache_ms != Time.get_ticks_msec():
+		_rebuild_ripple_cache()
+	var glow := _wave_glow_color()
+	for pos in _ripple_cache:
+		var g: float = float(_ripple_cache[pos]["g"])
+		var a: float = WAVE_WP * WAVE_PULSE_MAX * g
+		if a <= 0.0:
 			continue
-		var center: Vector2i = rp["pos"]
-		var fade: float = 1.0 - clampf(t / 0.2, 0.0, 1.0)
-		var f := flash
-		f.a *= fade
-		for d in [Vector2i(0, -1), Vector2i(1, -1), Vector2i(1, 0), Vector2i(1, 1), Vector2i(0, 1), Vector2i(-1, 1), Vector2i(-1, 0), Vector2i(-1, -1)]:
-			var np: Vector2i = center + d
-			if GameSession.board != null and GameSession.board.grid != null and GameSession.board.grid.in_board(np):
-				var nrect := Rect2(board_origin + Vector2(np.x, np.y) * cell_px, Vector2(cell_px, cell_px))
-				draw_rect(nrect, f)
+		var col := glow
+		col.a = a
+		draw_rect(Rect2(board_origin + Vector2(pos.x, pos.y) * cell_px, Vector2(cell_px, cell_px)), col)
+
+
+## 网格线独立绘制遍（0 间隙方案的主通道）。
+## 几何永远取自**原格矩形**，填充即使在收缩，线层也不动 → 线永远笔直。
+## 受波及格描边颜色按 glow*waveE 混向高亮色；waveE=0 时精确回到 grid_line 原色（无残留）。
+func _draw_grid_lines() -> void:
+	if GameSession.board == null or GameSession.board.grid == null:
+		return
+	var board: Board = GameSession.board
+	var board_size: Vector2i = board.grid.size()
+	var line := ThemeManager.grid_line()
+	var glow := _wave_glow_color()
+	var has_wave := not _ripples.is_empty()
+	if has_wave and _ripple_cache_ms != Time.get_ticks_msec():
+		_rebuild_ripple_cache()
+	for r in board_size.y:
+		for c in board_size.x:
+			var pos := Vector2i(c, r)
+			if board.grid.get_cell(pos) == null:
+				continue  # 异形拓扑洞格（与填充遍同口径）
+			var rect := Rect2(board_origin + Vector2(c, r) * cell_px, Vector2(cell_px, cell_px))
+			var col := line
+			if has_wave:
+				var e: Dictionary = _ripple_cache.get(pos, {})
+				if not e.is_empty():
+					col = line.lerp(glow, WAVE_GLOW * float(e["g"]))
+			draw_rect(rect, col, false, 1.0)
 
 
 # ============ 输入（§10.9；一切入口第一行检查 state == PLAYING） ============
