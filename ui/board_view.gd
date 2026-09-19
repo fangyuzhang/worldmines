@@ -15,6 +15,7 @@ var hover_pos: Vector2i = Vector2i(-1, -1)
 ## 开格波浪参数（§8.4.5；0 间隙棋盘：波浪的本质是**相位差**，不是位移）。
 ##   WS 每环延迟秒 · WD 单格时长秒 · GLOW 网格线高亮上限 · WP 颜色脉冲权重
 ##   SHRINK 填充收缩幅度 · COVER 波及范围比例 · MAX_RINGS 扩散层数上限
+##   DELAY_CAP 错峰上限秒 · TAIL_MULT 末环长尾倍率 · LINE_GAIN 高亮线宽增益
 const WAVE_WS := 0.040        # 每环延迟（秒）：环 0/1 同时开始，环 2 起逐环错开
 const WAVE_WD := 0.30         # 单格时长（秒）：waveE = sin(PI*t/WD)，唯一能精确回到 0
 const WAVE_GLOW := 0.85       # 网格线混向高亮色的强度上限（本方案主通道）
@@ -23,6 +24,19 @@ const WAVE_SHRINK := 0.04     # 填充原地收缩幅度（0 间隙下禁位移/
 const WAVE_COVER := 0.24      # 波及格数上限 = 总格数 × COVER（连续参数，跨环按 frac 衰减）
 const WAVE_MAX_RINGS := 4     # 扩散层数上限（安全 + 收尾时长可控）
 const WAVE_PULSE_MAX := 0.55  # 颜色脉冲相对 WP 的系数
+## 错峰延迟上限（秒）：末环起播最多比环 0 晚这么久（`_ring_delay_sec` 逐环 min 封顶）。
+## 为什么要显式封顶：环延迟随环序线性增长 (ring-1)*WS，泛洪范围一大（大盘 / 掀开整片）
+## 最后一环就会等到几百毫秒才起播，观感从「一圈推开」变成「拖沓」。
+## 封顶后超出的环共享同一启动时刻——波前在末环「追上」并一起收束，总时长因此有硬上限
+## ＝ WAVE_DELAY_CAP + WAVE_WD * WAVE_TAIL_MULT（见 total_ms 计算）。
+const WAVE_DELAY_CAP := 0.12
+## 末环渐慢长尾倍率：只有**最后一环**的波形时长放大到 WAVE_WD 的该倍率。
+## 目的：波前推到最外圈时不再「整环同时亮灭」地硬切，而是慢慢收束（渐慢长尾）。
+## 内部环时长不变 → 既有节奏、既有测试都不受影响。
+const WAVE_TAIL_MULT := 1.5
+## 波浪高亮描边相对静止网格线的线宽增益：线宽 = 1.0 + GAIN*g ∈ [1.0, 1.6]。
+## 只作用于被波浪波及、且该帧确有强度（g>0）的格——g=0 时精确回 1.0（非波浪帧零变化）。
+const WAVE_LINE_GAIN := 0.6
 
 ## 单格翻开 pop 参数（动效规范两件套之「单格 pop」，与 0 格波浪并存）。
 ##   POP_WD 单格时长秒 · POP_SCALE_MIN 起始收缩比
@@ -40,14 +54,12 @@ const RIPPLE_RINGS := preload("res://core/ripple_rings.gd")
 
 ## 开格波浪：同一时间最多一条（新波浪覆盖旧波浪，天然防叠加）。
 ## 每条记录 = { pos 环0起点, t0 触发时刻ms, ring_of{格->环}, amp_of{格->振幅},
-##              total_rings 最后一环, ring_sizes 各环格数, cells / target 供渐隐校验 }
+##              total_rings 最后一环, ring_sizes 各环格数, ring_delays 各环起播延迟,
+##              cells / target 供渐隐校验 }
 var _ripples: Array = []
-## 泛洪批次识别（规范硬规则一：只有 0 格泛洪引发的联动才播波浪）。
-## 一次同步泛洪会连发多个 cell_state_changed，单格翻开只发一个；故先攒本帧「唯一格集合」，
-## call_deferred 到同步 emit 全部结束后再结算——此时才能判定是单格还是联动。
-var _pending_batch: Array = []
-var _pending_seen: Dictionary = {}
-var _batch_scheduled := false
+## 波浪触发源（v3.4 起）：Board.flood_planned 的**权威计划**——origin / cells / zero_flood。
+## 此前在 UI 侧攒 cell_state_changed 做「同帧唯一格数 >= 2」的启发式判泛洪，已删除：
+## 那个启发式会把 chord（逐目标展开）与终极模式揭星误报成 0 格泛洪（core 侧新增本信号即为取代它）。
 ## 波浪逐帧缓存（Vector2i -> {"s": 填充缩放, "g": 波浪强度 0..1}）。
 ## 原实现对每个格子 O(1) 扫描整个涟漪队列（连锁翻开时可达数十条），
 ## 大盘下变成 O(格子数 × 涟漪数)/帧。改为每帧只算一次几何，绘制时查表。
@@ -141,9 +153,6 @@ var _pause_menu: PopupPanel
 func _on_session_started() -> void:
 	_connect_board()
 	_ripples.clear()
-	_pending_batch.clear()
-	_pending_seen.clear()
-	_batch_scheduled = false
 	_ripple_cache.clear()
 	_ripple_cache_ms = -1
 	_pops.clear()
@@ -199,23 +208,38 @@ func _connect_board() -> void:
 		return
 	if not GameSession.board.cell_state_changed.is_connected(_on_cell_changed):
 		GameSession.board.cell_state_changed.connect(_on_cell_changed)
+	# v3.4：波浪触发改用 Board 的**权威泛洪计划**（取代旧的「同帧唯一格数 >= 2」启发式）。
+	if not GameSession.board.flood_planned.is_connected(_on_flood_planned):
+		GameSession.board.flood_planned.connect(_on_flood_planned)
 
 
 func _on_cell_changed(pos: Vector2i) -> void:
 	_clear_hint()  # 盘面变化 → 旧推理结论失效
-	# 波浪触发：只认「0 格泛洪引发的联动」（规范硬规则一），单格翻开不播。
-	# 判定方案：一次同步泛洪会连发 N 个 cell_state_changed，单格翻开只发 1 个 →
-	# 按「本帧唯一格数」判定即可，无需改动 core/board.gd（保持最小改动、不碰核心）。
+	# 单格 pop：每次翻开该格都登记一次（数字格/任意单格都有反馈）。
+	# 泛洪时每个被翻开的格子都会各走一次本分支 → 每格各有一次 pop，与波浪并存。
+	# 注意：波浪**不在这里**触发——它只由 Board.flood_planned(zero_flood=true) 驱动（见下）。
 	if GameSession.board != null and GameSession.board.grid != null:
 		var cell := GameSession.board.grid.get_cell(pos)
-		if cell != null and cell.state == Cell.State.REVEALED:
-			# 总闸（翻开动效）关闭时连批次都不登记，逻辑上不可能产生波浪/单格 pop。
-			if _reveal_effects_enabled():
-				# 单格 pop：每次翻开该格都登记一次（数字格/任意单格都有反馈）。
-				# 泛洪时每个被翻开的格子都会各走一次本分支 → 每格各有一次 pop，与波浪并存。
-				_register_pop(pos)
-				_queue_reveal_batch(pos)
+		if cell != null and cell.state == Cell.State.REVEALED and _reveal_effects_enabled():
+			_register_pop(pos)
 	queue_redraw()
+
+
+## v3.4：0 格泛洪的权威计划 → 以 origin 为环 0、cells 为实际翻开集合起一条波浪（按环错峰）。
+##
+## 为什么只认 zero_flood=true：单格翻开（数字格 / FR 的 0 / 孤立 0 格）的反馈是
+## _on_cell_changed 登记的单格 pop；把它塞进环序错峰既无意义又会与 pop 打架。
+## chord 逐目标展开（每个目标各发一次 zero_flood=false）同理不产生波浪。
+##
+## 时序承诺：本信号在逐格 cell_state_changed 全部发完后、**同一个同步调用内**发出，
+## 此刻棋盘状态已是最终态。这里只做「演出」，绝不回写状态、也绝不延迟任何状态变更——
+## 动画的错峰只体现在绘制层（_ripples / _ripple_cache），与 Board 的时序完全解耦。
+func _on_flood_planned(origin: Vector2i, cells: Array[Vector2i], zero_flood: bool) -> void:
+	if not zero_flood:
+		return
+	if not _reveal_effects_enabled():
+		return
+	_start_wave(origin, cells)
 
 
 ## 登记一次单格 pop（记录起始时刻）。同一格重复 emit 只保留最新一次起算时刻。
@@ -225,30 +249,6 @@ func _register_pop(pos: Vector2i) -> void:
 	_pops[pos] = float(Time.get_ticks_msec())
 	_pop_cache_ms = -1
 	_request_frames()
-
-
-## 把一个「已翻开」格登记进本帧泛洪批次（去重）。首个登记者负责安排延迟结算。
-func _queue_reveal_batch(pos: Vector2i) -> void:
-	if _pending_seen.has(pos):
-		return
-	# 终极模式 _star_new_revealed 会对同一格重复 emit；去重后单格翻开仍只算 1 → 不会误判泛洪。
-	_pending_seen[pos] = true
-	_pending_batch.append(pos)
-	if not _batch_scheduled:
-		_batch_scheduled = true
-		call_deferred("_settle_reveal_batch")
-
-
-## 同步泛洪全部 emit 结束后结算：唯一格数 >= 2 才算联动 → 以首个格为环 0 起点播波浪。
-## 单格（数字格/雷格）翻开时唯一格数 = 1 → 不产生波浪。
-func _settle_reveal_batch() -> void:
-	_batch_scheduled = false
-	var batch := _pending_batch
-	_pending_batch = []
-	_pending_seen = {}
-	if batch.size() < 2:
-		return
-	_start_wave(batch[0])
 
 
 ## 无猜-专家档：翻开请求被拒绝（该格无法纯逻辑推出）。
@@ -709,10 +709,21 @@ func _rebuild_pop_cache(at_ms: int = -1) -> void:
 
 # ============ 开格波浪（§8.4.5 重写：图距离分环 + 相位差；0 间隙只走收缩/颜色通道） ============
 
-## 以 start 为环 0 起点构建一条波浪：RippleRings 按图距离分环 → 逐环延迟 → cover 渐隐。
+## 环 ring 相对环 0 的起播延迟（秒）= 时间模型 delay_of 再按 WAVE_DELAY_CAP 封顶。
+## 封顶策略见常量注释：环再多也不让末环无限等，总时长因此有硬上限。
+func _ring_delay_sec(ring: int) -> float:
+	return minf(RIPPLE_RINGS.delay_of(ring, WAVE_WS), WAVE_DELAY_CAP)
+
+
+## 以 start 为环 0 起点构建一条波浪：RippleRings 按图距离分环 → 逐环错峰延迟 → cover 渐隐。
 ## 环内顺序不影响观感（同环延迟相同）；0 间隙下禁用位移与放大。
-func _start_wave(start: Vector2i) -> void:
-	# 双保险：即便调用方（如 _settle_reveal_batch）没拦，关闭时也绝不建立波浪。
+##
+## cells：Board.flood_planned 给的**本次实际 HIDDEN→REVEALED 集合**。
+##   非空 → 波浪只波及这些格（不再去点亮尚未翻开的格；环由 RippleRings 按图距离算出，
+##          再与泛洪集合取交——环序错峰保证是「一圈推开」而不是「整片闪一下」）。
+##   空   → 退化路径：按几何环取全盘（保留给直接调用 / 单测的兼容入口）。
+func _start_wave(start: Vector2i, cells: Array = []) -> void:
+	# 双保险：即便调用方（_on_flood_planned）没拦，关闭时也绝不建立波浪。
 	if not _reveal_effects_enabled():
 		return
 	var board: Board = GameSession.board
@@ -723,9 +734,23 @@ func _start_wave(start: Vector2i) -> void:
 	var rings: Array = RIPPLE_RINGS.build(start, board_size, board.grid.get_neighbors, WAVE_MAX_RINGS)
 	if rings.is_empty():
 		return
+	# 权威泛洪集合（非空时只让「本次真正翻开的格」参与波浪）。
+	var flood_only := not cells.is_empty()
+	var in_flood := {}
+	for p in cells:
+		in_flood[p] = true
+	# 逐环收集成员：flood_only 时与泛洪集合取交（空环直接跳过，不影响环序）。
+	var ring_members: Array = []
 	var total_cells := 0
 	for ring in rings:
-		total_cells += (ring as Array).size()
+		var members: Array = []
+		for p in (ring as Array):
+			if not flood_only or in_flood.has(p):
+				members.append(p)
+		ring_members.append(members)
+		total_cells += members.size()
+	if total_cells <= 0:
+		return
 	# cover 是连续参数：波及格数达到 总格数 × COVER 即停；跨过目标的那一环按
 	# frac = (target - 已累计) / 环内格数 衰减振幅，避免「多一格就整环全亮」的阶跃。
 	var target: int = maxi(int(floor(float(total_cells) * WAVE_COVER)), 1)
@@ -734,16 +759,16 @@ func _start_wave(start: Vector2i) -> void:
 	var ring_sizes: Array = []
 	var cum := 0
 	var last_ring := 0
-	for i in rings.size():
-		var ring: Array = rings[i]
-		var n: int = ring.size()
+	for i in ring_members.size():
+		var members: Array = ring_members[i]
+		var n: int = members.size()
 		if n <= 0:
 			continue
 		var frac := 1.0
 		if cum + n > target:
 			frac = clampf(float(target - cum) / float(n), 0.0, 1.0)
 		if frac > 0.0:
-			for p in ring:
+			for p in members:
 				ring_of[p] = i
 				amp_of[p] = frac
 			ring_sizes.append(n)
@@ -753,7 +778,14 @@ func _start_wave(start: Vector2i) -> void:
 			break
 	if ring_of.is_empty():
 		return
-	# 新波浪覆盖旧波浪：同一时间只有一条，天然满足「泛洪进行中不叠加新波浪」。
+	# 环起播延迟表（0..last_ring）：仅供演出/校验读取，单调不降且末值 ≤ WAVE_DELAY_CAP。
+	var ring_delays: Array = []
+	for i in range(last_ring + 1):
+		ring_delays.append(_ring_delay_sec(i))
+	# 打架处理：**新波浪覆盖旧波浪**（clear 后只留这一条）。
+	# 为什么选覆盖而非合并/排队：① 同一时间只有一条波浪 → 零叠加风险、收尾判断简单（无残留）；
+	# ② 玩家连点时后一次点击才是意图焦点，旧波把 t0 归零重放会与新波互相打断；
+	# ③ 分环只影响绘制层，覆盖不会改变任何格的状态（状态早已是最终态）。
 	_ripples.clear()
 	_ripples.append({
 		"pos": start,
@@ -762,13 +794,21 @@ func _start_wave(start: Vector2i) -> void:
 		"amp_of": amp_of,
 		"total_rings": last_ring,
 		"ring_sizes": ring_sizes,
+		"ring_delays": ring_delays,
 		"cells": ring_of.size(),
 		"target": target,
-		# 总时长 = 最后一环的起始延迟 + 单格时长（_process 依此淘汰，保证结束后无残留）
-		"total_ms": (RIPPLE_RINGS.delay_of(last_ring, WAVE_WS) + WAVE_WD) * 1000.0,
+		# 总时长 = 末环起播延迟 + 末环时长（含长尾）→ _process 依此淘汰，结束后无残留。
+		# 上界 = WAVE_DELAY_CAP + WAVE_WD * WAVE_TAIL_MULT（错峰与收尾都有硬上限）。
+		"total_ms": (_ring_delay_sec(last_ring) + WAVE_WD * _ring_wd_mult(last_ring, last_ring)) * 1000.0,
 	})
 	_ripple_cache_ms = -1
 	_request_frames()
+
+
+## 环 ring 的波形时长倍率：只有最后一环走「渐慢长尾」（WAVE_TAIL_MULT），其余环恒为 1。
+## last_ring 由调用方传入（同一记录的末环），避免在记录尚未入队时反查全局状态。
+func _ring_wd_mult(ring: int, last_ring: int) -> float:
+	return WAVE_TAIL_MULT if ring == last_ring else 1.0
 
 
 ## 波浪高亮色（从主题派生，禁止硬编码 RGB）：以翻开底色为底向主题强调色提亮。
@@ -796,8 +836,9 @@ func _ripple_rect_for(pos: Vector2i, rect: Rect2) -> Rect2:
 
 
 ## 重算波浪几何/强度缓存。at_ms 仅供测试注入时钟（<= 0 → 用真实时钟）。
-## 时间轴：t = (now - t0)/1000 - delay_of(环)，waveE = sin(PI*clamp(t/WD,0,1))*振幅。
-## waveE 是唯一能精确回到 0 的曲线 → 动画收尾绝不残留（s 回 1.0、线色回原值）。
+## 时间轴：t = (now - t0)/1000 - 环起播延迟(ring)，waveE = sin(PI*clamp(t/WD,0,1))*振幅。
+## 末环的 WD 放大 WAVE_TAIL_MULT（渐慢长尾）；waveE 是唯一能精确回到 0 的曲线，
+## 故动画收尾绝不残留（s 回 1.0、线色回原值）——长尾只改时长，不改「归零」性质。
 func _rebuild_ripple_cache(at_ms: int = -1) -> void:
 	_ripple_cache.clear()
 	_ripple_cache_ms = at_ms if at_ms > 0 else Time.get_ticks_msec()
@@ -808,10 +849,12 @@ func _rebuild_ripple_cache(at_ms: int = -1) -> void:
 		var t0: float = float(rp["t0"])
 		var ring_of: Dictionary = rp["ring_of"]
 		var amp_of: Dictionary = rp["amp_of"]
+		var last_ring: int = int(rp["total_rings"])
 		for pos in ring_of:
 			var ring: int = int(ring_of[pos])
-			var t: float = float(now_ms - t0) / 1000.0 - RIPPLE_RINGS.delay_of(ring, WAVE_WS)
-			var e: float = sin(PI * clampf(t / WAVE_WD, 0.0, 1.0)) * float(amp_of.get(pos, 1.0))
+			var wd: float = WAVE_WD * _ring_wd_mult(ring, last_ring)
+			var t: float = float(now_ms - t0) / 1000.0 - _ring_delay_sec(ring)
+			var e: float = sin(PI * clampf(t / wd, 0.0, 1.0)) * float(amp_of.get(pos, 1.0))
 			if e <= 0.0:
 				continue  # t<=0（未开始）或 t>=WD（已结束）→ 不入缓存 = 精确静止态
 			if _ripple_cache.has(pos):
@@ -836,9 +879,17 @@ func _draw_wave_color_pulse() -> void:
 		draw_rect(Rect2(board_origin + Vector2(pos.x, pos.y) * cell_px, Vector2(cell_px, cell_px)), col)
 
 
+## 波浪高亮描边的线宽：静止 1.0，随波浪强度 g 线性加粗到 1.0 + WAVE_LINE_GAIN。
+## 收尾质感项「涟漪线的线宽」：波前经过时线略粗 → 边缘更锐、更「立」；
+## g=0 时精确回 1.0（非波浪帧与旧行为逐像素一致，避免静态棋盘观感变化）。
+func _grid_line_width(g: float) -> float:
+	return 1.0 + WAVE_LINE_GAIN * clampf(g, 0.0, 1.0)
+
+
 ## 网格线独立绘制遍（0 间隙方案的主通道）。
 ## 几何永远取自**原格矩形**，填充即使在收缩，线层也不动 → 线永远笔直。
-## 受波及格描边颜色按 glow*waveE 混向高亮色；waveE=0 时精确回到 grid_line 原色（无残留）。
+## 受波及格描边颜色按 glow*waveE 混向高亮色、线宽按 _grid_line_width(waveE) 略粗；
+## waveE=0 时精确回到 grid_line 原色 + 1.0 线宽（无残留）。抗锯齿只在被波及格开启。
 func _draw_grid_lines() -> void:
 	if GameSession.board == null or GameSession.board.grid == null:
 		return
@@ -856,11 +907,15 @@ func _draw_grid_lines() -> void:
 				continue  # 异形拓扑洞格（与填充遍同口径）
 			var rect := Rect2(board_origin + Vector2(c, r) * cell_px, Vector2(cell_px, cell_px))
 			var col := line
+			var lw := 1.0
 			if has_wave:
 				var e: Dictionary = _ripple_cache.get(pos, {})
 				if not e.is_empty():
-					col = line.lerp(glow, WAVE_GLOW * float(e["g"]))
-			draw_rect(rect, col, false, 1.0)
+					var g: float = float(e["g"])
+					col = line.lerp(glow, WAVE_GLOW * g)
+					lw = _grid_line_width(g)
+			# 只有被波浪波及（lw>1）时才开抗锯齿：静态帧保持原绘制路径不变。
+			draw_rect(rect, col, false, lw, lw > 1.0)
 
 
 # ============ 输入（§10.9；一切入口第一行检查 state == PLAYING） ============

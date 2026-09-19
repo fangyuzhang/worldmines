@@ -1,4 +1,6 @@
-# settings_manager.gd —— 设置持久化（5 项，实时生效）【plan1.1 §10.7.2】
+# settings_manager.gd —— 设置持久化（22 项，实时生效）【plan1.1 §10.7.2】
+# 注：其中 hint_font_size / hint_window_pos / hint_window_size 是 HintPanel 的**内部布局状态**
+# （由面板拖拽/缩放写回），不是给玩家在设置页调的项——故设置界面不为其提供入口。
 # 设置实时生效：改即存盘即广播；UI 面板控件只调 setter，不直改变量。
 extends Node
 ## autoload 名：SettingsManager
@@ -32,7 +34,13 @@ var hint_mode: int = 0
 # 免费提示充能：开启后提示按钮按 120 秒周期充能；
 # 充满时用提示不影响「完美通关」，未充满即用则标记本局为非完美（对标 doc10 §3.2）。
 var hint_charge: bool = true
-# 无猜模式（对标 doc10 §2）：0=关闭 / 1=专家（禁止猜测：拒绝翻开推不出来的格）。
+# 无猜模式（对标 doc10 §2），**三档**：
+#   0 = 关闭
+#   1 = 专家（禁止猜测：拒绝翻开当前信息推不出来的格；GameSession.NO_GUESS_EXPERT）
+#   2 = 终极（玩家新翻开的线索格一律打星号遮蔽，难度来自信息缺失而非禁止操作；
+#            GameSession.NO_GUESS_ULTIMATE；下面三个 ult_* 开关仅此档生效）
+# 原注释只写了 0/1，漏了第 2 档——hud.gd / hint_coordinator.gd / game_session.gd 与
+# test_ultimate_mode.gd 都按 == 2 判定，三档是既成事实（v3.4 更正）。
 # 红线兼容实现——不移动雷位，故不破坏 R01 与关卡数据；详见 GameSession 同名小节注释。
 var no_guess_mode: int = 0
 # ---- 终极模式附加开关（对标 doc10 §2.3）----
@@ -56,7 +64,11 @@ var fullscreen: bool = false
 # 默认开启；若真机反馈「误触太多」可在此关闭（两者绑定一个开关，避免设置项膨胀）。
 var quick_actions: bool = true
 # 重开确认弹窗：玩家在弹窗勾选「不再提示」后置 false，重开直接执行（v3.3）。
+# 有了设置界面入口，玩家才能在勾过「不再提示」之后改回来。
 var restart_confirm: bool = true
+# 界面缩放档位（v3.4，任务三「代价低且已支持」项）：只改 _apply_content_scale 的 canvas_items
+# 参考分辨率，不触碰任何棋盘 / UI 布局代码；取值 1.0 / 1.25 / 1.5。全局生效（棋盘一并缩放，属预期）。
+var ui_scale: float = 1.0
 
 
 func _ready() -> void:
@@ -96,6 +108,7 @@ func load_cfg() -> void:
     fullscreen = _get_bool(cfg, "fullscreen", false)
     quick_actions = _get_bool(cfg, "quick_actions", true)
     restart_confirm = _get_bool(cfg, "restart_confirm", true)
+    ui_scale = clampf(float(cfg.get_value("game", "ui_scale", 1.0)), 1.0, 1.5)
     # 注：AudioManager.enabled 的开机同步已移入 AudioManager._ready——本 autoload 注册序(4)
     # 早于 AudioManager(7)，此处反向引用会因 _ready 时序失败，导致持久化的音效开关开机不生效；
     # 且测试手工实例化 SettingsManager 调 load_cfg 时不应产生改写真实 AudioManager 的全局副作用。
@@ -134,6 +147,7 @@ func save() -> void:
     cfg.set_value("game", "fullscreen", fullscreen)
     cfg.set_value("game", "quick_actions", quick_actions)
     cfg.set_value("game", "restart_confirm", restart_confirm)
+    cfg.set_value("game", "ui_scale", ui_scale)
     cfg.save(PATH)
 
 
@@ -267,6 +281,14 @@ func set_restart_confirm(v: bool) -> void:
     save()
 
 
+## 界面缩放档位（v3.4）：改参考分辨率 → 立即重设 content scale，全局生效；再落盘 + 广播。
+func set_ui_scale(v: float) -> void:
+    ui_scale = clampf(v, 1.0, 1.5)
+    _apply_content_scale()
+    save()
+    settings_changed.emit()
+
+
 ## 获取 root window。autoload 下 get_window() 在嵌入/多窗口场景可能返回非主窗口对象，
 ## 导致 mode/content_scale 设置落空；直接用 SceneTree.root 更可靠。
 func _root_window() -> Window:
@@ -282,7 +304,10 @@ func _apply_content_scale() -> void:
         return
     var vp_w := int(ProjectSettings.get_setting("display/window/size/viewport_width", 1280))
     var vp_h := int(ProjectSettings.get_setting("display/window/size/viewport_height", 720))
-    win.content_scale_size = Vector2i(vp_w, vp_h)
+    # 界面缩放：参考分辨率 = 设计分辨率 / 缩放系数（系数越大 → canvas_items 整体越大）。
+    # 变量名避开 `scale`（Control/CanvasItem 属性名，会触发本工程的遮蔽体检）。
+    var factor := maxf(ui_scale, 0.01)
+    win.content_scale_size = Vector2i(int(float(vp_w) / factor), int(float(vp_h) / factor))
     win.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
     win.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
     win.content_scale_stretch = Window.CONTENT_SCALE_STRETCH_FRACTIONAL

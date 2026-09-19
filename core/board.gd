@@ -10,6 +10,29 @@ signal game_won
 signal game_lost
 ## 〔plan1.1 §10.2.3〕唯一许可的新增信号：单格状态变更（渲染/动效监听）。不得触碰判负/判胜逻辑。
 signal cell_state_changed(pos: Vector2i)
+## 〔v3.4 动效计划〕一次泛洪的完整计划（整批，一次性发出）——给 UI 一个「本次泛洪」的
+## **权威来源**，取代 UI 侧「同帧唯一格数 ≥ 2」的启发式（后者会把终极模式揭星 / chord 误报）。
+##
+## 与 cell_state_changed 的分工：前者是**逐格状态事实**（渲染 / 单格 pop 用），本信号是
+## **整批计划**（波浪分环 / 错峰排队用）。时序：本次泛洪的逐格 cell_state_changed 全部发完后，
+## 在**同一个同步调用内**发一次本信号（不引入跨帧 / 不延迟；泛洪同步语义不变）。
+##
+## 载荷：
+##   origin     —— 泛洪起点（玩家点的那一格 / 初始 revealed 声明的格 / chord 的目标格）
+##   cells      —— 本次实际由 HIDDEN → REVEALED 的全部格（含 origin；不含已翻开格与雷格）
+##   zero_flood —— 是否「真·0 格泛洪」：本次确实发生了**多格连锁展开**（cells.size() >= 2）。
+##                 false = 只是单格翻开（数字格 / FR 的 0 / 孤立 0 格：邻域无未翻开安全格）。
+##
+## zero_flood 判定依据（覆盖全部调用来源）：
+##   · 唯一实现点 _flood_reveal 只在起点为「零值安全格」时才会把邻格压栈——内置变体由
+##     ClueEngine.zero_safe_dirs 裁决、规则关卡由 RulePlugin.zero_safe_neighbors 裁决
+##     （FR 的 0 = 右邻必雷，永不扩散）；故 cells.size() >= 2 当且仅当
+##     「由变体语义下的 0 值格引发了一次真正的连锁」。
+##   · reveal()（玩家点击 / chord 逐目标）→ 0 值格连锁 true、数字格 false；
+##   · reveal_initial()（关卡载入 revealed 列表）→ 与 reveal() 同语义（0 值格 true）；
+##   · reveal_stars() / _star_new_revealed()（终极模式揭星）→ **不经过 _flood_reveal**，
+##     只发 cell_state_changed，故**不会**发出本信号（不会被误判为 0 格泛洪）。
+signal flood_planned(origin: Vector2i, cells: Array[Vector2i], zero_flood: bool)
 
 var grid: GridInterface = null
 var total_mines: int = 0
@@ -394,6 +417,8 @@ func reveal_initial(pos: Vector2i) -> void:
 func _flood_reveal(start: Vector2i) -> void:
         var stack: Array[Vector2i] = [start]
         var visited := {}
+        # 〔v3.4〕收集本次泛洪实际翻开的格，结束后一次性告知 UI（见 flood_planned 信号）。
+        var cells: Array[Vector2i] = []
         while not stack.is_empty():
                 var pos: Vector2i = stack.pop_back()
                 if visited.has(pos):
@@ -405,12 +430,24 @@ func _flood_reveal(start: Vector2i) -> void:
                 if cell.is_mine:
                         continue
                 cell.state = Cell.State.REVEALED
+                cells.append(pos)
                 cell_state_changed.emit(pos)
                 _run_comps_reveal(pos)  # 扩散翻开的格子同样触发组件（P4 沙箱 on_reveal）
                 for nb in _flood_neighbors(pos):
                         var ncell: Cell = grid.get_cell(nb)
                         if ncell != null and ncell.state == Cell.State.HIDDEN:
                                 stack.append(nb)
+        _emit_flood_planned(start, cells)
+
+
+## 〔v3.4〕泛洪结束后同帧发出「本次泛洪计划」（详见 flood_planned 信号注释）。
+## zero_flood = cells.size() >= 2：_flood_reveal 仅当起点为变体语义下的「0 值安全格」时才会
+## 把邻格压栈，故「多格」⟺「真·0 格泛洪」；单格（数字格 / FR 的 0 / 孤立 0 格）→ false。
+## cells 为空（起点不可翻：非 HIDDEN 或雷格）时不发，避免 UI 收到空计划。
+func _emit_flood_planned(origin: Vector2i, cells: Array[Vector2i]) -> void:
+        if cells.is_empty():
+                return
+        flood_planned.emit(origin, cells, cells.size() >= 2)
 
 
 ## 返回「该格线索值为 0（或等价于无雷）」时保证安全的邻格（变体感知）。
