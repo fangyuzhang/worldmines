@@ -126,13 +126,21 @@ static func play_path(mode: String, size: int, tier: String, idx: int) -> String
 
 ## 把库里的一关落成「可对局的文件」，返回路径（失败 → ""）。
 ## 对局链路按文件路径工作（含存档记住 level_path），故这里做一次物化。
-## **每次都重写**（不缓存命中跳过）：库内容再导入会更新，物化文件若缓存旧盘
-## 玩家就会玩到过期数据——一次几 KB 的写盘换取「永远与库一致」，值得。
+##
+## 缓存策略（2026-09-19 改）：按**源集文件 mtime** 判断是否需要重写 ——
+## 源集比物化文件新（或源 mtime 读不到）才重写。库再导入后集文件 mtime 变新 → 照常更新，
+## 原设计意图（"永远与库一致"）不变；而同一关反复进入不再每次写盘
+## （原实现每次都写，桌面 0.5ms 尚可，移动端单次写盘 10~50ms 级，是进关卡顿的来源之一）。
+## 读不到源 mtime 时保守重写：宁可多写一次，也不能让玩家玩到过期数据。
 static func materialize(mode: String, size: int, tier: String, idx: int) -> String:
 	var path := play_path(mode, size, tier, idx)
 	var lv := get_level(mode, size, tier, idx)
 	if lv.is_empty():
 		return ""
+	var src_mtime := FileAccess.get_modified_time("%s/%s/%d/%s.json" % [DIR, mode, size, tier])
+	if src_mtime > 0 and FileAccess.file_exists(path) \
+			and FileAccess.get_modified_time(path) >= src_mtime:
+		return path
 	if DirAccess.make_dir_recursive_absolute(PLAY_DIR) != OK:
 		return ""
 	var f := FileAccess.open(path, FileAccess.WRITE)
