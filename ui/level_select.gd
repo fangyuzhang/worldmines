@@ -94,6 +94,8 @@ var _dots_box: VBoxContainer = null
 var _stat_label: Label = null
 var _play_btn: Button = null
 var _title_label: Label = null
+## 预热好的对局场景（首次进关的卡顿源：board_view 脚本首次编译 + 场景构建）。
+var _board_view_prewarmed: PackedScene = null
 
 var _scroll_accum := 0.0
 
@@ -120,6 +122,19 @@ func _ready() -> void:
 	_consume_pending_focus()
 	# Mod 加载 / 卸载 → 注册表变化 → 选关页内容实时增减（卸载时 mod_api 会注销其规则）
 	ModAPI.events.on(EventBus.MOD_LOADED, _on_mods_changed)
+	_prewarm_board_view()
+
+
+## 预热对局场景：首次进入关卡的同步重活（`board_view.gd` 33KB 脚本首次编译 +
+## 场景/资源注册）发生在玩家点「开始」之后，观感是「点了没反应、画面静止」。
+## 这里提前 load 把这份开销挪到玩家还在浏览变体列表的时候。
+## 延后两帧执行：先让选关页自己画出来，再吃这份开销；失败无妨（只是没预热，不影响任何功能）。
+func _prewarm_board_view() -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var packed := load("res://ui/board_view.tscn")
+	if packed is PackedScene:
+		_board_view_prewarmed = packed
 
 
 ## Mod 生命周期回调：弹窗开着时只记脏标记（不打断玩家），关闭后再重建。
@@ -1549,7 +1564,10 @@ func _on_play() -> void:
 	if _lib_mode and _tier != "":
 		_play_btn.disabled = true
 		_play_btn.text = "载入中…"
-		await get_tree().process_frame
+		# 等**真正画完一帧**再干重活（而非 process_frame：那只是帧回调，绘制在其之后）。
+		# 后面紧跟着同步重活（start_level + change_scene_to_file 里首次构建 board_view），
+		# 若在绘制前就阻塞，按钮状态永远上不了屏 —— 玩家观感是「点了没反应，画面静止」。
+		await RenderingServer.frame_post_draw
 		# await 期间玩家可能已关掉弹窗（控件已释放）：失败路径触碰控件前必须判活
 		var lp := LevelLibrary.materialize(str(m["id"]), s, _tier, _selected)
 		if lp == "":
