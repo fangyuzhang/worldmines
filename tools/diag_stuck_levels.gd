@@ -36,7 +36,9 @@ func _initialize() -> void:
 				if step.state == "safe":
 					b.reveal(step.pos)
 				else:
-					b.toggle_flag(step.pos)
+					# 同 proof_log
+					# 不允许进入
+					b.toggle_flag(step.pos, false)
 				applied += 1
 			rounds += 1
 			if applied == 0:

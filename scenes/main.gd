@@ -168,7 +168,11 @@ func _gui_input(event: InputEvent) -> void:
 				MOUSE_BUTTON_LEFT:
 					board.reveal(pos)
 				MOUSE_BUTTON_RIGHT:
-					board.toggle_flag(pos)
+					# 与 ui/board_view.gd 保持同一口径：右键出不出 ? 由设置决定（默认两态）。
+					# 本场景绕过 GameSession 直连 board，所以必须自己读设置——否则设置对它无效
+					# （2026-09-20 核验发现：此前这里永远走三态）。
+					var allow_q: bool = true if SettingsManager == null else SettingsManager.question_mark_enabled
+					board.toggle_flag(pos, allow_q)
 			queue_redraw()
 
 

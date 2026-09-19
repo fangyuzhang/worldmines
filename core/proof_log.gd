@@ -60,7 +60,10 @@ static func build(level: Dictionary, max_rounds: int = MAX_ROUNDS) -> Dictionary
 			elif step.state == "mine":
 				# 登记「演绎确证的雷」再插旗：确证集要跨轮次保留，否则会丢信息导致假卡死
 				b.mark_proven_mine(step.pos)
-				b.toggle_flag(step.pos)
+				# 确证雷
+				# 一旦被翻成
+				# 该格若已被玩家插旗
+				b.toggle_flag(step.pos, false)
 			applied += 1
 			if b.state != Board.GameState.PLAYING:
 				break
