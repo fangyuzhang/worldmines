@@ -253,6 +253,24 @@ static func _print_axis_check(combos: Array, shard_count: int) -> void:
 		if i < combos.size():
 			var c: Dictionary = combos[i]
 			print("   [%3d] %-14s clue=%-8s globals=%s" % [i, str(c["id"]), str(c["clue"]), str(c.get("globals", []))])
+	# 签名预筛预估（与生成循环同一判据）：开跑前就知道有多少组合会被剔除，避免事后意外少产
+	var sig_forbid: Array = []
+	for c in combos:
+		# 范围与生成循环、`build_modes` 三处一致：只判混合档（单算子席位不过滤）
+		var g_n: int = (c.get("globals", []) as Array).size()
+		if not (g_n >= 2 or (g_n == 1 and str(c["clue"]) != "classic")):
+			continue
+		var ids: Array[String] = [str(c["clue"])]
+		for g in c.get("globals", []):
+			ids.append(str(g))
+		for side in SIZES:
+			var mines: int = RuleFeasibility.standard_mines(side)
+			if str(RuleSignature.compat_all(ids, Vector2i(side, side), mines)["verdict"]) == RuleSignature.FORBID:
+				sig_forbid.append(str(c["id"]))
+				break
+	print("  签名预筛预估：%d/%d 个组合在标准雷数下会被 FORBID 剔除（与选关页同判据）" % [sig_forbid.size(), combos.size()])
+	if sig_forbid.size() > 0:
+		print("    前 8: %s" % ", ".join(sig_forbid.slice(0, mini(8, sig_forbid.size()))))
 	if problems.is_empty():
 		print("[口径自检] ✅ 官方三轴（新口径）—— 可以开始量产")
 	else:
@@ -495,6 +513,7 @@ func _initialize() -> void:
 	var design_skip: Array = []
 	var partial: Array = []
 	var diff_unreach: Array = []
+	var signature_skip: Array = []  # 签名 FORBID（逻辑冗余/矛盾）剔除单元明细
 	var fallback_units: Array = []  # 候选雷数回退单元明细（审计报告带上实际雷数）
 
 	var quota_desc := "每档 %d 关（per_tier）" % _per_tier if _per_tier > 0 else "每类 %d 关" % _per_type
@@ -543,6 +562,25 @@ func _initialize() -> void:
 				continue
 			mines = int(rr["mines"])
 			var mines_fallback := not bool(rr["standard"])
+			# 签名预筛（2026-09-19，与选关页**同判据**）：逻辑冗余 R4 / 整除无解 R5 的组合不产出。
+			# 为什么必须加：`VariantCatalog.build_modes()` 用 RuleSignature 过滤 FORBID 组合，
+			# 而本工具此前只做数学可行性预筛 —— 判据不同会产出「进库了但选关页不显示」的
+			# 孤儿席位（玩家永远点不到，且全流程不报错）。
+			# RuleSignature 是 core 级纯判据（内置签名表，不依赖规则注册表），工具层可直接引用；
+			# 未知算子回退 WARN，故不会误杀 Mod / 新算子。
+			# 注意**范围**：只对混合档（T3/T4）过滤 —— 必须与 `build_modes` 的过滤范围一致。
+			# 单算子席位（观测/结构/守恒单独成关，如 z3）在选关页不参与签名过滤，
+			# 若在此剔除它们会白白少产，且该席位在库里永远空着。
+			var _n_g := (combo["globals"] as Array).size()
+			var _is_mixed := _n_g >= 2 or (_n_g == 1 and str(combo["clue"]) != "classic")
+			if _is_mixed:
+				var sig_ids: Array[String] = [combo["clue"]]
+				for _g in combo["globals"]:
+					sig_ids.append(str(_g))
+				if str(RuleSignature.compat_all(sig_ids, Vector2i(side, side), mines)["verdict"]) == RuleSignature.FORBID:
+					stats["signature_skip"] = int(stats.get("signature_skip", 0)) + 1
+					signature_skip.append("%s %dx%d" % [combo["id"], side, side])
+					continue
 			DirAccess.make_dir_recursive_absolute(combo_dir)
 			# 断点续跑：扫描已有产出。满额单元直接跳过（重跑安全、不重复生成）；
 			# 未满单元编号接续 + 指纹去重（同 seed 重跑撞已有盘时跳过，不产生冗余文件）。
@@ -705,6 +743,9 @@ func _initialize() -> void:
 		print("  设计跳过清单(%d，FR难度天然<0.3，见GDD 3.3): %s" % [design_skip.size(), ", ".join(design_skip)])
 	if skipped.size() > 0:
 		print("  跳过清单(%d): %s" % [skipped.size(), ", ".join(skipped)])
+	if signature_skip.size() > 0:
+		print("  签名剔除(%d，逻辑冗余/矛盾，选关页也不显示故不该产出): %s" % [
+			signature_skip.size(), ", ".join(signature_skip)])
 	if partial.size() > 0:
 		print("  部分成功清单(%d): %s" % [partial.size(), ", ".join(partial)])
 	if diff_unreach.size() > 0:

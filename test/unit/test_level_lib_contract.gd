@@ -119,6 +119,40 @@ func test_lib_levels_match_their_mode_and_tier() -> void:
 				"%s 有一关 difficulty=%.3f 不在 %s 区间 [%.2f, %.2f)" % [row["path"], d, row["tier"], lo, hi])
 
 
+func test_lib_levels_can_be_loaded_by_board() -> void:
+	## 「能玩」的自动化证明（不依赖真机）：库里的关卡喂给 Board.load_level 必须成功建盘。
+	## 每集抽首关——集内关卡同源同格式，抽一关即可暴露「字段缺失/格式漂移/规则不识别」，
+	## 全量加载留给真机抽查（真机是最终的观感验收）。
+	var checked := 0
+	for s in _lib_sets():
+		var row: Dictionary = s
+		var levels: Array = _read_json(str(row["path"])).get("levels", [])
+		if levels.is_empty():
+			continue
+		var lv: Dictionary = levels[0]
+		var b := Board.new()
+		b.load_level(lv)
+		assert_eq(b.total_mines, int(lv.get("total_mines", -1)),
+			"%s 首关加载后 total_mines 与声明不符（加载链有问题）" % row["path"])
+		checked += 1
+	assert_true(checked > 0, "应至少检查到一集")
+
+
+func test_lib_total_size_is_reported() -> void:
+	## 包体容量守卫（数据可见化）：库随包发行（res://），体量增长必须有人看见。
+	## 这里只报告不设硬阈值（阈值是产品决策）；若将来要封顶，把断言改成 assert_true(total < LIMIT)。
+	var total := 0
+	var sets := 0
+	for s in _lib_sets():
+		var row: Dictionary = s
+		if FileAccess.file_exists(str(row["path"])):
+			total += FileAccess.get_file_as_bytes(str(row["path"])).size()
+			sets += 1
+	var mb := float(total) / 1048576.0
+	gut.p("库体量: %d 个集 / %.2f MB（约 %.0f 字节/集）" % [sets, mb, float(total) / maxf(1.0, float(sets))])
+	assert_true(total > 0, "库应非空")
+
+
 func test_lib_catalog_counts_match_sets() -> void:
 	var cat: Dictionary = _read_json(LIB + "/catalog.json").get("catalog", {})
 	assert_false(cat.is_empty(), "catalog.json 应有 catalog 字段")
