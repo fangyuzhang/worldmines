@@ -56,6 +56,12 @@ var _bad_sizes: Array = []      # 尺寸目录名不认识的（如旧批次 `55
 
 
 func _initialize() -> void:
+	# 导出后 res:// 只读（架构审计 P0）：本工具全程写 res://levels_lib（它是唯一入库工具），
+	# 在 pck 运行时里会静默失败。直接在启动时拒绝，避免「跑完了但什么都没写进去」。
+	if OS.has_feature("template"):
+		push_error("[import] 当前运行在导出后的运行时里：res:// 只读，无法入库。请在开发机（编辑器 / headless 工具）运行本工具。")
+		CliShutdown.request_exit(1)
+		return
 	var args := OS.get_cmdline_user_args()
 	for a in args:
 		var s := str(a)

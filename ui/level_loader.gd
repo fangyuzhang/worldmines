@@ -37,6 +37,11 @@ static func list_levels() -> Array[String]:
 ## 播放侧若只扫顶层，嵌套关卡会**静默不可见**——两侧必须对称。
 static func list_mod_levels() -> Array[String]:
     var out: Array[String] = []
+    # 无头环境（-s 工具 / 无 autoload）下 ModAPI 不存在，直接取会炸 ——
+    # 与 VariantCatalog._is_bundled_rule 同款守卫（架构审计 P1）。
+    var tree := Engine.get_main_loop() as SceneTree
+    if tree == null or tree.root == null or not tree.root.has_node("ModAPI"):
+        return out
     for mod_name in ModAPI.list_mods():
         _collect_levels("user://mods/%s/levels" % mod_name, out)
     out.sort()

@@ -420,6 +420,14 @@ func _max_similarity(mine_sets: Array, new_set: Dictionary) -> float:
 
 
 func _initialize() -> void:
+	# CP-SAT 后端可用性前置断言（架构审计 P0）：`RuleCpSat.find_forced_cells` 在后端不可用时
+	# **静默返回空**（core 里注释写「保守降级」）→ 生成器判「需猜测」→ 每个盘都被拒 →
+	# **整批零产出且不报错**，长跑一夜才发现。非 mono 导出 / 无 .NET 的 Linux 机器即触发。
+	# 宁可在启动时失败，也不要静默跑空。
+	if not RuleCpSat.available():
+		push_error("[量产] CP-SAT 后端不可用（res://solver/RuleSolver.cs 加载失败或缺 .NET/mono 运行时）——继续跑只会零产出。请换 mono 版 Godot 或补齐构建产物后重试。")
+		CliShutdown.request_exit(1)
+		return
 	var args := OS.get_cmdline_user_args()
 	if args.size() >= 1 and args[0] != "":
 		_out_dir = args[0]
