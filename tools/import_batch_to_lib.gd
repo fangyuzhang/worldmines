@@ -15,6 +15,9 @@ extends SceneTree
 #   · --overwrite  覆盖已存在的 (mode,size,tier) 集；默认**只补缺**，不动已有的
 #   · --min=10   集内关卡数下限（低于此不建集，防半成品入库），默认 1
 #   · --no-window-check  跳过「集内档位 vs 实测峰值」一致性校验（仅用于导入旧口径关卡）
+#   · --prune    清掉「本轮未产出」的残留集：只删 levels_lib/<mode>/<size>/ 下的四档名 json
+#                （不删目录、不删 catalog）；库内重标（retier_stock.py）后用它清错档残留。
+#                建议**只与 --overwrite 同时用**：单独用时「已存在被跳过」的集会被误判为未产出。
 #
 # **mode 口径（最关键，2026-09-19 修正）**：以**关卡 JSON 字段**为产物侧真相
 #   （`clue_rule` + `global_rules`），推导库内 mode id（= 选关页 MODES[].id）：
@@ -45,6 +48,7 @@ var _dry := false
 var _overwrite := false
 var _min_levels := 1
 var _no_window_check := false      # --no-window-check：跳过窗口一致性校验（仅导入旧口径关卡用）
+var _prune := false                # --prune：清「本轮未产出」残留集（库内重标后清错档残留）
 
 ## mode -> size -> tier -> Array[level]
 var _bag: Dictionary = {}
@@ -57,6 +61,9 @@ var _accepted := 0                  # 已收入 _bag 的关数（目录级进度
 var _skipped_non_official := 0      # 关卡 JSON 推导出非官方组合 → 跳过的关数
 var _non_official: Array = []       # 非官方组合的来源目录（去重，报告用）
 var _bad_sizes: Array = []      # 尺寸目录名不认识的（如旧批次 `55`），整目录跳过
+var _skipped_thin := 0           # 集内关卡数 < _min_levels 被跳过的集数（G6：不静默）
+var _skipped_badname := 0        # 档名不符合 <tier>_<N> 的 json 数（G6：不静默）
+var _badname_warned := 0         # 上述已 push_warning 的条数（前 5 条告警，防刷屏）
 
 
 func _initialize() -> void:
@@ -77,12 +84,15 @@ func _initialize() -> void:
 			_min_levels = maxi(1, int(s.substr(6)))
 		elif s == "--no-window-check":
 			_no_window_check = true
+		elif s == "--prune":
+			_prune = true
 		elif not s.begins_with("--"):
 			_src = s
 
 	print("[import] 源目录: %s%s" % [_src, "（dry-run，不写盘）" if _dry else ""])
 	_scan_source()
 	var imported := _write_sets()
+	_prune_sets(imported)     # G1b：清残留（仅 --prune 生效）；放在 catalog 重建前，索引不含已删集
 	_rebuild_catalog()
 	_report(imported)
 	CliShutdown.request_exit(0)
@@ -123,11 +133,15 @@ func _scan_size(combo_dir: String, size_dir: String, side: int) -> void:
 			continue
 		var base := fn.get_basename()          # easy_01
 		var parts := base.split("_", false)
-		if parts.size() != 2:
+		# 档名必须符合 `<tier>_<N>`（G6）：不匹配的 json 计数 + 前 5 条 push_warning，
+		# 不再静默跳过——目录里混进 report/临时文件时，此前完全无声，量产「少产」查无实据。
+		if parts.size() != 2 or not TIERS.has(str(parts[0])) or not str(parts[1]).is_valid_int():
+			_skipped_badname += 1
+			if _badname_warned < 5:
+				_badname_warned += 1
+				push_warning("[import] 档名不符合 <tier>_<N>，跳过: %s/%s" % [list_dir, fn])
 			continue
 		var tier := str(parts[0])
-		if not TIERS.has(tier):
-			continue
 		_units_seen += 1
 		var lv := _read_level("%s/%s" % [list_dir, fn])
 		if lv.is_empty():
@@ -300,6 +314,7 @@ func _write_sets() -> Dictionary:
 					continue
 				var arr: Array = by_tier[tier]
 				if arr.size() < _min_levels:
+					_skipped_thin += 1     # G6：薄集不静默——报告里带阈值打印
 					continue
 				var rel := "%s/%d/%s.json" % [mode, side, tier]
 				var dst := "%s/%s" % [LIB_DIR, rel]
@@ -332,6 +347,67 @@ func _write_sets() -> Dictionary:
 				m[side] = s2
 				imported[mode] = m
 	return imported
+
+
+## --prune（G1b）：清「本轮未产出」的残留集。
+## 用途：库内重标（retier_stock.py → 本工具 --overwrite）后，某 (mode,size) 下旧口径/错档的
+## 档名集会残留（源里已没有它）——不清掉的话选关页仍能点到、catalog 也会继续记它。
+##
+## 安全口径（宁可不删，也不误删）：
+##   · 只认 levels_lib/<mode>/<size>/ 下的**四档名 json**（<tier>.json）；不删目录、不删
+##     catalog（它在库根，不在本层）、不碰其他命名文件；
+##   · 某 (mode,size) 本轮**一个集都没产出** → 整目录不删（防把一整席误清空）；
+##   · 删除前打印将删清单（前 20 条）+ 计数；
+##   · dry-run 只预览不删；未与 --overwrite 同用时也跳过删除（否则「已存在被跳过」的集
+##     会被误判为未产出——使用建议本身也写在文件头）。
+func _prune_sets(imported: Dictionary) -> void:
+	if not _prune:
+		return
+	var doomed: Array = []      # 可读相对路径（打印 + 对账）
+	var abs_paths: Array = []   # res:// 绝对路径（删除）
+	var modes: Array = imported.keys()
+	modes.sort()
+	for mode in modes:
+		var by_size: Dictionary = imported[mode]
+		var sizes: Array = by_size.keys()
+		sizes.sort()
+		for side in sizes:
+			var produced: Dictionary = by_size[side]     # tier -> count（本轮产出）
+			var rel_dir := "%s/%d" % [str(mode), int(side)]
+			var d := DirAccess.open("%s/%s" % [LIB_DIR, rel_dir])
+			if d == null:
+				continue
+			for fname in d.get_files():
+				var fn := str(fname)
+				if not fn.ends_with(".json"):
+					continue
+				var tier := fn.get_basename()
+				if not TIERS.has(tier):
+					continue                 # 只认四档名（安全：其余命名一概不碰）
+				if produced.has(tier):
+					continue
+				doomed.append("%s/%s" % [rel_dir, fn])
+				abs_paths.append("%s/%s/%s" % [LIB_DIR, rel_dir, fn])
+	if doomed.is_empty():
+		print("[import] --prune：无残留集（本轮产出的 (mode,size) 目录与盘上档名一致）")
+		return
+	var shown := mini(20, doomed.size())
+	print("[import] --prune：将删除 %d 个未产出残留集（前 %d）:" % [doomed.size(), shown])
+	for r in doomed.slice(0, shown):
+		print("[import]   %s" % str(r))
+	if _dry:
+		print("[import] --prune：dry-run，不实际删除")
+		return
+	if not _overwrite:
+		print("[import] --prune 未与 --overwrite 同用：为避免把「已存在被跳过」的集误删，本轮跳过删除；确要清理请补 --overwrite 重跑")
+		return
+	var removed := 0
+	for p in abs_paths:
+		if DirAccess.remove_absolute(str(p)) == OK:
+			removed += 1
+		else:
+			push_warning("[import] --prune 删除失败: %s" % str(p))
+	print("[import] --prune：已删除 %d 个残留集" % removed)
 
 
 ## 全量重建 catalog.json —— **扫盘上全部 levels_lib**，而非只记本次导入，
@@ -382,9 +458,12 @@ func _rebuild_catalog() -> void:
 	if f == null:
 		push_error("[import] catalog 写不了: %s" % CATALOG_PATH)
 		return
-	f.store_string(JSON.stringify({"catalog": catalog}, "  "))
+	# schema=4（G7）：标记 v4.0 峰值口径（档位 = max_complexity 落窗）。读取侧
+	# （ui/level_library.gd::catalog）取的是 ["catalog"] 子字典，加 schema 键对旧读取零影响；
+	# 有它之后，库口径换代时离线工具可一眼分辨 catalog 由哪版口径生成。
+	f.store_string(JSON.stringify({"schema": 4, "catalog": catalog}, "  "))
 	f.close()
-	print("[import] catalog 已重建：%d 席 / %d 关" % [catalog.size(), total])
+	print("[import] catalog 已重建（schema=4）：%d 席 / %d 关" % [catalog.size(), total])
 	_report_thin(thin)
 
 
@@ -425,6 +504,12 @@ func _report(imported: Dictionary) -> void:
 	if not _bad_sizes.is_empty():
 		print("[import] 尺寸目录名不认识、跳过 %d 个（规范为 5x5 或 5；前 8: %s）" % [
 			_bad_sizes.size(), ", ".join(_bad_sizes.slice(0, mini(8, _bad_sizes.size())))])
+	if _skipped_thin > 0:
+		print("[import] 薄集跳过 %d 个（集内关卡数 < --min=%d；先补产或调低 --min 再导入）" % [
+			_skipped_thin, _min_levels])
+	if _skipped_badname > 0:
+		print("[import] 档名不符 <tier>_<N> 跳过 %d 个（前 5 条已 push_warning；核对源目录混入的文件）" % [
+			_skipped_badname])
 
 
 func _process(_delta: float) -> bool:

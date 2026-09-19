@@ -10,8 +10,9 @@ extends GutTest
 ##      可能产出「选关页不显示」的孤儿席位（关卡进库了也永远点不到，与 c_/g_ 前缀同类病）；
 ##   2. 关卡内 `clue_rule` / `global_rules` 必须与 mode 语义一致 —— mode 只是索引键，
 ##      玩法由关卡内字段决定，不一致 = 玩家选中 A 玩到 B；
-##   3. 关卡 `difficulty` 必须落在其所在 tier 区间内 —— 档是导入时按**文件名**定的，
-##      内容从未被校验（服务器量产若命名错档，这里会立刻红）；
+##   3. 关卡档位必须等于**峰值口径**（`difficulty_profile.max_complexity` 落窗，
+##      Difficulty.tier_of_profile）—— 档是导入时按文件名+窗口校验定的，内容在此复检；
+##      旧标量 difficulty 区间口径已废弃（它测长度、非深度），库也按峰值重标过；
 ##   4. `catalog.json` 记录的关数必须与集文件实际一致。
 const LIB := "res://levels_lib"
 const TIER_ORDER: Array = ["intro", "easy", "normal", "hard"]
@@ -104,16 +105,16 @@ func test_lib_levels_match_their_mode_and_tier() -> void:
 		var exp: Dictionary = modes[str(row["mode"])]
 		var exp_g: Array = (exp["globals"] as Array).duplicate()
 		exp_g.sort()
-		var t: Dictionary = Difficulty.TIERS[str(row["tier"])]
-		var lo := float(t["min"])
-		var hi := float(t["max"])
 		# **抽样**：逐关断言在满额库（164 组合 × 5 尺寸 × 4 档 = 3280 集）上会把全量测试拖垮
 		# （库每大一轮、断言数就线性膨胀），而这几条检查的失败模式是「整集系统性错」——
-		# 每集抽首/中/末三关即可暴露（集按难度升序，两端 + 中段覆盖最广）。
+		# 每集抽首/中/末 + 1 个随机点即可暴露（集按深度升序，两端 + 中段 + 随机覆盖最广；
+		# 随机点用固定种子的局部 RNG，保证结果可复现）。
 		var levels: Array = _read_json(str(row["path"])).get("levels", [])
 		if levels.is_empty():
 			continue
-		var picks: Array = [0, levels.size() / 2, levels.size() - 1]
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 20260919
+		var picks: Array = [0, levels.size() / 2, levels.size() - 1, rng.randi_range(0, levels.size() - 1)]
 		for pi in picks:
 			var lvv: Dictionary = levels[int(pi)]
 			var got_g: Array = (lvv.get("global_rules", []) as Array).duplicate()
@@ -121,10 +122,11 @@ func test_lib_levels_match_their_mode_and_tier() -> void:
 			assert_eq(str(lvv.get("clue_rule", "")), str(exp["clue"]),
 				"%s[%d] 的 clue_rule 与 mode 不符（选中 A 会玩到 B）" % [row["path"], int(pi)])
 			assert_eq(got_g, exp_g, "%s[%d] 的 global_rules 与 mode 不符" % [row["path"], int(pi)])
-			var d := float(lvv.get("difficulty", -1.0))
-			assert_true(d >= lo and d < hi,
-				"%s[%d] 的 difficulty=%.3f 不在 %s 区间 [%.2f, %.2f)" % [
-					row["path"], int(pi), d, row["tier"], lo, hi])
+			# v4.0 档位口径（2026-09-19）：库内档 = 峰值落窗（tier_of_profile），不再是标量
+			# difficulty 区间——标量只作「紧凑度画像」保留（重标只动目录/文件名、字段不重写），
+			# 故此处不做标量区间断言；档位一致性必须按峰值复核（错档入库 = 玩家在深档遇浅盘）。
+			assert_eq(Difficulty.tier_of_profile(lvv.get("difficulty_profile", {})), str(row["tier"]),
+				"库内档位必须等于峰值口径（%s[%d]）" % [str(row["path"]), int(pi)])
 
 
 func test_lib_levels_can_be_loaded_by_board() -> void:

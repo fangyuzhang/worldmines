@@ -686,6 +686,8 @@ func _initialize() -> void:
 			var u_sim := 0
 			var u_full_stall := 0  # per_tier 模式：连续撞「已满档」计数（达 STALL_MAX 停单元）
 			var u_peak_miss := 0                     # 窗口外拒收计数（第 16 参启用时）
+			var u_peak_min := 1 << 30                # 已见候选峰值下界（窗口外止损证据，G3）
+			var u_peak_max := -(1 << 30)             # 已见候选峰值上界（同上）
 			var peak_hist: Dictionary = {}           # 候选峰值直方图（供能力档案/命中率分析）
 			# 阶段统计累计（v2.9.3 检测器增强）：布雷/删线索/验证各阶段失败可观测
 			var u_attempts := 0
@@ -738,11 +740,24 @@ func _initialize() -> void:
 				var peak := int(mc) if mc != null else -1
 				# 全候选峰值分布（窗口内与窗口外都记）——命中率 = 窗口内 / 本直方图总数
 				peak_hist[peak] = int(peak_hist.get(peak, 0)) + 1
+				u_peak_min = mini(u_peak_min, peak)      # 止损证据：累计已见峰值的 [min,max]
+				u_peak_max = maxi(u_peak_max, peak)
 				# v4.0 窗口验收（第 16 参）：peak 不在窗口 → 拒收（记 peak_miss）
 				if _peak_window.x >= 0 and not Difficulty.in_window(peak, _peak_window.x, _peak_window.y):
 					u_peak_miss += 1
 					unit_lines.append(_ev({"t": "peak_miss", "combo": combo["id"], "side": side,
 						"seed": seed, "peak": peak, "cost_s": cost_ms / 1000.0}))
+					# v4.0 窗口外止损（复审 G3）：结构性不可达窗口不白跑满 seed_max。
+					# 判据 = miss 数达阈值 + 已见峰值全在窗口同侧（低于下界或高于上界）——
+					# 为什么不能只按 miss 计数停：部分可达窗口的 miss 累计必然越过阈值（实测
+					# s1@8 追 9-20 命中 10% → 100 关需 ~1000 候选、miss ~900），只按计数停会把
+					# 正常单元腰斩；而「60 个候选峰值从未触窗」对 10% 命中率的误停概率仅约
+					# 0.9^60 ≈ 0.2%（对 0% 的结构性不可达则必然命中）。阈值与「档已满 stall」
+					# 同源（_stall_max）；实测代价：o8 追 9-20 命中 0%，此前白跑满 seed_max
+					# ≈ 50 分钟/单元，此止损后 ~60 个候选即停。
+					if u_peak_miss >= _stall_max \
+							and (u_peak_max < _peak_window.x or u_peak_min > _peak_window.y):
+						break
 					continue
 				var tier := Difficulty.tier_of_peak(peak) if _peak_window.x >= 0 else Difficulty.tier_of(diff)
 				if tier == "":

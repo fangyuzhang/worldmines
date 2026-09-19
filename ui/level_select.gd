@@ -1390,8 +1390,10 @@ func _make_tile(idx: int) -> Button:
 		btn.text = LevelLibrary.level_label(str(m["id"]), SIZES[_size_idx], _tier, idx)
 		if cleared:
 			btn.text += " ✓"
+		# dif = 紧凑度画像（difficulty_profile.difficulty，Σ1/批量），**不是档位判据**——
+		# v4.0 档位由峰值（max_complexity）落窗决定，故文案叫「紧凑度」而不叫「难度」。
 		var dif := LevelLibrary.level_difficulty(str(m["id"]), SIZES[_size_idx], _tier, idx)
-		btn.tooltip_text = "%s · %d×%d · %s 档第 %d 关\n（难度 %.2f；正式量产关卡）" % [
+		btn.tooltip_text = "%s · %d×%d · %s 档第 %d 关\n（紧凑度 %.2f；正式量产关卡）" % [
 				str(m["name"]), SIZES[_size_idx], SIZES[_size_idx],
 				_tier_text(_tier), idx + 1, dif]
 	else:

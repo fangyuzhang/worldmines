@@ -11,12 +11,23 @@
     <over-dir>/.../over_<idx>.json        # peak >= 21 超纲盘（不得混进四档目录）
     <unknown-dir>/.../unknown_<idx>.json  # 无 max_complexity 的盘
 
+两种输入布局都支持：
+  · 单关文件：一个 json = 一关（既有行为，不变）；
+  · 集文件（含 "levels" 数组；如库内 levels_lib/<mode>/<size>/<tier>.json 的集结构）：
+    展开 levels 里每个关卡按单关处理，combo/side 优先取集字段（mode/size）、缺失再从关卡
+    字段（clue_rule/global_rules、size.cols）推导；源路径带 "#序号" 便于报错定位。
+    「库内重标」链路（levels_lib → 本工具 → import --overwrite）由此闭环；集内关卡没有独立
+    源文件可拷，落盘按解析结果重序列化（内容等价、2 空格缩进对齐 Godot 格式），单关文件
+    仍是字节级拷贝。报告带 set_files / levels_from_sets 说明展开量。
+
 用法（仓库根执行；相对路径按当前目录解析）：
     python tools/retier_stock.py --src _staged_levels/harvest_0917 --out _staged_levels/retiered_smoke
     python tools/retier_stock.py --src A,B --limit 200     # 冒烟：只处理前 200 个源文件
+    python tools/retier_stock.py --src levels_lib --out _staged_levels/relib   # 库内重标
 
 说明：--out / --over-dir / --unknown-dir 属于**同一次运行**的输出组 —— 重跑以「最近一次运行」
 为快照覆盖同组目录里的旧产物（差集清理，同源重跑零删除）；不同数据集请配独立输出目录。
+输出根必须在 --src 之外（互包含会被拒绝运行；库内重标天然满足：levels_lib 与 _staged_levels 不相交）。
 
 安全：只读源（输出根与源互包含则拒绝运行）；幂等（同名覆盖写 + 只删上轮残留的过期产物，
 同源重跑零删除；输出根里发现非产物 json 则拒绝清理）；自校验（重读落盘产物断言峰值
@@ -115,7 +126,7 @@ def sanitize_component(name):
 
 
 def load_level(path):
-    """读关卡 JSON。返回 (dict, None) 或 (None, 原因)。
+    """读源 JSON（单关文件或集文件）。返回 (dict, None) 或 (None, 原因)。
     为什么 utf-8-sig：容忍源文件带 BOM（Windows/Godot 生态常见），否则整批 parse 失败进 bad。"""
     try:
         with open(path, "r", encoding="utf-8-sig") as f:
@@ -149,6 +160,15 @@ def combo_of(lv):
         gs = []
     parts = [clue] + [str(g).strip() for g in gs if str(g).strip()]
     return sanitize_component("_".join(parts))
+
+
+def combo_tokens(name):
+    """combo 名 -> 规则 id 集合（忽略顺序与 classic 底座），用于路径/字段一致性对比。
+
+    为什么不用字符串全等：库内集文件的 mode 是库内命名（dt = classic+dt、s1_o1 = 结构_观测），
+    与 combo_of 的拼接形态（classic_dt、o1_s1）是同一组合的两种写法；两种都算数，但两边
+    「算子集合」不同时仍会抓出来（如 o4 的盘落进 o1 目录）。"""
+    return sorted({t for t in str(name).replace("+", "_").split("_") if t and t != "classic"})
 
 
 def rounds_of(lv):
@@ -200,64 +220,133 @@ def rel_samples(pairs, n=MAX_SAMPLE):
 # ===========================================================================
 # 分类：读源 -> 记录 / 分流
 # ===========================================================================
+def _combo_from_ctx(lv, ctx):
+    """combo 目录名：集文件上下文（mode 字段）优先，缺失/非法时回退关卡字段推导。
+
+    集文件的 mode 是库内命名（dt / s1_o1），与 combo_of 的拼接形态（classic_dt / o1_s1）
+    是同一组合的两种写法——落盘目录按集字段走，自校验按 combo_tokens 做等价对比。"""
+    if ctx:
+        m = ctx.get("mode")
+        if isinstance(m, str) and m.strip():
+            return sanitize_component(m.strip())
+    return combo_of(lv)
+
+
+def _side_from_ctx(cols, rows, ctx):
+    """side：集文件 size 字段优先，缺失/非法回退关卡 cols。返回 (side, 错误或 None)。
+
+    为什么校验一致性：集声明 size=7 而关卡是 5x5 属于数据错配，宁可按坏文件隔离，
+    也不能按声明值落进 7x7 目录——目录尺寸与盘不符是下游最难查的一类错（选关页按
+    size 找目录，找不到就静默少内容）。"""
+    s = ctx.get("size") if ctx else None
+    if _intlike(s) and int(s) > 0:
+        if int(s) != cols or int(s) != rows:
+            return None, "集 size=%s 与关卡 %dx%d 不符" % (s, cols, rows)
+        return int(s), None
+    return cols, None
+
+
+def _classify_one(lv, src, ctx, recs, bad, unknown, nonsquare):
+    """单关分类（单文件流程与集文件展开共用；ctx 为集字段 mode/size，单文件为 None）。
+
+    src 是报错/样例用的可读来源：单文件 = 路径本身；集内关卡 = 路径#序号。"""
+    if not isinstance(lv, dict):
+        bad.append((src, "集内条目非对象"))
+        return
+    miss = [f for f in REQUIRED_FIELDS if f not in lv]
+    if miss:
+        bad.append((src, "缺字段:" + ",".join(miss)))
+        return
+    sz = lv["size"]
+    if not (isinstance(sz, dict) and _intlike(sz.get("cols")) and _intlike(sz.get("rows"))):
+        bad.append((src, "size 非法"))
+        return
+    cols, rows = int(sz["cols"]), int(sz["rows"])
+    if cols <= 0 or rows <= 0:
+        bad.append((src, "size 非正"))
+        return
+    side, cerr = _side_from_ctx(cols, rows, ctx)
+    if cerr is not None:
+        bad.append((src, cerr))
+        return
+    if "difficulty_profile" not in lv:
+        # 硬要求 5 显式点名：找不到 difficulty_profile 计入 bad（不写任何输出目录）。
+        # 为什么不让它走 unknown-dir：bad 判定先于画像判定，此条在硬要求里优先级最高；
+        # 实测存量 0 例，两种解读不影响任何结果。
+        bad.append((src, "无 difficulty_profile"))
+        return
+    peak = valid_peak(lv)
+    if peak is None:
+        # 「有画像、无 max_complexity」= 无法定档：隔离到 unknown-dir（绝不进四档）。
+        rec = {"src": src, "bucket": "unknown", "combo": _combo_from_ctx(lv, ctx),
+               "side": side, "tier": "unknown", "peak": None, "rounds": rounds_of(lv)}
+        if ctx is not None:
+            rec["payload"] = lv
+        unknown.append((src, "缺 max_complexity"))
+        recs.append(rec)
+        return
+    if peak < 0:
+        bad.append((src, "负峰值"))
+        return
+    if cols != rows:
+        # 非方形盘：库的尺寸键是单个 int（见 import 工具的 _parse_side），装不下 -> 跳过。
+        nonsquare.append((src, "size=%dx%d" % (cols, rows)))
+        return
+    combo = _combo_from_ctx(lv, ctx)
+    rounds = rounds_of(lv)
+    if peak >= OVER_MIN:
+        rec = {"src": src, "bucket": "over", "combo": combo, "side": side,
+               "tier": "over", "peak": peak, "rounds": rounds}
+        if ctx is not None:
+            rec["payload"] = lv
+        recs.append(rec)
+        return
+    t = tier_of(peak)
+    if t is None:  # 保险：非负且 <21 必落在窗口内；防御 NaN 等空洞
+        bad.append((src, "峰值无法定档"))
+        return
+    rec = {"src": src, "bucket": "main", "combo": combo, "side": side,
+           "tier": t, "peak": peak, "rounds": rounds}
+    if ctx is not None:
+        rec["payload"] = lv   # 集内关卡没有独立源文件，落盘走重序列化（见 write_planned）
+    recs.append(rec)
+
+
 def classify(files):
-    """读源分类。返回 (recs, bad, unknown, nonsquare)。
+    """读源分类。返回 (recs, bad, unknown, nonsquare, stats)。
+
+    stats：set_files（识别的集文件数）/ levels_from_sets（展开关卡数，含个别非法条目）/
+    units（处理单元总数：单关文件记 1，集文件记其展开关卡数）——units 供计数自洽断言用。
+
+    两种输入布局（G1a）：
+      · 单关文件：一 json = 一关（既有行为不变）；
+      · 集文件（含 "levels" 数组）：展开 levels 逐关处理，combo/side 优先取集字段，
+        缺失回退关卡字段；源路径带 "#序号"。
 
     优先级（为什么这么排）：bad 的语义是「文件不像合格关卡」（解析失败/缺盘体字段/
     无画像/负峰值），先判；再看能不能定档。无法定档≠坏文件，隔离而非丢弃。
     """
     recs, bad, unknown, nonsquare = [], [], [], []
+    stats = {"set_files": 0, "levels_from_sets": 0, "units": 0}
     for p in files:
-        lv, err = load_level(p)
+        data, err = load_level(p)
         if err is not None:
             bad.append((p, err))
+            stats["units"] += 1
             continue
-        miss = [f for f in REQUIRED_FIELDS if f not in lv]
-        if miss:
-            bad.append((p, "缺字段:" + ",".join(miss)))
-            continue
-        sz = lv["size"]
-        if not (isinstance(sz, dict) and _intlike(sz.get("cols")) and _intlike(sz.get("rows"))):
-            bad.append((p, "size 非法"))
-            continue
-        cols, rows = int(sz["cols"]), int(sz["rows"])
-        if cols <= 0 or rows <= 0:
-            bad.append((p, "size 非正"))
-            continue
-        if "difficulty_profile" not in lv:
-            # 硬要求 5 显式点名：找不到 difficulty_profile 计入 bad（不写任何输出目录）。
-            # 为什么不让它走 unknown-dir：bad 判定先于画像判定，此条在硬要求里优先级最高；
-            # 实测存量 0 例，两种解读不影响任何结果。
-            bad.append((p, "无 difficulty_profile"))
-            continue
-        peak = valid_peak(lv)
-        if peak is None:
-            # 「有画像、无 max_complexity」= 无法定档：隔离到 unknown-dir（绝不进四档）。
-            unknown.append((p, "缺 max_complexity"))
-            recs.append({"src": p, "bucket": "unknown", "combo": combo_of(lv),
-                         "side": cols, "tier": "unknown", "peak": None,
-                         "rounds": rounds_of(lv)})
-            continue
-        if peak < 0:
-            bad.append((p, "负峰值"))
-            continue
-        if cols != rows:
-            # 非方形盘：库的尺寸键是单个 int（见 import 工具的 _parse_side），装不下 -> 跳过。
-            nonsquare.append((p, "size=%dx%d" % (cols, rows)))
-            continue
-        combo = combo_of(lv)
-        rounds = rounds_of(lv)
-        if peak >= OVER_MIN:
-            recs.append({"src": p, "bucket": "over", "combo": combo, "side": cols,
-                         "tier": "over", "peak": peak, "rounds": rounds})
-            continue
-        t = tier_of(peak)
-        if t is None:  # 保险：非负且 <21 必落在窗口内；防御 NaN 等空洞
-            bad.append((p, "峰值无法定档"))
-            continue
-        recs.append({"src": p, "bucket": "main", "combo": combo, "side": cols,
-                     "tier": t, "peak": peak, "rounds": rounds})
-    return recs, bad, unknown, nonsquare
+        levels = data.get("levels")
+        if isinstance(levels, list):
+            # 集文件布局（库内 levels_lib/<mode>/<size>/<tier>.json）：展开按单关处理。
+            stats["set_files"] += 1
+            ctx = {"mode": data.get("mode"), "size": data.get("size")}
+            for i, lv in enumerate(levels, 1):
+                stats["units"] += 1
+                stats["levels_from_sets"] += 1
+                _classify_one(lv, "%s#%d" % (p, i), ctx, recs, bad, unknown, nonsquare)
+        else:
+            stats["units"] += 1
+            _classify_one(data, p, None, recs, bad, unknown, nonsquare)
+    return recs, bad, unknown, nonsquare, stats
 
 
 # ===========================================================================
@@ -361,19 +450,27 @@ def planned_paths(groups, roots):
 
 
 def write_planned(groups, roots):
-    """编号 + 字节级拷贝。
+    """编号 + 落盘。
 
     编号为什么 %02d 补零：对齐产物生态（easy_01），目录内字典序 == 数字序；
     超过 99 自动三位，import 工具 split('_') 依旧只认两段。
-    内容为什么用字节级 copyfile：重标只动目录与文件名，内容一字不改（零成本）；
-    序列化重写会引入格式差异，字节拷贝连浮点写法都原样保留。"""
+    内容分两路：
+      · 单关文件：字节级 copyfile —— 重标只动目录与文件名，内容一字不改（零成本）；
+        序列化重写会引入格式差异，字节拷贝连浮点写法都原样保留。
+      · 集内关卡（rec 带 payload，G1a）：没有独立源文件可拷，按解析结果重序列化
+        （内容等价；indent=2 对齐 Godot JSON.stringify("  ") 的格式习惯）。"""
     written = []  # (bucket, dst_path)
     for (bucket, combo, side, tier), lst in sorted(groups.items()):
         dst_dir = os.path.join(roots[bucket], combo, "%dx%d" % (side, side))
         os.makedirs(dst_dir, exist_ok=True)
         for i, r in enumerate(lst, 1):
             dst = os.path.join(dst_dir, "%s_%02d.json" % (tier, i))
-            shutil.copyfile(r["src"], dst)
+            payload = r.get("payload")
+            if payload is None:
+                shutil.copyfile(r["src"], dst)
+            else:
+                with open(dst, "w", encoding="utf-8") as f:
+                    json.dump(payload, f, ensure_ascii=False, indent=2)
             written.append((bucket, dst))
     return written
 
@@ -446,7 +543,10 @@ def verify(written, roots):
                     v("目录尺寸与盘不符（目录 %d，盘 %sx%s）：%s"
                       % (side, sz.get("cols"), sz.get("rows"), p))
                     continue
-                if combo_of(lv) != combo_dir:
+                if combo_tokens(combo_of(lv)) != combo_tokens(combo_dir):
+                    # 用「规则集合」对比而非字符串全等：集文件 mode 是库内命名（如 dt、s1_o1），
+                    # 与 combo_of 的拼接形态（classic_dt、o1_s1）是同一组合的两种写法（见
+                    # combo_tokens）；算子集合不同（如 o4 落进 o1 目录）仍会在此被抓出。
                     v("combo 路径与字段推导不一致（路径 %s，推导 %s）：%s"
                       % (combo_dir, combo_of(lv), p))
                     continue
@@ -569,10 +669,13 @@ def main(argv=None):
     if args.limit:
         print("[retier] --limit=%d：只处理前 %d 个源文件" % (args.limit, len(files)))
 
-    recs, bad, unknown, nonsquare = classify(files)
-    if len(recs) + len(bad) + len(nonsquare) != len(files):
-        die("内部分类计数不自洽：recs=%d bad=%d nonsquare=%d files=%d"
-            % (len(recs), len(bad), len(nonsquare), len(files)))
+    recs, bad, unknown, nonsquare, stats = classify(files)
+    if len(recs) + len(bad) + len(nonsquare) != stats["units"]:
+        die("内部分类计数不自洽：recs=%d bad=%d nonsquare=%d units=%d"
+            % (len(recs), len(bad), len(nonsquare), stats["units"]))
+    if stats["set_files"]:
+        print("[retier] 集文件: %d 个 → 展开 %d 关（按单关处理；combo/side 优先取集字段）"
+              % (stats["set_files"], stats["levels_from_sets"]))
     cnt = {b: sum(1 for r in recs if r["bucket"] == b) for b in roots}
     print("[retier] 分流: 主输出 %d | over %d | unknown %d | 非方形丢弃 %d | 坏文件 %d"
           % (cnt["main"], cnt["over"], cnt["unknown"], len(nonsquare), len(bad)))
@@ -595,6 +698,8 @@ def main(argv=None):
 
     rep = {
         "total_in": len(files),
+        "set_files": stats["set_files"],                 # G1a：识别的集文件数
+        "levels_from_sets": stats["levels_from_sets"],   # G1a：集文件展开出的关卡数
         "total_out": vres["actual"]["main"],
         "skipped_over": vres["actual"]["over"],
         "skipped_unknown": vres["actual"]["unknown"],

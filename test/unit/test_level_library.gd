@@ -146,5 +146,6 @@ func test_level_label_format() -> void:
 		for s in cat[m]:
 			for t in cat[m][s]:
 				var label := LevelLibrary.level_label(str(m), int(s), str(t), 0)
-				assert_true(label.contains("\n"), "标签应为「序号\\n难度值」两行")
+				# 标签第二行是「深度N」（峰值，v4.0 档位口径）——不是标量难度值。
+				assert_true(label.contains("\n"), "标签应为「序号\\n深度」两行")
 				return

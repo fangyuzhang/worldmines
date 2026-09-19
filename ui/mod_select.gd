@@ -721,7 +721,9 @@ func _generate_rule_levels(rule_id: String, tier_id: String = "") -> void:
 				return
 			continue
 		misses = 0
-		var f := FileAccess.open("%s/%s_%02d.json" % [out_dir, rule_id, produced + 1], FileAccess.WRITE)
+		# 档位进文件名（G4）：与量产同构（<tier>_<NN>），选关页按文件名显示；否则换档重生成
+		# 会覆盖上一档——同一 rule_id 切到新目标档后，rule_id_01.json 会互相顶掉。
+		var f := FileAccess.open("%s/%s_%s_%02d.json" % [out_dir, rule_id, tier_id, produced + 1], FileAccess.WRITE)
 		if f != null:
 			# 生成器的产出契约不含 name（标准关由 gen_standard_levels 事后补写）。
 			# 此处落盘前补齐，否则选关页回退显示文件名、丢失规则语义。
