@@ -1,5 +1,21 @@
 extends GutTest
 
+## ⚠️ 慢测试（实测数分钟）：跑的是 PuzzleGenerator.generate_with_rules 的**生成性能实测**
+##   （15 变体 × 5 尺寸，每项预算 3s/15s，纯生成时间），与 UI 动效零交集。
+##
+## 为什么不放在 test/ui/：
+##   会拖爆 -gdir=res://test/ui 全量回归（此前混在里面时，ui 目录全量 900s 跑不完），
+##   且它失败时看起来像「测试挂了」，实为「某变体在 UI 预算内出不了关」的性能信号——
+##   两种失败混在同一个绿色/红色信号里，回归结论就不可信了。
+##
+## 怎么跑：
+##   快全量：-gdir=res://test/unit -ginclude_subdirs（核心，~1 分钟）
+##           -gdir=res://test/ui  -ginclude_subdirs（UI 行为，~2 分钟）
+##   本文件：-gtest=res://test/slow/test_ui_gen_budget.gd
+##   （注意：-gdir=res://test 会连 slow 一起扫——想快就按上面两条目录分开跑。）
+##
+## 往 test/unit 或 test/ui 里放长耗时生成/性能测试前，先想想它是不是该进这里。
+
 ## UI 自由模式生成预算实测：level_select 的超时口径（≥9 尺寸 15s、其余 3s）下，
 ## 15 单变体 × 5 尺寸 是否都能出关。出关 = 玩家点「生成」能得到关（哪怕线索偏多偏简单）。
 ## 失败组合清单 = UI 需要按变体/尺寸加大预算的真实证据。
