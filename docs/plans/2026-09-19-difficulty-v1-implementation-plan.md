@@ -187,11 +187,23 @@ var _peak_window := Vector2i(-1, -1)  # 第 16 参：peak 窗口 "lo-hi"（如 "
 
 ```gdscript
 	# 第 16 参：峰值窗口（v4.0 深度口径）——"lo-hi" 闭区间；缺省/空 = 不限（保持旧行为）。
-	# 用法示例：`9-20`（只收噩梦）、`--peak 0-20`（全档，按窗口自动分档计数）。
+	# 用法示例：第 16 参（位置参数）传 `9-20`（只收噩梦）、`0-20`（全档，按窗口自动分档计数）。
 	if args.size() >= 16 and str(args[15]) != "":
 		var pw := str(args[15]).split("-", false, 1)
-		if pw.size() == 2:
-			_peak_window = Vector2i(int(pw[0]), int(pw[1]))
+		# 格式与范围必须启动即校验：这类配置错误在本工作流已真实发生（PowerShell 丢空串导致参数错位），
+		# 静默失效会让长跑白费机时或把脏数据写进量产目录。宁可在启动时失败。
+		if pw.size() != 2 or not pw[0].is_valid_int() or not pw[1].is_valid_int():
+			push_error("[量产] 第 16 参窗口格式非法: %r（应为 lo-hi，如 9-20；空缺位请填 off / -1）" % str(args[15]))
+			CliShutdown.request_exit(1)
+			return
+		var p_lo := int(pw[0])
+		var p_hi := int(pw[1])
+		if p_lo < 0 or p_hi < p_lo or p_hi >= Difficulty.PEAK_OVER:
+			push_error("[量产] 第 16 参窗口范围非法: %d-%d（需 0 <= lo <= hi <= %d；>=%d 为超纲档不进库）" % [
+				p_lo, p_hi, Difficulty.PEAK_OVER - 1, Difficulty.PEAK_OVER])
+			CliShutdown.request_exit(1)
+			return
+		_peak_window = Vector2i(p_lo, p_hi)
 ```
 
 **Step 2: 循环内改验收**（在 `var diff := float(dp.get("difficulty", 0.0))` 之前插入窗口判定，并把 `tier` 的来源改为窗口）
@@ -199,11 +211,13 @@ var _peak_window := Vector2i(-1, -1)  # 第 16 参：peak 窗口 "lo-hi"（如 "
 ```gdscript
 				var dp: Dictionary = level.get("difficulty_profile", {})
 				var diff := float(dp.get("difficulty", 0.0))
-				var peak := int(dp.get("max_complexity", -1))
+				var mc: Variant = dp.get("max_complexity")
+				var peak := int(mc) if mc != null else -1
+				# 全候选峰值分布（窗口内外都记）——命中率 = 窗口内 / 本直方图总数
+				peak_hist[peak] = int(peak_hist.get(peak, 0)) + 1
 				# v4.0 窗口验收：peak 不在窗口 → 拒收（记 peak_miss，供能力档案累积）
 				if _peak_window.x >= 0 and not Difficulty.in_window(peak, _peak_window.x, _peak_window.y):
 					u_peak_miss += 1
-					peak_hist[peak] = int(peak_hist.get(peak, 0)) + 1
 					unit_lines.append(_ev({"t": "peak_miss", "combo": combo["id"], "side": side,
 						"seed": seed, "peak": peak, "cost_s": cost_ms / 1000.0}))
 					continue
@@ -217,10 +231,11 @@ var _peak_window := Vector2i(-1, -1)  # 第 16 参：peak 窗口 "lo-hi"（如 "
 			var peak_hist: Dictionary = {}
 ```
 
-`unit_done` 事件追加两字段（便于离线累积能力档案）：
+`unit_done` 事件追加字段（便于离线累积能力档案 + 口径自证）：
 
 ```gdscript
 				"peak_miss": u_peak_miss, "peak_hist": peak_hist,
+				"peak_window": ("off" if _peak_window.x < 0 else "%d-%d" % [_peak_window.x, _peak_window.y]),
 ```
 
 **Step 3: 关掉与窗口冲突的标量定向**（窗口模式下标量 target 无意义；探针已证对峰值无效）
@@ -234,11 +249,17 @@ var _peak_window := Vector2i(-1, -1)  # 第 16 参：peak 窗口 "lo-hi"（如 "
 **Step 4: 冒烟（本地，100 关噩梦窗口；预期命中率 ~50%）**
 
 ```bash
-# 注意参数位：... <per_tier> <timeout_coef> <tiered:空=关> <stall_max> <k_public:空=默认> <peak窗口>
+# 注意参数位：... <per_tier> <timeout_coef> <tiered> <stall_max> <k_public> <peak窗口>
+# ⚠️ 坑：PowerShell 会**丢弃空字符串参数**（""），导致后续参数整体错位、窗口静默失效（实测踩过）。
+#    空缺位置请显式填占位值：tiered 填 off、k_public 填 -1。
 godot --headless --path . -s res://tools/batch_all_variants.gd -- \
-  user://probe_w4 100 400 -1 1 1 1 0 "o4@8" o4_bianjing 100 3000 "" 60 "" "9-20"
+  user://probe_w4 100 400 -1 1 1 1 0 "o4@8" o4_bianjing 100 3000 off 60 -1 "9-20"
 ```
-Expected: 产出 `hard_XX.json` 100 关；`issues.jsonl` 的 `unit_done` 行含 `peak_miss/peak_hist`；按探针 56% 命中率，tried ≈ 180；该档收满后靠 `stall_max`（连续 60 次撞满档）收尾。
+Expected: 产出 `hard_XX.json` 100 关，**每关 peak ∈ [9,20]**；`issues.jsonl` 的 `unit_done` 行含 `peak_miss/peak_hist/peak_window`；按探针 56% 命中率，tried ≈ 180；窗口模式下 `per_tier` 收满后**按窗口覆盖档收工**（`_window_tiers_full`：窗口覆盖到的各档全部收满才停——跨档窗口如 8-20 需两档都满），不再依赖 `stall_max`。
+
+> 实测参考（s1@8、窗口 9-20、per_tier=3）：命中率 **7/60 ≈ 11.7%**（与探针 10% 同量级）、单候选 ≈ **13 s**、`by_tier` 仅 hard ✓。
+> 另注①：窗口模式下若 `per_type` 大于 `per_tier`，报告会把该单元计入"部分成功"（只产了 per_tier 关）——属预期，不是缺陷。
+> 另注②（口径干净）：窗口模式要求输出目录口径干净——含旧口径文件（峰值不在窗口内）会拒绝续跑（防继承错误档位计数导致 made=0 的静默零产出）。
 
 **Step 5: 提交**
 
@@ -512,6 +533,31 @@ Expected: 落盘关卡的 `difficulty_profile.max_complexity` ∈ [9,20]；若�
 ```
 
 **Step 4: 提交** `git commit -m "feat(platform): 变体能力档案（探针产品化）+ 作者文档补难度口径"`
+
+---
+
+### Task 4b: 跨工具档位口径统一（复审 Minor5）
+
+**Files:**
+- Modify: `tools/verify_batch.gd`（约 L98-110：尺寸×档分组 / `tier` 收集）
+- Modify: `tools/mod_selfcheck.gd`（约 L79-80）
+- Modify: `tools/batch_generate.gd`（约 L90-91：落盘分组/命名）
+
+三处仍按**标量 `difficulty`** 定档（`Difficulty.tier_of(d)`，长度语义，与步数秩相关 0.923）；v4.0 起档位口径是**峰值深度**，须与量产工具（窗口模式下文件名档位按 `tier_of_peak`）对齐——否则同一批关卡在不同报表/分组里归属不同档。（`tier_of` 本身保留作紧凑度画像/回退，不在本任务删除。）
+
+**Step 1: 三处统一改按 `Difficulty.tier_of_profile(dp)`**（null/无画像 → `""`，计入未分档）
+
+```gdscript
+# 旧：var tier := Difficulty.tier_of(float(dp.get("difficulty", -1.0)))
+# 新：var tier := Difficulty.tier_of_profile(dp)     # dp = level.get("difficulty_profile", {})
+# batch_generate 中该 tier 还决定落盘文件名与每档配额计数，改后两处口径一致
+```
+
+**Step 2: 顶层 `difficulty` 字段仅作画像（勿用于分组）**
+
+`tools/batch_all_variants.gd` 的 `level["difficulty"] = diff`（原 L732；本批改动后为 L783）写入的顶层 `difficulty` 字段仅作**紧凑度画像**——长度语义，不是档位判据；报表/校验分组需按 `difficulty_profile.max_complexity`（峰值）另算。
+
+**Step 3: 提交** `git commit -m "chore(tools): 档位分组口径统一到峰值（复审 Minor5）"`
 
 ---
 

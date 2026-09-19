@@ -20,6 +20,13 @@ extends SceneTree
 #     （9×9 重线索单关 ~175s，重放 9 个就是半小时白花）。
 #   · target_difficulty 目标难度（默认 0=不限）。>0 时删线索「达标即停」（早停提速），
 #     并按目标难度分层生产——例如定向补 hard 关：target=2.5（hard 区间 2.2+）。
+#   · 第 16 参（v4.0 深度口径）：峰值窗口 `lo-hi`（闭区间），如 "9-20" = 只收噩梦档；
+#     缺省/空 = 不限（旧行为）。窗口模式下：档位由峰值定（tier_of_peak），标量 tiered 定向自动关闭，
+#     unit_done 事件带 peak_miss/peak_hist（可反推命中率与单候选成本）。
+#     ⚠️ 运维注意：① 空缺参数位必须填占位值（tiered 填 `off`、k 旋钮填 `-1`）——PowerShell 会
+#        丢弃空字符串参数导致后续参数整体错位、窗口静默失效（实测踩过）；② 窗口模式要求目录口径
+#        干净（含旧口径文件会拒绝续跑）；③ 输出的文件名档位 = 峰值口径，顶层 `difficulty` 字段
+#        仅作紧凑度画像（报表分组需按峰值口径另算）。
 #
 # 关键设计（防废品/防复工）：
 #   1. is_feasible 预筛：不含 dt 的组合在生成前判数学可行性，UNSAT（如 RL 6×6 奇偶矛盾、
@@ -29,7 +36,7 @@ extends SceneTree
 #
 # 记录功能（服务器长跑/远程分析用）：
 #   · issues_shard_XX.jsonl：逐事件记录（empty / empty_timeout / tier_empty / proof_fail /
-#     dup_fp / similar）+ 每单元完成行（unit_done：尝试数/产出/各分类计数/耗时）——
+#     dup_fp / similar / peak_miss）+ 每单元完成行（unit_done：尝试数/产出/各分类计数/耗时）——
 #     一行一个 JSON，追加写、单元粒度落盘（进程被杀也不丢已完成单元的事件）。
 #   · unit_done 行兼作心跳：远程 getfile 拉最后几行即可看进度。
 #   · 分析入口：跑完后 collect_report.py（本地）拉回汇总。
@@ -111,6 +118,7 @@ var _timeout_coef := 3000      # 第 12 参数：单关超时系数（超时 = s
 var _tiered_target := false    # 第 13 参数："tiered" = 方案 B 动态目标（按未满档传 target_difficulty）
 var _stall_max := 60           # 第 14 参数：停滞阈值覆盖（默认 60；调小 = 满档后更早停单元）
 var _k_public := -1            # 第 15 参数：k 旋钮（0=不公开 / 1=公开；缺省 -1=不设置，保持规则默认）
+var _peak_window := Vector2i(-1, -1)  # 第 16 参数：峰值窗口 "lo-hi"（如 "9-20"）；缺省 -1 = 不限（旧行为）
 
 ## per_tier 模式停滞阈值：连续 N 次尝试全部撞「已满档」→ 停止该单元
 ##（防「easy 满后为 normal/hard 白跑满 seed_max」——O1 等低难度天花板算子的常态）。
@@ -346,8 +354,9 @@ func _fingerprint(level: Dictionary) -> String:
 
 
 ## 断点续跑：扫描单元目录已有关卡（总数 / 各档最大编号 / 指纹集 / 雷位集用于相似度门）。
+## 窗口模式（第 16 参）下另收集「窗口外文件」清单 window_bad —— 续跑前据此拒绝脏口径目录（复审 I3）。
 func _scan_unit(combo_dir: String) -> Dictionary:
-	var out := {"count": 0, "max_idx": {}, "fps": {}, "mine_sets": [], "tier_count": {}}
+	var out := {"count": 0, "max_idx": {}, "fps": {}, "mine_sets": [], "tier_count": {}, "window_bad": []}
 	var d := DirAccess.open(combo_dir)
 	if d == null:
 		return out
@@ -362,6 +371,12 @@ func _scan_unit(combo_dir: String) -> Dictionary:
 			for m in level.get("mines", []):
 				ms[Vector2i(int(m["c"]), int(m["r"]))] = true
 			(out["mine_sets"] as Array).append(ms)
+			# 窗口模式：峰值不在窗口内 = 旧口径/超纲残留 → 记入 window_bad（续跑前拒绝）
+			if _peak_window.x >= 0:
+				var mc: Variant = (level.get("difficulty_profile", {}) as Dictionary).get("max_complexity")
+				var wpk := int(mc) if mc != null else -1
+				if not Difficulty.in_window(wpk, _peak_window.x, _peak_window.y):
+					(out["window_bad"] as Array).append("%s/%s" % [combo_dir, f])
 		var parts := str(f.get_basename()).split("_", false)
 		if parts.size() == 2:
 			var tier := str(parts[0])
@@ -378,6 +393,9 @@ func _scan_unit(combo_dir: String) -> Dictionary:
 func _unit_full(existing: Dictionary) -> bool:
 	if _per_tier > 0:
 		var tc: Dictionary = existing.get("tier_count", {})
+		# 窗口模式：只看窗口覆盖档（否则四档全满永不成立 → 已完成的窗口单元重跑时不跳过，白烧机时）
+		if _peak_window.x >= 0:
+			return _window_tiers_full(tc)
 		for tier in ["intro", "easy", "normal", "hard"]:
 			if int(tc.get(tier, 0)) < _per_tier:
 				return false
@@ -391,6 +409,24 @@ func _all_tiers_full(made_by_tier: Dictionary) -> bool:
 		if int(made_by_tier.get(tier, 0)) < _per_tier:
 			return false
 	return true
+
+
+## 窗口模式：窗口 [lo,hi] 覆盖到的所有档是否都已满（跨档窗口如 "8-20" 要两档都满才停）。
+## 为什么不能只看"当前档满"：跨档窗口只产一半就停会少产。
+func _window_tiers_full(made_by_tier: Dictionary) -> bool:
+	if _peak_window.x < 0:
+		return false
+	var covered := false
+	for tid in ["intro", "easy", "normal", "hard"]:
+		var r: Vector2i = Difficulty.tier_range(tid)
+		if r.x < 0:
+			continue
+		if r.y < _peak_window.x or r.x > _peak_window.y:
+			continue                       # 该档与窗口无交集
+		covered = true
+		if int(made_by_tier.get(tid, 0)) < _per_tier:
+			return false
+	return covered
 
 
 ## 与组内已有盘的峰值 Jaccard 相似度（雷位集 交/并）。> SIMILARITY_MAX 时拒收新关——
@@ -482,6 +518,29 @@ func _initialize() -> void:
 	# 生效：不公开 → 编码省略 Σ=k（生成验证即「不知 k」口径，通过 = 满足 R01）+ 关卡落盘 k_public=false。
 	if args.size() >= 15 and args[14] != "":
 		_k_public = int(args[14])
+	# 第 16 参：峰值窗口（v4.0 深度口径）——"lo-hi" 闭区间；缺省/空 = 不限（保持旧行为）。
+	# 用法示例：`9-20`（只收噩梦档）。窗口模式下档位计数改用 tier_of_peak，标量 tiered 定向自动关闭。
+	if args.size() >= 16 and str(args[15]) != "":
+		var pw := str(args[15]).split("-", false, 1)
+		# 显式关闭：`off` / `-1` / 任何负数——空缺位的通行占位值就是 -1，
+		# 若不接受，运维按习惯填 -1 会直接启动失败（踩坑成本 > 兼容成本）。
+		# 注意用原始串判负号："-1".split("-") 会把负号吃掉得到 ["1"]，用 pw 判会漏
+		var win_off := str(args[15]) == "off" or (str(args[15]).is_valid_int() and int(str(args[15])) < 0)
+		# 格式与范围必须启动即校验：这类配置错误在本工作流已真实发生（PowerShell 丢空串导致参数错位），
+		# 静默失效会让长跑白费机时或把脏数据写进量产目录。宁可在启动时失败。
+		if not win_off:
+			if pw.size() != 2 or not pw[0].is_valid_int() or not pw[1].is_valid_int():
+				push_error("[量产] 第 16 参窗口格式非法: %r（应为 lo-hi，如 9-20；不限请留空或填 off/-1）" % str(args[15]))
+				CliShutdown.request_exit(1)
+				return
+			var p_lo := int(pw[0])
+			var p_hi := int(pw[1])
+			if p_lo < 0 or p_hi < p_lo or p_hi >= Difficulty.PEAK_OVER:
+				push_error("[量产] 第 16 参窗口范围非法: %d-%d（需 0 <= lo <= hi <= %d；>=%d 为超纲档不进库）" % [
+					p_lo, p_hi, Difficulty.PEAK_OVER - 1, Difficulty.PEAK_OVER])
+				CliShutdown.request_exit(1)
+				return
+			_peak_window = Vector2i(p_lo, p_hi)
 	DirAccess.make_dir_recursive_absolute(_out_dir)
 	# 记录文件路径（分片命名——多进程写同一文件会互相覆盖，v2.9.3 probe 实测教训）
 	_issues_path = "%s/%s" % [_out_dir,
@@ -529,6 +588,7 @@ func _initialize() -> void:
 	var quota_desc := "每档 %d 关（per_tier）" % _per_tier if _per_tier > 0 else "每类 %d 关" % _per_type
 	print("=== 全变体+混合批量生成（%d 组合 × 5 尺寸 × %s）[shard %d/%d]===" % [
 		combos.size(), quota_desc, _shard_idx, _shard_total])
+	print("  峰值窗口: %s" % ("不限（旧行为）" if _peak_window.x < 0 else "%d-%d（档位按峰值判定）" % [_peak_window.x, _peak_window.y]))
 	for combo in combos:
 		# k 旋钮（第 15 参）：对本组合的 clue/global 规则统一设置（不公开 = 省略 Σ=k 口径）
 		if _k_public >= 0:
@@ -595,6 +655,14 @@ func _initialize() -> void:
 			# 断点续跑：扫描已有产出。满额单元直接跳过（重跑安全、不重复生成）；
 			# 未满单元编号接续 + 指纹去重（同 seed 重跑撞已有盘时跳过，不产生冗余文件）。
 			var existing := _scan_unit(combo_dir)
+			# 窗口模式下目录必须是"干净口径"：含旧口径文件（峰值不在窗口内）时拒绝续跑，
+			# 否则会继承错误的档位计数 → made=0 且看似"窗口太严"（复审 I3 的静默零产出）。
+			if _peak_window.x >= 0 and not (existing["window_bad"] as Array).is_empty():
+				push_error("[量产] 窗口模式目录含旧口径文件，拒绝续跑: %s（%d 个，例：%s）；请换新目录或清理后重跑" % [
+					combo_dir, (existing["window_bad"] as Array).size(),
+					str((existing["window_bad"] as Array)[0])])
+				stats["fail"] = int(stats.get("fail", 0)) + 1
+				continue
 			if _unit_full(existing):
 				stats["resumed"] = int(stats.get("resumed", 0)) + 1
 				stats["ok"] += int(existing["count"])
@@ -617,6 +685,8 @@ func _initialize() -> void:
 			var u_dup := 0
 			var u_sim := 0
 			var u_full_stall := 0  # per_tier 模式：连续撞「已满档」计数（达 STALL_MAX 停单元）
+			var u_peak_miss := 0                     # 窗口外拒收计数（第 16 参启用时）
+			var peak_hist: Dictionary = {}           # 候选峰值直方图（供能力档案/命中率分析）
 			# 阶段统计累计（v2.9.3 检测器增强）：布雷/删线索/验证各阶段失败可观测
 			var u_attempts := 0
 			var u_brep_fail := 0
@@ -639,7 +709,8 @@ func _initialize() -> void:
 				var t_seed := Time.get_ticks_msec()
 				# 方案 B：动态目标——tiered 模式下按「下一个未满档」定向传 target_difficulty。
 				var t_target := _target_difficulty
-				if _tiered_target and t_target <= 0.0:
+				# 窗口模式下标量定向无意义（探针实测：target 对峰值无影响，o4 56.0% vs 53.8%）
+				if _tiered_target and t_target <= 0.0 and _peak_window.x < 0:
 					t_target = _next_tier_target(made_by_tier)
 				var level: Dictionary = gen.generate_with_rules(
 					combo["clue"], combo["globals"], Vector2i(side, side), mines, seed,
@@ -663,7 +734,17 @@ func _initialize() -> void:
 					continue
 				var dp: Dictionary = level.get("difficulty_profile", {})
 				var diff := float(dp.get("difficulty", 0.0))
-				var tier := Difficulty.tier_of(diff)
+				var mc: Variant = dp.get("max_complexity")
+				var peak := int(mc) if mc != null else -1
+				# 全候选峰值分布（窗口内与窗口外都记）——命中率 = 窗口内 / 本直方图总数
+				peak_hist[peak] = int(peak_hist.get(peak, 0)) + 1
+				# v4.0 窗口验收（第 16 参）：peak 不在窗口 → 拒收（记 peak_miss）
+				if _peak_window.x >= 0 and not Difficulty.in_window(peak, _peak_window.x, _peak_window.y):
+					u_peak_miss += 1
+					unit_lines.append(_ev({"t": "peak_miss", "combo": combo["id"], "side": side,
+						"seed": seed, "peak": peak, "cost_s": cost_ms / 1000.0}))
+					continue
+				var tier := Difficulty.tier_of_peak(peak) if _peak_window.x >= 0 else Difficulty.tier_of(diff)
 				if tier == "":
 					u_tier += 1
 					max_diff_seen = maxf(max_diff_seen, diff)
@@ -713,7 +794,7 @@ func _initialize() -> void:
 				made_by_tier[tier] = int(made_by_tier.get(tier, 0)) + 1
 				stats["tiers"][tier] = int(stats["tiers"].get(tier, 0)) + 1
 				if _per_tier > 0:
-					if _all_tiers_full(made_by_tier):
+					if _all_tiers_full(made_by_tier) or _window_tiers_full(made_by_tier):
 						break
 				elif made >= _per_type:
 					break
@@ -728,6 +809,8 @@ func _initialize() -> void:
 				"verify_fail": u_verify_fail, "timeout": u_timeout,
 				"mines": mines, "mines_fallback": mines_fallback,
 				"per_tier": _per_tier, "by_tier": made_by_tier, "full_stall": u_full_stall,
+				"peak_miss": u_peak_miss, "peak_hist": peak_hist,
+				"peak_window": ("off" if _peak_window.x < 0 else "%d-%d" % [_peak_window.x, _peak_window.y]),
 				"cost_s": (Time.get_ticks_msec() - u_t0) / 1000.0}))
 			if mines_fallback:
 				stats["mines_fallback"] = int(stats.get("mines_fallback", 0)) + 1
