@@ -143,8 +143,12 @@ func _ready() -> void:
 ## 延后两帧执行：先让选关页自己画出来，再吃这份开销；失败无妨（只是没预热，不影响任何功能）。
 ## ⚠️ 它覆盖不到 `_ready` 里的节点构建（那部分不在上述测量范围内）。
 func _prewarm_board_view() -> void:
-	await get_tree().process_frame
-	await get_tree().process_frame
+	# **同步执行，不 await**（2026-09-19 真机崩溃修复）：
+	# 原实现用 `await get_tree().process_frame` 延后两帧，但 await 恢复时节点可能已不在
+	# 场景树 → `get_tree()` 返回 null → 报 `Parameter data.tree is null` /
+	# `Invalid access to property 'process_frame' on a base object of type 'null instance'`。
+	# 改为在 _ready 内同步完成：代价是选关页加载多 132ms（那本就是一次场景切换，玩家察觉不到），
+	# 换来「进入关卡时不再补付这 132ms」——比异步版更早完成预热，也更快让玩家点到已热场景。
 	var packed := load("res://ui/board_view.tscn")
 	if packed is PackedScene:
 		_board_view_prewarmed = packed

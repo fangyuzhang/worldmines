@@ -36,11 +36,12 @@ func _build_ui() -> void:
     vbox.custom_minimum_size = Vector2(360, 0)
     margin.add_child(vbox)
 
-    var title := Label.new()
-    title.text = "设置"
-    title.add_theme_font_size_override("font_size", 24)
-    title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    vbox.add_child(title)
+    # 名字不叫 title：会遮蔽基类 Window.title（真机报 SHADOWED_VARIABLE_BASE_CLASS）
+    var title_lb := Label.new()
+    title_lb.text = "设置"
+    title_lb.add_theme_font_size_override("font_size", 24)
+    title_lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    vbox.add_child(title_lb)
 
     # 主题模式
     var row1 := HBoxContainer.new()
