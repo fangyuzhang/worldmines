@@ -303,7 +303,10 @@ func toggle_flag(pos: Vector2i) -> void:
     if cell.state != Cell.State.HIDDEN and cell.state != Cell.State.FLAGGED and cell.state != Cell.State.QUESTION:
         return
     var before := _snapshot_cells()  # 撤销历史：记录本步之前的全盘格状态
-    board.toggle_flag(pos)
+    # 右键是否走「? 」三态由设置决定（默认只有 标雷/取消 两态）。
+    # 判空：测试里 SettingsManager 可能是手工实例或未注册，不能假定它一定在。
+    var allow_q: bool = true if SettingsManager == null else SettingsManager.question_mark_enabled
+    board.toggle_flag(pos, allow_q)
     _record_move(before)
     AudioManager.play("flag")
     _maybe_autosave()

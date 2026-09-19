@@ -29,6 +29,7 @@ var _ui_scale_opt: OptionButton
 
 # ---- 玩法页 ----
 var _quick_chk: CheckButton
+var _question_chk: CheckButton
 var _autosave_chk: CheckButton
 var _keyboard_chk: CheckButton
 var _restart_confirm_chk: CheckButton
@@ -209,6 +210,11 @@ func _build_play_page(page: VBoxContainer) -> void:
     # 连携操作：一键展开（chord）+ 右键拖动插旗。默认开；误触多可关
     _quick_chk = _add_check_row(page, "连携操作（一键展开 / 拖动插旗）",
         func(v: bool): SettingsManager.set_quick_actions(v), SettingsManager.quick_actions)
+    # 右键「? 」三态：默认关 → 右键只有 标雷 / 取消 两态（见 SettingsManager 的同名字段注释）。
+    # 标签写全循环顺序，是为了让玩家一眼知道开/关各自得到什么，而不是猜「问号」指什么。
+    _question_chk = _add_check_row(page, "右键可标问号（标雷 → ？ → 取消）",
+        func(v: bool): SettingsManager.set_question_mark_enabled(v),
+        SettingsManager.question_mark_enabled)
     _autosave_chk = _add_check_row(page, "自动存档",
         func(v: bool): SettingsManager.set_autosave_enabled(v), SettingsManager.autosave_enabled)
     # 键盘操作：关闭 = 只用鼠标

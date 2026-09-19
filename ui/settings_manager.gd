@@ -63,6 +63,12 @@ var fullscreen: bool = false
 #   · 右键拖动连续插旗
 # 默认开启；若真机反馈「误触太多」可在此关闭（两者绑定一个开关，避免设置项膨胀）。
 var quick_actions: bool = true
+## 右键是否走「标雷 → ? → 取消」三态。**默认 false（关闭）**：右键只有 标雷 / 取消 两态。
+## 为什么默认关：? 是「不确定」的笔记，多数玩家操作中它主要来自误触——想取消标记时
+## 多点一下就变成 ?，得再点一下才真正清掉，而 ? 又会占住格子不让左键翻开（易误判为卡住）。
+## ⚠️ 关闭只影响**新增** ?：盘上已有的 ? 仍可右键清除（见 Board.toggle_flag 的注释），
+## 否则关掉设置后残留的 ? 会变成永远消不掉的死格。
+var question_mark_enabled: bool = false
 # 重开确认弹窗：玩家在弹窗勾选「不再提示」后置 false，重开直接执行（v3.3）。
 # 有了设置界面入口，玩家才能在勾过「不再提示」之后改回来。
 var restart_confirm: bool = true
@@ -108,6 +114,7 @@ func load_cfg() -> void:
     fullscreen = _get_bool(cfg, "fullscreen", false)
     quick_actions = _get_bool(cfg, "quick_actions", true)
     restart_confirm = _get_bool(cfg, "restart_confirm", true)
+    question_mark_enabled = _get_bool(cfg, "question_mark_enabled", false)
     ui_scale = clampf(float(cfg.get_value("game", "ui_scale", 1.0)), 1.0, 1.5)
     # 注：AudioManager.enabled 的开机同步已移入 AudioManager._ready——本 autoload 注册序(4)
     # 早于 AudioManager(7)，此处反向引用会因 _ready 时序失败，导致持久化的音效开关开机不生效；
@@ -278,6 +285,13 @@ func set_quick_actions(v: bool) -> void:
 
 func set_restart_confirm(v: bool) -> void:
     restart_confirm = v
+    save()
+
+
+## 右键是否走三态。关闭后**只影响新增 ?**：盘上已有的 ? 仍能被右键清掉
+## （Board.toggle_flag 保留了 QUESTION→HIDDEN），否则关掉设置会留下永远消不掉的死格。
+func set_question_mark_enabled(v: bool) -> void:
+    question_mark_enabled = v
     save()
 
 

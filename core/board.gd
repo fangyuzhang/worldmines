@@ -483,7 +483,13 @@ func _append_flood_dirs(out: Array[Vector2i], pos: Vector2i, size: Vector2i, dir
 
 
 ## 插旗/笔记?/取消 循环标记（右键）。
-func toggle_flag(pos: Vector2i) -> void:
+##
+## allow_question=false 时**跳过 ? 态**，循环变成两态：HIDDEN → FLAGGED → HIDDEN。
+## 是否启用由上层（GameSession 读 SettingsManager）传入 —— core 不直接引用 UI autoload。
+##
+## ⚠️ QUESTION → HIDDEN 这条分支**任何设置下都必须保留**：玩家关掉 ? 之后，盘上残留的
+## 问号格仍要能被清掉，否则会留下一批右键永远消不掉的格子（静默死锁，且不报错）。
+func toggle_flag(pos: Vector2i, allow_question: bool = true) -> void:
         if state != GameState.PLAYING:
                 return
         if grid == null or not grid.in_board(pos):
@@ -495,7 +501,7 @@ func toggle_flag(pos: Vector2i) -> void:
                 Cell.State.HIDDEN:
                         cell.state = Cell.State.FLAGGED
                 Cell.State.FLAGGED:
-                        cell.state = Cell.State.QUESTION
+                        cell.state = Cell.State.QUESTION if allow_question else Cell.State.HIDDEN
                 Cell.State.QUESTION:
                         cell.state = Cell.State.HIDDEN
         cell_state_changed.emit(pos)
