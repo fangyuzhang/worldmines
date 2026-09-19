@@ -113,3 +113,12 @@ static func tier_range(tier: String) -> Vector2i:
 	if w.is_empty():
 		return Vector2i(-1, -1)
 	return Vector2i(int(w["min"]), int(w["max"]))
+
+
+## 档位显示文案（v4.0 深度口径）：标签 + 峰值窗口。**唯一的档位文案来源**——
+## 选关页/主菜单/图鉴都从这里取，禁止再手写第三份档位表（防漂移）。
+static func tier_text(tier: String) -> String:
+	var w: Dictionary = PEAK_WINDOWS.get(tier, {})
+	if w.is_empty():
+		return str(TIERS.get(tier, {}).get("label", tier))
+	return "%s（%d–%d 条线索）" % [str(w["label"]), int(w["min"]), int(w["max"])]

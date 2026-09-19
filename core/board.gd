@@ -20,6 +20,9 @@ var win_condition: WinConditionPlugin = WinConditionPlugin.new()
 ## 关卡难度画像（生成关落盘的 difficulty_profile.difficulty；-1 = 无画像）。
 ## 供提示预算等「按难度调节」的能力消费，不参与任何胜负/线索逻辑。
 var difficulty: float = -1.0
+## 深度画像（v4.0）：peak = 单步最大必要线索数；tier = 由峰值定的档位（供提示预算/UI 用）。
+var peak := -1
+var tier := ""
 ## **已被演绎确证的雷**（pos -> true）。只由提示/求解器的必然结论写入，
 ## **绝不等于玩家插的旗**——玩家可能插错，而这里的每一格都是在「当时全部玩家视角约束下
 ## 所有模型里恒成立的雷」。
@@ -84,6 +87,8 @@ func load_level(level: Dictionary) -> void:
         # 难度画像：优先顶层 difficulty，其次 difficulty_profile.difficulty
         var prof: Dictionary = level.get("difficulty_profile", {})
         difficulty = float(level.get("difficulty", prof.get("difficulty", -1.0)))
+        peak = int(prof.get("max_complexity", -1))
+        tier = Difficulty.tier_of_profile(prof)
         _static_mines.clear()
         # 变体配置复位为经典（经典关卡无 variant 字段 ⇒ 向后兼容）。
         clue_variant = ClueEngine.Variant.CLASSIC

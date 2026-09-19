@@ -40,3 +40,10 @@ func test_more_boundaries() -> void:
 	assert_eq(Difficulty.tier_range("nope"), Vector2i(-1, -1))       # 未知档位
 	assert_false(Difficulty.in_window(21, 9, 20))                    # 上界外侧
 	assert_eq(Difficulty.filter_by_tier([{"difficulty_profile": {}}], "nope").size(), 1)  # 未知 tier → 原样返回
+
+
+## 档位文案（唯一事实源）：UI 各处都从这里取，含峰值窗口提示。
+func test_tier_text() -> void:
+	assert_eq(Difficulty.tier_text("hard"), "噩梦（9–20 条线索）")
+	assert_eq(Difficulty.tier_text("intro"), "入门（0–2 条线索）")
+	assert_eq(Difficulty.tier_text("nope"), "nope")  # 未知档位回退原样，不崩

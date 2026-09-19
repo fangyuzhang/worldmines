@@ -51,6 +51,13 @@ const PAGE_SINGLE := 0          # 页一：单项变体（经典 + 线索型 + �
 const PAGE_MIXED := 1           # 页二：混合档（线索 × 全局约束 交叉表）
 const PAGE_MOD := 2             # 页三：Mod（按 Mod 分组，无 Mod 时页签隐藏）
 
+
+## 档位显示文案（v4.0 深度口径）：单一事实源在 core（`Difficulty.tier_text`，从 PEAK_WINDOWS 派生）。
+## 此处仅作旧调用点薄封装，避免大范围改名；新代码请直接用 Difficulty.tier_text。
+static func _tier_text(tier: String) -> String:
+	return Difficulty.tier_text(tier)
+
+
 # 变体表：**运行时从规则注册表派生**（见 ui/variant_catalog.gd）。
 #
 # 历史问题：这里原先是一张写死的 15 条常量表，引擎换变体（新增 knight、
@@ -1218,8 +1225,7 @@ func _refresh_tier_buttons() -> void:
 	for i in _tier_btns.size():
 		var t: String = str(LevelLibrary.TIER_ORDER[i])
 		var n := int(c.get(t, 0))
-		var tier_def: Dictionary = Difficulty.TIERS.get(t, {})
-		_tier_btns[i].text = "%s\n%d 关" % [str(tier_def.get("label", t)), n]
+		_tier_btns[i].text = "%s\n%d 关" % [_tier_text(t), n]
 		_tier_btns[i].disabled = n <= 0
 		_style_choice(_tier_btns[i], t == _tier)
 
@@ -1387,7 +1393,7 @@ func _make_tile(idx: int) -> Button:
 		var dif := LevelLibrary.level_difficulty(str(m["id"]), SIZES[_size_idx], _tier, idx)
 		btn.tooltip_text = "%s · %d×%d · %s 档第 %d 关\n（难度 %.2f；正式量产关卡）" % [
 				str(m["name"]), SIZES[_size_idx], SIZES[_size_idx],
-				str(Difficulty.TIERS.get(_tier, {}).get("label", _tier)), idx + 1, dif]
+				_tier_text(_tier), idx + 1, dif]
 	else:
 		btn.text = str(idx + 1)
 		if cleared:
@@ -1424,7 +1430,7 @@ func _refresh_stat() -> void:
 			cleared += 1
 	if _lib_mode:
 		_stat_label.text = "已通关 %d / %d\n（%s 档）" % [cleared, _set_count(),
-				str(Difficulty.TIERS.get(_tier, {}).get("label", _tier))]
+				_tier_text(_tier)]
 	else:
 		_stat_label.text = "已通关 %d / %d" % [cleared, _set_count()]
 	# 按钮：选中最新解锁关卡 → 继续游戏；手选其他 → 开始游戏；未开放变体 → 禁用
@@ -1581,7 +1587,7 @@ func _on_play() -> void:
 				_play_btn.disabled = false
 				_refresh_stat()
 			UiToast.popup(self, "关卡数据缺失（%s 档第 %d 关）" % [
-					str(Difficulty.TIERS.get(_tier, {}).get("label", _tier)), _selected + 1])
+					_tier_text(_tier), _selected + 1])
 			return
 		if _try_resume_saved(lp):
 			return

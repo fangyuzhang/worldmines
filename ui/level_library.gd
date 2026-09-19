@@ -164,11 +164,17 @@ static func level_difficulty(mode: String, size: int, tier: String, idx: int) ->
 	return float(prof.get("difficulty", -1.0))
 
 
-## 关卡短标签（tile 用）：序号 + 难度值（四位内）——玩家一眼看出这盘多重。
-static func level_label(mode: String, size: int, tier: String, idx: int) -> String:
+## 某关峰值深度（读不到 → -1）。
+static func level_peak(mode: String, size: int, tier: String, idx: int) -> int:
 	var lv := get_level(mode, size, tier, idx)
 	if lv.is_empty():
+		return -1
+	return int((lv.get("difficulty_profile", {}) as Dictionary).get("max_complexity", -1))
+
+
+## 关卡短标签（tile 用）：序号 + 深度峰值（玩家一眼看出要同时把握几条线索）。
+static func level_label(mode: String, size: int, tier: String, idx: int) -> String:
+	var peak := level_peak(mode, size, tier, idx)
+	if peak < 0:
 		return str(idx + 1)
-	var prof: Dictionary = lv.get("difficulty_profile", {})
-	var d := float(prof.get("difficulty", 0.0))
-	return "%d\n%.2f" % [idx + 1, d]
+	return "%d\n深度%d" % [idx + 1, peak]

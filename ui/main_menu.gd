@@ -126,7 +126,7 @@ func _saved_level_hint(level_path: String) -> String:
         return fallback
     return "有一局未完成的对局：%s · %s×%s · %s。从选关页进入同一关可继续。" % [
         VariantCatalog.display_name(mode), side, side,
-        str(Difficulty.TIERS[tier].get("label", tier))]
+        Difficulty.tier_text(tier)]
 
 
 # ============ toast（场景内顶部 Label + Timer，2s 自动消失；文案 §8.5） ============
