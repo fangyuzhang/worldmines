@@ -57,7 +57,7 @@ dotnet build
 | 全局约束 | `core/constraint_engine.gd` |
 | 生成关卡 | `core/puzzle_generator.gd` |
 | 难度量化/复杂度 | `core/puzzle_generator.gd`（`difficulty_from_stats` / `_minimal_clue_count`）|
-| 难度分档 | `core/difficulty.gd`（TIERS / tier_of / filter_by_tier / generate_tiered）|
+| 难度分档 | `core/difficulty.gd`（**PEAK_WINDOWS 三档峰值窗口** / tier_of_peak / tier_of_profile / filter_by_tier；旧标量 TIERS 保留作画像）|
 | 单格强制探测 | `solver/RuleSolver.cs::IsForcedCell` |
 | 提示 | `core/hint_solver.gd` |
 | 唯一解计数 | `core/brute_force_oracle.gd` / `solver/RuleSolver.cs` |
@@ -371,24 +371,37 @@ powershell -File tools\_analyze_issues.ps1                        # 本地分析
 | **删线索 = 提升难度** | 实测：不删（38 线索）maxC=4 → 删到 9 线索 maxC=6。删冗余后玩家被迫「精打细算组合线索」 |
 | **复杂度上限随盘面增长** | 实测 maxC：5×5→4、6×6→6、7×7→10、9×9→11。必要线索数上限 = 线索数（大盘线索多 → 上限自然更高）。**注意**：组合约束（mx/rl）不提升反而降低 maxC（约束使盘面结构化、每步所需线索更少）——不要试图靠加全局约束冲上限，正确路径是加大盘面 |
 
-**难度分档**（`core/difficulty.gd`，四档：入门/普通/困难/噩梦——2026-09-15 命名统一）：
+**难度分档**（`core/difficulty.gd`，v4.1 三档峰值窗口——2026-09-20 对齐《14MV2》常量矩阵；旧标量 TIERS 保留作「紧凑度画像」）：
 
 ```gdscript
-const TIERS := {
-    "intro":  {"label": "入门", "min": 0.0, "max": 0.3},
-    "easy":   {"label": "普通", "min": 0.3, "max": 1.2},
-    "normal": {"label": "困难", "min": 1.2, "max": 2.2},
-    "hard":   {"label": "噩梦", "min": 2.2, "max": 1e9},
+const PEAK_WINDOWS := {   # 玩家档位判据（唯一事实源）：峰值 = 单步最大必要线索数
+    "easy":   {"label": "普通", "min": 2, "max": 3},
+    "normal": {"label": "困难", "min": 4, "max": 5},
+    "hard":   {"label": "噩梦", "min": 6, "max": 20},
 }
+# PEAK_OVER := 21  # >=21 超纲淘汰；peak 0-1 纯一眼盘同样不进任何档（对方普通档 MIN=2 同语义）
 ```
 
 | 能力 | 函数 | 说明 |
 |---|---|---|
-| 档位归属 | `Difficulty.tier_of(d)` | 难度分 → 档位 |
-| 运行时筛选 | `Difficulty.filter_by_tier(levels, tier)` | 读 difficulty_profile 按区间筛（**零生成**） |
-| 定向生成 | `Difficulty.generate_tiered(...)` | 多 seed 尝试，达标即返回 |
+| 档位归属（玩家） | `Difficulty.tier_of_peak(peak)` / `tier_of_profile(dp)` | 峰值 → 档位；超纲/无画像返回 "" |
+| 运行时筛选 | `Difficulty.filter_by_tier(levels, tier)` | 读 difficulty_profile 按峰值窗口筛（**零生成**） |
+| 窗口谓词 | `Difficulty.in_window(peak, lo, hi)` / `tier_range(tier)` | 量产窗口验收与 UI 取窗 |
+| 定向生成（旧标量） | `Difficulty.generate_tiered(...)` / `tier_of(d)` | 旧口径画像与回退，不再是玩家档位 |
 
-**生成定向**：`generate_with_rules(..., target_difficulty: float = 0.0)`——>0 时删线索改为「难度驱动」（删到难度达标即停，早停=提速，同档难度可控）。注意 target 是**下限**（顺序删除的粒度会让 difficulty 跳跃），精确分档用 `filter_by_tier`。
+**生成定向**：`generate_with_rules(..., target_difficulty: float = 0.0)`——>0 时删线索改为「难度驱动」（删到难度达标即停，早停=提速，同档难度可控）。注意 target 是**下限**（顺序删除的粒度会让 difficulty 跳跃），精确分档用 `filter_by_tier`。窗口模式下（量产工具的峰值窗口参数）走窗口验收，标量定向自动关闭。
+
+**v4.1 存量重标（服务器侧流程）**：52,988 关存量仍按旧四档落盘——**收割回本机后、导入库之前**必须先按三档窗口重标再导入（工具与导入闸门均已同步三档）：
+```
+python tools/retier_stock.py --src <harvest批次目录...> \
+    --out _staged_levels/relib41_harvest \
+    --over-dir _staged_levels/relib41_harvest_over \
+    --too-easy-dir _staged_levels/relib41_harvest_tooeasy \
+    --unknown-dir _staged_levels/relib41_harvest_unknown \
+    --prewon-dir _staged_levels/relib41_harvest_prewon
+godot --headless --path . -s res://tools/import_batch_to_lib.gd -- _staged_levels/relib41_harvest --overwrite
+```
+本地实测基线（2026-09-20，6 个 harvest 批次共 14,609 关）：三档 9,392（easy 20.7% / normal 23.4% / hard 55.9%）+ 淘汰 tooeasy 5,017（34.3%）+ 超纲 35 + 开局即终局死盘 140；自校验 OK。
 
 **C# 侧新增**：`RuleSolver.IsForcedCell(spec, r, c)`（单格强制探测，2 次 assumption）；`RuleSolver.MinimalForcedClueCount(spec, r, c)`（unsat_core 必要线索数——`AddConstraint` 已有 `OnlyEnforceIf` 门控能力，每条线索 `use_i` 门控 + `SufficientAssumptionsForInfeasibility` 取 core，单 worker 求解保证确定性）。
 
