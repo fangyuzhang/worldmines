@@ -1,3 +1,9 @@
+# ⚠️ 警告：本文件含 40+ 条项目自定义规则（工具缓存 / 临时脚本 / 批次产物 / GodotSteam 等）。
+# **不要**用 Godot 菜单 Project > Version Control > Create/Override Version Control Metadata：
+# 它是「整文件覆盖」语义——2026-09-20 实测把本文件从 50 行砍到 3 行，
+# 446 个临时产物（_staged_levels 批次/日志/_*.ps1 等）暴露为可提交状态，手滑 git add -A 即污染历史。
+# 若确需 Godot 模板，请在临时文件里生成后**手动并集**到本文件，勿直接覆盖。
+
 # Godot 4+ specific ignores
 .godot/
 /android/
