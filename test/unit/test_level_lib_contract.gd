@@ -15,7 +15,8 @@ extends GutTest
 ##      旧标量 difficulty 区间口径已废弃（它测长度、非深度），库也按峰值重标过；
 ##   4. `catalog.json` 记录的关数必须与集文件实际一致。
 const LIB := "res://levels_lib"
-const TIER_ORDER: Array = ["intro", "easy", "normal", "hard"]
+## v4.1 三档（与 LevelLibrary.TIER_ORDER / Difficulty.PEAK_WINDOWS 同名单；intro 已退役）。
+const TIER_ORDER: Array = ["easy", "normal", "hard"]
 
 # static：GUT 每个测试方法新建实例，成员变量不跨测试，故用静态缓存避免重复读盘/构建
 static var _sets_cache: Array = []

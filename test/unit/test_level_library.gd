@@ -7,7 +7,8 @@
 # 只在「库非空」时验证内部一致性；库为空（未导入内容的分支）时仅验证优雅降级。
 extends GutTest
 
-const TIER_IDS := ["intro", "easy", "normal", "hard"]
+## v4.1 三档名单（与 LevelLibrary.TIER_ORDER 同源；intro 已退役，catalog 不应再出现）。
+const TIER_IDS := ["easy", "normal", "hard"]
 
 
 func test_catalog_shape() -> void:
@@ -22,7 +23,7 @@ func test_catalog_shape() -> void:
 			assert_true(str(size_s).is_valid_int(), "尺寸键应为整数字符串")
 			var by_tier: Dictionary = by_size[size_s]
 			for t in by_tier:
-				assert_true(TIER_IDS.has(str(t)), "档位键应为四档 id：%s" % str(t))
+				assert_true(TIER_IDS.has(str(t)), "档位键应为三档 id（v4.1，intro 已退役）：%s" % str(t))
 				assert_gt(int(by_tier[t]), 0, "有内容的档位关数应 > 0")
 
 

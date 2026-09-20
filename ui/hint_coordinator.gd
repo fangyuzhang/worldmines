@@ -81,7 +81,7 @@ func compute_hint(board: Board) -> Array[ReasoningStep]:
 
 
 ## 一次提示给出的结论格上限（对标游戏 doc10 §3.3 的 maxClues 与难度挂钩）：
-## v4.0 深度口径：噩梦(hard) → 3，困难(normal) → 5，普通/入门/无画像 → 不限（-1）。
+## v4.1 深度口径（三档）：噩梦(hard) → 3，困难(normal) → 5，普通/无画像 → 不限（-1）。
 ## 对齐 GDD 14.2「每次提示只给一个推理阶段，绝不一次性给全部答案」。
 func _limit_hint_budget(board: Board, steps: Array[ReasoningStep]) -> Array[ReasoningStep]:
     if board == null or steps.is_empty():
@@ -92,7 +92,7 @@ func _limit_hint_budget(board: Board, steps: Array[ReasoningStep]) -> Array[Reas
     return steps.slice(0, cap)
 
 
-## 一次提示给出的结论格上限：噩梦 3 / 困难 5 / 普通·入门不限（-1）。
+## 一次提示给出的结论格上限：噩梦 3 / 困难 5 / 普通不限（-1）。
 ## 依据：档位已切深度口径（峰值深 = 推理链宽），深档应「只给一个推理阶段」，避免一次揭示过多。
 ## 无深度画像（旧关卡/手工盘）时回退旧标量口径，再没有则不限。
 func _hint_budget_cap(board: Board) -> int:

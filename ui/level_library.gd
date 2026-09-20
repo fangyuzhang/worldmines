@@ -22,8 +22,9 @@ const DIR := "res://levels_lib"
 const CATALOG_PATH := DIR + "/catalog.json"
 ## 关卡库落盘缓存目录（materialize 的产物；一次性写、后续复用）。
 const PLAY_DIR := "user://lib_play"
-## 档位展示序（Difficulty.TIERS 的键序；此处显式列出以免依赖字典序）。
-const TIER_ORDER: Array = ["intro", "easy", "normal", "hard"]
+## 档位展示序（v4.1 三档，随 Difficulty.PEAK_WINDOWS 的键序；显式列出以免依赖字典序）。
+## test_single_source_of_truth 钉住两者同步——改档位名单时两处必须一起改。
+const TIER_ORDER: Array = ["easy", "normal", "hard"]
 
 static var _catalog: Dictionary = {}
 static var _catalog_loaded := false

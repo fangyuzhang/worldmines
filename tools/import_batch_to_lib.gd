@@ -41,7 +41,8 @@ const CliShutdown := preload("res://tools/cli_shutdown.gd")
 
 const LIB_DIR := "res://levels_lib"
 const CATALOG_PATH := LIB_DIR + "/catalog.json"
-const TIERS: Array = ["intro", "easy", "normal", "hard"]
+## 玩家档位名单（v4.1 三档，随 Difficulty.PEAK_WINDOWS 键序；intro 已退役不再入库）。
+const TIERS: Array = ["easy", "normal", "hard"]
 ## 关卡必需字段（缺任何一个都判坏关：Board.load_level 需要它们，缺了会加载出空盘）。
 const REQUIRED_FIELDS: Array = ["mines", "revealed", "size", "total_mines"]
 
@@ -418,7 +419,7 @@ func _prune_sets(imported: Dictionary) -> void:
 					continue
 				var tier := fn.get_basename()
 				if not TIERS.has(tier):
-					continue                 # 只认四档名（安全：其余命名一概不碰）
+					continue                 # 只认三档名（安全：其余命名一概不碰）
 				if produced.has(tier):
 					continue
 				doomed.append("%s/%s" % [rel_dir, fn])

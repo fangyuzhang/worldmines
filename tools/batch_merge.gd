@@ -27,12 +27,19 @@ func _initialize() -> void:
 		return
 
 	# 汇总各分片的关卡 + 统计
-	# 四档缺一不可：曾漏掉 "intro"，而同文件下方的遍历按四档走、`if by_tier.has(tier)` 一挡
-	# → **intro 关在合并阶段被静默丢弃**（2026-09-19 架构审计发现）。档位名单应与
-	# core/difficulty.gd 的 TIERS 同源，勿手写。下面 agg 的 tiers 计数同理（同一事故的第二处）。
-	var by_tier := {"intro": [], "easy": [], "normal": [], "hard": []}
+	# 档位名单**动态化**（2026-09-20 三档改版）：基线取 Difficulty.PEAK_WINDOWS 的键序
+	# （core 唯一事实源），分片报告里出现的额外档名（如旧四档分片的 intro）动态并入。
+	# 为什么不再硬编码：曾漏掉 "intro"，而下方 `if by_tier.has(tier)` 一挡 → **intro 关
+	# 在合并阶段被静默丢弃**（2026-09-19 架构审计发现）。硬编码名单与分片实际档名
+	# 天然可能漂移（分片由量产工具产出，其档名由 tier_of_peak/tier_of 决定），动态并集
+	# 才能从结构上杜绝这类静默丢档。
+	var by_tier := {}
+	for t in Difficulty.PEAK_WINDOWS:
+		by_tier[str(t)] = []
 	var agg := {"total": 0, "ok": 0, "fail": 0, "dup": 0, "cross_dup": 0,
-		"tiers": {"intro": 0, "easy": 0, "normal": 0, "hard": 0}, "elapsed_ms": 0}
+		"tiers": {}, "elapsed_ms": 0}
+	for t in by_tier:
+		agg["tiers"][t] = 0
 	var seen := {}  # 跨分片去重：不同 seed 撞出同一盘时只留第一次出现
 
 	for shard in shards:
@@ -59,8 +66,11 @@ func _initialize() -> void:
 			agg["dup"] += int(st.get("dup", 0))
 			agg["elapsed_ms"] += int(st.get("elapsed_ms", 0))
 			var ts: Dictionary = st.get("tiers", {})
-			for t in ["intro", "easy", "normal", "hard"]:
-				agg["tiers"][t] += int(ts.get(t, 0))
+			for t in ts:
+				var tk := str(t)
+				if not agg["tiers"].has(tk):
+					agg["tiers"][tk] = 0  # 分片出现基线之外的档名（旧四档 intro 等）→ 动态并入，防静默丢档
+				agg["tiers"][tk] += int(ts[tk])
 
 	# 全局编号写回顶层
 	for tier in by_tier:
@@ -82,7 +92,10 @@ func _initialize() -> void:
 
 	print("=== 合并完成 ===")
 	print("  分片数: %d" % shards.size())
-	print("  总关卡: easy=%d normal=%d hard=%d" % [agg["tiers"]["easy"], agg["tiers"]["normal"], agg["tiers"]["hard"]])
+	var tier_line: Array = []
+	for t in agg["tiers"]:
+		tier_line.append("%s=%d" % [str(t), int(agg["tiers"][t])])
+	print("  总关卡: " + " ".join(tier_line))
 	print("  总尝试: %d | 成功 %d | 失败 %d | 重复 %d | 跨分片去重 %d | 接受率 %.0f%%" % [
 		agg["total"], agg["ok"], agg["fail"], agg["dup"], agg["cross_dup"], agg["accept_rate"] * 100.0])
 	print("  输出: %s/<tier>_NN.json + merged_report.json" % _out_dir)

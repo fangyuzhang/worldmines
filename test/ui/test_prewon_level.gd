@@ -99,7 +99,7 @@ func _write_prewon_level() -> void:
 		"total_mines": MINES.size(),
 		"mines": mines,
 		"revealed": revealed,
-		# 这类盘的画像峰值恒 0（无推理步）——正是重标工具要拦下、不让其落进 intro 档的形态
+		# 这类盘的画像峰值恒 0（无推理步）——正是重标工具要拦下、不让其混进任何玩家档的形态
 		"difficulty_profile": {"difficulty": 0.1, "rounds": 1, "max_batch": 10,
 			"max_complexity": 0, "histogram": "0x1"},
 	}

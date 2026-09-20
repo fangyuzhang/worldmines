@@ -2,15 +2,19 @@
 # -*- coding: utf-8 -*-
 """retier_stock.py —— 存量关卡产物按「深度口径」离线重标（零生成成本，不改关卡内容）。
 
-档位口径：关卡 difficulty_profile.max_complexity（峰值）落窗——
-    intro 0–2 / easy 3–4 / normal 5–8 / hard 9–20；peak >= 21 超纲（不进任何档）。
+档位口径（v4.1 三档，对齐《14MV2》，与 core/difficulty.gd PEAK_WINDOWS 同窗）：
+关卡 difficulty_profile.max_complexity（峰值）落窗——
+    easy(普通) 2–3 / normal(困难) 4–5 / hard(噩梦) 6–20；peak >= 21 超纲（不进任何档）。
+    peak 0–1（纯一眼盘）**不进任何档**（对方普通档 MIN=2 同语义：淘汰，不供给），
+    隔离到 too-easy 目录保持可审计——不混进档目录，也不冒充坏文件。
 存量产物（_staged_levels/harvest_* 等）按旧口径落盘，大量高峰值盘被错放进低档；
 本工具不改关卡内容，只按峰值重排目录，产出可直接喂 tools/import_batch_to_lib.gd 的结构：
 
     <out>/<combo>/<side>x<side>/<tier>_<idx>.json
-    <over-dir>/.../over_<idx>.json        # peak >= 21 超纲盘（不得混进四档目录）
-    <unknown-dir>/.../unknown_<idx>.json  # 无 max_complexity 的盘
-    <prewon-dir>/.../prewon_<idx>.json    # 加载即终局（开局即胜/负）的死盘（不得混进四档目录）
+    <over-dir>/.../over_<idx>.json          # peak >= 21 超纲盘（不得混进档目录）
+    <tooeasy-dir>/.../tooeasy_<idx>.json    # peak 0–1 纯一眼盘（v4.1 起淘汰，不入库）
+    <unknown-dir>/.../unknown_<idx>.json    # 无 max_complexity 的盘
+    <prewon-dir>/.../prewon_<idx>.json      # 加载即终局（开局即胜/负）的死盘（不得混进档目录）
 
 两种输入布局都支持：
   · 单关文件：一个 json = 一关（既有行为，不变）；
@@ -50,24 +54,29 @@ import sys
 # ===========================================================================
 # 口径与常量
 # ===========================================================================
-TIERS = ("intro", "easy", "normal", "hard")
+TIERS = ("easy", "normal", "hard")
 
-# 深度口径窗口（闭区间）。为什么集中成一张表：分流 / 报告 / 自校验必须共用同一事实源，
-# 判据散落多处正是这次要收拾的历史债（旧标量口径漂移的根因）。
-TIER_WINDOWS = {"intro": (0, 2), "easy": (3, 4), "normal": (5, 8), "hard": (9, 20)}
+# 深度口径窗口（闭区间，v4.1 三档对齐《14MV2》）。为什么集中成一张表：分流 / 报告 /
+# 自校验必须共用同一事实源，判据散落多处正是这次要收拾的历史债（旧标量口径漂移的根因）。
+# 与 core/difficulty.gd PEAK_WINDOWS 必须同窗（改一处必改另一处，文件头注释有对照）。
+TIER_WINDOWS = {"easy": (2, 3), "normal": (4, 5), "hard": (6, 20)}
 
-OVER_MIN = 21  # >=21 超纲：不属于任何档
+OVER_MIN = 21       # >=21 超纲：不属于任何档
+TOOEASY_MAX = 1     # <=1 纯一眼盘：v4.1 起淘汰（对方普通档 MIN=2 同语义），不进任何档
 REQUIRED_FIELDS = ("mines", "revealed", "size", "total_mines")
 
-# 分流盘文件名前缀。为什么不用四档名：import_batch_to_lib.gd 只认 <tier>_<idx>（tier∈四档），
-# 超纲/无画像/加载即终局盘若借档名落盘会被原样导入成错误档内容
-# —— 用 over_/unknown_/prewon_ 前缀，入库工具自然忽略。
-PSEUDO_TIERS = ("over", "unknown", "prewon")
-ARTIFACT_PREFIXES = frozenset(TIERS) | frozenset(PSEUDO_TIERS)
+# 分流盘文件名前缀。为什么不用档名：import_batch_to_lib.gd 只认 <tier>_<idx>（tier∈三档），
+# 超纲/一眼/无画像/加载即终局盘若借档名落盘会被原样导入成错误档内容
+# —— 用 over_/tooeasy_/unknown_/prewon_ 前缀，入库工具自然忽略。
+PSEUDO_TIERS = ("over", "tooeasy", "unknown", "prewon")
+# "intro" 是 v4.0 旧产物的档名（已退役）：保留在产物识别名单里，让旧输出根重跑时
+# 旧 intro_*.json 能被差集清理正常删除，而不是被判「非本工具产物」拒绝运行。
+ARTIFACT_PREFIXES = frozenset(TIERS) | frozenset(PSEUDO_TIERS) | {"intro"}
 
 DEFAULT_SRC = "_staged_levels"
 DEFAULT_OUT = os.path.join("_staged_levels", "retiered")
 DEFAULT_OVER = os.path.join("_staged_levels", "retiered_over")
+DEFAULT_TOO_EASY = os.path.join("_staged_levels", "retiered_tooeasy")
 DEFAULT_UNKNOWN = os.path.join("_staged_levels", "retiered_unknown")
 DEFAULT_PREWON = os.path.join("_staged_levels", "retiered_prewon")
 
@@ -366,7 +375,18 @@ def _classify_one(lv, src, ctx, recs, bad, unknown, nonsquare):
         recs.append(rec)
         return
     t = tier_of(peak)
-    if t is None:  # 保险：非负且 <21 必落在窗口内；防御 NaN 等空洞
+    if t is None:
+        # v4.1 三档窗口从 2 起：peak 0–1 的纯一眼盘被淘汰（不进任何档），但它是有效盘、
+        # 不是坏文件——隔离到 tooeasy 目录保持可审计（与 over/prewon 的隔离哲学一致）。
+        # 窗口连续 [2,20] + OVER_MIN=21 时 None 只剩 0–1；真出现其他空洞（负数已在上面判过）
+        # 仍兜底进 bad，防御将来的窗口改动留下间隙。
+        if peak <= TOOEASY_MAX:
+            rec = {"src": src, "bucket": "tooeasy", "combo": combo, "side": side,
+                   "tier": "tooeasy", "peak": peak, "rounds": rounds}
+            if ctx is not None:
+                rec["payload"] = lv
+            recs.append(rec)
+            return
         bad.append((src, "峰值无法定档"))
         return
     rec = {"src": src, "bucket": "main", "combo": combo, "side": side,
@@ -630,6 +650,14 @@ def verify(written, roots):
                     v("over 盘峰值缺失或 < %d：%s" % (OVER_MIN, p))
                     continue
                 hist[_peak_key(peak)] = hist.get(_peak_key(peak), 0) + 1
+            elif bucket == "tooeasy":
+                if pre != "tooeasy":
+                    v("tooeasy 根出现非 tooeasy 前缀：%s" % p)
+                    continue
+                if peak is None or not (0 <= peak <= TOOEASY_MAX):
+                    v("tooeasy 盘峰值缺失或超出 [0,%d]：%s" % (TOOEASY_MAX, p))
+                    continue
+                hist[_peak_key(peak)] = hist.get(_peak_key(peak), 0) + 1
             elif bucket == "unknown":
                 if pre != "unknown":
                     v("unknown 根出现非 unknown 前缀：%s" % p)
@@ -720,6 +748,8 @@ def main(argv=None):
                     help="源目录：可多次传参或用逗号分隔（递归扫 *.json）；默认 %s" % DEFAULT_SRC)
     ap.add_argument("--out", default=DEFAULT_OUT, help="重标输出根（默认 %(default)s）")
     ap.add_argument("--over-dir", default=DEFAULT_OVER, help="peak>=21 超纲盘输出根（默认 %(default)s）")
+    ap.add_argument("--too-easy-dir", default=DEFAULT_TOO_EASY,
+                    help="peak 0–1 纯一眼盘输出根（v4.1 淘汰档，默认 %(default)s）")
     ap.add_argument("--unknown-dir", default=DEFAULT_UNKNOWN, help="无 max_complexity 盘输出根（默认 %(default)s）")
     ap.add_argument("--prewon-dir", default=DEFAULT_PREWON,
                     help="加载即终局（开局即胜/负）死盘输出根（默认 %(default)s）")
@@ -731,6 +761,7 @@ def main(argv=None):
     srcs = expand_srcs(args.src)
     roots = {"main": os.path.abspath(args.out),
              "over": os.path.abspath(args.over_dir),
+             "tooeasy": os.path.abspath(args.too_easy_dir),
              "unknown": os.path.abspath(args.unknown_dir),
              "prewon": os.path.abspath(args.prewon_dir)}
     guard_roots(srcs, roots)
@@ -754,12 +785,13 @@ def main(argv=None):
         print("[retier] 集文件: %d 个 → 展开 %d 关（按单关处理；combo/side 优先取集字段）"
               % (stats["set_files"], stats["levels_from_sets"]))
     cnt = {b: sum(1 for r in recs if r["bucket"] == b) for b in roots}
-    print("[retier] 分流: 主输出 %d | over %d | unknown %d | prewon（加载即终局） %d | 非方形丢弃 %d | 坏文件 %d"
-          % (cnt["main"], cnt["over"], cnt["unknown"], cnt["prewon"], len(nonsquare), len(bad)))
+    print("[retier] 分流: 主输出 %d | over %d | tooeasy（淘汰） %d | unknown %d | prewon（加载即终局） %d | 非方形丢弃 %d | 坏文件 %d"
+          % (cnt["main"], cnt["over"], cnt["tooeasy"], cnt["unknown"], cnt["prewon"], len(nonsquare), len(bad)))
     over_any = [(r["src"],) for r in recs if r["bucket"] == "over"]
+    tooeasy_any = [(r["src"],) for r in recs if r["bucket"] == "tooeasy"]
     prewon_any = [(r["src"],) for r in recs if r["bucket"] == "prewon"]
     for tag, lst in (("坏文件", bad), ("无画像", unknown), ("非方形", nonsquare),
-                     ("超纲", over_any), ("prewon死盘", prewon_any)):
+                     ("超纲", over_any), ("tooeasy", tooeasy_any), ("prewon死盘", prewon_any)):
         if lst:
             print("[retier] %s样例（前 %d）: %s"
                   % (tag, min(len(lst), MAX_SAMPLE), ", ".join(rel_samples(lst))))
@@ -767,8 +799,8 @@ def main(argv=None):
     groups = plan_groups(recs)
     planned = planned_paths(groups, roots)
     cleaned = clean_output_roots(roots, planned)
-    print("[retier] 清理输出根过期产物: out=%d, over=%d, unknown=%d, prewon=%d 个 json（同源重跑应为 0）"
-          % (cleaned["main"], cleaned["over"], cleaned["unknown"], cleaned["prewon"]))
+    print("[retier] 清理输出根过期产物: out=%d, over=%d, tooeasy=%d, unknown=%d, prewon=%d 个 json（同源重跑应为 0）"
+          % (cleaned["main"], cleaned["over"], cleaned["tooeasy"], cleaned["unknown"], cleaned["prewon"]))
 
     written = write_planned(groups, roots)
     vres = verify(written, roots)
@@ -781,6 +813,7 @@ def main(argv=None):
         "levels_from_sets": stats["levels_from_sets"],   # G1a：集文件展开出的关卡数
         "total_out": vres["actual"]["main"],
         "skipped_over": vres["actual"]["over"],
+        "skipped_tooeasy": vres["actual"]["tooeasy"],    # peak 0–1 纯一眼盘（v4.1 淘汰，不入库）
         "skipped_unknown": vres["actual"]["unknown"],
         "skipped_prewon": vres["actual"]["prewon"],      # 加载即终局（开局即胜/负）死盘数
         "skipped_nonsquare": len(nonsquare),
@@ -795,12 +828,14 @@ def main(argv=None):
         "srcs": srcs,
         "out_root": roots["main"],
         "over_root": roots["over"],
+        "too_easy_root": roots["tooeasy"],
         "unknown_root": roots["unknown"],
         "prewon_root": roots["prewon"],
         "bad_samples": rel_samples(bad),
         "unknown_samples": rel_samples(unknown),
         "nonsquare_samples": rel_samples(nonsquare),
         "over_samples": rel_samples(over_any),
+        "tooeasy_samples": rel_samples(tooeasy_any),
         "prewon_samples": rel_samples(prewon_any),
         "self_check": {
             "ok": vres["ok"],
@@ -816,7 +851,7 @@ def main(argv=None):
         f.write("\n")
 
     total_out = rep["total_out"]
-    print("[retier] 四档（占主输出）: %s" % " | ".join(
+    print("[retier] 三档（占主输出）: %s" % " | ".join(
         "%s %d (%.1f%%)" % (t, vres["by_tier"][t],
                             100.0 * vres["by_tier"][t] / total_out if total_out else 0.0)
         for t in TIERS))

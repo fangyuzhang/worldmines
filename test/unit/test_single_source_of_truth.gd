@@ -33,15 +33,19 @@ func test_mine_counts_match_feasibility() -> void:
 
 
 func test_tier_order_matches_difficulty_tiers() -> void:
-	## 档位名单漂移的直接后果见文件头（batch_merge 漏 intro 静默丢档）
-	assert_eq(LevelLibrary.TIER_ORDER, Difficulty.TIERS.keys(),
-		"TIER_ORDER 与 Difficulty.TIERS 漂移（档位名单应与 core/difficulty.gd 同源）")
+	## 玩家侧档位名单（选关页难度列）与判据表（PEAK_WINDOWS）必须同源同序。
+	## 档位名单漂移的直接后果见文件头（batch_merge 漏 intro 静默丢档）。
+	## v4.1 起玩家档位是三档（对齐 14MV2），名单源 = PEAK_WINDOWS；
+	## TIERS 保留四档仅作旧标量画像，不再是玩家名单。
+	assert_eq(LevelLibrary.TIER_ORDER, Difficulty.PEAK_WINDOWS.keys(),
+		"TIER_ORDER 与 Difficulty.PEAK_WINDOWS 漂移（玩家档位名单应与 core/difficulty.gd 同源）")
 
 
 func test_peak_windows_match_tiers() -> void:
-	## PEAK_WINDOWS（v4 判据）与 TIERS（紧凑度画像）是同一套档位的两份副本，必须同增同减
-	assert_eq(Difficulty.PEAK_WINDOWS.keys(), Difficulty.TIERS.keys(),
-		"PEAK_WINDOWS 与 TIERS 档位名单漂移（同一套档位 id，必须同增同减）")
-	for id in Difficulty.TIERS:
+	## v4.1：PEAK_WINDOWS（三档判据）是 TIERS（四档旧标量画像）的**子集**——
+	## intro 已退役，但 TIERS 完整区间保留作回退路径。同名档的 label 仍必须一致。
+	for id in Difficulty.PEAK_WINDOWS:
+		assert_true(Difficulty.TIERS.has(id),
+			"PEAK_WINDOWS 出现了 TIERS 没有的档位 id：%s（子集关系被破坏）" % id)
 		assert_eq(Difficulty.PEAK_WINDOWS[id]["label"], Difficulty.TIERS[id]["label"],
 			"%s 档 label 两份副本漂移" % id)

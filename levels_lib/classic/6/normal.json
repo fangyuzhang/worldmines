@@ -3,6 +3,111 @@
   "levels": [
     {
       "clue_rule": "classic",
+      "difficulty": 0.53,
+      "difficulty_profile": {
+        "clue_count": 5.0,
+        "clue_ratio": 0.23,
+        "difficulty": 0.53,
+        "histogram": "4x1,3x1,2x1,1x1",
+        "max_active": 17.0,
+        "max_batch": 9.0,
+        "max_complexity": 4.0,
+        "profile": "9x1,8x2,6x1",
+        "rounds": 4.0,
+        "target_difficulty": 0.0
+      },
+      "global_rules": [],
+      "mines": [
+        {
+          "c": 2.0,
+          "r": 4.0
+        },
+        {
+          "c": 5.0,
+          "r": 3.0
+        },
+        {
+          "c": 3.0,
+          "r": 1.0
+        },
+        {
+          "c": 1.0,
+          "r": 4.0
+        },
+        {
+          "c": 3.0,
+          "r": 5.0
+        },
+        {
+          "c": 3.0,
+          "r": 3.0
+        },
+        {
+          "c": 2.0,
+          "r": 5.0
+        },
+        {
+          "c": 0.0,
+          "r": 3.0
+        },
+        {
+          "c": 5.0,
+          "r": 1.0
+        },
+        {
+          "c": 3.0,
+          "r": 0.0
+        },
+        {
+          "c": 3.0,
+          "r": 4.0
+        },
+        {
+          "c": 1.0,
+          "r": 1.0
+        },
+        {
+          "c": 0.0,
+          "r": 2.0
+        },
+        {
+          "c": 5.0,
+          "r": 2.0
+        }
+      ],
+      "name": "easy_03",
+      "revealed": [
+        {
+          "c": 5.0,
+          "r": 5.0
+        },
+        {
+          "c": 2.0,
+          "r": 3.0
+        },
+        {
+          "c": 0.0,
+          "r": 4.0
+        },
+        {
+          "c": 0.0,
+          "r": 5.0
+        },
+        {
+          "c": 1.0,
+          "r": 5.0
+        }
+      ],
+      "rule_level": true,
+      "seed": 9.0,
+      "size": {
+        "cols": 6.0,
+        "rows": 6.0
+      },
+      "total_mines": 14.0
+    },
+    {
+      "clue_rule": "classic",
       "difficulty": 2.62,
       "difficulty_profile": {
         "clue_count": 8.0,
@@ -112,119 +217,6 @@
       ],
       "rule_level": true,
       "seed": 7.0,
-      "size": {
-        "cols": 6.0,
-        "rows": 6.0
-      },
-      "total_mines": 14.0
-    },
-    {
-      "clue_rule": "classic",
-      "difficulty": 1.58,
-      "difficulty_profile": {
-        "clue_count": 7.0,
-        "clue_ratio": 0.32,
-        "difficulty": 1.58,
-        "histogram": "7x1,3x1,2x2,1x1",
-        "max_active": 19.0,
-        "max_batch": 8.0,
-        "max_complexity": 7.0,
-        "profile": "8x1,7x2,6x1,1x1",
-        "rounds": 5.0,
-        "target_difficulty": 0.0
-      },
-      "global_rules": [],
-      "mines": [
-        {
-          "c": 3.0,
-          "r": 4.0
-        },
-        {
-          "c": 3.0,
-          "r": 2.0
-        },
-        {
-          "c": 5.0,
-          "r": 4.0
-        },
-        {
-          "c": 0.0,
-          "r": 3.0
-        },
-        {
-          "c": 3.0,
-          "r": 5.0
-        },
-        {
-          "c": 2.0,
-          "r": 3.0
-        },
-        {
-          "c": 0.0,
-          "r": 1.0
-        },
-        {
-          "c": 5.0,
-          "r": 1.0
-        },
-        {
-          "c": 4.0,
-          "r": 0.0
-        },
-        {
-          "c": 1.0,
-          "r": 0.0
-        },
-        {
-          "c": 2.0,
-          "r": 1.0
-        },
-        {
-          "c": 1.0,
-          "r": 4.0
-        },
-        {
-          "c": 2.0,
-          "r": 5.0
-        },
-        {
-          "c": 2.0,
-          "r": 0.0
-        }
-      ],
-      "name": "normal_04",
-      "revealed": [
-        {
-          "c": 0.0,
-          "r": 0.0
-        },
-        {
-          "c": 4.0,
-          "r": 1.0
-        },
-        {
-          "c": 1.0,
-          "r": 3.0
-        },
-        {
-          "c": 4.0,
-          "r": 4.0
-        },
-        {
-          "c": 0.0,
-          "r": 5.0
-        },
-        {
-          "c": 1.0,
-          "r": 5.0
-        },
-        {
-          "c": 4.0,
-          "r": 5.0
-        }
-      ],
-      "rule_level": true,
-      "seed": 4.0,
       "size": {
         "cols": 6.0,
         "rows": 6.0
