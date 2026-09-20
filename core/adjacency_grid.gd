@@ -8,14 +8,28 @@ extends GridInterface
 var _cells: Dictionary = {}    # Vector2i -> Cell
 var _adj: Dictionary = {}      # Vector2i -> Array[Vector2i]
 
+## 几何风格（T4）：渲染层据此决定「按包围盒方阵画」还是「按六边形几何排布」。
+##   "custom"     —— 无风格信息（旧拓扑 / 手写拓扑）= 按包围盒方阵渲染（向后兼容，行为零变化）
+##   "hex"        —— 蜂窝：格心/六边形顶点按六边形几何计算（ui/board_view.gd 的 _hex_layout()）
+##   "holed_grid" / "t488" —— 形状族标记，当前渲染仍走方阵（保留字符串供后续渲染扩展）
+## 只影响**展示**，绝不影响邻接语义（线索仍是拓扑邻域计数）。
+var style: String = "custom"
+## 风格的附随参数（如 hex / t488 的 {"size": N}）。同样是展示/几何提示，不参与邻接语义。
+var style_params: Dictionary = {}
+
 
 ## 从关卡拓扑描述构建。
 ## topo 两种等价形式（均只读、可种子化）：
 ##   1) {"positions":[{"x":..,"y":..},...], "adjacency":[{"a":{"x":..,"y":..},"b":{"x":..,"y":..}}, ...]}
 ##   2) {"positions":[...], "neighbors":{"x,y":["x,y",...], ...}}
+## 可选字段：style（缺省 "custom"）、params（缺省 {}）——**旧拓扑无这两个字段 ⇒ 方阵渲染**，
+## 故本函数对既有数据是纯向后兼容的扩展。
 func setup_from_topo(topo: Dictionary) -> void:
 	_cells.clear()
 	_adj.clear()
+	style = String(topo.get("style", "custom"))
+	var sp: Variant = topo.get("params", {})
+	style_params = sp if sp is Dictionary else {}
 	var positions: Array = topo.get("positions", [])
 	for p in positions:
 		var d: Dictionary = p
@@ -56,6 +70,11 @@ func setup_from_topo(topo: Dictionary) -> void:
 				lb.append(a)
 
 
+## 是否按蜂窝六边形几何排布（渲染层唯一判据）。只读辅助，不改任何拓扑语义。
+func has_hex_layout() -> bool:
+	return style == "hex"
+
+
 static func _parse_key(s: String) -> Vector2i:
 	var parts := s.split(",")
 	if parts.size() != 2:
@@ -89,8 +108,16 @@ static func normalized(topo: GridInterface) -> AdjacencyGrid:
 				"a": {"x": p.x - min_c, "y": p.y - min_r},
 				"b": {"x": nb.x - min_c, "y": nb.y - min_r},
 			})
+	# 几何风格随坐标一起搬过去：平移不改形状，但若把 style 丢了，蜂窝盘会被静默降级成方阵渲染。
+	var moved := {"positions": positions, "adjacency": adjacency}
+	if topo is AdjacencyGrid:
+		var src := topo as AdjacencyGrid
+		if src.style != "custom":
+			moved["style"] = src.style
+			if not src.style_params.is_empty():
+				moved["params"] = src.style_params
 	var out := AdjacencyGrid.new()
-	out.setup_from_topo({"positions": positions, "adjacency": adjacency})
+	out.setup_from_topo(moved)
 	return out
 
 

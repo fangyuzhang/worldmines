@@ -937,7 +937,12 @@ func _build_level_from_rules(clue_rule_id: String, global_rule_ids: Array, rows:
 	return out
 
 
-## 拓扑 → 可落盘/可种子化的描述（positions + adjacency 边列表）。
+## 拓扑 → 可落盘/可种子化的描述（positions + adjacency 边列表；带几何风格时追加 style / params）。
+##
+## style/params 只在**来源确实是带风格的 AdjacencyGrid**（T4：ShapeGenerator 三族产出）时写出：
+## 矩形关卡（RectGrid）与无风格的手写异形拓扑落盘格式**逐字节不变**——这是刻意的零变化约束，
+## 免得给 40+ 个既有矩形关卡的 JSON 平白加两个字段。它们只影响渲染几何，读回时由
+## AdjacencyGrid.setup_from_topo 消费（board.gd load_level → 异形分支），不影响任何拓扑语义。
 static func _topology_to_dict(topo: GridInterface) -> Dictionary:
 	var positions: Array = []
 	for p in topo.all_positions():
@@ -951,4 +956,12 @@ static func _topology_to_dict(topo: GridInterface) -> Dictionary:
 				continue
 			seen["%d,%d|%d,%d" % [p.x, p.y, nb.x, nb.y]] = true
 			adjacency.append({"a": {"x": p.x, "y": p.y}, "b": {"x": nb.x, "y": nb.y}})
-	return {"positions": positions, "adjacency": adjacency}
+	var out := {"positions": positions, "adjacency": adjacency}
+	# 几何风格（T4）：读了才写得出来。无 style / style == "custom" ⇒ 不写这两个键（旧格式零变化）。
+	if topo is AdjacencyGrid:
+		var ag := topo as AdjacencyGrid
+		if ag.style != "custom":
+			out["style"] = ag.style
+			if not ag.style_params.is_empty():
+				out["params"] = ag.style_params
+	return out

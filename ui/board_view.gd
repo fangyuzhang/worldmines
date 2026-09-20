@@ -3,12 +3,48 @@
 # 判负引爆格高亮从 GameSession.exploded_pos 取；终局揭晓绘制雷位允许调
 # get_mine_positions()（渲染，非判负逻辑；红线 2 的例外条款）。
 # 全部色值经 ThemeManager；无 48px 硬编码（全文件跟随 cell_px）。
+#
+# 几何抽象（T4）：所有「格坐标 → 像素」的换算集中到 _cell_center / _cell_rect / _cell_polygon
+# 三个函数里，另加纯函数 _unit_px()（每晶格单位的像素数）。矩形关卡（RectGrid 或 style=="custom"
+# 的邻接表）走原路径，逐像素等价；蜂窝（style=="hex"）走六边形几何（常量见下）。渲染之外的
+# 动效状态机（wave / pop / ripple）与它们的时间常量**一律未动**，只吃传进去的矩形。
 extends Control
 
-## cell_px：scale-to-fit 动态格尺寸（§8.4.7 公式；24~48px）
+# ============ 蜂窝（六边形）几何常量 ============
+# 数值来源 = 原版游戏字节码（T4 已确证），**照用勿改**：
+#   格心（晶格单位，(x,y) = 格坐标）：cx = 0.75*(x+y)、cy = (√3/4)*(x−y)
+#   六边形外接半径 R = 0.475；相邻格心距 = √3/2 ≈ 0.866；内切半径 = (√3/2)R ≈ 0.4114。
+#   ⇒ 两格内切半径和 ≈ 0.823 < 0.866，相邻格之间天然留 ~5% 缝——这是原版 0.95 收缩的复刻，
+#     蜂窝盘看着「格与格分得开」正是它，**不要改成无缝**。
+const HEX_R := 0.475                      # 六边形外接半径（晶格单位）
+const HEX_SQ3 := 1.7320508075688772       # √3
+const HEX_CX := 0.75                      # 格心 x 系数：cx = HEX_CX*(x+y)
+const HEX_CY := HEX_SQ3 / 4.0             # 格心 y 系数：cy = HEX_CY*(x−y) = 0.4330127…
+const HEX_SPACING := HEX_SQ3 / 2.0        # 相邻格心距 = √3/2 = 0.8660254…
+const HEX_INRADIUS := HEX_SPACING * HEX_R # 内切半径 = (√3/2)R = 0.4113620…
+## 六边形半高 = (√3/2)R：平顶六边形的**上下是水平边**，故这两条边到格心的距离就是内切半径
+## （= HEX_INRADIUS，同一个数）。layout 的视觉包围盒上下各外扩这么多：只有外扩 R 就会把
+## 最上/最下两排六边形切掉半个高度（首跑实测就是这么暴露的）。
+const HEX_HALF_H := HEX_INRADIUS
+const HEX_SQ_HALF := HEX_R / (1.0 + 1.0 / HEX_SQ3)  # 内接正方形半边长 = 0.3011379…
+## 为什么内接正方形半边长是 0.3011 而不是「内切半径 0.4114」：
+## 这个六边形是**平顶**的（顶点在左右，上下是水平边），左右两侧的斜边向内收。
+## 半边长取 0.4114 时，正方形四角 (0.4114, 0.4114) 落在六边形**外面**（该处斜边只在 x ≤ 0.2375），
+## 越过边长最多 0.174 晶格单位，而相邻格心仅相距 0.866 ⇒ 相邻格的正方形互相重叠约 1% 格面积，
+## 整盘会糊成方阵的观感。取真正内接的正方形（0.3011）后正方形完全落在六边形内：
+## 「六边形填充 ∪ 内接正方形填充 = 恰好六边形」，且与邻格零重叠（test_shape_style.gd 逐项断言）。
+## 内接正方形仍以格心为中心，故数字/旗子/问号与各类覆盖层的**居中口径**与矩形路径完全一致。
+const MIN_CELL_PX := 24                   # cell_px 下限（与矩形路径原公式的 24 同值同义）
+
+## cell_px：scale-to-fit 动态格尺寸（§8.4.7 公式；下限 24px）
+## 蜂窝路径下 = 内接正方形边长（像素），沿用 cell_px 是为了让既有「全部尺寸跟随 cell_px」的
+## 绘制代码（字号 scale、旗子、提示描边…）零改动地跟着蜂窝盘一起缩放。
 var cell_px: int = 48
-## 棋盘绘制原点（恒居中）
+## 棋盘绘制原点（恒居中）。矩形路径 = 格 (0,0) 的左上角；蜂窝路径 = 晶格原点（格心 = origin + 晶格坐标×unit）。
 var board_origin: Vector2 = Vector2.ZERO
+## 蜂窝路径的「每晶格单位像素数」（由 _layout() 按六边形实际跨度 scale-to-fit 算出）。
+## 只经 _unit_px() 读取；矩形路径不使用。
+var _hex_unit_px: float = 48.0
 ## 鼠标悬停格（-1,-1 = 无）
 var hover_pos: Vector2i = Vector2i(-1, -1)
 
@@ -104,9 +140,9 @@ func _ready() -> void:
 	add_child(_drawing)
 	# 笔迹改用棋盘坐标存储：窗口缩放 / 换分辨率读档时笔记自动跟着格子走。
 	# 闭包读的是当前字段值，故 _layout() 改变 cell_px / board_origin 后无需重新注入。
-	_drawing.set_board_transform(
-			func(p: Vector2): return board_origin + p * cell_px,
-			func(p: Vector2): return (p - board_origin) / float(maxi(cell_px, 1)))
+	# 换算本身仍是「棋盘坐标 → 屏幕」的线性映射（绘画层代码零改动），只是蜂窝盘要换成晶格仿射映射，
+	# 否则笔记会整片错位（蜂窝的格心间距与矩形不同）。
+	_drawing.set_board_transform(_board_pt_to_screen, _screen_pt_to_board)
 	var hud: Control = load("res://ui/hud.tscn").instantiate()
 	add_child(hud)
 	_toolbar = load("res://ui/drawing_toolbar.tscn").instantiate()
@@ -292,11 +328,186 @@ func _layout() -> void:
 	# 边距：左右 24、上 HUD 64 + 上边距 24、下边距 24 + 底栏 64（随窗口自适应，无 48px 上限）
 	var avail_w: float = vp.x - 48.0
 	var avail_h: float = vp.y - 64.0 - 64.0 - 48.0
-	cell_px = maxi(floori(min(avail_w / float(cols), avail_h / float(rows))), 24)
+	# 可用区域的中心：矩形路径的 board_origin 公式隐含就是这个中心，蜂窝路径直接用它对齐。
+	var avail_center := Vector2(vp.x * 0.5, 64.0 + avail_h * 0.5)
+	# 蜂窝：按六边形**实际几何跨度**（不是 grid.size() 包围盒方阵）做 scale-to-fit。
+	# 用包围盒算会按 size×size 的正方形分配空间，六边形盘的斜边留白全被浪费 ⇒ 盘明显偏小。
+	if _hex_layout():
+		var layout := hex_layout_for(GameSession.board.grid.all_positions(), avail_w, avail_h, avail_center)
+		_hex_unit_px = float(layout["unit_px"])
+		cell_px = maxi(int(layout["cell_px"]), MIN_CELL_PX)
+		board_origin = layout["origin"]
+		queue_redraw()
+		return
+	# ↓ 矩形路径：以下逐行是原实现（唯一改动 = 字面量 24 → 同值常量 MIN_CELL_PX）。
+	cell_px = maxi(floori(min(avail_w / float(cols), avail_h / float(rows))), MIN_CELL_PX)
 	var board_w: float = float(cols) * cell_px
 	var board_h: float = float(rows) * cell_px
 	board_origin = Vector2((vp.x - board_w) * 0.5, 64.0 + (avail_h - board_h) * 0.5)
 	queue_redraw()
+
+
+# ============ 几何抽象（矩形 / 蜂窝两套坐标映射的唯一出口） ============
+
+## 当前盘面是否按蜂窝（六边形）几何排布。唯一判据 = 邻接表的 style == "hex"
+## （ShapeGenerator.build_hex / 落盘 topology.style 得来）。矩形关卡与旧异形拓扑恒 false
+## ⇒ 本文件其余分支全部走原路径，行为零变化。
+func _hex_layout() -> bool:
+	var b: Board = GameSession.board
+	if b == null or b.grid == null:
+		return false
+	var g: GridInterface = b.grid
+	return g is AdjacencyGrid and (g as AdjacencyGrid).has_hex_layout()
+
+
+## 每「晶格单位」的像素数。
+## 矩形路径：1 单位 = 1 格 = cell_px（于是 _cell_center 与旧式 board_origin + (c,r)*cell_px 逐像素等价）。
+## 蜂窝路径：1 单位 = 原版晶格单位（0.75 / √3÷4 的格心步长、0.475 的外接半径都以它为单位）。
+func _unit_px() -> float:
+	return _hex_unit_px if _hex_layout() else float(cell_px)
+
+
+## 格心（像素）。矩形路径 = 原格矩形中心；蜂窝路径 = 六边形格心。
+func _cell_center(pos: Vector2i) -> Vector2:
+	if _hex_layout():
+		return hex_center_px(pos, _hex_unit_px, board_origin)
+	return board_origin + Vector2(pos.x, pos.y) * float(cell_px) + Vector2(cell_px, cell_px) * 0.5
+
+
+## 格位绘制矩形（_draw_cell 与全部覆盖层共用）。
+## 矩形路径 = **原实现原式**（逐像素等价）；蜂窝路径 = 以格心为中心的内接正方形（见 HEX_SQ_HALF）。
+func _cell_rect(pos: Vector2i) -> Rect2:
+	if not _hex_layout():
+		return Rect2(board_origin + Vector2(pos.x, pos.y) * cell_px, Vector2(cell_px, cell_px))
+	var s := 2.0 * HEX_SQ_HALF * _unit_px()
+	return Rect2(_cell_center(pos) - Vector2(s, s) * 0.5, Vector2(s, s))
+
+
+## 格子的多边形轮廓：蜂窝 = 6 顶点六边形；其余 = 该格矩形的 4 角（顺时针）。
+func _cell_polygon(pos: Vector2i) -> PackedVector2Array:
+	if _hex_layout():
+		return hex_polygon_px(pos, _hex_unit_px, board_origin)
+	var r := _cell_rect(pos)
+	return PackedVector2Array([
+		r.position,
+		r.position + Vector2(r.size.x, 0.0),
+		r.position + r.size,
+		r.position + Vector2(0.0, r.size.y),
+	])
+
+
+## 格子底色（与 _draw_cell 的状态分支同口径；REVEALED 时含 pop 颜色插值）。
+## 蜂窝几何下先由 _draw() 填六边形、再让 _draw_cell 填内接正方形——两处必须同色，
+## 否则会看到「六边形里嵌着一个方块」。
+func _cell_base_color(cell: Cell, pop_e: float) -> Color:
+	if cell.state == Cell.State.REVEALED:
+		var base := ThemeManager.cell_revealed()
+		if pop_e < 1.0:
+			base = ThemeManager.cell_hidden().lerp(base, pop_e)
+		return base
+	return ThemeManager.cell_hidden()
+
+
+# ============ 蜂窝几何纯函数（static：渲染与单测共用同一份公式，可脱离场景树验证） ============
+
+## 格心（晶格单位，与像素无关）：cx = 0.75*(x+y)、cy = (√3/4)*(x−y)。
+static func hex_center_lattice(pos: Vector2i) -> Vector2:
+	return Vector2(HEX_CX * float(pos.x + pos.y), HEX_CY * float(pos.x - pos.y))
+
+
+## 格心（像素）= origin + 晶格坐标 × unit_px。
+static func hex_center_px(pos: Vector2i, unit_px: float, origin: Vector2) -> Vector2:
+	return origin + hex_center_lattice(pos) * unit_px
+
+
+## 六边形 6 顶点（晶格单位，相对格心；顺序照原版：右 → 右上 → 左上 → 左 → 左下 → 右下）。
+static func hex_vertex_units() -> PackedVector2Array:
+	var r := HEX_R
+	var h := HEX_SPACING * HEX_R   # (√3/2)R：上下两条水平边距格心的距离
+	return PackedVector2Array([
+		Vector2(r, 0.0),
+		Vector2(r * 0.5, -h),
+		Vector2(-r * 0.5, -h),
+		Vector2(-r, 0.0),
+		Vector2(-r * 0.5, h),
+		Vector2(r * 0.5, h),
+	])
+
+
+## 某格的六边形顶点（像素）。shrink ≤ 1 时绕格心等比收缩——复用 wave / pop 已算好的收缩比，
+## 让动效在蜂窝盘上也「看得见」（不改动那两个状态机本身）。
+static func hex_polygon_px(pos: Vector2i, unit_px: float, origin: Vector2, shrink: float = 1.0) -> PackedVector2Array:
+	var c := hex_center_px(pos, unit_px, origin)
+	var out := PackedVector2Array()
+	for v in hex_vertex_units():
+		out.append(c + v * unit_px * shrink)
+	return out
+
+
+## 格心范围的包围盒（晶格单位）：position = 最小格心，size = 跨度。
+static func hex_lattice_bounds(positions: Array) -> Rect2:
+	if positions.is_empty():
+		return Rect2(Vector2.ZERO, Vector2.ZERO)
+	var min_c := Vector2(INF, INF)
+	var max_c := Vector2(-INF, -INF)
+	for p: Vector2i in positions:
+		var c := hex_center_lattice(p)
+		min_c = Vector2(minf(min_c.x, c.x), minf(min_c.y, c.y))
+		max_c = Vector2(maxf(max_c.x, c.x), maxf(max_c.y, c.y))
+	return Rect2(min_c, max_c - min_c)
+
+
+## 蜂窝盘的视觉包围盒尺寸（晶格单位）= 格心跨度 + 六边形外扩（左右各 R、上下各半高 (√3/2)R）。
+## 注意：**不能**用 grid.size()（= size×size 包围盒方阵）——六边形盘的 bbox 四角大半是盘外格，
+## 按 bbox 分配空间会让盘明显偏小、留白全堆在四个角。
+static func hex_visual_span(positions: Array) -> Vector2:
+	var b := hex_lattice_bounds(positions)
+	if b.size == Vector2.ZERO:
+		return Vector2.ZERO
+	return b.size + Vector2(2.0 * HEX_R, 2.0 * HEX_HALF_H)
+
+
+## 蜂窝布局（纯函数）：在 avail_w×avail_h 的可用区域里按视觉跨度做 scale-to-fit，并居中。
+## 返回 {unit_px, origin, span, cell_px}：
+##   unit_px —— 每晶格单位像素数；origin —— 晶格原点（格心 = origin + 晶格坐标×unit）；
+##   span    —— 视觉跨度（晶格单位，便于核对/报告）；cell_px —— 内接正方形边长（像素，= 渲染用的 cell_px）。
+static func hex_layout_for(positions: Array, avail_w: float, avail_h: float, center: Vector2) -> Dictionary:
+	var span := hex_visual_span(positions)
+	if span.x <= 0.0 or span.y <= 0.0:
+		return {"unit_px": 0.0, "origin": center, "span": Vector2.ZERO, "cell_px": 0}
+	var unit := minf(avail_w / span.x, avail_h / span.y)
+	var sq := 2.0 * HEX_SQ_HALF * unit
+	if sq < float(MIN_CELL_PX):
+		# 与矩形路径的 24px 下限同口径：窗口极小时宁可溢出，也不把格子缩成一团糊。
+		sq = float(MIN_CELL_PX)
+		unit = sq / (2.0 * HEX_SQ_HALF)
+	# 左右/上下的外扩是对称的 ⇒ 视觉包围盒中心 == 格心跨度中点，直接拿它对准可用区中心即可。
+	var bounds := hex_lattice_bounds(positions)
+	var mid := bounds.position + bounds.size * 0.5
+	return {
+		"unit_px": unit,
+		"origin": center - mid * unit,
+		"span": span,
+		"cell_px": int(round(sq)),
+	}
+
+
+## 棋盘坐标（单位 = 格，可为小数）→ 屏幕（绘画层注入的两个换算之一）。
+## 矩形 = 旧式线性映射（逐像素不变）；蜂窝 = 晶格仿射映射。
+func _board_pt_to_screen(p: Vector2) -> Vector2:
+	if _hex_layout():
+		return board_origin + Vector2(HEX_CX * (p.x + p.y), HEX_CY * (p.x - p.y)) * _unit_px()
+	return board_origin + p * cell_px
+
+
+## 屏幕 → 棋盘坐标（_board_pt_to_screen 的逆；两者必须互补，否则笔记会漂）。
+func _screen_pt_to_board(p: Vector2) -> Vector2:
+	if _hex_layout():
+		var v := (p - board_origin) / maxf(_unit_px(), 0.0001)
+		var s := v.x / HEX_CX            # = x + y
+		var d := v.y / HEX_CY            # = x − y
+		return Vector2((s + d) * 0.5, (s - d) * 0.5)
+	return (p - board_origin) / float(maxi(cell_px, 1))
 
 
 func _process(_delta: float) -> void:
@@ -394,6 +605,7 @@ func _draw() -> void:
 	if not effects_on and (not _ripples.is_empty() or not _pops.is_empty()):
 		_clear_wave_state()
 
+	var hex := _hex_layout()
 	for r in size.y:
 		for c in size.x:
 			var pos := Vector2i(c, r)
@@ -402,12 +614,21 @@ func _draw() -> void:
 			# 此前直接 _draw_cell(null) 空引用中止 _draw → 棋盘渲染整体失效。
 			if cell == null:
 				continue
-			var rect := Rect2(board_origin + Vector2(c, r) * cell_px, Vector2(cell_px, cell_px))
+			var rect := _cell_rect(pos)
 			# 翻开动效几何：波浪 + 单格 pop **相乘**（s_total = s_pop × s_wave）。
 			# 两者都 ≤1.0 → 零间隙下相乘只会更小、天然不可能压到邻格。关闭总闸时走原矩形。
 			var rrect: Rect2 = _reveal_rect_for(pos, rect) if effects_on else rect
 			# pop 颜色插值进度（0→1；无 pop = 1.0 = 状态色），供 _draw_cell 混色
-			_draw_cell(pos, cell, rrect, scale, font, endgame, _pop_progress(pos) if effects_on else 1.0)
+			var pop_e: float = _pop_progress(pos) if effects_on else 1.0
+			# 蜂窝：六边形本体在这里填（背景层），_draw_cell 只负责内接正方形与内容。
+			# 两者同色（_cell_base_color）⇒ 正方形被六边形完全覆盖 = 恰好一个六边形。
+			# 收缩比直接取自 rrect（wave/pop 既有几何）→ 动效在蜂窝盘上照样「原地收缩」，
+			# 而**没有**改动那两个状态机的任何一行。
+			if hex:
+				var shrink := rrect.size.x / maxf(rect.size.x, 0.001)
+				draw_colored_polygon(hex_polygon_px(pos, _hex_unit_px, board_origin, shrink),
+						_cell_base_color(cell, pop_e))
+			_draw_cell(pos, cell, rrect, scale, font, endgame, pop_e)
 
 	# 波浪颜色脉冲（0 间隙方案：位移/放大被禁 → 颜色通道增强）
 	if not endgame and effects_on:
@@ -428,7 +649,8 @@ func _draw() -> void:
 
 	# 键盘光标（2px 描边框，accent alpha 0.65，与悬停可叠加）
 	if not endgame and session.cursor.x >= 0 and SettingsManager != null and SettingsManager.keyboard_enabled:
-		var crect := Rect2(board_origin + Vector2(session.cursor.x, session.cursor.y) * cell_px + Vector2(1, 1), Vector2(cell_px - 2, cell_px - 2))
+		# grow(-1) 与旧式「position+1 / size−2」逐像素等价（矩形路径），蜂窝则自动落在六边形格心。
+		var crect := _cell_rect(session.cursor).grow(-1.0)
 		var col := ThemeManager.accent()
 		col.a = 0.65
 		draw_rect(crect, col, false, 2.0)
@@ -447,8 +669,7 @@ func _draw_reject() -> void:
 	var remain: float = float(_reject_until_ms - Time.get_ticks_msec()) / float(REJECT_FLASH_MS)
 	if remain <= 0.0:
 		return
-	var rect := Rect2(board_origin + Vector2(_reject_pos.x, _reject_pos.y) * cell_px + Vector2(2, 2),
-			Vector2(cell_px - 4, cell_px - 4))
+	var rect := _cell_rect(_reject_pos).grow(-2.0)
 	var col := ThemeManager.danger()
 	col.a = clampf(abs(sin((1.0 - remain) * TAU * 2.0)), 0.25, 1.0) * clampf(remain, 0.0, 1.0)
 	draw_rect(rect, col, false, 3.0)
@@ -469,14 +690,14 @@ func _draw_hint(scale: float, _font: Font) -> void:
 			continue
 		# 弱提示（对标 doc10 §3.2）：只画依据线索，不画结论格 —— 玩家自己推可推格
 		if step.method != "weak":
-			var rect := Rect2(board_origin + Vector2(p.x, p.y) * cell_px + Vector2(2, 2), Vector2(cell_px - 4, cell_px - 4))
+			var rect := _cell_rect(p).grow(-2.0)
 			var col := ThemeManager.safe() if step.state == "safe" else ThemeManager.danger()
 			draw_rect(rect, col, false, 3.0 * maxf(scale, 0.6))
 		for src in step.sources:
 			var sp: Vector2i = src
 			if not GameSession.board.grid.in_board(sp):
 				continue
-			var srect := Rect2(board_origin + Vector2(sp.x, sp.y) * cell_px + Vector2(1, 1), Vector2(cell_px - 2, cell_px - 2))
+			var srect := _cell_rect(sp).grow(-1.0)
 			var scol := ThemeManager.accent()
 			scol.a = 0.8
 			draw_rect(srect, scol, false, 2.0)
@@ -593,9 +814,13 @@ func _draw_mines_reveal(board: Board, scale: float) -> void:
 	var exploded: Vector2i = GameSession.exploded_pos
 	var body_col := ThemeManager.mine_body()
 	for m in board.get_mine_positions():
-		var rect := Rect2(board_origin + Vector2(m.x, m.y) * cell_px, Vector2(cell_px, cell_px))
+		var rect := _cell_rect(m)
 		if m == exploded:
-			draw_rect(rect, ThemeManager.danger())
+			# 引爆格高亮：蜂窝下按六边形填，方阵路径保持原 draw_rect。
+			if _hex_layout():
+				draw_colored_polygon(_cell_polygon(m), ThemeManager.danger())
+			else:
+				draw_rect(rect, ThemeManager.danger())
 		var center := rect.position + rect.size * 0.5
 		draw_circle(center, 11.0 * scale, body_col)
 		var spike: float = 15.0 * scale
@@ -612,16 +837,16 @@ func _draw_hover_highlight(center_pos: Vector2i, with_neighbors: bool) -> void:
 	if board == null:
 		return
 	# 中心格遮罩
-	var crect := Rect2(board_origin + Vector2(center_pos.x, center_pos.y) * cell_px, Vector2(cell_px, cell_px))
-	draw_rect(crect, ThemeManager.hover_center_overlay())
+	draw_rect(_cell_rect(center_pos), ThemeManager.hover_center_overlay())
 	if not with_neighbors:
 		return
 	# 周围 8 邻（按实际存在的邻格）
+	# 注：邻域仍按**包围盒偏移**枚举（矩形 8 邻语义），蜂窝盘上落在盘外的偏移由 in_board 过滤掉——
+	# 悬停「柔光」是纯装饰，不值得为它引入拓扑邻接（真正的邻接关系只有线索语义需要）。
 	for d in [Vector2i(0, -1), Vector2i(1, -1), Vector2i(1, 0), Vector2i(1, 1), Vector2i(0, 1), Vector2i(-1, 1), Vector2i(-1, 0), Vector2i(-1, -1)]:
 		var np: Vector2i = center_pos + d
 		if board.grid.in_board(np):
-			var nrect := Rect2(board_origin + Vector2(np.x, np.y) * cell_px, Vector2(cell_px, cell_px))
-			draw_rect(nrect, ThemeManager.hover_neighbor_overlay())
+			draw_rect(_cell_rect(np), ThemeManager.hover_neighbor_overlay())
 
 
 # ============ 翻开动效开关（总闸 + 波浪细项） ============
@@ -876,7 +1101,7 @@ func _draw_wave_color_pulse() -> void:
 			continue
 		var col := glow
 		col.a = a
-		draw_rect(Rect2(board_origin + Vector2(pos.x, pos.y) * cell_px, Vector2(cell_px, cell_px)), col)
+		draw_rect(_cell_rect(pos), col)
 
 
 ## 波浪高亮描边的线宽：静止 1.0，随波浪强度 g 线性加粗到 1.0 + WAVE_LINE_GAIN。
@@ -890,6 +1115,10 @@ func _grid_line_width(g: float) -> float:
 ## 几何永远取自**原格矩形**，填充即使在收缩，线层也不动 → 线永远笔直。
 ## 受波及格描边颜色按 glow*waveE 混向高亮色、线宽按 _grid_line_width(waveE) 略粗；
 ## waveE=0 时精确回到 grid_line 原色 + 1.0 线宽（无残留）。抗锯齿只在被波及格开启。
+##
+## 蜂窝分支（二选一里的「按六边形描边」，而非「跳过」）：矩形网格线切进六边形内部会毁掉形状，
+## 而波浪高亮线宽/线色是本方案的主通道，整遍跳过等于让蜂窝盘丢掉波浪反馈。故这里逐格描
+## **六边形轮廓**（几何取自不收缩的 _cell_polygon，与填充收缩解耦 ⇒ 「线永远笔直」的不变量照旧）。
 func _draw_grid_lines() -> void:
 	if GameSession.board == null or GameSession.board.grid == null:
 		return
@@ -900,6 +1129,20 @@ func _draw_grid_lines() -> void:
 	var has_wave := not _ripples.is_empty() and _reveal_effects_enabled()
 	if has_wave and _ripple_cache_ms != Time.get_ticks_msec():
 		_rebuild_ripple_cache()
+	if _hex_layout():
+		for p: Vector2i in board.grid.all_positions():
+			var col := line
+			var lw := 1.0
+			if has_wave:
+				var e: Dictionary = _ripple_cache.get(p, {})
+				if not e.is_empty():
+					var g: float = float(e["g"])
+					col = line.lerp(glow, WAVE_GLOW * g)
+					lw = _grid_line_width(g)
+			var poly := _cell_polygon(p)
+			poly.append(poly[0])   # 闭合（draw_polyline 画的是折线）
+			draw_polyline(poly, col, lw, lw > 1.0)
+		return
 	for r in board_size.y:
 		for c in board_size.x:
 			var pos := Vector2i(c, r)
@@ -1208,11 +1451,13 @@ func _is_revealed(pos: Vector2i) -> bool:
 func _pick(local_pos: Vector2) -> Vector2i:
 	if cell_px <= 0:
 		return Vector2i(-1, -1)
+	if GameSession.board == null or GameSession.board.grid == null:
+		return Vector2i(-1, -1)
+	if _hex_layout():
+		return _pick_hex(local_pos)
 	var rel := local_pos - board_origin
 	var c := floori(rel.x / float(cell_px))
 	var r := floori(rel.y / float(cell_px))
-	if GameSession.board == null or GameSession.board.grid == null:
-		return Vector2i(-1, -1)
 	@warning_ignore("shadowed_variable_base_class")
 	var size := GameSession.board.grid.size()
 	if c < 0 or c >= size.x or r < 0 or r >= size.y:
@@ -1221,3 +1466,20 @@ func _pick(local_pos: Vector2) -> Vector2i:
 	if GameSession.board.grid.get_cell(Vector2i(c, r)) == null:
 		return Vector2i(-1, -1)
 	return Vector2i(c, r)
+
+
+## 蜂窝命中测试：取最近的格心，距离 ≤ 内切半径 × 1.15 才算命中（否则返回 -1,-1）。
+## 为什么取「最近格心」而不是像矩形那样反算行列：六边形格心是斜交晶格，且盘是被**截断**的
+## （包围盒内有洞格），反算出的最近格可能落在盘外还得再做邻居搜索——本盘最多几十格，直接扫全格心
+## 更短也更不容易写错。1.15 的宽容：相邻格心距 0.866 > 两格内切半径和 0.823，六边形之间本就留了
+## ~5% 的缝，恰好点在缝里时不该「点了个空」（也顺便盖住半个格子的边缘误点）。
+func _pick_hex(local_pos: Vector2) -> Vector2i:
+	var limit := HEX_INRADIUS * 1.15 * _unit_px()
+	var best := Vector2i(-1, -1)
+	var best_d := limit
+	for p: Vector2i in GameSession.board.grid.all_positions():
+		var d := local_pos.distance_to(_cell_center(p))
+		if d <= best_d:
+			best_d = d
+			best = p
+	return best
