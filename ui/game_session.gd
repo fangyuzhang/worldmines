@@ -85,6 +85,27 @@ func _tick(delta: float) -> void:
 
 # ============ 对局生命周期 ============
 
+
+## 当前对局的变体 id（2026-09-23，教程入口用）：从棋盘 meta 的规则声明推导
+##（LevelLoader 载入时注入 clue_rule / global_rules）。
+##   ① 线索规则非 classic（o*/s*/z* 单算子）→ 直接用 clue_rule；
+##   ② classic + 单个全局算子（如 dt 骨牌）→ 用该全局算子；
+##   ③ 纯经典（含普通关卡 / 形状关——两者都是 8 邻计数）→ "classic"；
+##   ④ 混合档（多全局算子）→ 空串（暂无对应教程，覆盖层显示兜底提示）。
+func current_variant_id() -> String:
+    if board == null:
+        return ""
+    var clue := str(board.get_meta("clue_rule", ""))
+    var globals: Array = board.get_meta("global_rules", [])
+    if clue != "" and clue != "classic":
+        return clue
+    if globals.size() == 1:
+        return str(globals[0])
+    if globals.size() > 1:
+        return ""
+    return "classic"
+
+
 ## 开始关卡。失败返回 false（调用方停留本页 + toast，不切场景）。
 func start_level(path: String) -> bool:
     level_path = path

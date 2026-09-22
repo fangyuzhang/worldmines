@@ -1,10 +1,11 @@
 # main_menu.gd —— 主菜单 + 未完成对局自动恢复【plan1.1 §10.7.7-①】
-# 文案唯一来源 §8.5：标题「世界扫雷」，按钮 开始游戏/设置/退出。
+# 文案唯一来源 §8.5：标题「世界扫雷」，按钮 开始游戏/规则图鉴/设置/模组/退出。
 # v3.2：检测到未完成对局不再弹窗询问，直接自动恢复；无法恢复时隔离备份 + toast。
+#
+# 2026-09-23（用户决策）：删除主菜单的「教程」总入口。教程改为**上下文相关**——
+# 选关页弹窗（看该变体教程）与对局 HUD 左上角（看当前变体教程），
+# 共用 `ui/tutorial_overlay.gd` 的 static `show_for()`。
 extends Control
-
-# 教程覆盖层用 preload 而非 class_name 引用（headless 下新全局类不在 .godot 缓存里，见坑表 #26）
-const TutorialOverlayScript := preload("res://ui/tutorial_overlay.gd")
 
 ## 自动恢复进程级门控：每次启动只在**首次进入主菜单**时尝试一次。
 ## 必须用 static（场景节点会随切页重建，实例字段保不住）——否则「暂停→回主菜单」
@@ -89,7 +90,7 @@ func _build_ui() -> void:
     title.custom_minimum_size = Vector2(400, 64)
     vbox.add_child(title)
 
-    for cap in ["开始游戏", "教程", "规则图鉴", "设置", "模组", "退出"]:
+    for cap in ["开始游戏", "规则图鉴", "设置", "模组", "退出"]:
         var btn := Button.new()
         btn.text = cap
         btn.focus_mode = Control.FOCUS_NONE
@@ -110,8 +111,6 @@ func _on_button(cap: String) -> void:
     match cap:
         "开始游戏":
             get_tree().change_scene_to_file("res://ui/level_select.tscn")
-        "教程":
-            _open_tutorial()
         "规则图鉴":
             get_tree().change_scene_to_file("res://ui/codex.tscn")
         "设置":
@@ -121,14 +120,6 @@ func _on_button(cap: String) -> void:
         "退出":
             SaveCoordinator.clear_temp()  # 清存活标志，防误报（§10.7.7-①）
             get_tree().quit()
-
-
-## 打开教程覆盖层（对标 doc10 §1）。页列表由 res://levels/tutorial/ 自动枚举，按名称排序。
-func _open_tutorial() -> void:
-    var ov: Control = TutorialOverlayScript.new()
-    add_child(ov)
-    ov.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    ov.call("open")
 
 
 # ============ 崩溃恢复检测（验收项 3） ============

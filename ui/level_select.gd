@@ -17,6 +17,9 @@
 #      关卡由种子确定性生成（同 seed 必同盘），首次进入某套时预置前若干关为已通关（模拟存档）。
 extends Control
 
+# 教程覆盖层用 preload 而非 class_name 引用（headless 下新全局类不在 .godot 缓存里，见坑表 #26）
+const TutorialOverlayScript := preload("res://ui/tutorial_overlay.gd")
+
 # ===== 常量 =====
 # 序列相关的常量统一托管在 LevelSequence（终局页要靠它算「下一关」，两处必须同源）。
 const LEVELS_PER_SET := LevelSequence.LEVELS_PER_SET   # 每套关卡数
@@ -1438,6 +1441,19 @@ func _open_popup(mode_idx: int) -> void:
 	_title_label.add_theme_font_size_override("font_size", 24)
 	_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(_title_label)
+
+	# 教程入口（2026-09-23 用户决策）：从主菜单总入口改为**上下文相关**——标题栏里放
+	# 「教程」，点击看**当前变体**的教程（标题显示的就是变体名，语义直接对应）。
+	# 覆盖层 add 到 self（整页）：弹窗 _overlay 同级但更早，教程节点后加 → 盖在弹窗之上 ✓
+	var tut := Button.new()
+	tut.text = "教程"
+	tut.focus_mode = Control.FOCUS_NONE
+	tut.custom_minimum_size = Vector2(72, 40)
+	tut.set_meta("std_btn", true)
+	tut.tooltip_text = "查看当前变体的教程"
+	tut.pressed.connect(func():
+		TutorialOverlayScript.show_for(self, str(MODES[_mode_idx]["id"])))
+	head.add_child(tut)
 
 	var close := Button.new()
 	close.text = "✕"

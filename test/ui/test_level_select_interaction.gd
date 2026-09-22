@@ -209,6 +209,33 @@ func test_ls2_mock_progress_is_not_persisted() -> void:
 				"演示预设绝不能写入真实存档（历史 bug：留下永久的假通关成绩）")
 
 
+# LS14：弹窗标题栏应有「教程」入口（2026-09-23 用户决策：教程改上下文相关——
+# 选关页弹窗点的是**当前变体**的教程）。点它 → 覆盖层挂出且加载该变体的页。
+# 用 classic 测：内容缺口席位（o1 等尚无教程页）点了是兜底文案，测经典最稳。
+func test_ls14_popup_offers_variant_tutorial() -> void:
+	var ci: int = int(_view._mode_index.get("classic", -1))
+	assert_gte(ci, 0, "应有 classic 卡片")
+	if ci < 0:
+		return
+	_view._open_popup(ci)
+	assert_ne(_view._mode_idx, -1, "弹窗应已打开")
+	var tut := _find_button(_view._overlay, "教程")
+	assert_not_null(tut, "弹窗标题栏应有「教程」按钮")
+	if tut == null:
+		return
+	tut.pressed.emit()
+	var ov: Control = null
+	for c in _view.get_children():
+		if c.has_method("close_overlay"):
+			ov = c
+	assert_not_null(ov, "点教程应挂出覆盖层")
+	if ov == null:
+		return
+	var title: Label = ov.get("_title")
+	assert_true(title.text.find("tutorial_classic") >= 0,
+		"应加载当前变体（classic）的教程页，实得：%s" % title.text)
+
+
 # LS3：关闭动画期间禁止重开弹窗
 func test_ls3_popup_close_animation_blocks_reopen() -> void:
 	_view._open_popup(0)

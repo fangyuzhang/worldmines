@@ -1,0 +1,9 @@
+q	F	q	q	q
+F	q	q	q	F
+q	q	q	q	q
+F	q	q	q	F
+q	F	q	q	{@clue}1
+? QD（Quadrant）规则：棋盘被十字分成四个象限，
+各象限的雷数相等（或满足固定比例）。
+
+知道一个象限的雷数，就约束了另外三个象限。

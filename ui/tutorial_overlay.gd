@@ -158,10 +158,32 @@ func _build_ui() -> void:
 	bar.add_child(close)
 
 
+## 打开某变体的教程（2026-09-23）：三个入口共用——选关页弹窗 / 对局 HUD。
+## 主菜单的「教程」总入口已按用户决策删除（改为上下文相关：在哪看哪的教程）。
+##
+## parent 必须是**能覆盖全屏的 Control**（选关页传 self；对局 HUD 传 current_scene，
+## 因为 HUD 本体只是 64px 高的顶栏，相对它铺 PRESET_FULL_RECT 只会盖住顶栏）。
+##
+## 该变体没有教程页时传空数组：覆盖层显示「暂无教程内容」（已有兜底，
+## 入口不会点了没反应）。内容覆盖清单见 levels/tutorial/。
+static func show_for(parent: Node, variant_id: String) -> void:
+	if parent == null or not parent.is_inside_tree():
+		return
+	var pages: Array = TutorialData.pages_for(variant_id) if variant_id != "" else []
+	# 运行期 load 自身（static 上下文里 preload 自引用有循环风险；且本文件刻意无 class_name）
+	var ov: Control = load("res://ui/tutorial_overlay.gd").new()
+	parent.add_child(ov)
+	ov.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ov.call("open", pages, true)
+
+
 ## 打开教程。pages 为空时列出全部教程页。
-func open(pages: Array = []) -> void:
+## explicit_empty（2026-09-23）：show_for 对「该变体无教程页」要的是**空态**（显示兜底
+## 文案），而本函数的历史语义是「空数组 = 列全部页」（旧主菜单总入口用法）——两者冲突。
+## 加显式开关：explicit_empty=true 时空数组按空态处理；不传则保持旧语义（测试依赖）。
+func open(pages: Array = [], explicit_empty := false) -> void:
 	if _pages.is_empty():
-		if pages.is_empty():
+		if pages.is_empty() and not explicit_empty:
 			pages = TutorialData.list_ids()
 		for p in pages:
 			_pages.append(str(p))

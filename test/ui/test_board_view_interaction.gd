@@ -151,6 +151,32 @@ func test_b5_pause_toggle_roundtrip() -> void:
 	assert_eq(GameSession.state, GameSession.State.PLAYING, "应能恢复对局")
 
 
+# B9：对局 HUD 左上角有「教程」入口（2026-09-23 用户决策：从主菜单总入口挪到
+# 上下文相关位置，对局中看**当前变体**的教程）。位置契约：紧跟「雷数」之后。
+func test_b9_hud_tutorial_entry_sits_after_mines() -> void:
+	var tut := _find_btn_by_text(_view, "教程")
+	assert_not_null(tut, "对局 HUD 应有「教程」入口")
+	if tut == null:
+		return
+	var box := tut.get_parent()
+	assert_true(box is HBoxContainer, "教程按钮应在 HUD 的按钮排（_box）里")
+	assert_eq(tut.get_index(), 1, "应在「雷数」之后（索引 0 = 雷数标签）= 左上角")
+	# 变体身份推导（入口的取数链）：before_each 载入 classic_01（普通关卡，无规则声明）
+	# → 应推导为 classic（不能是空串，否则点了必然走「暂无教程」兜底）
+	assert_eq(GameSession.current_variant_id(), "classic",
+		"普通关卡应推导为 classic 变体（LevelLoader 注入的 clue_rule/global_rules meta）")
+
+
+func _find_btn_by_text(node: Node, want: String) -> Button:
+	if node is Button and (node as Button).text == want:
+		return node as Button
+	for c in node.get_children():
+		var r := _find_btn_by_text(c, want)
+		if r != null:
+			return r
+	return null
+
+
 # B8：分色雷数计数器与左上角「雷数」合并到同一角（2026-09-22 用户要求：
 # 原先总雷数在左上、分色明细在右上，视线要两边跑）。
 func test_b8_group_panel_joins_the_mines_label_at_top_left() -> void:

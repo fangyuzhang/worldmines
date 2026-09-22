@@ -256,6 +256,12 @@ static func _validate_and_build(d: Dictionary, path: String) -> Board:
     # 颜色分区（2026-09-21）：「变体 × 异形」关卡带 groups（环层分色），参数化形状
     # （蜂窝 / 挖洞方格）没有 custom_shapes 几何，但同样要分色 + 分色雷数计数器 ⇒ 单独一条通路。
     board.set_meta("groups", d.get("groups"))
+    # 变体身份（2026-09-23）：教程入口等 UI 需要「当前变体 id」，而 level_path 有三种
+    # 格式（gen 流 user://gen_levels/…、库流 res://levels_lib/…、直接路径 res://levels/…，
+    # mode 段位置各异且 mode 自身可能含下划线）——关卡自带的规则声明最权威，
+    # 载入时顺手挂 meta（与上面 custom_shapes/palette/groups 同组）。
+    board.set_meta("clue_rule", str(d.get("clue_rule", "")))
+    board.set_meta("global_rules", d.get("global_rules", []))
     if board.grid == null or board.total_mines != total_mines:
         push_error("引擎构造棋盘失败: " + path)
         return null

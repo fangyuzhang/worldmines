@@ -141,3 +141,54 @@ func test_load_missing_page_is_graceful() -> void:
 	var page := Tutorial.load_page("tutorial_不存在_99")
 	assert_ne(page["error"], "", "缺失页应返回 error")
 	assert_eq((page["rows"] as Array).size(), 0, "缺失页盘面应为空")
+
+
+## 官方席位的教程可达性（2026-09-23：教程入口改为上下文相关——选关页弹窗 / 对局 HUD
+## 都按「当前变体 id」查页）。现覆盖：classic（3 页）+ dt + 6 个与官方席位**等价**的旧
+## 实现平移（clock→o8 / loopruns→o10 / pf→s1 / mx→z1 / rl→z2 / qd→z3，等价关系见
+## variant_catalog.HIDDEN_RULES 注释）。其余席位（o1-o7/o9/o5x、s2-s7、z4/z5）**暂无内容**，
+## 点击显示「暂无教程内容」兜底——本测试只钉「已有的别回退」，不假装全覆盖。
+func test_official_seats_with_content_stay_reachable() -> void:
+	for combo in ["classic", "dt", "o8", "o10", "s1", "z1", "z2", "z3"]:
+		var pages := Tutorial.pages_for(combo)
+		assert_gt(pages.size(), 0, "官方席位 %s 应能查到教程页（内容平移自等价旧实现）" % combo)
+	# 平移件与原件同内容（防止将来有人只改一边）
+	var orig := Tutorial.load_page("tutorial_clock_0")
+	var copy := Tutorial.load_page("tutorial_o8_0")
+	assert_eq(str(copy.get("text", "")), str(orig.get("text", "")),
+		"o8 教程（平移自 clock）的正文应与原件一致")
+
+
+## show_for：三处入口共用的打开函数（2026-09-23）——有内容的变体加载出对应页；
+## 无内容的变体优雅兜底（显示「暂无教程内容」而不是不弹或崩溃）。
+func test_show_for_loads_pages_or_falls_back() -> void:
+	var script: Variant = load("res://ui/tutorial_overlay.gd")
+	assert_true(script != null, "覆盖层脚本可加载")
+	if script == null:
+		return
+	var host := Control.new()
+	add_child_autofree(host)
+	host.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	script.call("show_for", host, "o8")
+	var ov: Control = null
+	for c in host.get_children():
+		if c.has_method("open"):
+			ov = c
+	assert_not_null(ov, "有教程的变体：show_for 应挂出覆盖层")
+	if ov != null:
+		var title: Label = ov.get("_title")
+		assert_true(title.text.find("tutorial_o8") >= 0,
+			"标题应显示 o8 的教程页（实得 %s）" % title.text)
+		ov.queue_free()
+
+	# 内容缺口席位（o1 尚无教程页）：仍须挂出覆盖层并显示兜底文案
+	script.call("show_for", host, "o1")
+	var ov2: Control = null
+	for c in host.get_children():
+		if c.has_method("open") and c != ov:
+			ov2 = c
+	assert_not_null(ov2, "无教程的变体也应挂出覆盖层（显示兜底文案）")
+	if ov2 != null:
+		var text: RichTextLabel = ov2.get("_text")
+		assert_true(text.text.find("暂无教程") >= 0, "应显示「暂无教程内容」兜底（实得：%s）" % text.text)

@@ -8,6 +8,9 @@
 #   ③ 旗数每帧全盘遍历（O(格子数)/帧）——改为按 cell_state_changed 失效的缓存。
 extends Control
 
+# 教程覆盖层用 preload 而非 class_name 引用（headless 下新全局类不在 .godot 缓存里，见坑表 #26）
+const TutorialOverlayScript := preload("res://ui/tutorial_overlay.gd")
+
 var _mines_label: Label
 var _time_label: Label
 var _hint_btn: Button
@@ -38,6 +41,14 @@ func _ready() -> void:
     _mines_label = Label.new()
     _mines_label.add_theme_font_size_override("font_size", 28)
     _box.add_child(_mines_label)
+
+    # 教程入口（2026-09-23 用户决策）：从主菜单总入口改为**上下文相关**——这里放在
+    # **左上角**（紧贴「雷数」：左端唯一按钮），点击看**当前变体**的教程。
+    # `_add_button` 一律追加到 _box 末尾（右端按钮区），故此处 move_child 到索引 1。
+    # 覆盖宿主用 current_scene：HUD 本体高只有 64px，相对它铺全屏预设只会盖住顶栏。
+    var _tut_btn: Button = _add_button("教程", "查看当前变体的教程", func():
+        TutorialOverlayScript.show_for(get_tree().current_scene, GameSession.current_variant_id()))
+    _box.move_child(_tut_btn, 1)
 
     _time_label = Label.new()
     _time_label.add_theme_font_size_override("font_size", 28)
