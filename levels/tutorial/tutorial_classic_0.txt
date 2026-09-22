@@ -1,5 +1,5 @@
 {@}F	q	F	q	q
-q	{@clue}1	q	q	F
+q	{@clue}3	q	q	F
 F	q	{@!}1	q	q
 q	q	F	q	F
 q	F	q	q	q

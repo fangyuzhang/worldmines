@@ -1,6 +1,6 @@
 q	F	q	q	q
-F	{@clue}2	F	q	q
-q	F	{@!}1	q	q
+F	{@clue}4	F	q	q
+q	F	{@!}2	q	q
 q	q	q	q	F
 q	q	F	q	q
 ? 4N 规则：数字只统计「上下左右」4 个正交邻格中的雷数，

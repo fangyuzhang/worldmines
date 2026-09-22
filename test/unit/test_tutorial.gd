@@ -182,8 +182,10 @@ func test_show_for_loads_pages_or_falls_back() -> void:
 			"标题应显示 o8 的教程页（实得 %s）" % title.text)
 		ov.queue_free()
 
-	# 内容缺口席位（o1 尚无教程页）：仍须挂出覆盖层并显示兜底文案
-	script.call("show_for", host, "o1")
+	# 无页变体（不存在的 id）：仍须挂出覆盖层并显示兜底文案而不是不弹/崩溃。
+	# 用假 id 而非某个真实变体——2026-09-23 起官方席位已全部有教程页，
+	# 兜底路径的守卫不能再依赖「某个席位恰好缺内容」这种会过期的前提。
+	script.call("show_for", host, "nonexistent_variant")
 	var ov2: Control = null
 	for c in host.get_children():
 		if c.has_method("open") and c != ov:

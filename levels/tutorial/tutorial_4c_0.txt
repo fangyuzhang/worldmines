@@ -1,4 +1,4 @@
-{@clue}1	{@clue}1	q	F	q
+{@clue}0	{@clue}0	q	F	q
 q	q	q	q	q
 F	q	q	q	F
 q	{@!}2	q	q	q
