@@ -4,21 +4,59 @@ extends SceneTree
 # 做法：复现 ProofLog.build 的卡住状态，然后用 CP-SAT 数该状态下还剩几个模型——
 #   模型数 == 1 → 信息足够、只是没被判成 forced（提示能力缺口）
 #   模型数 >= 2 →  действительно 存在二义性（关卡本身推不到底）
+#
+# 用法：`-s res://tools/diag_stuck_levels.gd [-- <关卡路径> ...]`（不传参 = 下面两关）。
+#   · 先给「门禁口径」一行（ProofLog.build 的 solved/轮数/步数，与 test_level_proof_coverage.gd 同口径），
+#     再看模型数判定根因——两条一起看，避免把"门禁能不能过"和"为什么过不了"混为一谈。
+#
+# 为什么必须在**首帧之后**跑（本工具与 test 的门禁同款坑，两个方向都踩过）：
+#   `_initialize()` 早于 autoload 装载，此时 S/Z 轴变体规则**还没进 RuleRegistry**——
+#   带 global_rules 的关卡会被判「推不到底」（假红）；反过来，环境里 C# 后端不可用时
+#   测试的 `pending()` 会让门禁静默跳过（假绿）。故这里显式打印后端可用性。
 const CliShutdown := preload("res://tools/cli_shutdown.gd")
 const ProofLogScript := preload("res://core/proof_log.gd")
 
-const PATHS := [
+const DEFAULT_PATHS := [
 	"res://levels/classic_07.json",
 	"res://levels/generated_07.json",
 ]
 
+var _started := false
 
-func _initialize() -> void:
-	for path in PATHS:
+
+func _process(_delta: float) -> bool:
+	# 首帧后才跑：等 autoload 把 S/Z 轴变体规则装进 RuleRegistry（见文件头说明）
+	if not _started:
+		_started = true
+		_run(_selected_paths())
+	return CliShutdown.poll(self)
+
+
+## 命令行关卡路径；不传 = DEFAULT_PATHS。
+func _selected_paths() -> Array:
+	var picked: Array = []
+	for a in OS.get_cmdline_user_args():
+		var s := str(a).strip_edges()
+		if s != "":
+			picked.append(s)
+	return picked if not picked.is_empty() else DEFAULT_PATHS
+
+
+func _run(paths: Array) -> void:
+	print("=== 后端可用性 ===")
+	print("  RuleCpSat.available() = %s（false ⇒ 模型数走 GDScript 回退，且测试门禁会静默跳过）"
+		% RuleCpSat.available())
+	for path in paths:
 		var level := _read_json(path)
 		if level.is_empty():
 			print("%s: 读取失败" % path)
 			continue
+		# 门禁口径先行（与 test_level_proof_coverage.gd 同口径）：
+		# 「能不能推到底」看这一行；「为什么推不到底」看下面的模型数。
+		var proof: Dictionary = ProofLogScript.build(level)
+		print("%s  门禁：solved=%s 轮数=%s 步数=%s" % [
+			path.get_file(), proof.get("solved"), proof.get("rounds"),
+			(proof["steps"] as Array).size() if proof.has("steps") else "-"])
 		var b := Board.new()
 		b.load_level(level)
 		var solver := HintSolver.new()
@@ -73,6 +111,10 @@ func _initialize() -> void:
 		if clue_rule == null:
 			print("   → 线索规则未解析到，无法判定")
 			continue
+		if globals.size() < b.rule_global_ids.size():
+			# 典型原因：跑在 autoload 之前 / 规则未注册 → 模型数会系统性偏大，不可作判定依据
+			print("   → ⚠ 全局规则未全部解析（%d/%d）：本行以下结论不可信（规则未注册？）" % [
+				globals.size(), b.rule_global_ids.size()])
 		var oracle := RuleOracle.new(clue_rule, globals, b.grid.size(), b.total_mines, null)
 		var active := {}
 		for p in b.grid.all_positions():
@@ -98,10 +140,6 @@ func _initialize() -> void:
 		print("  ASCII total_mines=%d proven=%d models_zero_trust=%d models_with_proven=%d" % [
 			b.total_mines, proven.size(), n0, n1])
 	CliShutdown.request_exit(0)
-
-
-func _process(delta: float) -> bool:
-	return CliShutdown.poll(self)
 
 
 func _read_json(path: String) -> Dictionary:

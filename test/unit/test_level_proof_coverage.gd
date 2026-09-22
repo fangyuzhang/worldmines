@@ -21,6 +21,13 @@ extends GutTest
 ## 其可推导性依赖 Tametsi 自身的规则集（含「非雷格连通」类全局约束，本引擎未实现）。
 ## 豁免不影响加载/渲染/游玩，仅不参与序贯推导门禁。
 ## 豁免必须显式列出并受数量上限约束（防滥用）。
+##
+## 两个假信号（2026-09-23 踩过，改本门禁/写独立核验脚本时先看这里）：
+##   · 假红：在某脚本的 `_initialize()` 里调 ProofLog——那是**首帧之前**，autoload 还没把
+##     S/Z 轴变体规则装进 RuleRegistry，带 global_rules 的关卡会被判「推不到底」。
+##     独立脚本必须等首帧（`tools/diag_stuck_levels.gd` 已按此改）。
+##   · 假绿：`RuleCpSat.available()` 为 false 时本门禁 `pending()` 静默跳过——后端缺失或
+##     构建陈旧时套件仍全绿。诊断工具已显式打印该行，排查先看它。
 
 const KNOWN_STUCK: Array[String] = []
 ## 允许的豁免关卡上限：新增豁免必须同时在此注释说明理由（当前 3 个）。
