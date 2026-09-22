@@ -139,7 +139,9 @@ func _initialize() -> void:
 					level["name"] = "%s_p%02d_%d" % [tag, peak, int(arm["saved"])]
 					var f := FileAccess.open("%s/%s_p%02d_%d.json" % [_out_dir, tag, peak, int(arm["saved"])], FileAccess.WRITE)
 					if f != null:
-						f.store_string(JSON.stringify(level, " "))
+						# 两空格：与仓库其余写 JSON 的工具（及 Python 侧 indent=2）统一，
+						# 避免产物格式与惯例分叉（详见 fill_window.gd 的同款注释）。
+						f.store_string(JSON.stringify(level, "  "))
 						f.close()
 		var cand := maxi(1, int(arm["cand"]))
 		var hit := int(arm["hit"])

@@ -606,6 +606,7 @@
   ],
   "name": "八角 04 · 涡嵌",
   "palette": {
+    "texture": "octa",
     "background": [
       20,
       0,

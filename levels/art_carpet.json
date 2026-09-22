@@ -1995,6 +1995,7 @@
   "total_mines": 13,
   "shape_kind": "艺术图案",
   "palette": {
+    "texture": "halo",
     "theme": "VIOLET"
   }
 }

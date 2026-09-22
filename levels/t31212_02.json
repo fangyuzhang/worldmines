@@ -3686,6 +3686,7 @@
   ],
   "name": "十二边 02 · 密铺",
   "palette": {
+    "texture": "weave",
     "background": [
       20,
       0,

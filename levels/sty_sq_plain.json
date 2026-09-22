@@ -1226,6 +1226,7 @@
   ],
   "name": "方格 01 · 素方",
   "palette": {
+    "texture": "weave",
     "background": [
       20,
       0,

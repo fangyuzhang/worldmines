@@ -1357,6 +1357,7 @@
   "total_mines": 7,
   "shape_kind": "艺术图案",
   "palette": {
+    "texture": "halo",
     "theme": "VIOLET"
   }
 }

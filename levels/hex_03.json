@@ -1937,6 +1937,7 @@
   "total_mines": 14,
   "shape_kind": "蜂窝盘",
   "palette": {
+    "texture": "comb",
     "theme": "BLUE"
   }
 }

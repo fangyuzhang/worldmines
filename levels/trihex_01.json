@@ -1990,6 +1990,7 @@
   ],
   "name": "编织 01 · 卡果梅",
   "palette": {
+    "texture": "weave",
     "background": [
       20,
       0,

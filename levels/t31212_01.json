@@ -2590,6 +2590,7 @@
   ],
   "name": "十二边 01 · 大格与小角",
   "palette": {
+    "texture": "weave",
     "background": [
       20,
       0,

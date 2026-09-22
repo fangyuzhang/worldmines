@@ -2966,6 +2966,7 @@
   ],
   "name": "编织 02 · 大卡果梅",
   "palette": {
+    "texture": "weave",
     "background": [
       20,
       0,

@@ -1226,6 +1226,7 @@
   ],
   "name": "方格 06 · 立砖",
   "palette": {
+    "texture": "weave",
     "background": [
       20,
       0,

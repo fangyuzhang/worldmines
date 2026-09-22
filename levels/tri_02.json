@@ -1422,6 +1422,7 @@
   ],
   "name": "三角 02 · 宽幅",
   "palette": {
+    "texture": "weave",
     "background": [
       20,
       0,

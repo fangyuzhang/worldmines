@@ -606,6 +606,7 @@
   ],
   "name": "八角 01 · 素嵌",
   "palette": {
+    "texture": "octa",
     "background": [
       20,
       0,

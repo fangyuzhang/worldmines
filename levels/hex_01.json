@@ -565,6 +565,7 @@
   "total_mines": 4,
   "shape_kind": "蜂窝盘",
   "palette": {
+    "texture": "comb",
     "theme": "BLUE"
   }
 }

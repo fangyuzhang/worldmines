@@ -1566,6 +1566,7 @@
   ],
   "name": "环盘 01 · 三环",
   "palette": {
+    "texture": "ring",
     "background": [
       20,
       0,

@@ -1226,6 +1226,7 @@
   ],
   "name": "等轴 04 · 掏四角",
   "palette": {
+    "texture": "cube",
     "background": [
       20,
       0,

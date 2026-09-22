@@ -1226,6 +1226,7 @@
   ],
   "name": "方格 02 · 菱格",
   "palette": {
+    "texture": "weave",
     "background": [
       20,
       0,

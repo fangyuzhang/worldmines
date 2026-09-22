@@ -814,6 +814,7 @@
   ],
   "name": "蜂窝 12 · 涡巢",
   "palette": {
+    "texture": "comb",
     "background": [
       20,
       0,

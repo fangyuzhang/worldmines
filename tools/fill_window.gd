@@ -128,7 +128,11 @@ func _initialize() -> void:
 			level["name"] = "%s_%02d" % [tier, made]
 			var f := FileAccess.open("%s/%s_%02d.json" % [dir, tier, made], FileAccess.WRITE)
 			if f != null:
-				f.store_string(JSON.stringify(level, " "))
+				# 缩进与全场统一（2026-09-23）：仓库里 20+ 个写 JSON 的工具都用两空格，
+				# Python 侧也是 indent=2（见 retier_stock.py 的同款注释）。此处曾是单空格，
+				# 产物一旦被拷进 res://levels/ 就会造成整目录的格式分叉（曾出现过一次
+				# 108 文件的噪音 diff，内容其实一行未变）。
+				f.store_string(JSON.stringify(level, "  "))
 				f.close()
 		total_made += made
 		var el := float(Time.get_ticks_msec() - t0) / 1000.0

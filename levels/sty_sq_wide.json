@@ -1226,6 +1226,7 @@
   ],
   "name": "方格 05 · 宽砖",
   "palette": {
+    "texture": "weave",
     "background": [
       20,
       0,

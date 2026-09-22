@@ -814,6 +814,7 @@
   ],
   "name": "蜂窝 13 · 扇巢",
   "palette": {
+    "texture": "comb",
     "background": [
       20,
       0,

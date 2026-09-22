@@ -2306,6 +2306,7 @@
   ],
   "name": "环盘 02 · 四环",
   "palette": {
+    "texture": "ring",
     "background": [
       20,
       0,

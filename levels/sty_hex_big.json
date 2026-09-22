@@ -1554,6 +1554,7 @@
   ],
   "name": "蜂窝 10 · 大素巢",
   "palette": {
+    "texture": "comb",
     "background": [
       20,
       0,

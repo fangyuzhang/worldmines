@@ -606,6 +606,7 @@
   ],
   "name": "八角 02 · 深浅嵌",
   "palette": {
+    "texture": "octa",
     "background": [
       20,
       0,

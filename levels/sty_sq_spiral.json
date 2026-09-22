@@ -1226,6 +1226,7 @@
   ],
   "name": "方格 10 · 涡格",
   "palette": {
+    "texture": "weave",
     "background": [
       20,
       0,

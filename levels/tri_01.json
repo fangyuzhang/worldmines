@@ -958,6 +958,7 @@
   ],
   "name": "三角 01 · 素三角",
   "palette": {
+    "texture": "weave",
     "background": [
       20,
       0,

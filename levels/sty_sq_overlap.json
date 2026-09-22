@@ -1226,6 +1226,7 @@
   ],
   "name": "方格 12 · 叠瓦",
   "palette": {
+    "texture": "weave",
     "background": [
       20,
       0,

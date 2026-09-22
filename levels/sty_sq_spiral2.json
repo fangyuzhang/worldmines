@@ -1226,6 +1226,7 @@
   ],
   "name": "方格 11 · 强涡",
   "palette": {
+    "texture": "weave",
     "background": [
       20,
       0,

@@ -1226,6 +1226,7 @@
   ],
   "name": "方格 08 · 透视",
   "palette": {
+    "texture": "weave",
     "background": [
       20,
       0,

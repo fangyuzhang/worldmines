@@ -2846,6 +2846,7 @@
   "total_mines": 15,
   "shape_kind": "挖洞方格",
   "palette": {
+    "texture": "strata",
     "theme": "ORANGE"
   }
 }

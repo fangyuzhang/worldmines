@@ -1118,6 +1118,7 @@
   ],
   "name": "八角 03 · 宽嵌",
   "palette": {
+    "texture": "octa",
     "background": [
       20,
       0,

@@ -814,6 +814,7 @@
   ],
   "name": "蜂窝 08 · 高巢",
   "palette": {
+    "texture": "comb",
     "background": [
       20,
       0,

@@ -1822,6 +1822,7 @@
   ],
   "name": "等轴 05 · 隧道",
   "palette": {
+    "texture": "cube",
     "background": [
       20,
       0,

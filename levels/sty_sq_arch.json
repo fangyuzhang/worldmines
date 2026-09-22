@@ -1226,6 +1226,7 @@
   ],
   "name": "方格 09 · 拱格",
   "palette": {
+    "texture": "weave",
     "background": [
       20,
       0,
