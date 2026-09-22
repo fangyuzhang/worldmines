@@ -758,12 +758,17 @@ func _group_color(name: String) -> Color:
 	return PaletteColor.parse((groups as Dictionary).get(name, null))
 
 
-# ============ 分色雷数计数器（右上角浮层） ============
+# ============ 分色雷数计数器（左上角浮层，紧贴 HUD「雷数」下方） ============
 #
-# 复刻 Tametsi 的「彩色分区 + 分色雷数」：棋盘被染成若干颜色区，右上角按颜色列出
+# 复刻 Tametsi 的「彩色分区 + 分色雷数」：棋盘被染成若干颜色区，按颜色列出
 # 「该区还剩几颗雷没被标记 / 该区共有几颗雷」。它同时承担两个作用：
 #   ① 好看（单色灰盘 → 多色图案）；
 #   ② **额外线索**：某色区剩余归零时，该区剩下的未知格全部安全——原版高阶推理的抓手之一。
+#
+# 位置沿革（2026-09-22 用户决策）：原先在**右上角**，玩家视线要在「左上读总雷数、
+# 右上读分色明细」之间来回跑；现移到左上角、紧贴 HUD「雷数 N」下方——总数用大字（28px）、
+# 各色明细用小字（18px）竖排连成一块，一眼看全。仍是浮层（mouse_filter=IGNORE），
+# 不会挡住棋盘点击。
 
 var _group_panel: VBoxContainer = null
 var _group_rows: Dictionary = {}      # group -> {"total": int, "label": Label}
@@ -790,11 +795,14 @@ func _ensure_group_panel() -> void:
 		totals[g] = int(totals.get(g, 0)) + 1
 	if totals.is_empty():
 		return
+	# 左上角、紧贴 HUD「雷数 N」下方（2026-09-22 用户决策：总数与分色明细合并到同一角）。
+	# 左缘 24 与 HUD._box.offset_left 对齐；顶栏高 64，故从 62 起 → 视觉上与「雷数」连成一块。
+	# 宽度只约束换行边界（行内容左对齐，组多也不溢出）。
 	var panel := VBoxContainer.new()
-	panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	panel.offset_left = -190
-	panel.offset_right = -16
-	panel.offset_top = 64                                  # 让开顶栏 HUD
+	panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	panel.offset_left = 24
+	panel.offset_right = 240
+	panel.offset_top = 62
 	panel.add_theme_constant_override("separation", 6)
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE        # 浮层不得吃掉棋盘点击
 	add_child(panel)

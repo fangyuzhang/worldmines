@@ -149,3 +149,26 @@ func test_b5_pause_toggle_roundtrip() -> void:
 	assert_eq(GameSession.state, GameSession.State.PAUSED, "应能进入暂停")
 	GameSession.set_paused(false)
 	assert_eq(GameSession.state, GameSession.State.PLAYING, "应能恢复对局")
+
+
+# B8：分色雷数计数器与左上角「雷数」合并到同一角（2026-09-22 用户要求：
+# 原先总雷数在左上、分色明细在右上，视线要两边跑）。
+func test_b8_group_panel_joins_the_mines_label_at_top_left() -> void:
+	# 带分色分组的异形关：ring/tri 族每格都有 group（数据契约见 test_geo_levels）。
+	# 用新实例——_view 是 before_each 按 classic 关建的，板不匹配。
+	assert_true(GameSession.start_level("res://levels/ring_01.json"), "需要带分色分组的异形关")
+	var v2 = load("res://ui/board_view.tscn").instantiate()
+	add_child_autofree(v2)
+	v2._refresh_group_panel()   # 同步建面板（不依赖 _process 的帧序）
+	var panel: Control = v2._group_panel
+	assert_not_null(panel, "分色关应出现分色雷数计数器")
+	if panel == null:
+		return
+	# 位置契约：左上角、与 HUD「雷数」同列（总数大字在顶栏，各色明细小字在其正下方）。
+	assert_eq(panel.anchor_left, 0.0, "应锚定左上（左锚点 0）")
+	assert_eq(panel.anchor_top, 0.0, "应锚定左上（上锚点 0）")
+	assert_eq(panel.anchor_right, 0.0, "左锚点布局：右锚点 0 = 宽度由 offset 定义，不拉伸到右缘")
+	assert_eq(int(panel.offset_left), 24, "左缘应与 HUD「雷数」对齐（HUD._box.offset_left = 24）")
+	assert_gte(int(panel.offset_top), 60, "应让开顶栏（高 64）")
+	assert_lte(int(panel.offset_top), 96, "且紧贴顶栏下方——不远离总雷数，两者视觉上连成一块")
+	assert_gte(v2._group_rows.size(), 2, "分色关应列出至少 2 个颜色组（明细内联显示）")
