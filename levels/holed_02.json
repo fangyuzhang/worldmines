@@ -3,13 +3,13 @@
   "difficulty_profile": {
     "clue_count": 8,
     "clue_ratio": 0.17,
-    "difficulty": 0.34,
-    "histogram": "1x3",
-    "max_active": 45,
-    "max_batch": 23,
-    "max_complexity": 1,
-    "profile": "23x2,4x1",
-    "rounds": 3,
+    "difficulty": 0.38,
+    "histogram": "3x2,1x2",
+    "max_active": 42,
+    "max_batch": 18,
+    "max_complexity": 3,
+    "profile": "18x1,15x1,11x1,6x1",
+    "rounds": 4,
     "target_difficulty": 0.0
   },
   "global_rules": [],
@@ -20,82 +20,82 @@
     },
     {
       "c": 4,
-      "r": 1
-    },
-    {
-      "c": 5,
-      "r": 3
-    },
-    {
-      "c": 5,
-      "r": 5
+      "r": 7
     },
     {
       "c": 0,
-      "r": 4
-    },
-    {
-      "c": 7,
-      "r": 3
-    },
-    {
-      "c": 4,
-      "r": 7
-    },
-    {
-      "c": 1,
-      "r": 0
-    },
-    {
-      "c": 1,
-      "r": 7
-    },
-    {
-      "c": 4,
       "r": 5
     },
     {
-      "c": 2,
+      "c": 5,
+      "r": 7
+    },
+    {
+      "c": 1,
       "r": 3
+    },
+    {
+      "c": 3,
+      "r": 0
+    },
+    {
+      "c": 7,
+      "r": 4
+    },
+    {
+      "c": 2,
+      "r": 6
+    },
+    {
+      "c": 3,
+      "r": 1
+    },
+    {
+      "c": 7,
+      "r": 1
+    },
+    {
+      "c": 4,
+      "r": 1
     }
   ],
   "name": "挖洞 02 · 贴边洞",
   "revealed": [
     {
-      "c": 6,
-      "r": 0
-    },
-    {
-      "c": 6,
-      "r": 1
-    },
-    {
-      "c": 7,
-      "r": 1
-    },
-    {
       "c": 0,
-      "r": 2
+      "r": 1
     },
     {
-      "c": 2,
+      "c": 4,
+      "r": 3
+    },
+    {
+      "c": 5,
+      "r": 3
+    },
+    {
+      "c": 4,
+      "r": 4
+    },
+    {
+      "c": 5,
+      "r": 4
+    },
+    {
+      "c": 4,
       "r": 5
     },
     {
-      "c": 7,
+      "c": 5,
       "r": 5
     },
     {
       "c": 7,
       "r": 6
-    },
-    {
-      "c": 6,
-      "r": 7
     }
   ],
   "rule_level": true,
-  "seed": 2001,
+  "seed": 2005,
   "size": {
     "cols": 8,
     "rows": 8
@@ -2169,5 +2169,9 @@
     ],
     "style": "holed_grid"
   },
-  "total_mines": 11
+  "total_mines": 11,
+  "shape_kind": "挖洞方格",
+  "palette": {
+    "theme": "ORANGE"
+  }
 }

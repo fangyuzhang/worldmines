@@ -107,8 +107,25 @@ static func levels(mode: String, size: int, tier: String) -> Array:
 	var arr: Array = []
 	if parsed is Dictionary:
 		arr = (parsed as Dictionary).get("levels", [])
-	_sets[key] = arr
-	return arr
+	# v4.1 严格难度梯度（玩家可见前的最后一道闸）：集内关卡必须与集档位同窗。
+	# 数据侧已有三道（生成门禁 / retier 重标 / 入库校验），这里兜的是历史或外部产物
+	# —— 宁可不显示，也不让「噩梦」档里冒出普通盘（那正是玩家一眼看穿的假梯度）。
+	var conforming := filter_conforming(arr, tier)
+	if conforming.size() != arr.size():
+		push_warning("[LevelLibrary] %s/%d/%s：%d 关档位与峰值不符已隐去（建议重导入该集）" % [
+			mode, size, tier, arr.size() - conforming.size()])
+	_sets[key] = conforming
+	return conforming
+
+
+## v4.1 严格梯度过滤器：只保留「峰值窗口 == 集档位」的关卡（纯函数，可单测）。
+static func filter_conforming(arr: Array, tier: String) -> Array:
+	var out: Array = []
+	for lv in arr:
+		if lv is Dictionary \
+				and Difficulty.tier_of_profile((lv as Dictionary).get("difficulty_profile", {})) == tier:
+			out.append(lv)
+	return out
 
 
 ## 取一关（越界 → 空字典）。
@@ -143,7 +160,8 @@ static func materialize(mode: String, size: int, tier: String, idx: int) -> Stri
 	# `>=` 会把「集随后又被更新（同一秒内）」也判成最新 → 玩家玩到旧盘。
 	# 宁可多写一次，也不能出现过期数据（原「每次都重写」的意图在此保留）。
 	if src_mtime > 0 and FileAccess.file_exists(path) \
-			and FileAccess.get_modified_time(path) > src_mtime:
+			and FileAccess.get_modified_time(path) > src_mtime \
+			and _materialized_ok(path, lv):
 		return path
 	if DirAccess.make_dir_recursive_absolute(PLAY_DIR) != OK:
 		return ""
@@ -153,6 +171,33 @@ static func materialize(mode: String, size: int, tier: String, idx: int) -> Stri
 	f.store_string(JSON.stringify(lv, "  "))
 	f.close()
 	return path
+
+
+## 物化文件可用性校验（审计修复 2026-09-21）：命中缓存前必须**验内容**，不能只比 mtime——
+## 首次物化时崩溃/断电/磁盘满会留下半份 JSON，而此后 mtime 永远"更新"，该关就永久不可玩
+## （点开始游戏只会 toast「关卡加载失败」，旧存档也恢复不了），只有手删 user://lib_play 才自愈。
+## 校验失败 → false ⇒ 走下面的重写路径（原子替换）。字段校验取"缺了就会崩/玩错盘"的最小集。
+static func _materialized_ok(path: String, expect: Dictionary) -> bool:
+	if not FileAccess.file_exists(path):
+		return false
+	# 用 JSON.new().parse() 而非 JSON.parse_string()：后者对坏内容会触发 Godot 内部
+	# engine error（`Condition "error != Error::OK"`）—— 而本函数恰恰是为「坏文件」而写的，
+	# 每次命中坏档都会在控制台刷错误、CI 也会把它记成 Unexpected Errors。
+	var j := JSON.new()
+	if j.parse(FileAccess.get_file_as_string(path)) != OK:
+		return false
+	var parsed: Variant = j.data
+	if not (parsed is Dictionary):
+		return false
+	var d: Dictionary = parsed
+	if not d.has("mines") or not d.has("size") or not d.has("total_mines"):
+		return false
+	if int(d.get("total_mines", -1)) != int(expect.get("total_mines", -2)):
+		return false
+	# 拓扑键必须与源关卡一致（形状关丢了 topology 会被当成矩形盘——玩错盘）
+	if expect.has("topology") != d.has("topology"):
+		return false
+	return true
 
 
 ## 某关的难度值（读不到 → -1.0）。tile 提示等 UI 直接取值，

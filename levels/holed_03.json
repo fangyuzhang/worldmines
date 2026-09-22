@@ -2843,5 +2843,9 @@
     ],
     "style": "holed_grid"
   },
-  "total_mines": 15
+  "total_mines": 15,
+  "shape_kind": "挖洞方格",
+  "palette": {
+    "theme": "ORANGE"
+  }
 }

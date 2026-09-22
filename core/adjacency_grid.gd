@@ -98,6 +98,8 @@ static func normalized(topo: GridInterface) -> AdjacencyGrid:
 		positions.append({"x": p.x - min_c, "y": p.y - min_r})
 	var adjacency: Array = []
 	var seen := {}
+	# L1 交叉说明（2026-09-21）：本处的去重键按遍历序 (p, nb)，与 core/shape_generator.gd 的
+	# `_add_edge`（字典序 lo/hi）输出定向不同、集合语义相同——不要断言两处 adjacency 逐字节一致。
 	for p in topo.all_positions():
 		for nb in topo.get_neighbors(p):
 			var rkey := "%d,%d|%d,%d" % [nb.x, nb.y, p.x, p.y]

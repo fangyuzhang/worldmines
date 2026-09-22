@@ -16,7 +16,61 @@ func _ready() -> void:
     add_to_group("themed")
     ThemeManager.theme_changed.connect(_on_theme_changed)
     _build_ui()
+    _schedule_prewarm()
     _check_crash_restore()
+
+
+## 延迟一帧预热（2026-09-22 性能）：**先让主菜单渲染出来**，预热的开销放下一帧吃
+##（process_frame 信号在节点 _process 之前发射）。
+##
+## 为什么不用 await：await 恢复时节点可能已不在树 → get_tree() 为 null → 真机崩溃
+##（选关页同款事故记录）；信号连接随对象销毁自动断开，回调内再查一次树内状态即可。
+## 若玩家在两帧内点「开始游戏」（实际不可能），切场景会在该帧同步等预热完成——
+## 行为不劣于未优化前（那时预热就在切场景路径上）。
+func _schedule_prewarm() -> void:
+    var tree := get_tree()
+    if tree == null:
+        return
+    tree.process_frame.connect(_prewarm_deferred, CONNECT_ONE_SHOT)
+
+
+## 三项预热（2026-09-22 实测口径，全部从"点开始游戏之后的等待"前移到这里）：
+##   ① board_view.tscn 首次 load ≈ 190ms（首次进关的顿挫源）
+##   ② level_select.tscn 首次 load ≈ 257ms（脚本编译 + 依赖 + 场景构建）
+##   ③ 异形页关卡扫描 ≈ 117ms（91 个 JSON 全量解析，原先在选关页建页时同步跑）
+## 前两项直接 load 后**必须用 static 持有引用**——裸 load 的返回值无引用会被释放、
+## 资源缓存随之失效（实测踩过：预热"做了"，选关页仍付全价）。
+func _prewarm_deferred() -> void:
+    if not is_inside_tree():
+        return
+    if _board_view_prewarmed == null:
+        _board_view_prewarmed = load("res://ui/board_view.tscn")
+    if _level_select_prewarmed == null:
+        _level_select_prewarmed = load("res://ui/level_select.tscn")
+    _prewarm_shape_scan()
+
+
+static var _board_view_prewarmed: PackedScene = null
+static var _level_select_prewarmed: PackedScene = null
+static var _shape_scan_prewarmed := false
+
+
+## 预热异形页的关卡扫描：`level_select._shape_levels()` 首次调用要扫 res://levels/
+## 全部关卡 JSON（实测 91 个文件 ≈ 117ms），填充其**类级 static 缓存**。
+## 用一个未入树的临时实例调用——该函数只读文件 + 写 static 缓存，
+## 不依赖实例状态与场景树（已逐行核对）；实例用完即 free，不进树、不产生任何 UI。
+func _prewarm_shape_scan() -> void:
+    if _shape_scan_prewarmed:
+        return
+    _shape_scan_prewarmed = true
+    var ls_script: GDScript = load("res://ui/level_select.gd")
+    if ls_script == null:
+        return
+    var probe: Control = ls_script.new()
+    if probe == null:
+        return
+    probe.call("_shape_levels")
+    probe.free()
 
 
 func _build_ui() -> void:

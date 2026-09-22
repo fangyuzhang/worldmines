@@ -1,65 +1,57 @@
 {
   "clue_rule": "classic",
   "difficulty_profile": {
-    "clue_count": 6,
-    "clue_ratio": 0.4,
-    "difficulty": 0.87,
-    "histogram": "1x3",
-    "max_active": 14,
+    "clue_count": 4,
+    "clue_ratio": 0.27,
+    "difficulty": 0.62,
+    "histogram": "3x1,1x2",
+    "max_active": 11,
     "max_batch": 6,
-    "max_complexity": 1,
-    "profile": "6x1,5x1,2x1",
+    "max_complexity": 3,
+    "profile": "6x1,5x1,4x1",
     "rounds": 3,
     "target_difficulty": 0.0
   },
   "global_rules": [],
   "mines": [
     {
-      "c": 2,
-      "r": 4
+      "c": 3,
+      "r": 1
     },
     {
-      "c": 1,
-      "r": 3
+      "c": 2,
+      "r": 1
     },
     {
       "c": 3,
-      "r": 3
+      "r": 2
     },
     {
-      "c": 2,
+      "c": 1,
       "r": 2
     }
   ],
   "name": "蜂窝 01 · 初环",
   "revealed": [
     {
-      "c": 2,
-      "r": 0
-    },
-    {
-      "c": 3,
-      "r": 0
-    },
-    {
-      "c": 4,
-      "r": 0
+      "c": 0,
+      "r": 4
     },
     {
       "c": 1,
-      "r": 1
+      "r": 4
+    },
+    {
+      "c": 2,
+      "r": 4
     },
     {
       "c": 4,
-      "r": 1
-    },
-    {
-      "c": 0,
       "r": 2
     }
   ],
   "rule_level": true,
-  "seed": 4001,
+  "seed": 4004,
   "size": {
     "cols": 5,
     "rows": 5
@@ -570,5 +562,9 @@
     ],
     "style": "hex"
   },
-  "total_mines": 4
+  "total_mines": 4,
+  "shape_kind": "蜂窝盘",
+  "palette": {
+    "theme": "BLUE"
+  }
 }

@@ -939,6 +939,10 @@ func _build_level_from_rules(clue_rule_id: String, global_rule_ids: Array, rows:
 
 ## 拓扑 → 可落盘/可种子化的描述（positions + adjacency 边列表；带几何风格时追加 style / params）。
 ##
+## L1 交叉说明（2026-09-21）：本处的去重键按**遍历序** (p, nb) 写 a/b，与
+## core/shape_generator.gd 的 `_add_edge`（字典序 lo/hi）**顺序不同、集合语义相同**——
+## 落盘边数与运行时边数一致由集合语义保证；不要断言两处 adjacency 数组逐字节相同。
+##
 ## style/params 只在**来源确实是带风格的 AdjacencyGrid**（T4：ShapeGenerator 三族产出）时写出：
 ## 矩形关卡（RectGrid）与无风格的手写异形拓扑落盘格式**逐字节不变**——这是刻意的零变化约束，
 ## 免得给 40+ 个既有矩形关卡的 JSON 平白加两个字段。它们只影响渲染几何，读回时由

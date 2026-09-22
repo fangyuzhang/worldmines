@@ -1,9 +1,14 @@
 extends GutTest
-## test_shape_generator.gd —— ShapeGenerator 三族形状的数学门禁（纯函数，无引擎/UI 依赖）。
+## test_shape_generator.gd —— ShapeGenerator 形状生成的数学门禁（纯函数，无引擎/UI 依赖）。
+## 覆盖：三族参数化生成器（holed_grid / hex / t488）+ (d) mask 驱动生成（T7，文件末一节）。
 ##
 ## 断言口径：只用精确数学量（格数 / 无向边数 / 逐格度 / 度分布多重集 / bbox），
 ## 不用「看起来像」的弱断言。所有数字由 core/shape_generator.gd 头注释里的规则独立手算，
 ## 每条断言旁注明推导式，便于复核。
+##
+## (d) mask 一节的交叉验证口径：mask 版与参数化生成器「同族同形」时，positions/adjacency
+## 必须**逐字节相等**（两条独立路径互证：一条从轮廓字符集建图、一条从参数公式建图）；
+## 只比「格数/边数」强度不够——规模相同而接线不同的图会漏网。
 ##
 ## 度分布多重集 {度: 该度的格数} 与坐标原点无关（可跨平移比较），但它只是同构的**必要**条件，
 ## 本文件不拿它当同构证据——见 test_hex3_vs_hex_board_audit 的实测结论。
@@ -310,6 +315,102 @@ func test_t488_3_baseline() -> void:
 	assert_eq(g.size(), Vector2i(5, 5), "bbox 5×5（×2 整数化后坐标跨 0..4）")
 
 
+# ==================== (d) mask 驱动生成（T7）====================
+#
+# 交叉验证：mask 版与参数化生成器同族同形时，positions/adjacency 逐字节相等（见文件头）。
+# 等值断言用**数组直接 assert_eq**（GDScript 对 Array/Dictionary 做逐元素深比较），
+# 失败时 GUT 会打印首个差异位置，便于定位。
+
+func test_mask_holed_grid_matches_build_holed_grid() -> void:
+	# build_holed_grid(3, 3, [中心]) 的 mask 表达 = 3×3 满格挖中心（'.' 即洞）
+	var a := ShapeGenerator.build_from_mask("holed_grid", ["###", "#.#", "###"])
+	var b := ShapeGenerator.build_holed_grid(3, 3, [Vector2i(1, 1)])
+	_assert_invariants(a, "mask(holed_grid)")
+	_assert_consumable(a, "mask(holed_grid)")
+	assert_eq(a["style"], "holed_grid", "style 应原样写入产物")
+	assert_eq(a["positions"], b["positions"], "mask 与 build_holed_grid(3,3,[(1,1)]) 的 positions 应逐字节相等")
+	assert_eq(a["adjacency"], b["adjacency"], "mask 与 build_holed_grid(3,3,[(1,1)]) 的 adjacency 应逐字节相等")
+
+
+func test_mask_hex_matches_build_hex() -> void:
+	# build_hex(3) 的裁剪式 = abs(r+c-2) <= 1 → 逐行 [".##","###","##."]（c=x，r=y）
+	var a := ShapeGenerator.build_from_mask("hex", [".##", "###", "##."])
+	var b := ShapeGenerator.build_hex(3)
+	_assert_invariants(a, "mask(hex)")
+	_assert_consumable(a, "mask(hex)")
+	assert_eq(a["style"], "hex", "style 应原样写入产物")
+	assert_eq(a["positions"], b["positions"], "mask 与 build_hex(3) 的 positions 应逐字节相等")
+	assert_eq(a["adjacency"], b["adjacency"], "mask 与 build_hex(3) 的 adjacency 应逐字节相等")
+
+
+func test_mask_t488_matches_build_t488() -> void:
+	# 2×2 八边形 mask → 自动补小方块 (1,1)（其 4 个相邻八边形全在）
+	var a := ShapeGenerator.build_from_mask("t488", ["##", "##"])
+	var b := ShapeGenerator.build_t488(2)
+	_assert_invariants(a, "mask(t488)")
+	_assert_consumable(a, "mask(t488)")
+	assert_eq(a["style"], "t488", "style 应原样写入产物")
+	assert_eq(a["positions"], b["positions"], "mask 与 build_t488(2) 的 positions 应逐字节相等（含自动补的 (1,1)）")
+	assert_eq(a["adjacency"], b["adjacency"], "mask 与 build_t488(2) 的 adjacency 应逐字节相等")
+
+
+func test_mask_t488_auto_square_needs_all_four_octagons() -> void:
+	# 三缺一：L 形 3 八边形 ⇒ 小方块不该出现（其 4 个相邻八边形必须全在）
+	var t := ShapeGenerator.build_from_mask("t488", ["##", "#."])
+	_assert_invariants(t, "mask(t488,L)")
+	assert_eq(t["positions"].size(), 3, "L 形 3 八边形，不补小方块")
+	assert_eq(t["adjacency"].size(), 2, "只留 (0,0)-(2,0)、(0,0)-(0,2) 两条正交边")
+
+
+func test_mask_style_and_params_passthrough() -> void:
+	var t := ShapeGenerator.build_from_mask("holed_grid", ["#"], {"mask": ["#"]})
+	assert_eq(t["style"], "holed_grid", "style 透传")
+	assert_eq(t["params"], {"mask": ["#"]}, "params 原样透传（调用方可塞 mask 供落盘审计）")
+	assert_eq((t["positions"] as Array).size(), 1, "单格 mask → 1 格")
+	assert_eq((t["adjacency"] as Array).size(), 0, "单格没有边")
+
+
+func test_to_adjacency_grid_mask_entry() -> void:
+	var g := ShapeGenerator.to_adjacency_grid("mask", {"style": "holed_grid", "mask": ["###", "#.#", "###"]})
+	assert_true(g is AdjacencyGrid, "mask → AdjacencyGrid")
+	assert_eq(g.cell_count(), 8, "挖心 3×3 = 8 格")
+	assert_eq(_grid_edge_count(g), 12, "8 格挖洞方阵 = 12 边（与 build 侧互证）")
+	assert_eq(g.style, "holed_grid", "mask 分支应带上 style（渲染/落盘依赖）")
+	assert_eq(g.style_params, {"mask": ["###", "#.#", "###"]}, "mask 应随 params 落盘（JSON 审计）")
+	assert_false(g.in_board(Vector2i(1, 1)), "洞格不在盘内")
+
+
+func test_build_from_mask_unknown_style_returns_empty() -> void:
+	assert_eq(ShapeGenerator.build_from_mask("nope", ["#"]), {"positions": [], "adjacency": []},
+			"未注册 style → 空拓扑（不是部分结果）")
+	assert_push_error("未注册的 style")
+
+
+func test_build_from_mask_empty_mask_returns_empty() -> void:
+	assert_eq(ShapeGenerator.build_from_mask("holed_grid", []), {"positions": [], "adjacency": []},
+			"空 mask → 空拓扑")
+	assert_push_error("mask 为空")
+
+
+func test_build_from_mask_ragged_rows_return_empty() -> void:
+	assert_eq(ShapeGenerator.build_from_mask("holed_grid", ["##", "#"]), {"positions": [], "adjacency": []},
+			"行长不一致 → 空拓扑")
+	assert_push_error("行长不一致")
+
+
+func test_build_from_mask_invalid_char_returns_empty() -> void:
+	assert_eq(ShapeGenerator.build_from_mask("holed_grid", ["#?", "##"]), {"positions": [], "adjacency": []},
+			"非法字符 → 空拓扑")
+	assert_push_error("非法字符")
+
+
+func test_build_from_mask_all_empty_returns_empty() -> void:
+	# 空格 / 0 都算空字符；全空 = 没有可建的格
+	assert_eq(ShapeGenerator.build_from_mask("holed_grid", [". ", "0."]), {"positions": [], "adjacency": []},
+			"全空 mask → 空拓扑")
+	assert_push_error("没有任何格")
+
+
 # ==================== 统一契约 ====================
 
 func test_all_families_consumable_by_adjacency_grid() -> void:
@@ -317,6 +418,7 @@ func test_all_families_consumable_by_adjacency_grid() -> void:
 		["holed_grid", ShapeGenerator.build_holed_grid(3, 3, [Vector2i(1, 1)])],
 		["hex", ShapeGenerator.build_hex(3)],
 		["t488", ShapeGenerator.build_t488(3)],
+		["mask", ShapeGenerator.build_from_mask("holed_grid", ["###", "#.#", "###"])],
 	]
 	for c in cases:
 		_assert_consumable(c[1], str(c[0]))
@@ -379,3 +481,58 @@ func test_board_loads_generated_topology() -> void:
 	assert_eq(b.get_mine_positions().size(), 1, "1 个雷应落在盘内")
 	assert_true(b.is_mine(Vector2i(0, 0)), "(0,0) 是雷")
 	assert_false(b.grid.in_board(Vector2i(1, 1)), "洞格不在盘内（不是「不可通行」，而是不存在）")
+
+
+# ==================== M6 + mask 边界 + 偶数尺寸（2026-09-21 审计补测） ====================
+
+func test_mask_must_be_flush_top_left() -> void:
+	# M6：mask 带左上留白 → 拒绝。理由：下游 normalized 会平移坐标，而落盘的 params.mask
+	# 原样透传 ⇒ 两者失配（审计链断、bbox ≠ mask 行列数）。要求作者把图案贴到左上。
+	var t := ShapeGenerator.build_from_mask("holed_grid", ["....", "..##", "..##"])
+	assert_eq(t, {"positions": [], "adjacency": []}, "留白 mask 应返回空拓扑")
+	assert_push_error("贴左上角")
+
+
+func test_mask_single_cell() -> void:
+	var t := ShapeGenerator.build_from_mask("holed_grid", ["#"])
+	_assert_invariants(t, "mask 1×1")
+	assert_eq(t["positions"].size(), 1, "1×1 mask → 1 格")
+	assert_eq(t["adjacency"].size(), 0, "单格无邻接")
+
+
+func test_mask_single_row_and_col() -> void:
+	var r := ShapeGenerator.build_from_mask("holed_grid", ["###"])
+	_assert_invariants(r, "mask 单行")
+	assert_eq(r["positions"].size(), 3, "单行 3 格")
+	assert_eq(r["adjacency"].size(), 2, "单行链 2 条边")
+	var c := ShapeGenerator.build_from_mask("holed_grid", ["#", "#", "#"])
+	_assert_invariants(c, "mask 单列")
+	assert_eq(c["adjacency"].size(), 2, "单列链 2 条边")
+
+
+func test_mask_disconnected_blocks_are_legal() -> void:
+	# 非连通（两块互不相邻）是合法拓扑：不变量（对称/无自环/无重复/端点闭合）照常成立
+	var t := ShapeGenerator.build_from_mask("holed_grid", ["#.#"])
+	_assert_invariants(t, "mask 两块不相邻")
+	assert_eq(t["positions"].size(), 2, "两块共 2 格")
+	assert_eq(t["adjacency"].size(), 0, "中间隔空 → 无边")
+
+
+func test_mask_t488_equals_parametric() -> void:
+	# mask 的 t488 支线（自动补小方块）与参数化 build_t488 等价（size=2 已测，这里补 3×3）
+	var via_mask := ShapeGenerator.build_from_mask("t488", ["###", "###", "###"])
+	var via_gen := ShapeGenerator.build_t488(3)
+	assert_eq(via_mask["positions"], via_gen["positions"], "t488 mask 的 positions 应与参数化一致")
+	assert_eq(via_mask["adjacency"], via_gen["adjacency"], "t488 mask 的 adjacency 应与参数化一致")
+
+
+func test_hex_even_sizes_closed_forms() -> void:
+	# 偶数 size 蜂窝（4/6/8）：闭式与实现独立对照（此前只有产物文件覆盖——文件缺失即 pending）
+	# 闭式（与 tools/gen_shape_levels.gd 的偶数分支同源、独立手算）：cells=3R²+5R+2、edges=9R²+9R+1
+	var cases: Array = [[4, 10, 19], [6, 24, 55], [8, 44, 109]]   # [size, cells, edges]
+	for c: Array in cases:
+		var n := int(c[0])
+		var t := ShapeGenerator.build_hex(n)
+		_assert_invariants(t, "hex(%d)" % n)
+		assert_eq(t["positions"].size(), int(c[1]), "hex(%d) 格数应等于偶数闭式" % n)
+		assert_eq(_edge_keys(t).size(), int(c[2]), "hex(%d) 边数应等于偶数闭式" % n)

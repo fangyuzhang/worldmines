@@ -404,4 +404,29 @@ static func build_modes(size: Vector2i, mines: int) -> Array:
 			"enabled": true,
 			"source": "builtin",
 		})
+
+	# 形状档（异形棋盘）：拓扑层玩法，不是规则/守恒轴——成员资格由关卡库内容决定
+	#（levels_lib/shape_*，由 tools/import_shape_levels_to_lib.gd 量产入库）。
+	# 库为空/某形状尚未入库 ⇒ 卡片不出现（不显示点进去没有内容的空卡片）。
+	# L4（2026-09-21）：成员资格读 LevelLibrary.catalog() 的**进程内静态缓存**——
+	# 运行中（游戏已启动后）往 res://levels_lib 新导入形状关，需重启进程才会出现新卡片。
+	# 形状关是随包发行内容（不进运行时热更新场景），故不为此引入缓存失效入口；此注为约定。
+	# 2026-09-22：卡片表扩为 7 席（新几何族 iso/tri/trihex/t31212/ring 走同一机制；
+	# t31212/ring 暂无 5~9 尺寸的纯 classic 关，catalog 无键 ⇒ 守卫自动隐藏卡片）。
+	for spec in [
+		["shape_holed", "挖洞方格", "T1·挖洞"],
+		["shape_hex", "蜂窝", "T2·蜂窝"],
+		["shape_iso", "等轴菱面", "T4·菱面"],
+		["shape_tri", "三角网格", "T5·三角"],
+		["shape_trihex", "编织", "T6·编织"],
+		["shape_t31212", "十二边", "T7·十二边"],
+		["shape_ring", "环盘", "T8·环盘"],
+	]:
+		var sid := str(spec[0])
+		if LevelLibrary.catalog().has(sid):
+			out.append({
+				"id": sid, "name": str(spec[1]), "kind": "shape",
+				"clue": "classic", "globals": [], "tip": str(spec[2]),
+				"enabled": true, "source": "builtin",
+			})
 	return out

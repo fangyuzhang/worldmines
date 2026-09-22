@@ -129,6 +129,13 @@ static func tier_range(tier: String) -> Vector2i:
 	return Vector2i(int(w["min"]), int(w["max"]))
 
 
+## v4.1 严格难度梯度谓词：该画像是否落在梯度内（即落在某一档窗口内）。
+## peak<=1（一眼盘，v4.1 淘汰）与 peak>=21（机器级超纲）都不算在梯度内。
+## 生成门禁 / 入库闸门 / 库展示 三层共用这一判据，避免各自为政出现「假梯度」。
+static func gradient_ok(dp: Dictionary) -> bool:
+	return tier_of_profile(dp) != ""
+
+
 ## 档位显示文案（v4.0 深度口径）：标签 + 峰值窗口。**唯一的档位文案来源**——
 ## 选关页/主菜单/图鉴都从这里取，禁止再手写第三份档位表（防漂移）。
 static func tier_text(tier: String) -> String:

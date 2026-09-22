@@ -227,7 +227,7 @@ static func _div_ok(kind: int, arg: int, size: Vector2i, mines: int) -> bool:
 		Div.EVEN:
 			return mines % 2 == 0
 		Div.MOD_EQ_MINUS_C:
-			# 中央行列：奇数维存在中轴，需先从 N 中扣除中轴上的雷（保守取格数上界）
+				# 中央行列：奇数维存在中轴，需先从 N 中扣除中轴上的雷（保守取格数上界）
 			var center := 0
 			if size.y % 2 == 1:
 				center += size.x

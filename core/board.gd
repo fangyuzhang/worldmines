@@ -457,16 +457,20 @@ func _flood_neighbors(pos: Vector2i) -> Array[Vector2i]:
         # is_mine 守卫与原 Cell.is_zero_clue() 口径一致（雷格永不扩散）
         if cell == null or cell.is_mine or cell.is_hidden_clue():
                 return []
+        # 异形拓扑（邻接表）：0 值扩散**必须优先**走拓扑邻域——本分支必须在规则分支之前。
+        # 审计修复（2026-09-21）：内置规则（如 ClassicRule.zero_safe_neighbors）按 ring_dirs()
+        # 的 8 邻偏移算邻域，而形状关的线索值是**拓扑邻域**计数：蜂窝盘 HEX6 不含对角
+        # (±1,±1) 方向 ⇒ 0 值格会"免费翻开"非拓扑邻域的格（越过线索保证范围、与提示结论
+        # 不一致、实际难度低于生成画像）。原顺序下本分支对带 rule_clue_id 的形状关是死代码。
+        if grid is AdjacencyGrid:
+                if cell.is_zero_clue():
+                        return grid.get_neighbors(pos)
+                return []
         # 自举式规则：0 值扩散邻域由规则自己声明（平台不硬编码窗口；value 交给规则判断）。
         if rule_clue_id != "":
                 var rule_obj: Object = RuleRegistry.default().resolve(StringName(rule_clue_id))
                 if rule_obj != null:
                         return rule_obj.zero_safe_neighbors(pos, grid.size(), cell.value)
-                return []
-        # 异形拓扑（邻接表）：0 值扩散走拓扑邻域（无「方向」语义，dirs 偏移不成立）。
-        if grid is AdjacencyGrid:
-                if cell.is_zero_clue():
-                        return grid.get_neighbors(pos)
                 return []
         # 内置变体的 0 值语义：**单点定义在 ClueEngine.zero_safe_dirs**（v2.9.3 收敛）。
         # 此前这段 match 与 hint_solver 的零值特判各写一套，新增变体易漏改一处。

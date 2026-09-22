@@ -1,7 +1,7 @@
 # test_level_select_interaction.gd —— 选关页交互契约
 #
 # 覆盖「只能靠运行期断言」的几点：
-#   ① 三个页面（单项 / 混合档 / Mod）都建起来，且目录里的变体在自己的页里有入口；
+#   ① 四个页面（单项 / 混合档 / 异形棋盘 / Mod）都建起来，且目录里的变体在自己的页里有入口；
 #   ② 演示预设（MOCK_CLEARED）不得写进真实进度存档；
 #   ③ 弹窗关闭动画期间不得被重复打开（原实现会叠出第二个弹窗）；
 #   ④ 终局页「下一关」交接的焦点意图应被领取、翻到对应页并展开弹窗；
@@ -36,6 +36,17 @@ func _count_meta_buttons(node: Node, meta_key: String) -> int:
 		n += 1
 	for c in node.get_children():
 		n += _count_meta_buttons(c, meta_key)
+	return n
+
+
+## 形状档卡片数（kind == "shape"）：成员资格由 levels_lib/shape_* 库内容决定，
+## 随形状族增减（T1 挖洞方格 / T2 蜂窝 / 未来 T48x…）——**不写死总数**。
+## 单项页断言一律用「24 + 本值」：2026-09-21 加形状卡时旧断言写死 24 被打破，特此固化口径。
+func _count_shape_cards(view) -> int:
+	var n := 0
+	for m in view.MODES:
+		if str((m as Dictionary).get("kind", "")) == "shape":
+			n += 1
 	return n
 
 
@@ -126,18 +137,24 @@ func _has_label_containing(node: Node, needle: String) -> bool:
 	return _find_label_containing(node, needle) != null
 
 
-# LS1：三页都建起来，且目录里的每个变体在其所属页里有入口
+# LS1：四页都建起来，且目录里的每个变体在其所属页里有入口
 # （这就是「引擎换了、UI 必须跟上」这条链在 UI 侧的兜底）
 func test_ls1_three_pages_are_built() -> void:
 	assert_not_null(_view, "选关页应能实例化")
-	assert_eq(_view._pages.size(), 3, "应有三个页面（单项变体 / 混合档 / Mod）")
+	# 2026-09-21 起为四页：新增「异形棋盘」（res://levels/ 下手工异形关的唯一入口）。
+	# 手工异形关不属于 MODES 变体体系、也不走生成/关卡库序列，此前在选关页完全没有入口。
+	assert_eq(_view._pages.size(), 4,
+			"应有四个页面（单项变体 / 混合档 / 异形棋盘 / Mod）")
 
 	var single := _count_meta_buttons(_view._pages[_view.PAGE_SINGLE], "card_btn")
 	# 2026-09-18 起按 GDD 终版 §4 收敛变体池：单项页 = 经典 1 + 官方观测 10 + 结构守恒 13
 	# （s1~s7 结构 + z1~z5 守恒 + dt 骨牌）= 24 张。
 	# 旧算子（4n/sc/knight/fr/distsum/hv/ep/4c）已移入 legacy_rules Mod（默认不加载）；
 	# 与官方席位等价的 6 个内置实现（clock/loopruns/pf/mx/rl/qd）按 HIDDEN_RULES 隐藏。
-	assert_eq(single, 24, "单项变体页：经典 1 + 观测 10 + 结构守恒 13 = 24 张卡片")
+	# 2026-09-21 起另加**形状档**（挖洞方格/蜂窝，成员由 levels_lib/shape_* 库内容决定）：
+	# 断言用「24 + 形状卡数」而非写死总数，加新形状族（T48x 等）不再破本用例。
+	var shape_cards := _count_shape_cards(_view)
+	assert_eq(single, 24 + shape_cards, "单项变体页：官方算子 24 张 + 形状卡 %d 张" % shape_cards)
 	assert_eq(_count_meta_buttons(_view._pages[_view.PAGE_MIXED], "cell_btn"), 7 * 10,
 			"混合档默认表（T3 C 类）：7 结构 × 10 观测 = 70 个交叉格")
 
@@ -162,10 +179,29 @@ func test_ls1_three_pages_are_built() -> void:
 func test_ls2_mock_progress_is_not_persisted() -> void:
 	_view._mode_idx = 0          # classic
 	_view._size_idx = 0          # 5×5
+	_view._lib_mode = false      # 生成流口径（LS2 测的是 gen:// 演示键，不走库）
+	_view._tier = ""
 	# 注意：_view 是 Variant（场景脚本无 class_name），必须显式标注类型，
 	# 否则 Godot 4.7 会因无法推断而 Parse Error（交接文档已记录的坑）。
 	var key: String = _view._level_key(0)
+	assert_true(key.begins_with("gen://"), "本用例只测生成流的演示键（lib:// 键不走 mock）")
 	var before: bool = ProgressStore.is_cleared(key)
+	_view._mock_cleared.clear()  # 进程内演示记录是 static——先清掉其他用例可能留下的残留
+	if _view._mode_has_lib("classic"):
+		# classic 已量产入库（v4.1 形状库接线后成为常态）：生成流演示预设不再适用
+		#（_ensure_mock 对库模式刻意不垫假通关）。改为断言「库模式不写 mock、不落盘」。
+		_view._lib_mode = true
+		_view._ensure_mock()
+		assert_true(_view._mock_cleared.is_empty(),
+				"库模式不预置演示通关（真实内容从零进度开始）")
+		# 2026-09-22 修正：原断言写死 is_cleared(key) == false —— 隐含「测试机存档里
+		# 该生成流键必未通关」的假设；玩家真通关过 classic 5×5 第 1 关时（本机存档
+		# 就有 gen://classic/5/0 的真实记录）必然为 true，测试假红。本用例真正要守的
+		# 语义是「演示预设不改动真实存档」，故与进入本用例时的状态对比（before 已在
+		# 上方捕获）。非库分支早已有 `if not before` 保护，此处此前漏了。
+		assert_eq(ProgressStore.is_cleared(key), before,
+				"演示预设绝不写入真实存档（应保持进入本用例时的状态）")
+		return
 	_view._ensure_mock()
 	assert_true(_view._is_cleared(key), "演示预设应在本进程内生效（解锁流程可演示）")
 	if not before:
@@ -242,9 +278,10 @@ func test_ls9_mod_variant_lands_on_mod_page() -> void:
 	var mi: int = int(v2._mode_index.get("x2diag", -1))
 	assert_eq(v2._page_of(v2.MODES[mi]), v2.PAGE_MOD, "Mod 变体应归 Mod 页")
 	assert_gte(_count_meta_buttons(v2._pages[v2.PAGE_MOD], "card_btn"), 1, "Mod 页应有它的卡片")
-	# 24 = 经典 1 + 观测 10 + 结构守恒 13（GDD 终版 §4 口径）；**玩家 Mod 变体（x2diag）仍不得混入**
-	assert_eq(_count_meta_buttons(v2._pages[v2.PAGE_SINGLE], "card_btn"), 24,
-			"单项变体页含官方算子、但不应混进玩家 Mod 变体（位置必须稳定）")
+	# 24 = 经典 1 + 观测 10 + 结构守恒 13（GDD 终版 §4 口径）+ 形状卡（库内容决定）；
+	# **玩家 Mod 变体（x2diag）仍不得混入**
+	assert_eq(_count_meta_buttons(v2._pages[v2.PAGE_SINGLE], "card_btn"), 24 + _count_shape_cards(v2),
+			"单项变体页含官方算子与形状卡、但不应混进玩家 Mod 变体（位置必须稳定）")
 	assert_true(_has_label_containing(v2._pages[v2.PAGE_MOD], "代码 Mod"),
 			"分组标题应标出该 Mod 的创作形式")
 
@@ -446,7 +483,9 @@ func test_ls5_cards_do_not_overlap() -> void:
 		await get_tree().process_frame
 		var rects: Array = []
 		_collect_rects(v2._pages[v2.PAGE_SINGLE], "card_btn", rects)
-		assert_eq(rects.size(), 24, "%s：单项变体页应有 24 张卡片（GDD 终版口径）" % vp)
+		var shape_n := _count_shape_cards(v2)
+		assert_eq(rects.size(), 24 + shape_n,
+				"%s：单项变体页应有 24 张官方算子卡 + %d 张形状卡" % [vp, shape_n])
 		_assert_no_overlap(rects, "%s 单项变体卡片" % vp)
 		for r in rects:
 			assert_true(r.size.x > 0.0 and r.size.y > 0.0, "%s：卡片不得为零尺寸" % vp)

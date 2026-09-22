@@ -227,12 +227,13 @@ func hint_def(board: Board, def_name: String) -> Array[ReasoningStep]:
 	var def: Dictionary = engine.clue_defs[def_name]
 	var window: String = def["window"]
 	var aggregate: String = def["aggregate"]
-	var size := board.grid.size()
-	for r in size.y:
-		for c in size.x:
-			var pos := Vector2i(c, r)
+	# 审计修复（2026-09-21）：遍历一律走 all_positions()。形状盘（AdjacencyGrid）的洞格在
+	# get_cell() 返回 null，原「按包围盒双重循环」会 `null.state` 直接崩
+	# （形状关的提示功能因此完全不可用；C# 后端缺失走 Def 兜底时必现）。
+	# null 守卫是双保险（未来若出现"稀疏但 all_positions 不全"的实现）。
+	for pos: Vector2i in board.grid.all_positions():
 			var cell := board.grid.get_cell(pos)
-			if cell.state != Cell.State.REVEALED:
+			if cell == null or cell.state != Cell.State.REVEALED:
 				continue
 			var constraint := board.get_player_constraint(pos)
 			_hint_cell(board, pos, constraint, steps, window, aggregate)
@@ -479,7 +480,8 @@ func _hint_fr(board: Board, pos: Vector2i, constraint: Dictionary, steps: Array[
 		while cx + 1 < cols:
 			cx += 1
 			var p := Vector2i(cx, pos.y)
-			if board.grid.get_cell(p).state != Cell.State.REVEALED:
+			var cell_at: Cell = board.grid.get_cell(p)
+			if cell_at == null or cell_at.state != Cell.State.REVEALED:
 				steps.append(_make_step(p, "safe", pos, "fr",
 					"线索 (%d,%d) 首雷值为 ∞，表示右侧全程无雷，故该格必为安全格" % [pos.y, pos.x]))
 		return
@@ -490,7 +492,10 @@ func _hint_fr(board: Board, pos: Vector2i, constraint: Dictionary, steps: Array[
 		c += 1
 		idx += 1
 		var p := Vector2i(c, pos.y)
-		var s := board.grid.get_cell(p).state
+		var cell_at: Cell = board.grid.get_cell(p)
+		if cell_at == null:
+			continue  # 越界/洞格（形状盘）守卫：原实现 null.state 会崩
+		var s := cell_at.state
 		if idx <= k:
 			if s != Cell.State.REVEALED:
 				steps.append(_make_step(p, "safe", pos, "fr",
@@ -527,16 +532,21 @@ func _hint_loop_runs(board: Board, pos: Vector2i, constraint: Dictionary, steps:
 func _hint_mx(board: Board, steps: Array[ReasoningStep]) -> void:
 	var cols := board.grid.size().x
 	var gsize := board.grid.size()
-	for r in gsize.y:
-		for c in gsize.x:
+	# 审计修复（2026-09-21）：同 hint_def —— 包围盒循环在形状盘上取到洞格 null 会崩。
+	for pos: Vector2i in board.grid.all_positions():
+			var c := pos.x
+			var r := pos.y
 			var mirror_x := cols - 1 - c
 			if mirror_x <= c:
 				continue  # 只处理左半区 → 右半区
-			var pos := Vector2i(c, r)
 			var mirror := Vector2i(mirror_x, r)
-			if board.grid.get_cell(pos).state != Cell.State.REVEALED:
+			var cp: Cell = board.grid.get_cell(pos)
+			var cm: Cell = board.grid.get_cell(mirror)
+			if cp == null or cm == null:
 				continue
-			if board.grid.get_cell(mirror).state == Cell.State.REVEALED:
+			if cp.state != Cell.State.REVEALED:
+				continue
+			if cm.state == Cell.State.REVEALED:
 				continue
 			steps.append(_make_step(mirror, "safe", pos, "mx",
 				"镜像约束：左半区格 (%d,%d) 已翻开为安全，其镜像格 (%d,%d) 必为安全" % [r, c, r, mirror_x]))
@@ -591,11 +601,10 @@ func _hint_l2(board: Board, def: Dictionary, steps: Array[ReasoningStep]) -> voi
 	var size := board.grid.size()
 	# 1) 收集线索（求和类 + HV 双值）
 	var clues: Array = []
-	for r in size.y:
-		for c in size.x:
-			var pos := Vector2i(c, r)
+	# 审计修复（2026-09-21）：同 hint_def —— 形状盘洞格 null 崩溃。
+	for pos: Vector2i in board.grid.all_positions():
 			var cell := board.grid.get_cell(pos)
-			if cell.state != Cell.State.REVEALED:
+			if cell == null or cell.state != Cell.State.REVEALED:
 				continue
 			var con := board.get_player_constraint(pos)
 			for it in _l2_items(board, pos, con, window, aggregate):

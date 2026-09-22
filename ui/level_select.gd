@@ -50,6 +50,10 @@ const TILE := Vector2(116, 84)
 const PAGE_SINGLE := 0          # 页一：单项变体（经典 + 线索型 + 全局约束）
 const PAGE_MIXED := 1           # 页二：混合档（线索 × 全局约束 交叉表）
 const PAGE_MOD := 2             # 页三：Mod（按 Mod 分组，无 Mod 时页签隐藏）
+## 页四：异形棋盘。res://levels/ 下**手工异形关卡**（挖洞方格 / 蜂窝 / 多边形镶嵌）的
+## 唯一入口——它们不在 MODES 变体体系里，也不走生成/关卡库序列，此前没有任何入口。
+## 判定 = 关卡 JSON 含非空 topology 字段；无此类关卡时页签隐藏（与 Mod 页同策略）。
+const PAGE_SHAPE := 3
 
 
 ## 档位显示文案（v4.0 深度口径）：单一事实源在 core（`Difficulty.tier_text`，从 PEAK_WINDOWS 派生）。
@@ -102,7 +106,9 @@ var _stat_label: Label = null
 var _play_btn: Button = null
 var _title_label: Label = null
 ## 预热好的对局场景（首次进关的卡顿源：board_view 脚本首次编译 + 场景构建）。
-var _board_view_prewarmed: PackedScene = null
+## static：跨场景存活；且**持有引用**——裸 load 的返回值无引用会被释放、缓存随之失效
+## （2026-09-22 实测踩过，见 main_menu._prewarm_board_view 注释）。
+static var _board_view_prewarmed: PackedScene = null
 
 var _scroll_accum := 0.0
 
@@ -149,6 +155,11 @@ func _prewarm_board_view() -> void:
 	# `Invalid access to property 'process_frame' on a base object of type 'null instance'`。
 	# 改为在 _ready 内同步完成：代价是选关页加载多 132ms（那本就是一次场景切换，玩家察觉不到），
 	# 换来「进入关卡时不再补付这 132ms」——比异步版更早完成预热，也更快让玩家点到已热场景。
+	#
+	# 2026-09-22 起主菜单已提前预热（本函数多数时候只是命中缓存后的幂等复用）；
+	# 保留它作兜底：直接从编辑器运行选关页场景时仍需要预热。
+	if _board_view_prewarmed != null:
+		return
 	var packed := load("res://ui/board_view.tscn")
 	if packed is PackedScene:
 		_board_view_prewarmed = packed
@@ -255,7 +266,7 @@ func _build_ui() -> void:
 	bar.alignment = BoxContainer.ALIGNMENT_CENTER
 	bar.add_theme_constant_override("separation", 10)
 	add_child(bar)
-	for spec in [["单项变体", PAGE_SINGLE], ["混合档", PAGE_MIXED], ["Mod", PAGE_MOD]]:
+	for spec in [["单项变体", PAGE_SINGLE], ["混合档", PAGE_MIXED], ["异形棋盘", PAGE_SHAPE], ["Mod", PAGE_MOD]]:
 		var b := Button.new()
 		b.text = str(spec[0])
 		b.focus_mode = Control.FOCUS_NONE
@@ -289,6 +300,13 @@ func _show_tab(t: int) -> void:
 	# Mod 页在「一个 Mod 都没加载」时不可达（页签已隐藏，这里防程序调用 / 键盘触发）
 	if t == PAGE_MOD and ModAPI.list_mods().is_empty():
 		t = PAGE_SINGLE
+	# 异形棋盘页在「一个异形关都没有」时不可达（页签已隐藏，同上防程序调用 / 键盘触发）
+	if t == PAGE_SHAPE and _shape_levels().is_empty():
+		t = PAGE_SINGLE
+	if t == PAGE_SHAPE and not _shape_filled:
+		# 延迟填充的兜底：玩家已切到本页，内容必须立刻就绪（只在首切时付一次构建成本）
+		_shape_filled = true
+		_refresh_shape_body()
 	_tab = t
 	_tab_memory = t
 	for i in _pages.size():
@@ -337,11 +355,15 @@ func _rebuild_pages() -> void:
 	_pages.append(_build_single_page())
 	_pages.append(_build_mixed_page())
 	_pages.append(_build_mod_page())
+	_pages.append(_build_shape_page())
 	for p in _pages:
 		_page_host.add_child(p)
 	# Mod 页签的可见性：没有 Mod 就整个隐藏（不是置灰——空页签只会让人点进去看空）
 	if _tab_btns.size() > PAGE_MOD:
 		_tab_btns[PAGE_MOD].visible = not ModAPI.list_mods().is_empty()
+	# 异形棋盘页签同理：一个异形关都没有就隐藏（空页签只会让人点进去看一片空白）
+	if _tab_btns.size() > PAGE_SHAPE:
+		_tab_btns[PAGE_SHAPE].visible = not _shape_levels().is_empty()
 	_show_tab(_tab)
 
 
@@ -965,6 +987,335 @@ func _mod_empty_state() -> Control:
 
 ## 卡片与交叉格共用的紧凑样式（标准按钮内边距 16/8 会把交叉格撑到相互挤压）。
 ## focus 态是给交叉表的键盘/手柄导航用的（卡片仍 FOCUS_NONE，不会显示它）。
+# ---------- 页四：异形棋盘（手工异形关卡，点击直接开局） ----------
+
+## 异形关卡判定：关卡 JSON **含非空 topology 字段** = 非矩形网格（挖洞方格 / 蜂窝 /
+## 多边形镶嵌）。classic_* / generated_* / 关卡库都没有该字段 ⇒ 天然排除，无需白名单。
+static func _is_shape_level(d: Dictionary) -> bool:
+	var t: Variant = d.get("topology", null)
+	return t is Dictionary and not (t as Dictionary).is_empty()
+
+
+## 扫描结果进程级缓存（2026-09-22 性能）：本函数一次全量扫 res://levels/ + 解析 JSON，
+## 而建页流程一次至少调 3 处（页签可见性 / 变体分组 / 二级卡片）——此前每次切页签、
+## 每次重建都重复扫盘，是进选关页 660ms 卡顿里的可去重项。
+## 与 LevelLibrary.catalog() 同语义：进程内静态缓存，运行中新导入异形关需重启进程才可见
+##（既有约定：形状档成员资格同样读进程内缓存，见 variant_catalog 形状档注释）。
+static var _shape_cache: Array[Dictionary] = []
+static var _shape_cache_loaded := false
+
+
+## 扫描 res://levels/ 下的异形关卡 → [{path, title, cells, mines, kind, desc}]。
+## 只在建页时读一次 JSON（十几关量级，重建页面开销可忽略），卡片不再二次读盘。
+func _shape_levels() -> Array[Dictionary]:
+	if _shape_cache_loaded:
+		return _shape_cache
+	var out: Array[Dictionary] = []
+	for path in LevelLoader.list_levels():
+		if not FileAccess.file_exists(path):
+			continue
+		var f := FileAccess.open(path, FileAccess.READ)
+		if f == null:
+			continue
+		var d: Variant = JSON.parse_string(f.get_as_text())
+		f.close()
+		if not (d is Dictionary):
+			continue
+		var lv: Dictionary = d
+		if not _is_shape_level(lv):
+			continue
+		var topo: Dictionary = lv.get("topology", {})
+		var cells: int = (topo.get("positions", []) as Array).size()
+		var sz: Dictionary = lv.get("size", {})
+		var full: int = int(sz.get("rows", 0)) * int(sz.get("cols", 0))
+		# 类型标签：**优先读关卡自带的 shape_kind**（生成 / 复刻时写入，语义确定）。
+		# 缺该字段才回退几何判定（custom_shapes → 多边形镶嵌；满格 → 完整盘；否则裁剪 / 挖洞）。
+		# 为什么不从文件名或格数猜：蜂窝盘与挖洞方格在场数据上都是「方阵裁掉一部分」，
+		# 几何上无法可靠区分——猜出来的标签会把「蜂窝 02」标成「挖洞」（实测踩过）。
+		var kind := str(lv.get("shape_kind", ""))
+		if kind == "":
+			kind = "裁剪 / 挖洞"
+			if lv.has("custom_shapes"):
+				kind = "多边形镶嵌"
+			elif full > 0 and cells == full:
+				kind = "完整盘"
+		# 变体归属：由关卡自带的 global_rules 推导（空 = 经典底座）。这是**两级浏览**
+		# （先选变体、再选棋盘）的索引键，也是「这个变体有哪些异形棋盘」的唯一事实源。
+		var gr_v: Variant = lv.get("global_rules", [])
+		var globals: Array = gr_v if (gr_v is Array) else []
+		# 无 global_rules ⇒ 经典底座。id 取 "classic"（与 VariantCatalog.clue_ids() 的
+		# 底座席位同名）——**不用空串**：空串在页面状态里是"第一级总览"的哨兵值，混用会令
+		# 「经典」变体永远打不开（实测踩过）。
+		var vid := str(globals[0]) if not globals.is_empty() else "classic"
+		out.append({
+			"path": path,
+			"title": LevelLoader.get_level_name(path),
+			"cells": cells,
+			"mines": int(lv.get("total_mines", 0)),
+			"kind": kind,
+			"desc": str(lv.get("desc", "")),
+			"variant": vid,
+			"variant_name": "经典" if vid == "classic" else VariantCatalog.display_name(vid),
+			"variant_text": "经典底座（无额外规则）" if vid == "classic" else VariantCatalog.rule_text(vid),
+		})
+	_shape_cache = out
+	_shape_cache_loaded = true
+	return out
+
+
+## 当前浏览的变体（"" = 变体总览 = 第一级；否则 = 该变体 id = 第二级）。
+## **为什么以变体为导向**（2026-09-21 改版）：玩家的思考单位是「我想玩哪个变体」，
+## 而同一个变体在不同异形棋盘上的推理体验差异，才是这一页真正的内容。旧版把 60+ 张
+## 关卡卡平铺成一面墙，既看不出变体维度、也找不准重点。
+var _shape_variant := ""
+var _shape_body: MarginContainer = null
+var _shape_scroll: ScrollContainer = null
+
+
+## 异形页内容「延迟一帧填」的状态（2026-09-22 性能）。
+var _shape_filled := false
+var _shape_fill_pending := false
+
+
+func _build_shape_page() -> Control:
+	var shell := _make_page_shell()
+	_shape_scroll = shell[0] as ScrollContainer
+	_shape_body = shell[1] as MarginContainer
+	_shape_filled = false
+	_schedule_shape_fill()
+	return shell[0]
+
+
+## 延迟一帧填异形页内容：进选关页实测 660ms 卡顿里，本页内容构建占 122ms
+## （_shape_levels 扫 res://levels/ 全部关卡 JSON + 建两级卡片墙），而它默认不可见
+## （首屏是单项变体页）。延迟一帧后玩家侧首屏不付这笔钱；_show_tab 有同步兜底，
+## 内容必在被看见前就绪。
+##
+## 为什么用 process_frame 信号而不是 await：await 恢复时节点可能已不在树 → get_tree()
+## 为 null → 真机崩溃（见 _prewarm_board_view 注释的同款事故）；信号连接随对象销毁
+## 自动断开，回调内再查一次树内状态，两头都安全。
+func _schedule_shape_fill() -> void:
+	if _shape_filled or _shape_fill_pending or not is_inside_tree():
+		return
+	var tree := get_tree()
+	if tree == null:
+		return
+	_shape_fill_pending = true
+	tree.process_frame.connect(_fill_shape_deferred, CONNECT_ONE_SHOT)
+
+
+func _fill_shape_deferred() -> void:
+	_shape_fill_pending = false
+	if not is_inside_tree() or _shape_filled:
+		return
+	_shape_filled = true
+	_refresh_shape_body()
+
+
+## 变体分组（第一级卡片的数据源）：按关卡的 global_rules[0] 归并（空 = 经典）。
+## 顺序：经典优先，其余按官方三轴顺序（S 轴 → Z 轴），未登记变体（未来新增/Mod）追加末尾。
+func _shape_variants() -> Array[Dictionary]:
+	var by: Dictionary = {}
+	for info: Dictionary in _shape_levels():
+		var vid := str(info["variant"])
+		if not by.has(vid):
+			by[vid] = {"id": vid, "name": str(info["variant_name"]),
+					"text": str(info["variant_text"]), "levels": 0, "cleared": 0}
+		by[vid]["levels"] = int(by[vid]["levels"]) + 1
+		if _is_cleared(str(info["path"])):
+			by[vid]["cleared"] = int(by[vid]["cleared"]) + 1
+	var order: Array = ["classic"] + VariantAxes.STRUCT + VariantAxes.CONSERVE
+	var out: Array[Dictionary] = []
+	for vid in order:
+		if by.has(vid):
+			out.append(by[vid])
+	for vid in by:
+		if not order.has(vid):
+			out.append(by[vid])
+	return out
+
+
+## 重建内容区（切级 / 主题刷新时调用）：只换卡片墙，保住滚动容器本身。
+func _refresh_shape_body() -> void:
+	if _shape_body == null or not is_instance_valid(_shape_body):
+		return
+	for c in _shape_body.get_children():
+		# 必须**先摘除再释放**：queue_free 是延迟的（本帧末才真正删除），只调它的话
+		# 同一帧内的后续读取仍会看到旧卡片（切级瞬间新旧两批同时存在，实测踩过）。
+		_shape_body.remove_child(c)
+		c.queue_free()
+	var flow := HFlowContainer.new()
+	flow.add_theme_constant_override("h_separation", 14)
+	flow.add_theme_constant_override("v_separation", 14)
+	flow.alignment = FlowContainer.ALIGNMENT_CENTER
+	_shape_body.add_child(flow)
+	if _shape_variant == "":
+		# 第一级：变体卡片（每个变体一张，带该变体的异形棋盘覆盖与通关进度）
+		for v: Dictionary in _shape_variants():
+			flow.add_child(_make_variant_card(v))
+		return
+	# 第二级：返回入口 + 该变体下的全部异形棋盘
+	flow.add_child(_make_shape_back_card())
+	for info: Dictionary in _shape_levels():
+		if str(info["variant"]) == _shape_variant:
+			flow.add_child(_make_shape_card(info))
+
+
+## 第一级卡片：变体名 + 覆盖（「3 / 4」= 已通关 / 该变体的异形棋盘数）。
+func _make_variant_card(v: Dictionary) -> Button:
+	var btn := Button.new()
+	btn.custom_minimum_size = Vector2(CARD_W, CARD_H)
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.set_meta("card_btn", true)
+	btn.set_meta("variant_id", str(v["id"]))       # 测试 / 调试可据此定位变体
+	var total := int(v["levels"])
+	var cleared := int(v["cleared"])
+	btn.tooltip_text = "%s\n%s\n该变体有 %d 个异形棋盘（已通关 %d）\n点击查看全部棋盘" % [
+		str(v["name"]), str(v["text"]), total, cleared]
+	btn.pressed.connect(_open_shape_variant.bind(str(v["id"])))
+	_style_card(btn)
+
+	var box := VBoxContainer.new()
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_theme_constant_override("separation", 4)
+	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	box.offset_left = 10
+	box.offset_right = -10
+	box.offset_top = 8
+	box.offset_bottom = -15
+	btn.add_child(box)
+
+	var title := Label.new()
+	title.text = "%s　%d / %d%s" % [str(v["name"]), cleared, total, "　✓" if cleared >= total else ""]
+	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_color_override("font_color", ThemeManager.text())
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(title)
+
+	var desc := Label.new()
+	desc.text = "%s\n%d 种异形棋盘" % [str(v["text"]), total]
+	desc.add_theme_font_size_override("font_size", 13)
+	desc.add_theme_color_override("font_color", ThemeManager.text_secondary())
+	desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	desc.max_lines_visible = 3
+	desc.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	desc.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	desc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(desc)
+
+	UiTheme.bind_hover(btn, 1.03)
+	return btn
+
+
+## 第二级的返回入口（同尺寸卡片，网格里不突兀）。
+func _make_shape_back_card() -> Button:
+	var btn := Button.new()
+	btn.custom_minimum_size = Vector2(CARD_W, CARD_H)
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.set_meta("card_btn", true)
+	btn.set_meta("shape_back", true)
+	btn.tooltip_text = "返回变体列表"
+	btn.pressed.connect(_back_to_shape_variants)
+	_style_card(btn)
+	var lb := Label.new()
+	lb.text = "← 返回变体列表"
+	lb.add_theme_font_size_override("font_size", 15)
+	lb.add_theme_color_override("font_color", ThemeManager.text_secondary())
+	lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lb.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	lb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	btn.add_child(lb)
+	UiTheme.bind_hover(btn, 1.03)
+	return btn
+
+
+func _open_shape_variant(vid: String) -> void:
+	_shape_variant = vid
+	_refresh_shape_body()
+	# 切级回到顶部：否则会停在上一级留下的滚动位置（看起来像"点了没反应"）
+	if _shape_scroll != null and is_instance_valid(_shape_scroll):
+		_shape_scroll.scroll_vertical = 0
+
+
+func _back_to_shape_variants() -> void:
+	_shape_variant = ""
+	_refresh_shape_body()
+	if _shape_scroll != null and is_instance_valid(_shape_scroll):
+		_shape_scroll.scroll_vertical = 0
+
+
+func _make_shape_card(info: Dictionary) -> Button:
+	var btn := Button.new()
+	btn.custom_minimum_size = Vector2(CARD_W, CARD_H)
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.set_meta("card_btn", true)
+	btn.set_meta("shape_path", str(info["path"]))   # 测试 / 调试可据此定位关卡
+	var desc_txt := str(info["desc"])
+	btn.tooltip_text = "%s\n%s · %d 格 · %d 雷%s" % [
+		str(info["title"]), str(info["kind"]), int(info["cells"]), int(info["mines"]),
+		("\n" + desc_txt) if desc_txt != "" else ""]
+	btn.pressed.connect(_open_shape_level.bind(str(info["path"])))
+	_style_card(btn)
+
+	var box := VBoxContainer.new()
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE   # 点击必须落到按钮上
+	box.add_theme_constant_override("separation", 4)
+	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	box.offset_left = 10
+	box.offset_right = -10
+	box.offset_top = 8
+	box.offset_bottom = -15
+	btn.add_child(box)
+
+	# 进度键：LevelSequence.progress_key 对非序列关（res://levels/*.json）原样返回路径
+	# ⇒ 直接用路径查 ProgressStore，与写侧同一约定（不然会「通关了不打勾」）。
+	var title := Label.new()
+	title.text = "%s%s" % [str(info["title"]), "  ✓" if _is_cleared(str(info["path"])) else ""]
+	title.add_theme_font_size_override("font_size", 15)
+	title.add_theme_color_override("font_color", ThemeManager.text())
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(title)
+
+	var desc := Label.new()
+	desc.text = "%s · %d 格 · %d 雷" % [str(info["kind"]), int(info["cells"]), int(info["mines"])]
+	desc.add_theme_font_size_override("font_size", 13)
+	desc.add_theme_color_override("font_color", ThemeManager.text_secondary())
+	desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART   # 中文断行按字，标点不落行首
+	desc.max_lines_visible = 3
+	desc.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	desc.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	desc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(desc)
+
+	UiTheme.bind_hover(btn, 1.03)
+	return btn
+
+
+## 异形关开局：点卡片直接进对局（无尺寸/变体弹窗——关卡是固定的成品，不是生成的）。
+## 续档与 _try_resume_saved 同口径，但**不能复用它**：它内部取 _level_key(_selected)，
+## 依赖弹窗状态（_mode_idx / _selected）；页内直接点卡片时 _mode_idx = -1 ⇒ 会越界崩溃。
+func _open_shape_level(path: String) -> void:
+	var d := SaveCoordinator.load_save()
+	if not d.is_empty():
+		var meta_v: Variant = d.get("metadata", {})
+		if meta_v is Dictionary:
+			var meta: Dictionary = meta_v
+			if (not bool(meta.get("ended", false))) and str(meta.get("level_path", "")) == path \
+					and not _is_cleared(path) and GameSession.restore_from_save():
+				get_tree().change_scene_to_file("res://ui/board_view.tscn")
+				return
+	if GameSession.start_level(path):
+		get_tree().change_scene_to_file("res://ui/board_view.tscn")
+	else:
+		# 异形或损坏关卡会被 LevelLoader 拒绝 → 只提示、不切场景（避免进了棋盘才发现坏档）
+		UiToast.popup(self, "关卡加载失败：%s" % path.get_file())
+
+
 func _style_card(btn: Button) -> void:
 	for state in ["normal", "hover", "pressed", "focus"]:
 		var sb := StyleBoxFlat.new()
@@ -1314,27 +1665,52 @@ func _mode_feasible(mode: Dictionary, side: int) -> bool:
 	return int(RuleFeasibility.resolve_mines(str(mode["clue"]), mode.get("globals", []), side)["mines"]) >= 0
 
 
+## 该尺寸对该变体是否可选（RM2，2026-09-21 审计修复）：
+## 形状档（kind == "shape"）的内容在**关卡库**（levels_lib/shape_*）——库内没有该尺寸时，
+## `_lib_mode` 为假 ⇒ 原实现会静默回退"按种子生成"，产出与卡名不符的**矩形经典关**，
+## 且进度落在 gen:// 与 lib:// 两个分桶。改为：形状档没有库内容的尺寸一律不可选。
+func _size_available(m: Dictionary, side: int) -> bool:
+	if str(m.get("kind", "")) == "shape":
+		return LevelLibrary.has_any(str(m["id"]), side)
+	return _mode_feasible(m, side)
+
+
+## 该变体是否在**任一尺寸**有正式关卡库内容（RM4：库 mode 一律不写演示进度）。
+func _mode_has_lib(mode_id: String) -> bool:
+	for s: int in SIZES:
+		if LevelLibrary.has_any(mode_id, s):
+			return true
+	return false
+
+
 func _refresh_popup() -> void:
 	if _mode_idx < 0 or _grid == null:
 		return
 	var m: Dictionary = MODES[_mode_idx]
-	# 当前尺寸对该变体不可行 → 自动切到最近的可行尺寸（避免「选中即必失败」状态）
-	if not _mode_feasible(m, SIZES[_size_idx]):
+	# 当前尺寸不可选（数学不可行 / 形状档缺库内容）→ 自动切到最近的可选尺寸
+	if not _size_available(m, SIZES[_size_idx]):
 		for i in SIZES.size():
 			var cand: int = ( _size_idx + i ) % SIZES.size()
-			if _mode_feasible(m, SIZES[cand]):
+			if _size_available(m, SIZES[cand]):
 				_size_idx = cand
 				break
 	_title_label.text = "%s · %d×%d" % [m["name"], SIZES[_size_idx], SIZES[_size_idx]]
 
-	# 尺寸按钮高亮 + 可行性禁用（不可行组合按钮置灰 + tooltip 说明原因，点不了）
+	# 尺寸按钮高亮 + 禁用（不可选组合置灰 + tooltip 说明原因，点不了）
+	var is_shape := str(m.get("kind", "")) == "shape"
 	for i in _size_btns.size():
 		_style_choice(_size_btns[i], i == _size_idx)
-		var ok := _mode_feasible(m, SIZES[i])
+		var ok := _size_available(m, SIZES[i])
 		_size_btns[i].disabled = not ok
-		_size_btns[i].tooltip_text = "" if ok else \
-			"该变体在 %d×%d（%d 雷）下数学上无解——请换尺寸或换变体" % [
-					SIZES[i], SIZES[i], LevelSequence.mine_count(SIZES[i])]
+		if ok:
+			_size_btns[i].tooltip_text = ""
+		elif is_shape:
+			# RM2：形状档缺库内容 ≠ 数学无解——文案必须区分（否则玩家以为是规则问题）
+			_size_btns[i].tooltip_text = "该尺寸暂无形状关卡（量产入库后可选）"
+		else:
+			_size_btns[i].tooltip_text = \
+				"该变体在 %d×%d（%d 雷）下数学上无解——请换尺寸或换变体" % [
+						SIZES[i], SIZES[i], LevelSequence.mine_count(SIZES[i])]
 	_style_frame()
 
 	# ---- 关卡库开关（2026-09-17）：本（变体 × 尺寸）有正式关卡 → 走库（难度列生效）；
@@ -1342,7 +1718,11 @@ func _refresh_popup() -> void:
 	_lib_mode = LevelLibrary.has_any(str(m["id"]), SIZES[_size_idx])
 	if _lib_mode:
 		var present := LevelLibrary.tiers_present(str(m["id"]), SIZES[_size_idx])
-		if not present.has(_tier):
+		if present.is_empty():
+			# L1（2026-09-21 审计修复）：catalog 计数 > 0 但集文件损坏 / 档名不在 TIER_ORDER 时，
+			# tiers_present 可能为空 —— 原实现 present[0] 直接越界报错。降级为"非库模式"（走生成流兜底）。
+			_lib_mode = false
+		elif not present.has(_tier):
 			_tier = str(present[0])   # 默认落在该尺寸最轻的档（入门优先）
 	else:
 		_tier = ""
@@ -1557,8 +1937,14 @@ func _is_unlocked(idx: int) -> bool:
 func _ensure_mock() -> void:
 	if _mode_idx < 0:
 		return
-	if _lib_mode:
+	# RM4（2026-09-21 审计修复）：判据从"当前尺寸是库模式"改为"**该变体任一尺寸有库内容**"。
+	# 原实现只看 _lib_mode（当前尺寸），形状卡首次打开时它还是初值 false ⇒ 写入了
+	# gen://shape_*/ 的 mock 键；整页重建后 _cleared_total 把它算进卡片"已通关"，显示虚高。
+	if _lib_mode or _mode_has_lib(str(MODES[_mode_idx]["id"])):
 		return   # 库关卡不预置演示通关：真实内容从零进度开始（打勾代表玩家真打过）
+	# 历史回归（2026-09-22 修复）：测试/工具运行中往 levels_lib 动态写库（或该进程启动时
+	# 库为空、后来被导入），_mode_has_lib 会随后变真 —— 但演示记录早在库尚空时已写入。
+	# 这里在「本次真的要写 mock」时**再次**复核库状态，防止往已有库内容的变体上垫假通关。
 	for i in LEVELS_PER_SET:
 		if _is_cleared(_level_key(i)):
 			return
@@ -1578,6 +1964,12 @@ func _on_play() -> void:
 		return
 	var m: Dictionary = MODES[_mode_idx]
 	var s: int = SIZES[_size_idx]
+	# RM2 防御（正常已被 _refresh_popup 的尺寸禁用拦下）：形状档在库内无该尺寸内容时，
+	# 绝不进"按种子生成"流——那会产出与卡名不符的**矩形经典关**。
+	if str(m.get("kind", "")) == "shape" and not LevelLibrary.has_any(str(m["id"]), s):
+		_play_btn.disabled = false
+		UiToast.popup(self, "该尺寸暂无形状关卡（量产入库后可选）")
+		return
 	# 关卡库模式：直接物化正式关卡 → 开局（不经生成/可行性预筛——盘已在库里且门禁验过）。
 	if _lib_mode and _tier != "":
 		_play_btn.disabled = true
@@ -1668,6 +2060,10 @@ func _try_resume_saved(path: String) -> bool:
 	if _is_cleared(_level_key(_selected)):
 		return false  # 已通关的关重玩 = 从零开始，不续旧进度
 	if not GameSession.restore_from_save():
+		# RM3（2026-09-21 审计修复）：存档与本关匹配但恢复失败（典型：库重导入 → materialize
+		# 重写了同名关卡文件 ⇒ 旧档的雷位/尺寸与新盘不符）——旧进度即将被新对局存档覆盖。
+		# 必须明确告知，否则玩家只看到"从第 1 关重来"而不知原因（静默丢进度）。
+		UiToast.popup(self, "存档与当前关卡数据不符（关卡可能已更新），已开始新对局")
 		return false
 	get_tree().change_scene_to_file("res://ui/board_view.tscn")
 	return true
@@ -1685,14 +2081,21 @@ func _ensure_level_file_async(idx: int) -> String:
 			str(m["id"]), s, s])
 		return ""
 	var path := LevelSequence.level_path(str(m["id"]), s, idx)
+	# v4.1 严格难度梯度：目标窗口 = 当前档位窗口；未选档（""）则只要求「落在梯度内」。
+	var win := Difficulty.tier_range(_tier)
 	if FileAccess.file_exists(path):
-		return path
+		# 缓存关也要过梯度复验：历史产物可能出自旧口径/旧窗口（v4.0 四档或更早标量），
+		# 玩家不该拿到名不副实的一关。不合格就删掉重生成（自愈，不静默复用）。
+		if _gen_file_conforms(path, win):
+			return path
+		DirAccess.remove_absolute(path)
 
 	DirAccess.make_dir_recursive_absolute(LevelSequence.GEN_DIR)
 	var dlg := _open_gen_dialog(s)
 	var deadline := Time.get_ticks_msec() + _gen_timeout(s)
 	var gen := PuzzleGenerator.new()
 	var out := ""
+	var rejected := 0   # 窗口外拒收数（用于区分「产不出」与「超时」的失败原因）
 	# 说明：生成期间界面仍可响应（每次 attempt 之间 await 让帧），取消按钮据此生效。
 	var started_ms := Time.get_ticks_msec()
 	for attempt in GEN_ATTEMPTS:
@@ -1711,6 +2114,11 @@ func _ensure_level_file_async(idx: int) -> String:
 			_level_seed(idx) + attempt, 0, 1, null, remain)
 		if level.is_empty():
 			continue
+		# v4.1 严格梯度：不命中窗口就不落盘（宁可不产，也不产「文件和档位名不副实」的关）。
+		var peak := int((level.get("difficulty_profile", {}) as Dictionary).get("max_complexity", -1))
+		if not _gen_peak_ok(peak, win):
+			rejected += 1
+			continue
 		# 记录生成参数，便于追溯复现
 		level["gen"] = {"mode": m["id"], "size": s, "index": idx, "seed": _level_seed(idx)}
 		var f := FileAccess.open(path, FileAccess.WRITE)
@@ -1722,7 +2130,31 @@ func _ensure_level_file_async(idx: int) -> String:
 		break
 	_close_gen_dialog(dlg)
 	_gen_cancel = false
+	if out == "" and rejected > 0 and not _gen_cancel:
+		# 把失败原因讲清楚：不是"卡住"，而是该（变体×尺寸）在本档窗口内产不出内容
+		var want := Difficulty.tier_text(_tier) if _tier != "" else "符合梯度"
+		UiToast.popup(self, "该变体在 %d×%d 产不出「%s」的关卡（已试 %d 次，%d 次落在窗口外）——建议换难度或换尺寸" % [
+			s, s, want, GEN_ATTEMPTS, rejected])
 	return out
+
+
+## v4.1 严格梯度：峰值可否收下。选档时必须命中该档窗口；未选档时至少落在梯度内
+##（peak≤1 一眼盘、≥21 超纲都不收 —— 与入库闸门、retier 重标同一判据）。
+func _gen_peak_ok(peak: int, win: Vector2i) -> bool:
+	if win.x >= 0:
+		return Difficulty.in_window(peak, win.x, win.y)
+	return Difficulty.tier_of_peak(peak) != ""
+
+
+## 复用已缓存生成关前的口径复验（防历史缓存绕过梯度）。
+func _gen_file_conforms(path: String, win: Vector2i) -> bool:
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if not (parsed is Dictionary):
+		return false
+	var dp: Dictionary = (parsed as Dictionary).get("difficulty_profile", {})
+	if not Difficulty.gradient_ok(dp):
+		return false
+	return _gen_peak_ok(int(dp.get("max_complexity", -1)), win)
 
 
 ## 生成进度弹窗：明确告诉玩家「程序在忙」，并给取消出口。

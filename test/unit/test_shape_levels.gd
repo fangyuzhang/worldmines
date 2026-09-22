@@ -1,7 +1,7 @@
 # test_shape_levels.gd —— T2 挖洞方格 + T3 蜂窝关卡：存在性 + 契约（端到端产物门禁）
 #
 # 被测对象 = res://tools/gen_shape_levels.gd 产出的关卡文件：
-#   T2 挖洞方格 holed_01/02/03.json；T3 蜂窝 hex_01/02/03.json。
+#   T2 挖洞方格 holed_01..06.json；T3 蜂窝 hex_01..05.json（含偶数尺寸 6/8）。
 # 本测试**不生成**（生成是 CLI + CP-SAT 的活），只对产物做黑盒契约断言：
 #   文件可载入 / 异形棋盘格数 / 雷数与雷位 / 洞格（盘外格）不在盘内 / revealed 合法 /
 #   边数非零且自洽 / 蜂窝度分布指纹（角 3 度、边 4 度、内 6 度）。
@@ -12,7 +12,8 @@ const GEN_CMD := "godot --headless --path . -s res://tools/gen_shape_levels.gd"
 ## 只产蜂窝族（T3）；同上命令等价（同一条族驱动链路）。
 const GEN_CMD_HEX := "godot --headless --path . -s res://tools/gen_shape_levels.gd -- hex"
 
-# 期望值来自关卡规格（tools/gen_shape_levels.gd:SPECS）：8×8−4 洞 = 60、8×8−6 洞 = 58、9×9−5 洞 = 76。
+# 期望值来自关卡规格（tools/gen_shape_levels.gd:SPECS）：8×8−4 洞 = 60、8×8−6 洞 = 58、9×9−5 洞 = 76、
+# 5×5−1 洞 = 24、6×6−4 洞 = 32、7×7−9 洞 = 40。
 const CASES: Array = [
 	{
 		"file": "holed_01.json", "cells": 60, "mines": 10, "bbox": Vector2i(8, 8),
@@ -28,6 +29,23 @@ const CASES: Array = [
 	{
 		"file": "holed_03.json", "cells": 76, "mines": 15, "bbox": Vector2i(9, 9),
 		"holes": [Vector2i(4, 4), Vector2i(4, 3), Vector2i(4, 5), Vector2i(3, 4), Vector2i(5, 4)],
+	},
+	# 接线补产（选关页全尺寸入口需要 5/6/7 有内容）：中心单格洞 / 中央 2×2 / 中央 3×3
+	{
+		"file": "holed_04.json", "cells": 24, "mines": 4, "bbox": Vector2i(5, 5),
+		"holes": [Vector2i(2, 2)],
+	},
+	{
+		"file": "holed_05.json", "cells": 32, "mines": 6, "bbox": Vector2i(6, 6),
+		"holes": [Vector2i(2, 2), Vector2i(3, 2), Vector2i(2, 3), Vector2i(3, 3)],
+	},
+	{
+		"file": "holed_06.json", "cells": 40, "mines": 8, "bbox": Vector2i(7, 7),
+		"holes": [
+			Vector2i(2, 2), Vector2i(3, 2), Vector2i(4, 2),
+			Vector2i(2, 3), Vector2i(3, 3), Vector2i(4, 3),
+			Vector2i(2, 4), Vector2i(3, 4), Vector2i(4, 4),
+		],
 	},
 ]
 
@@ -183,14 +201,16 @@ func test_edges_nonzero_and_match_topology_adjacency() -> void:
 # ==================== T3：蜂窝（六边形盘）====================
 #
 # 期望值来自 tools/gen_shape_levels.gd:SPECS。deg_hist / edges 写成**字面量**，与生成侧工具里的
-# 闭式（格数 3R²+3R+1、边 9R²+3R、度分布 {3:6, 4:6(R−1), 6:3R²−3R+1}）互为独立核对——
-# 公式错的话不会两边一起错。
-# 几何：size=2R+1，R=2/3/4；6 个角格 3 度、6(R−1) 个边格 4 度、其余内格 6 度；
-#   无向边 size=5→42、7→90、9→156（**不是** 162，见本次报告「遇到的问题」）。
-# 包围盒 = 左对齐的 size×size 窗口 ⇒ 四角**并非**全在盘外：(size−1,0)、(0,size−1) 在盘内。
+# 闭式互为独立核对——公式错的话不会两边一起错：
+#   奇数 size=2R+1：格数 3R²+3R+1、边 9R²+3R、度分布 {3:6, 4:6(R−1), 6:3R²−3R+1}
+#   偶数 size=2R+2：格数 3R²+5R+2、边 9R²+9R+1、度分布 {3:6, 4:6R−4, 6:3R²−R}（size=6/8 两条）
+# 几何：6 个角格 3 度、边格 4 度、其余内格 6 度（偶数盘心是 2×2 四格 ⇒ 中轴两行等长）；
+#   无向边 size=5→42、6→55、7→90、8→109、9→156（**不是** 162，见本次报告「遇到的问题」）。
+# 包围盒 = 左对齐的 size×size 窗口 ⇒ 四角**并非**全在盘外：(size−1,0)、(0,size−1) 在盘内
+#   （偶数同理：size=6 → (5,0)/(0,5)；size=8 → (7,0)/(0,7)）。
 const HEX_CASES: Array = [
 	{
-		"file": "hex_01.json", "gen_cmd": GEN_CMD_HEX, "size": 5, "R": 2, "cells": 19, "mines": 4, "seed": 4001,
+		"file": "hex_01.json", "gen_cmd": GEN_CMD_HEX, "size": 5, "R": 2, "cells": 19, "mines": 4, "seed": 4004,
 		"row_lens": [3, 4, 5, 4, 3],
 		"bbox": Vector2i(5, 5), "edges": 42, "deg_hist": "3:6,4:6,6:7",
 		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1),
@@ -207,7 +227,7 @@ const HEX_CASES: Array = [
 		"in_board": [Vector2i(6, 0), Vector2i(0, 6)],
 	},
 	{
-		"file": "hex_03.json", "gen_cmd": GEN_CMD_HEX, "size": 9, "R": 4, "cells": 61, "mines": 14, "seed": 6001,
+		"file": "hex_03.json", "gen_cmd": GEN_CMD_HEX, "size": 9, "R": 4, "cells": 61, "mines": 14, "seed": 6003,
 		"row_lens": [5, 6, 7, 8, 9, 8, 7, 6, 5],
 		"bbox": Vector2i(9, 9), "edges": 156, "deg_hist": "3:6,4:18,6:37",
 		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0), Vector2i(3, 0),
@@ -218,6 +238,35 @@ const HEX_CASES: Array = [
 			Vector2i(6, 7), Vector2i(7, 7), Vector2i(8, 7),
 			Vector2i(5, 8), Vector2i(6, 8), Vector2i(7, 8), Vector2i(8, 8)],
 		"in_board": [Vector2i(8, 0), Vector2i(0, 8)],
+	},
+	# 接线补产（选关页全尺寸入口需要 6/8 有内容）：偶数尺寸蜂窝（盘心 2×2）
+	{
+		"file": "hex_04.json", "gen_cmd": GEN_CMD_HEX, "size": 6, "R": 2, "cells": 24, "mines": 5, "seed": 7006,
+		"row_lens": [3, 4, 5, 5, 4, 3],
+		"bbox": Vector2i(6, 6), "edges": 55, "deg_hist": "3:6,4:8,6:10",
+		# 盘外格 = 36−24 = 12
+		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0),
+			Vector2i(0, 1), Vector2i(1, 1),
+			Vector2i(0, 2),
+			Vector2i(5, 3),
+			Vector2i(4, 4), Vector2i(5, 4),
+			Vector2i(3, 5), Vector2i(4, 5), Vector2i(5, 5)],
+		"in_board": [Vector2i(5, 0), Vector2i(0, 5)],
+	},
+	{
+		"file": "hex_05.json", "gen_cmd": GEN_CMD_HEX, "size": 8, "R": 3, "cells": 44, "mines": 9, "seed": 7005,
+		"row_lens": [4, 5, 6, 7, 7, 6, 5, 4],
+		"bbox": Vector2i(8, 8), "edges": 109, "deg_hist": "3:6,4:14,6:24",
+		# 盘外格 = 64−44 = 20
+		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0), Vector2i(3, 0),
+			Vector2i(0, 1), Vector2i(1, 1), Vector2i(2, 1),
+			Vector2i(0, 2), Vector2i(1, 2),
+			Vector2i(0, 3),
+			Vector2i(7, 4),
+			Vector2i(6, 5), Vector2i(7, 5),
+			Vector2i(5, 6), Vector2i(6, 6), Vector2i(7, 6),
+			Vector2i(4, 7), Vector2i(5, 7), Vector2i(6, 7), Vector2i(7, 7)],
+		"in_board": [Vector2i(7, 0), Vector2i(0, 7)],
 	},
 ]
 
@@ -323,3 +372,98 @@ func test_hex_row_length_fingerprint() -> void:
 			counts.append(n)
 		assert_eq(counts, case["row_lens"],
 				"%s 逐行格数应为六边形盘指纹（R+1 … 2R+1 … R+1）" % str(case["file"]))
+
+
+# ==================== (d) T7 mask 图案关（art_target / art_carpet / art_jelly）====================
+#
+# 期望值来自 tools/gen_shape_levels.gd:SPECS 的手写 mask（逐字符可复核）与实跑结果：
+#   同心靶 41 格 / 9 雷 seed=8002（换 seed 1 次）；分形地毯 64 格 / 13 雷 seed=8106（换 4 次）；
+#   小水母 40 格 / 7 雷 seed=8205（换 2 次）。三关同 shape_holed 9×9，seed 段错开防入库去重碰撞。
+# row_lens = mask 逐行有格数（图案指纹：形状被改必红灯）；mask 另从**产物 JSON**（topology.params.mask）
+# 独立数一遍与其 cells 比对——「cells 与 mask 数一致」的黑盒复核（生成器自校验之外的第三只眼）。
+const ART_CASES: Array = [
+	{
+		"file": "art_target.json", "cells": 41, "mines": 9, "seed": 8002, "bbox": Vector2i(9, 9),
+		"row_lens": [9, 2, 2, 5, 5, 5, 2, 2, 9], "edges": 56,
+		"holes": [Vector2i(1, 1), Vector2i(4, 1), Vector2i(2, 4)],
+		"in_board": [Vector2i(0, 0), Vector2i(3, 3), Vector2i(4, 4)],
+	},
+	{
+		"file": "art_carpet.json", "cells": 64, "mines": 13, "seed": 8106, "bbox": Vector2i(9, 9),
+		"row_lens": [9, 6, 9, 6, 4, 6, 9, 6, 9], "edges": 156,
+		"holes": [Vector2i(1, 1), Vector2i(4, 4), Vector2i(7, 7)],
+		"in_board": [Vector2i(0, 0), Vector2i(2, 2)],
+	},
+	{
+		"file": "art_jelly.json", "cells": 40, "mines": 7, "seed": 8205, "bbox": Vector2i(9, 9),
+		"row_lens": [5, 7, 9, 7, 5, 2, 2, 2, 1], "edges": 109,
+		"holes": [Vector2i(0, 0), Vector2i(8, 0), Vector2i(0, 4)],
+		"in_board": [Vector2i(4, 2), Vector2i(1, 5), Vector2i(4, 8)],
+	},
+]
+
+
+func test_art_files_load_as_holed_grid_boards() -> void:
+	for case: Dictionary in ART_CASES:
+		var b := _board(case)
+		if b == null:
+			continue
+		var f := str(case["file"])
+		assert_true(b.grid is AdjacencyGrid, "%s 应重建异形棋盘（AdjacencyGrid）" % f)
+		assert_eq(b.grid.cell_count(), int(case["cells"]), "%s 格数应与 mask 有格数一致" % f)
+		assert_eq(b.grid.size(), case["bbox"], "%s 包围盒应为 9×9" % f)
+		assert_eq(b.total_mines, int(case["mines"]), "%s 雷数应与规格一致" % f)
+		assert_eq(int(_json(case).get("seed", -1)), int(case["seed"]),
+				"%s seed 应与 SPECS 实跑结果一致（换 seed 次数变了这里会红灯）" % f)
+		for m: Vector2i in b.get_mine_positions():
+			assert_true(b.grid.in_board(m), "%s 雷位 (%d,%d) 应在盘内" % [f, m.x, m.y])
+
+
+func test_art_mask_in_json_matches_cells() -> void:
+	# 产物 JSON 自带审计 mask（to_adjacency_grid 的 "mask" 分支落盘 params.mask）：
+	# 从 JSON 独立数 '#'/X/1 应等于 cells，且 9 行 × 9 列 —— 「cells 与 mask 数一致」的黑盒复核。
+	for case: Dictionary in ART_CASES:
+		var topo: Dictionary = _json(case).get("topology", {})
+		var f := str(case["file"])
+		assert_eq(str(topo.get("style", "")), "holed_grid",
+				"%s topology.style 应为 holed_grid（入库自动归 shape_holed 的依据）" % f)
+		var mask: Array = (topo.get("params", {}) as Dictionary).get("mask", [])
+		assert_eq(mask.size(), 9, "%s 审计 mask 应 9 行" % f)
+		var filled := 0
+		for row in mask:
+			assert_eq(str(row).length(), 9, "%s 审计 mask 每行应 9 列" % f)
+			for ch in str(row):
+				if "#X1".contains(ch):
+					filled += 1
+		assert_eq(filled, int(case["cells"]), "%s mask 有格数应与 cells 一致" % f)
+
+
+func test_art_row_length_fingerprint_and_edges() -> void:
+	# 形状指纹（最强）：逐行格数 = mask 行指纹；无向边数也与生成日志一致——图案被改必红灯。
+	for case: Dictionary in ART_CASES:
+		var b := _board(case)
+		if b == null:
+			continue
+		var f := str(case["file"])
+		var counts: Array = []
+		for y in 9:
+			var n := 0
+			for p: Vector2i in b.grid.all_positions():
+				if p.y == y:
+					n += 1
+			counts.append(n)
+		assert_eq(counts, case["row_lens"], "%s 逐行格数应为 mask 行指纹" % f)
+		assert_eq(_grid_edge_count(b.grid), int(case["edges"]), "%s 无向边数应与生成日志一致" % f)
+
+
+func test_art_holes_off_board_and_key_cells_in_board() -> void:
+	for case: Dictionary in ART_CASES:
+		var b := _board(case)
+		if b == null:
+			continue
+		var f := str(case["file"])
+		for hole: Vector2i in case["holes"]:
+			assert_false(b.grid.in_board(hole), "%s 洞格 (%d,%d) 不应在盘内" % [f, hole.x, hole.y])
+			assert_null(b.grid.get_cell(hole), "%s 洞格 (%d,%d) 应无 Cell" % [f, hole.x, hole.y])
+		for p: Vector2i in case["in_board"]:
+			assert_true(b.grid.in_board(p), "%s 图案关键格 (%d,%d) 应在盘内" % [f, p.x, p.y])

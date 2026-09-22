@@ -36,6 +36,32 @@ const HEX_SQ_HALF := HEX_R / (1.0 + 1.0 / HEX_SQ3)  # 内接正方形半边长 =
 ## 内接正方形仍以格心为中心，故数字/旗子/问号与各类覆盖层的**居中口径**与矩形路径完全一致。
 const MIN_CELL_PX := 24                   # cell_px 下限（与矩形路径原公式的 24 同值同义）
 
+# ============ 自定义多边形（数据驱动，T-D2）几何常量与口径 ============
+# 数据来源：关卡 JSON 的 custom_shapes（level_loader 在 load_level 后挂到 board 的 meta 上；
+# core/Board/GridInterface 一行不改）：bbox = [minX,minY,maxX,maxY]（**原版世界坐标**，只用于
+# 核对尺寸——格心已归一化到 0 起）、unit = 一个「格」的世界尺寸（正六边形外径 2R）、
+# cells = [{x,y,center:[cx,cy],poly:[[dx,dy],…],hl:[i,…],taper:[b,b],group}, …]。
+# 坐标口径（三段线性映射，全部围绕 _custom_scale()）：
+#   世界坐标 → 屏幕 ：screen = board_origin + world * scale，scale = unit_px / unit
+#   棋盘坐标 → 屏幕 ：board_pt = world / unit ⇒ screen = board_origin + board_pt * unit_px
+#     （与矩形分支「1 棋盘单位 = 1 格 = cell_px 像素」同构：1 棋盘单位 = 1 格世界尺寸）
+#   格心 / 格轮廓   ：格心 = board_origin + center * scale；顶点 = board_origin + poly * scale
+# 与 hex_layout_for() 的对照（同构，只差「视觉包围盒」的来源）：
+#   · 两者都按**视觉包围盒**（既不是 grid.size() 方阵包围盒，也不是格心包围盒）scale-to-fit
+#     + 居中，并用同样的 24px 下限；
+#   · 蜂窝的视觉跨度由六边形公式推出（hex_visual_span = 格心跨度 + 左右 2R / 上下 2×半高）；
+#   · 自定义盘的五/六边形混排、朝向各异，公式化外扩不成立 ⇒ 直接实测量「全部格心 + 全部顶点」
+#     的并集包围盒（custom_visual_bounds）。
+#   · 反例：bbox 字段只圈住格心，比视觉包围盒每边小约一格半径 ⇒ 按它分配会把最外圈格子切掉
+#    （与蜂窝盘当初误用 grid.size() 的错同源）。
+const CUSTOM_CELL_FRAC := 2.0 * HEX_SQ_HALF  # cell_px = CUSTOM_CELL_FRAC × unit_px
+## 为什么沿用蜂窝的 0.6023（= 2×内接正方形半边长）：cell_px 是本文件字号/旗子/雷体/描边的
+## **密度旋钮**，取同一比例 ⇒ 自定义盘与蜂窝盘的文字视觉密度一致。自定义盘没有「内接正方形」
+## 这种几何量，这个比例只是密度约定，不是几何量。
+const CUSTOM_HL_W := 3.5                  # 高亮折线线宽（原版 ≈ 轮廓的 3~4 倍；轮廓固定 1.0）
+const CUSTOM_HL_TAPER_W := 1.0            # taper 端收细后的线宽（= 轮廓线宽）
+const CUSTOM_HL_TAPER_STEPS := 4          # taper 段的细分段数（分段变宽折线，见 _draw_hl_polyline）
+
 ## cell_px：scale-to-fit 动态格尺寸（§8.4.7 公式；下限 24px）
 ## 蜂窝路径下 = 内接正方形边长（像素），沿用 cell_px 是为了让既有「全部尺寸跟随 cell_px」的
 ## 绘制代码（字号 scale、旗子、提示描边…）零改动地跟着蜂窝盘一起缩放。
@@ -45,6 +71,13 @@ var board_origin: Vector2 = Vector2.ZERO
 ## 蜂窝路径的「每晶格单位像素数」（由 _layout() 按六边形实际跨度 scale-to-fit 算出）。
 ## 只经 _unit_px() 读取；矩形路径不使用。
 var _hex_unit_px: float = 48.0
+## 自定义多边形路径的「每棋盘单位像素数」（= scale × unit；由 _layout() 按视觉包围盒 scale-to-fit
+## 算出）。只经 _unit_px() / _custom_scale() 读取；矩形与蜂窝路径不使用。
+var _custom_unit_px: float = 48.0
+## 自定义盘查表缓存：Vector2i → {center, poly(世界绝对顶点), rel, hl, taper, apothem}。
+## 按 board 实例 id 失效（换关/重开/读档都是新 Board ⇒ 自动重建，不跨关卡残留）。
+var _custom_cells: Dictionary = {}
+var _custom_cache_key: int = 0
 ## 鼠标悬停格（-1,-1 = 无）
 var hover_pos: Vector2i = Vector2i(-1, -1)
 
@@ -242,6 +275,8 @@ func _clear_hint() -> void:
 func _connect_board() -> void:
 	if GameSession.board == null:
 		return
+	# 换了 Board（新关 / 重开 / 恢复）⇒ 分色分组与雷数全变，浮层必须重建
+	_reset_group_panel()
 	if not GameSession.board.cell_state_changed.is_connected(_on_cell_changed):
 		GameSession.board.cell_state_changed.connect(_on_cell_changed)
 	# v3.4：波浪触发改用 Board 的**权威泛洪计划**（取代旧的「同帧唯一格数 >= 2」启发式）。
@@ -251,6 +286,7 @@ func _connect_board() -> void:
 
 func _on_cell_changed(pos: Vector2i) -> void:
 	_clear_hint()  # 盘面变化 → 旧推理结论失效
+	_group_dirty = true   # 插旗/翻开都会改变「分色剩余雷数」
 	# 单格 pop：每次翻开该格都登记一次（数字格/任意单格都有反馈）。
 	# 泛洪时每个被翻开的格子都会各走一次本分支 → 每格各有一次 pop，与波浪并存。
 	# 注意：波浪**不在这里**触发——它只由 Board.flood_planned(zero_flood=true) 驱动（见下）。
@@ -330,6 +366,17 @@ func _layout() -> void:
 	var avail_h: float = vp.y - 64.0 - 64.0 - 48.0
 	# 可用区域的中心：矩形路径的 board_origin 公式隐含就是这个中心，蜂窝路径直接用它对齐。
 	var avail_center := Vector2(vp.x * 0.5, 64.0 + avail_h * 0.5)
+	# 自定义多边形盘（数据驱动）：同样按**视觉包围盒**（所有格心 + 所有顶点的并集，不是
+	# grid.size() 的 15×15 紧凑包围盒、也不是 bbox 字段的格心包围盒）做 scale-to-fit + 居中。
+	if _custom_layout():
+		var layout := custom_layout_for(
+				custom_visual_bounds(_custom_shapes().get("cells", []) as Array),
+				_custom_unit_world(), avail_w, avail_h, avail_center)
+		_custom_unit_px = float(layout["unit_px"])
+		cell_px = maxi(int(layout["cell_px"]), MIN_CELL_PX)
+		board_origin = layout["origin"]
+		queue_redraw()
+		return
 	# 蜂窝：按六边形**实际几何跨度**（不是 grid.size() 包围盒方阵）做 scale-to-fit。
 	# 用包围盒算会按 size×size 的正方形分配空间，六边形盘的斜边留白全被浪费 ⇒ 盘明显偏小。
 	if _hex_layout():
@@ -353,6 +400,8 @@ func _layout() -> void:
 ## （ShapeGenerator.build_hex / 落盘 topology.style 得来）。矩形关卡与旧异形拓扑恒 false
 ## ⇒ 本文件其余分支全部走原路径，行为零变化。
 func _hex_layout() -> bool:
+	if _custom_layout():
+		return false   # 自定义多边形盘优先（见 _custom_layout 的优先级说明）
 	var b: Board = GameSession.board
 	if b == null or b.grid == null:
 		return false
@@ -360,31 +409,169 @@ func _hex_layout() -> bool:
 	return g is AdjacencyGrid and (g as AdjacencyGrid).has_hex_layout()
 
 
-## 每「晶格单位」的像素数。
+# ============ 自定义多边形盘：判据 / 查表 / 世界→屏幕 ============
+
+## 当前盘面是否按数据驱动的自定义多边形排布（T-D2）。判据 = board 上挂了**非空**的
+## custom_shapes 字典（且含非空 cells）——level_loader 在 load_level 后注入 meta。
+## 矩形/蜂窝关卡没有这条 meta ⇒ 恒 false ⇒ 本文件其余分支零变化。
+## 优先级：自定义盘 > 蜂窝（_hex_layout() 因此返回 false）。两者本是互斥数据；若真同现，
+## 以更具体的 custom_shapes 为准。
+func _custom_layout() -> bool:
+	var cs := _custom_shapes()
+	if cs.is_empty():
+		return false
+	var cells: Variant = cs.get("cells", null)
+	return cells is Array and not (cells as Array).is_empty()
+
+
+## board 上挂的 custom_shapes 字典（无 meta / 值非字典 → 空字典）。
+## ⚠️ 必须先 has_meta 再 get_meta(name)（**不带默认值**）：Object.get_meta(name, default) 在
+## 默认值恰为 null 时不生效（引擎按「没给默认值」处理）→ key 不存在时每帧刷一条
+## "Method/function failed. Returning: Variant()" 引擎错误（本轮实测：矩形/蜂窝关卡每帧每格一条）。
+func _custom_shapes() -> Dictionary:
+	var b: Board = GameSession.board
+	if b == null or not b.has_meta("custom_shapes"):
+		return {}
+	var cs: Variant = b.get_meta("custom_shapes")
+	return cs if cs is Dictionary else {}
+
+
+## 一个「格」的世界尺寸（custom_shapes.unit = 正六边形外径 2R）。缺字段 → 0。
+func _custom_unit_world() -> float:
+	return float(_custom_shapes().get("unit", 0.0))
+
+
+## 世界单位 → 屏幕像素的比例（px / 世界单位）= unit_px / unit。
+func _custom_scale() -> float:
+	return _custom_unit_px / maxf(_custom_unit_world(), 0.0001)
+
+
+## 世界点 → 屏幕点（自定义盘唯一的坐标变换出口）。
+func _custom_world_to_screen(w: Vector2) -> Vector2:
+	return board_origin + w * _custom_scale()
+
+
+## 查一格的自定义几何（缓存查表；缺格/数据不合法 → 空字典）。
+func _custom_cell(pos: Vector2i) -> Dictionary:
+	_ensure_custom_cache()
+	return _custom_cells.get(pos, {})
+
+
+## 重建查表缓存（每次换 Board 只建一次；绘制与命中测试共用同一份）。
+## poly 存**世界绝对坐标**（center + 相对顶点）⇒ 绘制时每顶点只乘一个 scale。
+## apothem = 相对顶点多边形对格心的内切圆半径（供数据自检与内容盒使用）。
+## 缓存键 = board 实例 id：Board 每次 start/restart/restore 都是新实例（见 _connect_board），
+## 而 custom_shapes 是随关卡 JSON 一次性载入的**不可变**数据 ⇒ 换 board 即换关，缓存必失效。
+## （Dictionary 不是 Object，取不到实例 id，也不必取。）
+func _ensure_custom_cache() -> void:
+	var cs := _custom_shapes()
+	if cs.is_empty():
+		return
+	var b: Board = GameSession.board
+	if b == null:
+		return
+	var key: int = b.get_instance_id()
+	if key == _custom_cache_key and not _custom_cells.is_empty():
+		return
+	_custom_cache_key = key
+	_custom_cells.clear()
+	for c in (cs.get("cells", []) as Array):
+		if not (c is Dictionary):
+			continue
+		var d: Dictionary = c
+		if not (d.has("x") and d.has("y") and d.has("center") and d.has("poly")):
+			continue
+		var ctr: Array = d["center"]
+		var rel_arr: Array = d["poly"]
+		if ctr.size() < 2 or rel_arr.size() < 3:
+			continue
+		var center := Vector2(float(ctr[0]), float(ctr[1]))
+		var rel := PackedVector2Array()
+		for v in rel_arr:
+			rel.append(Vector2(float(v[0]), float(v[1])))
+		var abs_poly := PackedVector2Array()
+		for v in rel:
+			abs_poly.append(center + v)
+		_custom_cells[Vector2i(int(d["x"]), int(d["y"]))] = {
+			"center": center,
+			"poly": abs_poly,
+			"rel": rel,
+			"hl": d.get("hl", []),
+			"taper": d.get("taper", []),
+			"apothem": custom_apothem(rel),
+			"group": str(d.get("group", "")),   # 颜色分组（Tametsi 多色分区；"" = 不属任何组）
+		}
+
+
+## 自定义盘的「内容盒」：以格心为中心、cell_px 见方的矩形。
+## 与蜂窝路径的「内接正方形」同角色（内容定位 + 动效收缩基准），但**不用于填充**——填充由
+## 多边形承担（见 _draw_cell 的 poly_filled）：矩形填充会越出多边形边线、盖住格与格之间的缝。
+## 为什么不用 _cell_rect（外接矩形）：五边形外接矩形 ≈ 33×59 世界单位、且左上角不在格内
+## （格心偏在矩形右侧），旗子/问号按「48px 基准坐标 × scale」从矩形左上角摆放会被顶到格角外；
+## 方盒以格心为中心 ⇒ 内容居中、旗子落在格内（与蜂窝盘内接正方形的居中口径一致）。
+func _custom_content_rect(pos: Vector2i) -> Rect2:
+	var s := float(cell_px)
+	return Rect2(_cell_center(pos) - Vector2(s, s) * 0.5, Vector2(s, s))
+
+
+## 每「棋盘单位」的像素数（棋盘单位 = 1 格的坐标步长）。
 ## 矩形路径：1 单位 = 1 格 = cell_px（于是 _cell_center 与旧式 board_origin + (c,r)*cell_px 逐像素等价）。
 ## 蜂窝路径：1 单位 = 原版晶格单位（0.75 / √3÷4 的格心步长、0.475 的外接半径都以它为单位）。
+## 自定义盘：1 单位 = 1 格世界尺寸（= 世界坐标 / unit，见文件头口径）。
 func _unit_px() -> float:
+	if _custom_layout():
+		return _custom_unit_px
 	return _hex_unit_px if _hex_layout() else float(cell_px)
 
 
-## 格心（像素）。矩形路径 = 原格矩形中心；蜂窝路径 = 六边形格心。
+## 格心（像素）。矩形路径 = 原格矩形中心；蜂窝路径 = 六边形格心；自定义盘 = 世界格心 × scale。
 func _cell_center(pos: Vector2i) -> Vector2:
+	if _custom_layout():
+		var c := _custom_cell(pos)
+		if c.is_empty():
+			return board_origin   # 数据缺该格（不该发生）：退化为原点，绝不崩
+		return _custom_world_to_screen(c["center"])
 	if _hex_layout():
 		return hex_center_px(pos, _hex_unit_px, board_origin)
 	return board_origin + Vector2(pos.x, pos.y) * float(cell_px) + Vector2(cell_px, cell_px) * 0.5
 
 
 ## 格位绘制矩形（_draw_cell 与全部覆盖层共用）。
-## 矩形路径 = **原实现原式**（逐像素等价）；蜂窝路径 = 以格心为中心的内接正方形（见 HEX_SQ_HALF）。
+## 矩形路径 = **原实现原式**（逐像素等价）；蜂窝路径 = 以格心为中心的内接正方形（见 HEX_SQ_HALF）；
+## 自定义盘 = 该格多边形的**外接矩形**（世界包围盒 × scale）。自定义盘没有「格宽×格高」可言，
+## 外接矩形只有两个用途：命中测试粗筛（_pick_custom）与外部核对；
+## **填充与内容定位分别由多边形和 _custom_content_rect 承担**（说明见那两个函数的注释）。
 func _cell_rect(pos: Vector2i) -> Rect2:
+	if _custom_layout():
+		var c := _custom_cell(pos)
+		if c.is_empty():
+			return Rect2(_cell_center(pos), Vector2.ZERO)
+		var poly: PackedVector2Array = c["poly"]
+		var sc := _custom_scale()
+		var lo: Vector2 = poly[0]
+		var hi: Vector2 = poly[0]
+		for v in poly:
+			lo = Vector2(minf(lo.x, v.x), minf(lo.y, v.y))
+			hi = Vector2(maxf(hi.x, v.x), maxf(hi.y, v.y))
+		return Rect2(board_origin + lo * sc, (hi - lo) * sc)
 	if not _hex_layout():
 		return Rect2(board_origin + Vector2(pos.x, pos.y) * cell_px, Vector2(cell_px, cell_px))
 	var s := 2.0 * HEX_SQ_HALF * _unit_px()
 	return Rect2(_cell_center(pos) - Vector2(s, s) * 0.5, Vector2(s, s))
 
 
-## 格子的多边形轮廓：蜂窝 = 6 顶点六边形；其余 = 该格矩形的 4 角（顺时针）。
+## 格子的多边形轮廓：蜂窝 = 6 顶点六边形；自定义盘 = 数据给的 5/6 顶点多边形（顺序即绕序）；
+## 其余 = 该格矩形的 4 角（顺时针）。
 func _cell_polygon(pos: Vector2i) -> PackedVector2Array:
+	if _custom_layout():
+		var c := _custom_cell(pos)
+		if c.is_empty():
+			return PackedVector2Array()
+		var sc := _custom_scale()
+		var out := PackedVector2Array()
+		for v in (c["poly"] as PackedVector2Array):
+			out.append(board_origin + v * sc)
+		return out
 	if _hex_layout():
 		return hex_polygon_px(pos, _hex_unit_px, board_origin)
 	var r := _cell_rect(pos)
@@ -396,16 +583,275 @@ func _cell_polygon(pos: Vector2i) -> PackedVector2Array:
 	])
 
 
+## 覆盖层用多边形：格子轮廓按「顶点向格心收缩 inset 像素」后的形态（inset=0 = 原轮廓）。
+## 用于把 hover / hint / reject / 光标 / 波浪等**颜色覆盖层**画成与格子同形——此前它们统一
+## 用 _cell_rect（蜂窝的**内接正方形**），蜂窝盘上会看到「六边形格子里顶着一个方块」。
+func _cell_polygon_inset(pos: Vector2i, inset: float) -> PackedVector2Array:
+	var poly := _cell_polygon(pos)
+	if inset <= 0.0:
+		return poly
+	var c := _cell_center(pos)
+	var out := PackedVector2Array()
+	for p in poly:
+		var d: Vector2 = p - c
+		var l := d.length()
+		if l > 0.0:
+			out.append(c + d * (maxf(0.0, l - inset) / l))
+		else:
+			out.append(p)
+	return out
+
+
+## 填充一个格子（覆盖层用）：蜂窝 = 六边形多边形；自定义盘 = 数据多边形；
+## 矩形 = 原 draw_rect（逐像素不变）。
+func _draw_cell_fill(pos: Vector2i, col: Color) -> void:
+	if _hex_layout() or _custom_layout():
+		var poly := _cell_polygon(pos)
+		if poly.size() >= 3:   # 自定义盘缺格数据 → 不画，绝不臆造形状
+			draw_colored_polygon(poly, col)
+		return
+	draw_rect(_cell_rect(pos), col)
+
+
+## 描边一个格子（覆盖层用）：蜂窝/自定义盘 = 沿该格多边形折线（顶点向格心内缩 inset）；
+## 矩形 = 原 rect.grow(-inset) 描边（逐像素不变）。
+func _draw_cell_outline(pos: Vector2i, col: Color, width: float, inset: float = 0.0) -> void:
+	if _hex_layout() or _custom_layout():
+		var poly := _cell_polygon_inset(pos, inset)
+		if poly.size() < 3:
+			return
+		var closed := poly.duplicate()
+		closed.append(closed[0])   # draw_polyline 画折线，需手动闭合
+		draw_polyline(closed, col, width)
+		return
+	draw_rect(_cell_rect(pos).grow(-inset), col, false, width)
+
+
+# ============ 配色（自定义盘的 palette；无 palette 时逐项回退 ThemeManager） ============
+# 口径：palette 只在**自定义多边形盘**上生效，且逐键回退主题色 ⇒ 矩形/蜂窝路径的取色
+# 与改动前逐像素一致（这是「不得回归」的结构性保证）。
+
+## 关卡配色表（关卡 JSON 的 palette；无 meta / 非字典 → 空字典）。
+##
+## ⚠️ 2026-09-22 修正：此处**不再要求自定义几何**。此前这行是 `if not _custom_layout(): return {}`，
+## 而 `_custom_layout()` 要求关卡带非空 custom_shapes ⇒ 走 style 分支的关卡（hex / 挖洞方格）
+## 即使声明了 palette 和 groups，取色也全部落空：实测 16 关（va_hex_* 9 + va_holed_* 7）、
+## 395 个已分组格、48 条分组色声明被整条丢弃 —— 棋盘仍是主题灰，而分色雷数计数器
+## 照样建出来（它的条件只看 groups 是否为空），于是色块全是透明的。
+## palette 描述的是「这盘用什么颜色」，与「几何从哪来」无关，故解耦。
+## 矩形关卡不写 palette 字段 ⇒ meta 为 null ⇒ 仍走主题色，行为零变化。
+##
+## 入口提成**静态纯函数**（下面两个）：一是单测不必起整棵场景树就能锁住「palette 会被采用」，
+## 二是静态函数拿不到 `_custom_layout()`，那条耦合在结构上就加不回来了。
+static func palette_of(board: Board) -> Dictionary:
+	if board == null or not board.has_meta("palette"):
+		return {}
+	var p: Variant = board.get_meta("palette")
+	return p if p is Dictionary else {}
+
+
+## 从 palette 字典取某个键的颜色（纯函数，无实例状态）。
+## 取值支持两种形式（见 core/palette_color.gd）：
+##   · RGB 数组 [r,g,b] —— 既有 57 关的手写口径
+##   · 色码字符串 "BLUE" / "PINK_DARK" —— 走派生化，自动带对比度保证
+## 逐级回退：显式键 → palette.theme 派生 → 调用方给的 fallback（主题色）。
+## 不抛错、不臆造：mod 关卡给了畸形 palette 也只会退回主题色。
+static func resolve_palette_color(palette: Dictionary, key: String, fallback: Color) -> Color:
+	if not palette.is_empty() and palette.has(key):
+		var c := PaletteColor.parse(palette[key])
+		if c.a > 0.0:
+			return c
+	var t: Variant = palette.get("theme", "")
+	if t is String and (t as String) != "":
+		var tc := PaletteColor.theme_color(t as String, key)
+		if tc.a > 0.0:
+			return tc
+	return fallback
+
+
+func _custom_palette() -> Dictionary:
+	return palette_of(GameSession.board)
+
+
+## 取 palette 中的颜色（实例侧薄封装，见上面的静态实现）。
+func _pal_color(key: String, fallback: Color) -> Color:
+	return resolve_palette_color(_custom_palette(), key, fallback)
+
+
+## 本关的主题色码（palette.theme）。空串 = 未声明主题，全部走 fallback/显式键。
+func _theme_code() -> String:
+	var t: Variant = _custom_palette().get("theme", "")
+	return str(t) if t is String else ""
+
+
+## 未翻开格底色（palette.tile / 主题隐藏色）。
+func _cell_hidden_color() -> Color:
+	return _pal_color("tile", ThemeManager.cell_hidden())
+
+
+## 已翻开格底色（palette.revealed / 主题已翻开色）。
+func _cell_revealed_color() -> Color:
+	return _pal_color("revealed", ThemeManager.cell_revealed())
+
+
+## 格子轮廓线色（palette.tile_border / 主题网格线色）。
+func _outline_color() -> Color:
+	return _pal_color("tile_border", ThemeManager.grid_line())
+
+
 ## 格子底色（与 _draw_cell 的状态分支同口径；REVEALED 时含 pop 颜色插值）。
-## 蜂窝几何下先由 _draw() 填六边形、再让 _draw_cell 填内接正方形——两处必须同色，
-## 否则会看到「六边形里嵌着一个方块」。
-func _cell_base_color(cell: Cell, pop_e: float) -> Color:
-	if cell.state == Cell.State.REVEALED:
-		var base := ThemeManager.cell_revealed()
+## 蜂窝/自定义盘下先由 _draw() 填多边形本体、再让 _draw_cell 填内容盒（或跳过矩形底）——
+## 两处必须同色，否则会看到「多边形里嵌着一个方块」。
+func _cell_base_color(pos: Vector2i, cell: Cell, pop_e: float) -> Color:
+	var base := _cell_hidden_color()
+	if cell.state == Cell.State.FLAGGED:
+		base = _pal_color("flagged_tile", _cell_hidden_color())
+	elif cell.state == Cell.State.REVEALED:
+		base = _cell_revealed_color()
 		if pop_e < 1.0:
-			base = ThemeManager.cell_hidden().lerp(base, pop_e)
-		return base
-	return ThemeManager.cell_hidden()
+			base = _cell_hidden_color().lerp(base, pop_e)
+	# 分色棋盘（复刻 Tametsi 的多色分区）：格子属于某颜色分组 → 用该组色。
+	# 翻开格压暗 45%：亮色底 + 白数字会糊成一片（黄 #DAD200 尤其明显）。
+	var g := _custom_group(pos)
+	if g != "":
+		var gc := _group_color(g)
+		if gc.a > 0.0:
+			base = gc.darkened(0.45) if cell.state == Cell.State.REVEALED else gc
+	return base
+
+
+## 关卡的颜色分组数据（两种来源，2026-09-21 起）：
+##   · custom_shapes.cells[].group —— 数据驱动多边形盘（如雏菊链复刻，几何与分组同一份数据）
+##   · level.groups.cells{"x,y": 组名} —— **参数化形状**（蜂窝 / 挖洞方格 + 环层分色）：
+##     几何仍走 style 分支（hex/方阵公式），分组单独一张轻表，避免为分色复制一份几何。
+func _level_groups() -> Dictionary:
+	var b: Board = GameSession.board
+	if b == null or not b.has_meta("groups"):
+		return {}
+	var g: Variant = b.get_meta("groups")
+	return g if g is Dictionary else {}
+
+
+## 该格所属的颜色分组（"" = 不属于任何分组）：先查数据驱动盘，再查参数化形状的 groups 表。
+func _custom_group(pos: Vector2i) -> String:
+	if _custom_layout():
+		var c := _custom_cell(pos)
+		var g1 := str(c.get("group", ""))
+		if g1 != "":
+			return g1
+	var cells: Variant = _level_groups().get("cells", null)
+	if cells is Dictionary:
+		return str((cells as Dictionary).get("%d,%d" % [pos.x, pos.y], ""))
+	return ""
+
+
+## 分组色（关卡 palette.groups，值可以是 RGB 数组或色码串如 "YELLOW" / "PINK_DARK"）；
+## 未定义 → 透明（调用方据此回退）。
+## 注意这里**不走 _pal_color**：分组色没有"主题派生"这一层（主题只负责底色/文字/轮廓），
+## 未声明就是未声明，回退到棋盘底色而不是拿主题色冒充某个分组。
+func _group_color(name: String) -> Color:
+	if name == "":
+		return Color(0, 0, 0, 0)
+	var groups: Variant = _custom_palette().get("groups", null)
+	if not (groups is Dictionary):
+		return Color(0, 0, 0, 0)
+	return PaletteColor.parse((groups as Dictionary).get(name, null))
+
+
+# ============ 分色雷数计数器（右上角浮层） ============
+#
+# 复刻 Tametsi 的「彩色分区 + 分色雷数」：棋盘被染成若干颜色区，右上角按颜色列出
+# 「该区还剩几颗雷没被标记 / 该区共有几颗雷」。它同时承担两个作用：
+#   ① 好看（单色灰盘 → 多色图案）；
+#   ② **额外线索**：某色区剩余归零时，该区剩下的未知格全部安全——原版高阶推理的抓手之一。
+
+var _group_panel: VBoxContainer = null
+var _group_rows: Dictionary = {}      # group -> {"total": int, "label": Label}
+var _group_dirty := true
+
+
+## 建计数器（换关时先 _reset_group_panel，下一帧由 _refresh_group_panel 重建）。
+func _ensure_group_panel() -> void:
+	if _group_panel != null:
+		return
+	# 数据驱动盘（custom_shapes）与参数化形状（level.groups）都能有分组；
+	# 两者都没有 ⇒ 这关没有分色，也就不需要计数器。
+	if not _custom_layout() and _level_groups().is_empty():
+		return
+	var board: Board = GameSession.board
+	if board == null or board.grid == null:
+		return
+	# 每组雷数 = 该组内的雷颗数（按关卡数据的分组，静态不变）
+	var totals: Dictionary = {}
+	for m in board.get_mine_positions():
+		var g := _custom_group(m)
+		if g == "":
+			continue
+		totals[g] = int(totals.get(g, 0)) + 1
+	if totals.is_empty():
+		return
+	var panel := VBoxContainer.new()
+	panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	panel.offset_left = -190
+	panel.offset_right = -16
+	panel.offset_top = 64                                  # 让开顶栏 HUD
+	panel.add_theme_constant_override("separation", 6)
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE        # 浮层不得吃掉棋盘点击
+	add_child(panel)
+	_group_panel = panel
+	for g in totals:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var sw := ColorRect.new()
+		sw.custom_minimum_size = Vector2(18, 18)
+		sw.color = _group_color(str(g))
+		sw.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(sw)
+		var lb := Label.new()
+		lb.add_theme_font_size_override("font_size", 18)
+		lb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(lb)
+		panel.add_child(row)
+		_group_rows[str(g)] = {"total": int(totals[g]), "label": lb}
+	_group_dirty = true
+
+
+## 换关：销毁旧浮层（Board 换了 ⇒ 分组与雷数全变，不能沿用旧面板）。
+func _reset_group_panel() -> void:
+	if _group_panel != null:
+		if is_instance_valid(_group_panel):
+			_group_panel.queue_free()
+		_group_panel = null
+	_group_rows.clear()
+	_group_dirty = true
+
+
+## 刷新「剩余 / 总数」：剩余 = 该组雷数 − 该组已插旗数（与总雷数计数同口径）。
+func _refresh_group_panel() -> void:
+	_ensure_group_panel()
+	if _group_panel == null or not _group_dirty:
+		return
+	var board: Board = GameSession.board
+	if board == null or board.grid == null:
+		return
+	var flags: Dictionary = {}
+	for p in board.grid.all_positions():
+		var cell: Cell = board.grid.get_cell(p)
+		if cell != null and cell.state == Cell.State.FLAGGED:
+			var g := _custom_group(p)
+			if g != "":
+				flags[g] = int(flags.get(g, 0)) + 1
+	for g in _group_rows:
+		var rec: Dictionary = _group_rows[g]
+		var total := int(rec["total"])
+		var left := maxi(0, total - int(flags.get(g, 0)))
+		var lb: Label = rec["label"]
+		var txt := "%d / %d" % [left, total]
+		if lb.text != txt:
+			lb.text = txt
+		lb.add_theme_color_override("font_color", _group_color(g).lightened(0.3))
+	_group_dirty = false
 
 
 # ============ 蜂窝几何纯函数（static：渲染与单测共用同一份公式，可脱离场景树验证） ============
@@ -492,9 +938,131 @@ static func hex_layout_for(positions: Array, avail_w: float, avail_h: float, cen
 	}
 
 
+# ============ 自定义多边形纯函数（static：渲染与单测共用同一份公式，可脱离场景树验证） ============
+
+## custom_shapes.bbox（原版世界坐标 [minX,minY,maxX,maxY]）→ Rect2。
+## ⚠️ 两个坑，别直接拿去当布局输入：
+##   ① 它只圈住**格心**：多边形从格心向外伸出一个格半径（正六边形外接半径 = unit/2），
+##      故它不是视觉包围盒（见 custom_visual_bounds）；
+##   ② 它是**原版世界坐标**（本关 minX/minY = 318.93/59.52），而 center/poly 已减去 minX/minY
+##      归一化到 0 起 ⇒ 本函数返回的 position 与 center 不在同一坐标系，**只有 size 可跨帧比较**；
+##      归一化帧下的格心包围盒恒为 Rect2(0, 0, size)。
+static func custom_bbox_rect(bbox: Array) -> Rect2:
+	if bbox.size() < 4:
+		return Rect2(Vector2.ZERO, Vector2.ZERO)
+	var lo := Vector2(float(bbox[0]), float(bbox[1]))
+	var hi := Vector2(float(bbox[2]), float(bbox[3]))
+	return Rect2(lo, hi - lo)
+
+
+## 全部（格心 + 多边形顶点）的并集包围盒（世界坐标）= 真正的**视觉包围盒**。
+## 这是自定义盘版的 hex_visual_span()：五/六边形混排、每格形状与朝向都不同，公式化外扩不成立，
+## 只能实测。cells 是 JSON 原始数组（[{center:[x,y], poly:[[dx,dy],…]}, …]），便于单测构造。
+static func custom_visual_bounds(cells: Array) -> Rect2:
+	var lo := Vector2(INF, INF)
+	var hi := Vector2(-INF, -INF)
+	for c in cells:
+		if not (c is Dictionary):
+			continue
+		var d: Dictionary = c
+		if not (d.has("center") and d.has("poly")):
+			continue
+		var ctr: Array = d["center"]
+		if ctr.size() < 2:
+			continue
+		var center := Vector2(float(ctr[0]), float(ctr[1]))
+		lo = Vector2(minf(lo.x, center.x), minf(lo.y, center.y))
+		hi = Vector2(maxf(hi.x, center.x), maxf(hi.y, center.y))
+		for v in (d["poly"] as Array):
+			var pt := center + Vector2(float(v[0]), float(v[1]))
+			lo = Vector2(minf(lo.x, pt.x), minf(lo.y, pt.y))
+			hi = Vector2(maxf(hi.x, pt.x), maxf(hi.y, pt.y))
+	if lo.x > hi.x or lo.y > hi.y:
+		return Rect2(Vector2.ZERO, Vector2.ZERO)
+	return Rect2(lo, hi - lo)
+
+
+## 自定义盘布局（纯函数）：在 avail_w×avail_h 的可用区域里按**视觉包围盒** scale-to-fit 并居中。
+## 返回 {scale, unit_px, origin, span, cell_px}：
+##   scale   —— px / 世界单位（世界 → 屏幕的唯一比例）；
+##   unit_px —— px / 棋盘单位（= scale × unit，绘画层换算用的比例）；
+##   origin  —— 世界原点在屏幕上的位置（世界点 w ↦ origin + w × scale）；
+##   span    —— 视觉跨度（世界单位，便于核对/报告）；cell_px —— 内容/字号密度基准。
+## 与 hex_layout_for 逐条对照：贴合口径（等比缩放 + 某一维恰好贴满）、居中口径（视觉包围盒
+## 中心对准可用区中心）、以及同样的 MIN_CELL_PX 下限（窗口极小时宁可溢出，也不把格子缩成糊）。
+static func custom_layout_for(bounds: Rect2, unit: float, avail_w: float, avail_h: float, center: Vector2) -> Dictionary:
+	if bounds.size.x <= 0.0 or bounds.size.y <= 0.0 or unit <= 0.0:
+		return {"scale": 0.0, "unit_px": 0.0, "origin": center, "span": Vector2.ZERO, "cell_px": 0}
+	var scale: float = minf(avail_w / bounds.size.x, avail_h / bounds.size.y)
+	var unit_px: float = scale * unit
+	var cell: float = CUSTOM_CELL_FRAC * unit_px
+	if cell < float(MIN_CELL_PX):
+		cell = float(MIN_CELL_PX)
+		unit_px = cell / CUSTOM_CELL_FRAC
+		scale = unit_px / unit
+	var mid := bounds.position + bounds.size * 0.5
+	return {
+		"scale": scale,
+		"unit_px": unit_px,
+		"origin": center - mid * scale,
+		"span": bounds.size,
+		"cell_px": int(round(cell)),
+	}
+
+
+## 相对顶点多边形（n ≥ 3）对**格心（原点）**的内切圆半径 = 原点到各边（线段）的最小距离。
+## 用途：① 内容盒尺寸的自检；② 数据自检（格心必须落在自格内 ⇒ 该值 > 0）。
+static func custom_apothem(poly: PackedVector2Array) -> float:
+	if poly.size() < 3:
+		return 0.0
+	var best := INF
+	for i in poly.size():
+		var a: Vector2 = poly[i]
+		var b: Vector2 = poly[(i + 1) % poly.size()]
+		best = minf(best, Geometry2D.get_closest_point_to_segment(Vector2.ZERO, a, b).length())
+	return best if best < INF else 0.0
+
+
+## 多边形绕格心等比缩放（shrink>1 也合法，虽然翻开动效只用 ≤1）：波浪/pop 已算好的收缩比
+## 直接喂进来，与 hex_polygon_px(..., shrink) 同语义（那两个动效状态机一行未改）。
+static func scale_polygon_about(poly: PackedVector2Array, c: Vector2, shrink: float) -> PackedVector2Array:
+	if is_equal_approx(shrink, 1.0):
+		return poly
+	var out := PackedVector2Array()
+	for p in poly:
+		out.append(c + (p - c) * shrink)
+	return out
+
+
+## 高亮折线的**屏幕**顶点序列：按 hl 的索引顺序取 poly（世界绝对顶点）再乘 scale + origin。
+## 开放折线（不闭合、不补首点）；索引越界或 hl < 2 项 → 返回空数组（= 整格不画，绝不画错线）。
+## 抽成 static 的唯一目的：单测能断言「画出来的顺序 == 数据给的顺序」——顺序错 = 图案错，
+## 这是本任务的视觉核心，不能只靠肉眼看截图。
+static func custom_hl_points(poly: PackedVector2Array, hl: Array, scale: float, origin: Vector2) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	if poly.size() < 3 or hl.size() < 2:
+		return out
+	for i in hl:
+		var idx := int(i)
+		if idx < 0 or idx >= poly.size():
+			return PackedVector2Array()
+		out.append(origin + poly[idx] * scale)
+	return out
+
+
+## 点是否落在该格多边形内（自定义盘命中测试的精确判据；< 3 顶点恒 false）。
+static func custom_point_in_cell(pt: Vector2, poly: PackedVector2Array) -> bool:
+	if poly.size() < 3:
+		return false
+	return Geometry2D.is_point_in_polygon(pt, poly)
+
+
 ## 棋盘坐标（单位 = 格，可为小数）→ 屏幕（绘画层注入的两个换算之一）。
-## 矩形 = 旧式线性映射（逐像素不变）；蜂窝 = 晶格仿射映射。
+## 矩形 = 旧式线性映射（逐像素不变）；蜂窝 = 晶格仿射映射；
+## 自定义盘 = 「棋盘坐标 = 世界坐标 / unit」，故 screen = origin + board_pt × unit_px（线性）。
 func _board_pt_to_screen(p: Vector2) -> Vector2:
+	if _custom_layout():
+		return board_origin + p * _custom_unit_px
 	if _hex_layout():
 		return board_origin + Vector2(HEX_CX * (p.x + p.y), HEX_CY * (p.x - p.y)) * _unit_px()
 	return board_origin + p * cell_px
@@ -502,6 +1070,8 @@ func _board_pt_to_screen(p: Vector2) -> Vector2:
 
 ## 屏幕 → 棋盘坐标（_board_pt_to_screen 的逆；两者必须互补，否则笔记会漂）。
 func _screen_pt_to_board(p: Vector2) -> Vector2:
+	if _custom_layout():
+		return (p - board_origin) / maxf(_custom_unit_px, 0.0001)
 	if _hex_layout():
 		var v := (p - board_origin) / maxf(_unit_px(), 0.0001)
 		var s := v.x / HEX_CX            # = x + y
@@ -513,6 +1083,8 @@ func _screen_pt_to_board(p: Vector2) -> Vector2:
 func _process(_delta: float) -> void:
 	var now_ms := Time.get_ticks_msec()
 	var dirty := false
+	# 分色雷数计数器（仅自定义盘存在；内部有脏标记，不变时直接返回）
+	_refresh_group_panel()
 	# 总开关关闭：立刻丢弃在途波浪/单格 pop 与缓存 → 下一次重绘即静止态
 	#（无收缩、无高亮残留；pop 清掉后该格 scale 回 1.0、颜色走状态色）。
 	if not _reveal_effects_enabled() and (not _ripples.is_empty() or not _pops.is_empty()):
@@ -593,6 +1165,17 @@ func _draw() -> void:
 	if session.board == null or session.board.grid == null:
 		return
 	var board: Board = session.board
+	# 自定义盘（数据驱动）：盘面分三重身份，先算一次供下面各分支复用。
+	var custom := _custom_layout()
+	# 背景（palette.background）：board_view 本身是全屏 Control（锚点 preset 15），于是直接在
+	# **自己的绘制遍**里铺一块视口大小的底色块 —— 不动 GameScreen / 场景树 / 游戏场景。
+	# 子节点（绘画层 / HUD / 底栏）在本控件之后绘制，天然覆盖其上（背景仍在下层）。
+	# 无 palette.background → 不画（保持原样，矩形关卡零变化）。
+	# ⚠️ 2026-09-22：此处原先还要求 `custom`（自定义几何盘），与 _custom_palette 的耦合同源，
+	# 于是声明了 background 的蜂窝关也画不出底色。现只以「取到了不透明色」为条件。
+	var bg := _pal_color("background", Color(0.0, 0.0, 0.0, 0.0))
+	if bg.a > 0.0:
+		draw_rect(get_viewport_rect(), bg)
 	@warning_ignore("shadowed_variable_base_class")
 	var size := board.grid.size()
 	@warning_ignore("shadowed_variable_base_class")
@@ -615,19 +1198,31 @@ func _draw() -> void:
 			if cell == null:
 				continue
 			var rect := _cell_rect(pos)
+			# 自定义盘：矩形基准换成「内容盒」——底色由多边形承担（下面的多边形填充），
+			# 矩形只用来给内容（数字/问号/旗子）定位并作为动效收缩基准。见 _custom_content_rect。
+			if custom:
+				rect = _custom_content_rect(pos)
 			# 翻开动效几何：波浪 + 单格 pop **相乘**（s_total = s_pop × s_wave）。
 			# 两者都 ≤1.0 → 零间隙下相乘只会更小、天然不可能压到邻格。关闭总闸时走原矩形。
 			var rrect: Rect2 = _reveal_rect_for(pos, rect) if effects_on else rect
 			# pop 颜色插值进度（0→1；无 pop = 1.0 = 状态色），供 _draw_cell 混色
 			var pop_e: float = _pop_progress(pos) if effects_on else 1.0
+			# 自定义盘：**多边形本体**在这里填（底色层），_draw_cell 只负责内容。
+			# 收缩比同样取自 rrect（wave/pop 既有几何）→ 两个动效状态机一行未改。
+			if custom:
+				var shrink := rrect.size.x / maxf(rect.size.x, 0.001)
+				var poly_c := _cell_polygon(pos)
+				if poly_c.size() >= 3:
+					draw_colored_polygon(scale_polygon_about(poly_c, _cell_center(pos), shrink),
+							_cell_base_color(pos, cell, pop_e))
 			# 蜂窝：六边形本体在这里填（背景层），_draw_cell 只负责内接正方形与内容。
 			# 两者同色（_cell_base_color）⇒ 正方形被六边形完全覆盖 = 恰好一个六边形。
 			# 收缩比直接取自 rrect（wave/pop 既有几何）→ 动效在蜂窝盘上照样「原地收缩」，
 			# 而**没有**改动那两个状态机的任何一行。
-			if hex:
+			elif hex:
 				var shrink := rrect.size.x / maxf(rect.size.x, 0.001)
 				draw_colored_polygon(hex_polygon_px(pos, _hex_unit_px, board_origin, shrink),
-						_cell_base_color(cell, pop_e))
+						_cell_base_color(pos, cell, pop_e))
 			_draw_cell(pos, cell, rrect, scale, font, endgame, pop_e)
 
 	# 波浪颜色脉冲（0 间隙方案：位移/放大被禁 → 颜色通道增强）
@@ -649,11 +1244,10 @@ func _draw() -> void:
 
 	# 键盘光标（2px 描边框，accent alpha 0.65，与悬停可叠加）
 	if not endgame and session.cursor.x >= 0 and SettingsManager != null and SettingsManager.keyboard_enabled:
-		# grow(-1) 与旧式「position+1 / size−2」逐像素等价（矩形路径），蜂窝则自动落在六边形格心。
-		var crect := _cell_rect(session.cursor).grow(-1.0)
+		# 与格子同形：蜂窝 = 沿六边形描边；矩形 = 原 grow(-1) 逐像素不变。
 		var col := ThemeManager.accent()
 		col.a = 0.65
-		draw_rect(crect, col, false, 2.0)
+		_draw_cell_outline(session.cursor, col, 2.0, 1.0)
 
 	if not endgame:
 		_draw_hint(scale, font)
@@ -669,10 +1263,9 @@ func _draw_reject() -> void:
 	var remain: float = float(_reject_until_ms - Time.get_ticks_msec()) / float(REJECT_FLASH_MS)
 	if remain <= 0.0:
 		return
-	var rect := _cell_rect(_reject_pos).grow(-2.0)
 	var col := ThemeManager.danger()
 	col.a = clampf(abs(sin((1.0 - remain) * TAU * 2.0)), 0.25, 1.0) * clampf(remain, 0.0, 1.0)
-	draw_rect(rect, col, false, 3.0)
+	_draw_cell_outline(_reject_pos, col, 3.0, 2.0)
 
 
 ## 提示高亮：结论格 safe=绿描边 / mine=红描边；依据线索格 accent 细描边。
@@ -690,37 +1283,40 @@ func _draw_hint(scale: float, _font: Font) -> void:
 			continue
 		# 弱提示（对标 doc10 §3.2）：只画依据线索，不画结论格 —— 玩家自己推可推格
 		if step.method != "weak":
-			var rect := _cell_rect(p).grow(-2.0)
 			var col := ThemeManager.safe() if step.state == "safe" else ThemeManager.danger()
-			draw_rect(rect, col, false, 3.0 * maxf(scale, 0.6))
+			_draw_cell_outline(p, col, 3.0 * maxf(scale, 0.6), 2.0)
 		for src in step.sources:
 			var sp: Vector2i = src
 			if not GameSession.board.grid.in_board(sp):
 				continue
-			var srect := _cell_rect(sp).grow(-1.0)
 			var scol := ThemeManager.accent()
 			scol.a = 0.8
-			draw_rect(srect, scol, false, 2.0)
+			_draw_cell_outline(sp, scol, 2.0, 1.0)
 
 
 @warning_ignore("shadowed_variable_base_class")
 @warning_ignore("unused_parameter")
 func _draw_cell(pos: Vector2i, cell: Cell, rect: Rect2, scale: float, font: Font, endgame: bool, pop_e: float = 1.0) -> void:
+	# 自定义盘：格子**底色**已由 _draw() 的多边形填充画好（poly_filled），此处只画内容——
+	# 传入的 rect 也已换成「内容盒」（见 _custom_content_rect）：若仍 draw_rect 底色，
+	# 会沿着格与格之间的缝露出一块方块（多边形不是矩形）。
+	var poly_filled := _custom_layout()
 	match cell.state:
 		Cell.State.HIDDEN:
-			draw_rect(rect, ThemeManager.cell_hidden())
+			if not poly_filled:
+				# 走 _cell_base_color ⇒ 矩形/挖洞盘也能吃到颜色分组（分色棋盘）
+				draw_rect(rect, _cell_base_color(pos, cell, pop_e))
 		Cell.State.FLAGGED:
-			_draw_flag(rect, scale)
+			_draw_flag(rect, scale, not poly_filled)
 		Cell.State.QUESTION:
-			draw_rect(rect, ThemeManager.cell_hidden())
+			if not poly_filled:
+				draw_rect(rect, _cell_base_color(pos, cell, pop_e))
 			_draw_question(rect, scale, font)
 		Cell.State.REVEALED:
 			# 单格 pop 的颜色通道：由「瞬变」改为 0.20s 内 未翻开色 → 已翻开色 插值。
 			# pop_e = sin(PI*p/2) ∈ [0,1]；无 pop（静止/未登记）时传 1.0 → 精确取状态色。
-			var base := ThemeManager.cell_revealed()
-			if pop_e < 1.0:
-				base = ThemeManager.cell_hidden().lerp(base, pop_e)
-			draw_rect(rect, base)
+			if not poly_filled:
+				draw_rect(rect, _cell_base_color(pos, cell, pop_e))
 			_draw_clue_value(cell, rect, scale, font)
 
 
@@ -755,7 +1351,9 @@ func _draw_clue_value(cell: Cell, rect: Rect2, scale: float, font: Font) -> void
 @warning_ignore("shadowed_variable_base_class")
 func _draw_single_clue(v: Variant, rect: Rect2, scale: float, font: Font) -> void:
 	var text := ""
-	var col := ThemeManager.text()
+	# 文字色：自定义盘走 palette.revealed_text（palette 只有这一个文字色 ⇒ 数字/双值/∞ 共用它；
+	# 否则数字色来自主题，压在 palette.revealed 的深底上可能糊掉）。无 palette → 主题色不变。
+	var col := _pal_color("revealed_text", ThemeManager.text())
 	if v is Array:
 		# HV 纵横分计 [正交, 对角]。防御：长度不足 2 时退化为单值，避免越界（mod 规则可能返回畸形）。
 		if (v as Array).size() >= 2:
@@ -768,7 +1366,7 @@ func _draw_single_clue(v: Variant, rect: Rect2, scale: float, font: Font) -> voi
 		text = str(v)
 		# number(n) 对 n<1 或 n>8 退化为主文本色，所以 0 与大值（异形拓扑 dist_sum / mod 规则）
 		# 都用主文本色（可读但不抢眼），不再因 v <= 12 硬上限而漏画（那会是又一种「空白格」）。
-		col = ThemeManager.number(v)
+		col = _pal_color("revealed_text", ThemeManager.number(v))
 	if text == "":
 		return
 	var fs2 := int(round(26.0 * scale))
@@ -787,18 +1385,26 @@ func _draw_single_clue(v: Variant, rect: Rect2, scale: float, font: Font) -> voi
 @warning_ignore("shadowed_variable_base_class")
 func _draw_question(rect: Rect2, scale: float, font: Font) -> void:
 	var fs := int(round(20.0 * scale))
-	draw_string(font, rect.position + Vector2(0, rect.size.y * 0.5 + fs * 0.35), "?", HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, fs, ThemeManager.text_secondary())
+	draw_string(font, rect.position + Vector2(0, rect.size.y * 0.5 + fs * 0.35), "?", HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, fs,
+			_pal_color("revealed_text", ThemeManager.text_secondary()))
 
 
 ## §8.4.8 FLAGGED：HIDDEN 底 + 旗杆 draw_rect + 三角 draw_polygon（48px 基准坐标×scale）
 @warning_ignore("shadowed_variable_base_class")
-func _draw_flag(rect: Rect2, scale: float) -> void:
-	draw_rect(rect, ThemeManager.cell_hidden())
+func _draw_flag(rect: Rect2, scale: float, with_bg: bool = true) -> void:
+	if with_bg:
+		draw_rect(rect, _cell_hidden_color())
+	# 旗杆色：自定义盘用 palette.revealed（原版深灰）——palette.flagged_tile 是浅色，
+	# 主题的 text_secondary 在深色主题下是浅色，压在浅底上会看不见；palette 无旗子专用色。
+	# 无 palette 时 _custom_palette() 为空 ⇒ 恒为主题色（逐像素不变）。
+	var pole_col := ThemeManager.text_secondary()
+	if not _custom_palette().is_empty():
+		pole_col = _pal_color("revealed", pole_col)
 	var x: float = rect.position.x
 	var y: float = rect.position.y
 	# 旗杆 Rect2(x+22, y+10, 2, 18)
 	var pole := Rect2(x + 22.0 * scale, y + 10.0 * scale, 2.0 * scale, 18.0 * scale)
-	draw_rect(pole, ThemeManager.text_secondary())
+	draw_rect(pole, pole_col)
 	# 三角 [(x+24,y+10),(x+24,y+22),(x+37,y+16)]
 	var tri := PackedVector2Array([
 		Vector2(x + 24.0 * scale, y + 10.0 * scale),
@@ -814,14 +1420,10 @@ func _draw_mines_reveal(board: Board, scale: float) -> void:
 	var exploded: Vector2i = GameSession.exploded_pos
 	var body_col := ThemeManager.mine_body()
 	for m in board.get_mine_positions():
-		var rect := _cell_rect(m)
 		if m == exploded:
-			# 引爆格高亮：蜂窝下按六边形填，方阵路径保持原 draw_rect。
-			if _hex_layout():
-				draw_colored_polygon(_cell_polygon(m), ThemeManager.danger())
-			else:
-				draw_rect(rect, ThemeManager.danger())
-		var center := rect.position + rect.size * 0.5
+			# 引爆格高亮：与格子同形（蜂窝 = 六边形填，矩形 = 原 draw_rect）
+			_draw_cell_fill(m, ThemeManager.danger())
+		var center := _cell_center(m)
 		draw_circle(center, 11.0 * scale, body_col)
 		var spike: float = 15.0 * scale
 		draw_line(center + Vector2(0, 6.0 * scale), center + Vector2(0, 6.0 * scale + spike), body_col, 1.5 * scale)
@@ -836,17 +1438,15 @@ func _draw_hover_highlight(center_pos: Vector2i, with_neighbors: bool) -> void:
 	var board: Board = GameSession.board
 	if board == null:
 		return
-	# 中心格遮罩
-	draw_rect(_cell_rect(center_pos), ThemeManager.hover_center_overlay())
+	# 中心格遮罩（与格子同形：蜂窝 = 六边形；矩形 = 原 draw_rect 逐像素不变）
+	_draw_cell_fill(center_pos, ThemeManager.hover_center_overlay())
 	if not with_neighbors:
 		return
-	# 周围 8 邻（按实际存在的邻格）
-	# 注：邻域仍按**包围盒偏移**枚举（矩形 8 邻语义），蜂窝盘上落在盘外的偏移由 in_board 过滤掉——
-	# 悬停「柔光」是纯装饰，不值得为它引入拓扑邻接（真正的邻接关系只有线索语义需要）。
-	for d in [Vector2i(0, -1), Vector2i(1, -1), Vector2i(1, 0), Vector2i(1, 1), Vector2i(0, 1), Vector2i(-1, 1), Vector2i(-1, 0), Vector2i(-1, -1)]:
-		var np: Vector2i = center_pos + d
-		if board.grid.in_board(np):
-			draw_rect(_cell_rect(np), ThemeManager.hover_neighbor_overlay())
+	# 周围邻格柔光：改走**拓扑邻域**（L5，2026-09-21 审计修复）。原实现按包围盒 8 邻偏移枚举，
+	# 蜂窝盘上会把"几何相邻但拓扑不相邻"的格点亮（与线索语义矛盾，玩家会误读相邻关系）。
+	# 矩形盘的 get_neighbors 就是 8 邻（含 in_board 过滤）⇒ 行为等价；形状盘则自动正确。
+	for np: Vector2i in board.grid.get_neighbors(center_pos):
+		_draw_cell_fill(np, ThemeManager.hover_neighbor_overlay())
 
 
 # ============ 翻开动效开关（总闸 + 波浪细项） ============
@@ -1101,7 +1701,7 @@ func _draw_wave_color_pulse() -> void:
 			continue
 		var col := glow
 		col.a = a
-		draw_rect(_cell_rect(pos), col)
+		_draw_cell_fill(pos, col)
 
 
 ## 波浪高亮描边的线宽：静止 1.0，随波浪强度 g 线性加粗到 1.0 + WAVE_LINE_GAIN。
@@ -1117,31 +1717,30 @@ func _grid_line_width(g: float) -> float:
 ## waveE=0 时精确回到 grid_line 原色 + 1.0 线宽（无残留）。抗锯齿只在被波及格开启。
 ##
 ## 蜂窝分支（二选一里的「按六边形描边」，而非「跳过」）：矩形网格线切进六边形内部会毁掉形状，
-## 而波浪高亮线宽/线色是本方案的主通道，整遍跳过等于让蜂窝盘丢掉波浪反馈。故这里逐格描
-## **六边形轮廓**（几何取自不收缩的 _cell_polygon，与填充收缩解耦 ⇒ 「线永远笔直」的不变量照旧）。
+## 而波浪高亮线宽/线色是本方案的主通道，整遍跳过等于让蜂窝盘丢掉波浪反馈。静态帧走
+## **边去重 + 斜边抗锯齿**（_draw_grid_lines_dedup：共享边只画一遍、斜边平滑），波浪帧保留
+## 逐格描边（_draw_grid_lines_per_cell：每格线色/线宽独立变化）。几何一律取自不收缩的
+## _cell_polygon，与填充收缩解耦 ⇒ 「线永远笔直」的不变量照旧。
 func _draw_grid_lines() -> void:
 	if GameSession.board == null or GameSession.board.grid == null:
 		return
 	var board: Board = GameSession.board
 	var board_size: Vector2i = board.grid.size()
-	var line := ThemeManager.grid_line()
+	var line := _outline_color()
 	var glow := _wave_glow_color()
 	var has_wave := not _ripples.is_empty() and _reveal_effects_enabled()
 	if has_wave and _ripple_cache_ms != Time.get_ticks_msec():
 		_rebuild_ripple_cache()
-	if _hex_layout():
-		for p: Vector2i in board.grid.all_positions():
-			var col := line
-			var lw := 1.0
-			if has_wave:
-				var e: Dictionary = _ripple_cache.get(p, {})
-				if not e.is_empty():
-					var g: float = float(e["g"])
-					col = line.lerp(glow, WAVE_GLOW * g)
-					lw = _grid_line_width(g)
-			var poly := _cell_polygon(p)
-			poly.append(poly[0])   # 闭合（draw_polyline 画的是折线）
-			draw_polyline(poly, col, lw, lw > 1.0)
+	var custom := _custom_layout()
+	if _hex_layout() or custom:
+		if has_wave:
+			_draw_grid_lines_per_cell(board, line, glow)
+		else:
+			_draw_grid_lines_dedup(line)
+		# 自定义盘：**矩形/蜂窝网格线整遍跳过**（它们会切进多边形内部），轮廓已由上面的
+		# 逐格多边形折线承担；随后在最上层再画花纹高亮折线（填充 → 轮廓 → 高亮）。
+		if custom:
+			_draw_custom_highlights()
 		return
 	for r in board_size.y:
 		for c in board_size.x:
@@ -1159,6 +1758,124 @@ func _draw_grid_lines() -> void:
 					lw = _grid_line_width(g)
 			# 只有被波浪波及（lw>1）时才开抗锯齿：静态帧保持原绘制路径不变。
 			draw_rect(rect, col, false, lw, lw > 1.0)
+
+
+## 波浪路径：逐格闭合折线（旧行为原样保留 —— 被波及格的线色/线宽逐格独立变化）。
+func _draw_grid_lines_per_cell(board: Board, line: Color, glow: Color) -> void:
+	for p: Vector2i in board.grid.all_positions():
+		var col := line
+		var lw := 1.0
+		var e: Dictionary = _ripple_cache.get(p, {})
+		if not e.is_empty():
+			var g: float = float(e["g"])
+			col = line.lerp(glow, WAVE_GLOW * g)
+			lw = _grid_line_width(g)
+		var poly := _cell_polygon(p)
+		if poly.size() < 3:
+			continue
+		poly.append(poly[0])   # 闭合（draw_polyline 画的是折线）
+		draw_polyline(poly, col, lw, lw > 1.0)
+
+
+## 静态帧：**边去重 + 斜边抗锯齿** 的网格线（蜂窝 + 自定义盘共用；矩形路径不走这里）。
+## 旧逐格闭合折线把每条共享边画两遍：两侧描边因落盘量化误差（≤1e-4 世界单位，落屏
+## ≤0.002px）不完全重合，偶尔错开一个像素行 → 「断线/颗粒感」。这里把全部格的边按端点
+## 归并（0.05px 容差空间哈希，远小于格间最短边 ≥8px，绝不误并），每条边恰好画一次 →
+## 线宽一致、连续。同时对斜边开抗锯齿：60° 对角线在 1px 无 AA 时逐列硬跳 2 行（台阶 =
+## 「像素感」来源），AA 后平滑；横竖边保持无 AA（整数像素下本就精确，避免 AA 羽化晕边）。
+func _draw_grid_lines_dedup(line: Color) -> void:
+	var board: Board = GameSession.board
+	if board == null or board.grid == null:
+		return
+	var reps: Array[Vector2] = []   # 归并后的顶点代表表（首见坐标为准）
+	var vmap: Dictionary = {}       # 0.05px 空间哈希格 → 顶点代表序号
+	var edges: Dictionary = {}      # "ia|ib"（ia<ib）→ 已画过
+	for p: Vector2i in board.grid.all_positions():
+		var poly := _cell_polygon(p)
+		if poly.size() < 3:
+			continue
+		var ids: Array[int] = []
+		ids.resize(poly.size())
+		for i in poly.size():
+			ids[i] = _canon_vertex(poly[i], reps, vmap)
+		for i in poly.size():
+			var ia: int = ids[i]
+			var ib: int = ids[(i + 1) % poly.size()]
+			if ia == ib:
+				continue   # 退化边（理论不出现）：跳过
+			var key := "%d|%d" % [mini(ia, ib), maxi(ia, ib)]
+			if edges.has(key):
+				continue   # 共享边：另一格已画过，只归并不重画
+			edges[key] = true
+			var a := reps[ia]
+			var b := reps[ib]
+			# 横竖边（轴对齐）无 AA：整数像素下本就 1px 精确；斜边开 AA 消除台阶。
+			var axis_aligned: bool = absf(a.y - b.y) < 0.001 or absf(a.x - b.x) < 0.001
+			draw_line(a, b, line, 1.0, not axis_aligned)
+
+
+## 顶点归并：0.05px 网格哈希 + 3×3 邻域查重，返回该顶点的代表序号。
+## 容差 ~0.05px：远大于量化残差（≤0.002px）→ 两侧共享边端点必归并；远小于格间最短边
+## （≥8px）→ 不同顶点绝不误并。首次见到的顶点以其精确坐标为代表（不做坐标修改）。
+func _canon_vertex(v: Vector2, reps: Array[Vector2], vmap: Dictionary) -> int:
+	var gx := int(floor(v.x * 20.0))
+	var gy := int(floor(v.y * 20.0))
+	for dx in range(-1, 2):
+		for dy in range(-1, 2):
+			var k := Vector2i(gx + dx, gy + dy)
+			if vmap.has(k):
+				return int(vmap[k])
+	var idx := reps.size()
+	reps.append(v)
+	vmap[Vector2i(gx, gy)] = idx
+	return idx
+
+
+# ============ 自定义盘的「雏菊链」高亮折线（花纹本体） ============
+
+## 逐格画高亮折线：按 hl 的**顶点索引顺序** moveTo(poly[hl[0]]) 然后依次 lineTo(poly[hl[i]])
+## ——开放折线、**绝不闭合**。顺序错会画出错误的图案（数据里 31 个六边形一律 (0,1,2,3)，
+## 180 个五边形分 6 种朝向 × 30 个，拼出的正是「雏菊链」）；索引越界/顶点不足则整格不画。
+## 线色 palette.tile_highlight（无 palette → 主题网格线色）。
+func _draw_custom_highlights() -> void:
+	if _custom_cells.is_empty():
+		return
+	var col := _pal_color("tile_highlight", ThemeManager.grid_line())
+	var sc := _custom_scale()
+	for key in _custom_cells:
+		var cell: Dictionary = _custom_cells[key]
+		# 索引序 → 屏幕顶点序列（越界/不足 → 空数组 = 整格不画）
+		var pts := custom_hl_points(cell["poly"], cell["hl"], sc, board_origin)
+		if pts.size() >= 2:
+			_draw_hl_polyline(pts, cell["taper"], col)
+
+
+## 高亮折线（含 taper 的分段变宽）。原版用一支**可缩放笔宽**的笔画这条开放折线；Godot 的
+## draw_polyline 只有等宽，故此处分段变宽：普通段一条 draw_line（满宽 CUSTOM_HL_W），只有
+## taper 为 true 的那一端所在段细分成 CUSTOM_HL_TAPER_STEPS 段、线宽线性过渡到 CUSTOM_HL_TAPER_W。
+## ⚠️ 简化（如实标注）：真 taper 是沿笔画切向连续收细（尖端收敛到一点），本实现是**阶梯近似**
+##    （段内等宽）；视觉差异 = 收细端有 ≤4 级台阶、末端是 CUSTOM_HL_TAPER_W(=1.0px) 的平头
+##    而不是收敛到 0。数据里 taper=(true,true) 151 格两端都收细、(true,false)/(false,true) 各 30 格收一端。
+## taper 语义：数组两端分别对应折线的首端（hl[0]）与末端（hl[last]）。
+func _draw_hl_polyline(pts: PackedVector2Array, taper: Array, col: Color) -> void:
+	var n := pts.size()
+	for i in n - 1:
+		var a: Vector2 = pts[i]
+		var b: Vector2 = pts[i + 1]
+		var w0 := CUSTOM_HL_W
+		var w1 := CUSTOM_HL_W
+		if taper.size() >= 2:
+			if i == 0 and bool(taper[0]):
+				w0 = CUSTOM_HL_TAPER_W
+			if i == n - 2 and bool(taper[1]):
+				w1 = CUSTOM_HL_TAPER_W
+		if is_equal_approx(w0, w1):
+			draw_line(a, b, col, w0, true)
+			continue
+		for k in CUSTOM_HL_TAPER_STEPS:
+			var f0 := float(k) / float(CUSTOM_HL_TAPER_STEPS)
+			var f1 := float(k + 1) / float(CUSTOM_HL_TAPER_STEPS)
+			draw_line(a.lerp(b, f0), a.lerp(b, f1), col, lerpf(w0, w1, (f0 + f1) * 0.5), true)
 
 
 # ============ 输入（§10.9；一切入口第一行检查 state == PLAYING） ============
@@ -1453,6 +2170,8 @@ func _pick(local_pos: Vector2) -> Vector2i:
 		return Vector2i(-1, -1)
 	if GameSession.board == null or GameSession.board.grid == null:
 		return Vector2i(-1, -1)
+	if _custom_layout():
+		return _pick_custom(local_pos)
 	if _hex_layout():
 		return _pick_hex(local_pos)
 	var rel := local_pos - board_origin
@@ -1483,3 +2202,19 @@ func _pick_hex(local_pos: Vector2) -> Vector2i:
 			best_d = d
 			best = p
 	return best
+
+
+## 自定义盘命中测试：**多边形包含判定**（不是「最近格心」）。为什么不用最近格心：本盘每格形状
+## 与朝向都不同（尖角五边形/六边形混排），最近格心会在尖角处把点判给邻格。
+## 211 格全扫一遍、每帧最多一次（hover）可接受；先用外接矩形（_cell_rect）粗筛，再做精确判定。
+## 多边形两两不重叠（数据已核：0 对相交）⇒ 首个命中即唯一命中，遍历序不影响结果。
+func _pick_custom(local_pos: Vector2) -> Vector2i:
+	var b: Board = GameSession.board
+	if b == null or b.grid == null:
+		return Vector2i(-1, -1)
+	for p: Vector2i in b.grid.all_positions():
+		if not _cell_rect(p).has_point(local_pos):
+			continue
+		if custom_point_in_cell(local_pos, _cell_polygon(p)):
+			return p
+	return Vector2i(-1, -1)

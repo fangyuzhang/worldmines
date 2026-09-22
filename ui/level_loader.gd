@@ -242,6 +242,20 @@ static func _validate_and_build(d: Dictionary, path: String) -> Board:
     # 构造（引擎 API = Board.new() + load_level(dict)，Step 0 第 2 项核对结论）
     var board := Board.new()
     board.load_level(d)
+    # 数据驱动的自定义多边形棋盘（T-D2）：渲染层要的两段数据挂在 **meta** 上 ——
+    # Board/GridInterface 一行不改（瓦片几何与配色是展示数据，不属于逻辑层）。
+    # 缺失/为 null 时 meta 不存在（或值非 Dictionary）⇒ 渲染层自定义分支自动关闭，
+    # 矩形/蜂窝关卡行为零变化。
+    #
+    # 几何来源：**逐关落盘**在关卡 JSON 的 custom_shapes（41/71 关已有；t488 九关全有）。
+    # 不在载入期按 style 现算几何 —— 一是与落盘口径重复（两套 unit/内切半径会打架），
+    # 二是将来变形工具产出的任意多边形本来就必须是数据。生成侧
+    # `tools/gen_style_shape_levels.gd` 负责写这份数据。
+    board.set_meta("custom_shapes", d.get("custom_shapes"))
+    board.set_meta("palette", d.get("palette"))
+    # 颜色分区（2026-09-21）：「变体 × 异形」关卡带 groups（环层分色），参数化形状
+    # （蜂窝 / 挖洞方格）没有 custom_shapes 几何，但同样要分色 + 分色雷数计数器 ⇒ 单独一条通路。
+    board.set_meta("groups", d.get("groups"))
     if board.grid == null or board.total_mines != total_mines:
         push_error("引擎构造棋盘失败: " + path)
         return null

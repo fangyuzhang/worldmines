@@ -57,3 +57,27 @@ func test_tier_text() -> void:
 func test_three_tiers_exactly() -> void:
 	assert_eq(Difficulty.PEAK_WINDOWS.keys(), ["easy", "normal", "hard"],
 		"玩家档位必须是三档（对齐 14MV2），键序即 UI 展示序")
+
+
+## v4.1 严格梯度谓词：peak≤1 与 ≥21 都不在梯度内（生成门禁 / 入库 / 库展示 三层共用判据）。
+func test_gradient_ok() -> void:
+	assert_true(Difficulty.gradient_ok({"max_complexity": 2}))
+	assert_true(Difficulty.gradient_ok({"max_complexity": 20}))
+	assert_false(Difficulty.gradient_ok({"max_complexity": 1}), "一眼盘不在梯度内（v4.1 淘汰）")
+	assert_false(Difficulty.gradient_ok({"max_complexity": 21}), "超纲不在梯度内")
+	assert_false(Difficulty.gradient_ok({}), "无画像不在梯度内")
+
+
+## 库集严格过滤（玩家可见前最后一道闸）：只留与集档位同窗的关卡。
+func test_library_filter_conforming() -> void:
+	var arr := [
+		{"difficulty_profile": {"max_complexity": 7}},   # hard ✓
+		{"difficulty_profile": {"max_complexity": 3}},   # easy ✗（挂在 hard 集里 = 假梯度）
+		{"difficulty_profile": {"max_complexity": 1}},   # 一眼盘 ✗
+		{"difficulty_profile": {}},                      # 无画像 ✗
+	]
+	var hard := LevelLibrary.filter_conforming(arr, "hard")
+	assert_eq(hard.size(), 1, "只保留峰值落在 hard 窗口的关卡")
+	assert_eq(int(hard[0]["difficulty_profile"]["max_complexity"]), 7)
+	assert_eq(LevelLibrary.filter_conforming(arr, "easy").size(), 1)
+	assert_eq(LevelLibrary.filter_conforming([], "hard").size(), 0)
