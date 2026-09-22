@@ -59,20 +59,21 @@ func _build_ui() -> void:
             hide()
             _resume()
             GameSession.restart()))
+    # 离开不再弹确认（2026-09-22 用户决策）：直接落盘 + 离开。
+    # v3.2 起这里就是「保存而非放弃」，确认框对玩家只剩打断作用（实测反馈：很烦）；
+    # HUD 直点按钮同步改掉后，整个离开路径统一为 save_now + 切场景。
     _add_button(vbox, "关卡列表", func():
-        UiConfirm.confirm_leave(get_tree().current_scene, func():
-            hide()
-            _resume()
-            # v3.2：离开对局不再删档——立即落盘当前进度（含绘画草稿），
-            # 下次进入本关/下次启动时自动恢复（存档内容自动保存）。
-            GameSession.save_now()
-            get_tree().change_scene_to_file("res://ui/level_select.tscn")))
+        hide()
+        _resume()
+        # 离开对局不删档——立即落盘当前进度（含绘画草稿），
+        # 下次进入本关/下次启动时自动恢复（存档内容自动保存）。
+        GameSession.save_now()
+        get_tree().change_scene_to_file("res://ui/level_select.tscn"))
     _add_button(vbox, "主菜单", func():
-        UiConfirm.confirm_leave(get_tree().current_scene, func():
-            hide()
-            _resume()
-            GameSession.save_now()
-            get_tree().change_scene_to_file("res://ui/main_menu.tscn")))
+        hide()
+        _resume()
+        GameSession.save_now()
+        get_tree().change_scene_to_file("res://ui/main_menu.tscn"))
 
     _apply_theme()
 

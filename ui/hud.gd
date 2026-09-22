@@ -50,15 +50,18 @@ func _ready() -> void:
     _add_button("设置", "对局内设置", func(): _open_settings())
     _add_button("重开", "重新开始本关（R）", func():
         UiConfirm.confirm_restart(self, func(): GameSession.restart()))
-    # 返回类按钮：文案互斥且语义明确（原「返回 / 返回菜单」极易误点，而离开会清掉存档）
-    _add_button("关卡列表", "放弃本局并返回关卡选择", func():
-        UiConfirm.confirm_leave(self, func():
-            SaveCoordinator.clear()  # 主动离开对局：全清（§10.7.8）
-            get_tree().change_scene_to_file("res://ui/level_select.tscn")))
-    _add_button("主菜单", "放弃本局并返回主菜单", func():
-        UiConfirm.confirm_leave(self, func():
-            SaveCoordinator.clear()  # 主动结束对局：全清（§10.7.8）
-            get_tree().change_scene_to_file("res://ui/main_menu.tscn")))
+    # 返回类按钮：**自动保存 + 直接离开**（2026-09-22 用户决策）。
+    # 原行为：弹窗确认 → 放弃进度清档——每次离开都打断玩家，且进度白打；
+    # 暂停菜单早在 v3.2 就改成了「保存并离开」（save_now），HUD 这两个直点按钮
+    # 一直没跟上（同一件事两套口径）。现统一为：save_now() 落盘当前对局
+    #（非 PLAYING 时其内部自会跳过，如终局后离开），下次进本关 / 下次启动可恢复。
+    # 文案同步去掉「放弃本局」——离开不再意味着丢进度。
+    _add_button("关卡列表", "保存进度并返回关卡选择", func():
+        GameSession.save_now()
+        get_tree().change_scene_to_file("res://ui/level_select.tscn"))
+    _add_button("主菜单", "保存进度并返回主菜单", func():
+        GameSession.save_now()
+        get_tree().change_scene_to_file("res://ui/main_menu.tscn"))
 
     GameSession.session_started.connect(_on_session_started)
     GameSession.session_restored.connect(_on_session_started)

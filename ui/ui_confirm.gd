@@ -1,9 +1,14 @@
 # ui_confirm.gd —— 二次确认弹窗统一入口
 #
-# 背景：HUD 上的「返回 / 返回菜单」与 R 键「重开」都是**立即不可撤销**的破坏性操作，
-# 且前两者原本挨在一起（文案只差两个字），误点即丢整局。
-# 统一入口保证所有危险操作的确认框外观 / 文案 / 判定口径一致
-# （R 键与 HUD 按钮共用同一套「毫无进展就免确认」的规则）。
+# 背景：R 键「重开」是**立即不可撤销**的破坏性操作（清空当前进度从头开始），
+# 需要统一外观 / 文案 / 判定口径的确认框（R 键与 HUD 重开按钮共用同一套
+# 「毫无进展就免确认」的规则）。
+#
+# 历史：本模块曾有 confirm_leave（「关卡列表 / 主菜单」的离开确认）。
+# 2026-09-22 用户决策删除——暂停菜单自 v3.2 起离开已是「保存并离开」（不丢进度），
+# HUD 直点按钮同步后，「离开」不再是破坏性操作，确认框对玩家只剩打断作用
+#（实测反馈：每次离开都弹，很烦）。离开路径现统一为 GameSession.save_now() + 切场景，
+# 见 hud.gd / pause_menu.gd；test_ui_confirm.gd 有源码级守卫防止确认框被加回来。
 class_name UiConfirm
 extends RefCounted
 
@@ -34,17 +39,6 @@ static func ask(parent: Node, text: String, ok_text: String, cancel_text: String
 		dlg.close_requested.connect(dlg.queue_free)
 	dlg.popup_centered()
 	return dlg
-
-
-## 对局进行中离开当前局。
-static func confirm_leave(parent: Node, on_ok: Callable) -> void:
-	if GameSession.state != GameSession.State.PLAYING and GameSession.state != GameSession.State.PAUSED:
-		on_ok.call()
-		return
-	var secs := int(GameSession.elapsed)
-	var tip := "当前对局尚未结束（已用时 %02d:%02d）。\n离开将放弃本局进度，确定吗？" % [
-			secs / 60, secs % 60]
-	ask(parent, tip, "离开", "取消", on_ok)
 
 
 ## 重开当前关：R 键与 HUD「重开」共用，保证两处口径一致。
