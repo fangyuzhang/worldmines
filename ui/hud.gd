@@ -44,11 +44,10 @@ func _ready() -> void:
 
     # 教程入口（2026-09-23 用户决策）：从主菜单总入口改为**上下文相关**——这里放在
     # **左上角**（紧贴「雷数」：左端唯一按钮），点击看**当前变体**的教程。
-    # `_add_button` 一律追加到 _box 末尾（右端按钮区），故此处 move_child 到索引 1。
-    # 覆盖宿主用 current_scene：HUD 本体高只有 64px，相对它铺全屏预设只会盖住顶栏。
-    var _tut_btn: Button = _add_button("教程", "查看当前变体的教程", func():
-        TutorialOverlayScript.show_for(get_tree().current_scene, GameSession.current_variant_id()))
-    _box.move_child(_tut_btn, 1)
+    # `_add_button` 一律追加到 _box 末尾（右端按钮区），故按「雷数」的相对位置回插
+    # （不写死索引 1：将来雷数前面再加元素时，教程按钮不会漂到别处去）。
+    var _tut_btn: Button = _add_button("教程", "查看当前变体的教程", func(): _open_tutorial())
+    _box.move_child(_tut_btn, _mines_label.get_index() + 1)
 
     _time_label = Label.new()
     _time_label.add_theme_font_size_override("font_size", 28)
@@ -87,6 +86,42 @@ func _add_button(text: String, tip: String, on_pressed: Callable) -> Button:
     b.pressed.connect(on_pressed)
     _box.add_child(b)
     return b
+
+
+## 打开「当前变体」的教程（对局内入口，2026-09-23）。
+##
+## 与「暂停」按钮的区别：这里是**静默暂停**——玩家读规则时计时不该继续空转，
+## 但不弹暂停面板（要的是教程，不是暂停菜单）。
+##
+## 依赖倒置：覆盖层保持通用（不认识对局状态），暂停/恢复由 HUD 负责；恢复挂在
+## 覆盖层的 tree_exited 上——用户按 ESC 还是点「关闭」都走同一条路，不会漏恢复。
+## 连点按钮时 show_for 复用已有覆盖层：那时 was_playing 已经是 false（状态已 PAUSED），
+## 不会重复暂停；先连接的那次回调在释放时按条件只恢复一次。
+func _open_tutorial() -> void:
+    var was_playing: bool = GameSession.state == GameSession.State.PLAYING
+    if was_playing:
+        GameSession.set_paused(true)
+    var ov: Control = TutorialOverlayScript.show_for(_overlay_host(),
+            GameSession.current_variant_id())
+    if ov == null:
+        if was_playing:
+            GameSession.set_paused(false)  # 覆盖层没建起来，别把对局留在暂停里
+        return
+    ov.tree_exited.connect(func():
+        if was_playing and GameSession.state == GameSession.State.PAUSED:
+            GameSession.set_paused(false))
+
+
+## 教程覆盖层的宿主：必须是**能铺满全屏**的 Control。
+## 优先 `current_scene`（board_view 场景根）——HUD 本体只有 64px 高，相对它铺全屏预设
+## 只会盖住顶栏。极端情况（current_scene 为空，如某些测试宿主）退回 HUD 的父节点，
+## 保证入口在任何宿主下都能弹出，而不是静默什么也不发生。
+func _overlay_host() -> Node:
+    var scene := get_tree().current_scene
+    if scene != null:
+        return scene
+    var parent := get_parent()
+    return parent if parent != null else self
 
 
 ## 暂停交给 board_view（它持有暂停面板），避免在 HUD 里重复维护一份 UI。

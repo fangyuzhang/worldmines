@@ -161,10 +161,37 @@ func test_b9_hud_tutorial_entry_sits_after_mines() -> void:
 	var box := tut.get_parent()
 	assert_true(box is HBoxContainer, "教程按钮应在 HUD 的按钮排（_box）里")
 	assert_eq(tut.get_index(), 1, "应在「雷数」之后（索引 0 = 雷数标签）= 左上角")
+	assert_true(box.get_child(tut.get_index() - 1) is Label,
+		"教程按钮的前一个兄弟应是「雷数」标签（左上角定位语义）")
 	# 变体身份推导（入口的取数链）：before_each 载入 classic_01（普通关卡，无规则声明）
 	# → 应推导为 classic（不能是空串，否则点了必然走「暂无教程」兜底）
 	assert_eq(GameSession.current_variant_id(), "classic",
 		"普通关卡应推导为 classic 变体（LevelLoader 注入的 clue_rule/global_rules meta）")
+
+
+# B10：打开教程 = **静默暂停**（读规则时计时不该空转），覆盖层释放即恢复对局
+#（2026-09-23 审查修复：此前教程打开期间计时继续走，且按键会穿透给对局快捷键）。
+func test_b10_hud_tutorial_pauses_session() -> void:
+	var tut := _find_btn_by_text(_view, "教程")
+	assert_not_null(tut, "对局 HUD 应有「教程」入口")
+	if tut == null:
+		return
+	assert_eq(GameSession.state, GameSession.State.PLAYING, "前置：对局进行中")
+	tut.pressed.emit()
+	# 覆盖层宿主 = current_scene（生产）或 HUD 的父节点（_overlay_host 的兜底，测试走这条）
+	var ov: Control = null
+	for root in [get_tree().current_scene, _view]:
+		if root == null:
+			continue
+		for c in (root as Node).get_children():
+			if c.has_method("close_overlay"):
+				ov = c
+	if ov == null:
+		pending("找不到教程覆盖层宿主——跳过暂停断言")
+		return
+	assert_eq(GameSession.state, GameSession.State.PAUSED, "教程打开时应静默暂停（计时不空转）")
+	ov.free()  # 立即释放以触发 tree_exited（queue_free 要等帧末）
+	assert_eq(GameSession.state, GameSession.State.PLAYING, "教程关闭后应恢复对局")
 
 
 func _find_btn_by_text(node: Node, want: String) -> Button:

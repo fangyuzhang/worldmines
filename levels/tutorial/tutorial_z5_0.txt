@@ -1,7 +1,7 @@
 q	{@clue}1	q	q	q
 F	q	q	q	q
 F	F	q	q	q
-F	F	{@!}5	q	q
+F	F	F	{@!}3	q
 F	F	F	F	q
 ? 等差行：从上往下，每一行的雷数依次构成一个等差数列（相邻两行的雷数差始终相同）。
 

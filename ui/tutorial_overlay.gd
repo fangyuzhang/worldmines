@@ -166,15 +166,21 @@ func _build_ui() -> void:
 ##
 ## 该变体没有教程页时传空数组：覆盖层显示「暂无教程内容」（已有兜底，
 ## 入口不会点了没反应）。内容覆盖清单见 levels/tutorial/。
-static func show_for(parent: Node, variant_id: String) -> void:
+static func show_for(parent: Node, variant_id: String) -> Control:
 	if parent == null or not parent.is_inside_tree():
-		return
+		return null
+	# 防重入：同一宿主已有一层教程时直接复用它（连点「教程」会叠出多层，
+	# 关掉一层还剩一层——用户以为按钮失灵）。
+	for c in parent.get_children():
+		if c.has_method("close_overlay") and c.has_method("open"):
+			return c as Control
 	var pages: Array = TutorialData.pages_for(variant_id) if variant_id != "" else []
 	# 运行期 load 自身（static 上下文里 preload 自引用有循环风险；且本文件刻意无 class_name）
 	var ov: Control = load("res://ui/tutorial_overlay.gd").new()
 	parent.add_child(ov)
 	ov.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ov.call("open", pages, true)
+	return ov
 
 
 ## 打开教程。pages 为空时列出全部教程页。
@@ -226,12 +232,25 @@ func _refresh() -> void:
 		_next_btn.disabled = _index >= _pages.size() - 1
 
 
-func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and (event as InputEventKey).pressed:
-		var k := (event as InputEventKey).keycode
-		if k == KEY_ESCAPE:
-			close_overlay()
-		elif k == KEY_LEFT:
-			_go(-1)
-		elif k == KEY_RIGHT:
-			_go(1)
+## 输入：**模态**处理（2026-09-23 审查修复的真 bug）。
+##
+## 为什么用 `_input` 而不是 `_unhandled_input`：`board_view._unhandled_key_input` 在
+## `_unhandled_input` **之前**执行——旧实现放在 unhandled 段，对局中按 ESC 会**先被
+## board_view 吃掉**（弹出暂停菜单），按 R 直接重开、按 P 进绘画模式、方向键移动光标，
+## 教程才收到同一个事件。改到 `_input`（早于 GUI 与全部 unhandled 阶段）并显式
+## `set_input_as_handled()`：教程是模态覆盖层，打开期间按键不再穿透给对局。
+##
+## 只拦**按下的键盘事件**：鼠标事件不消费（鼠标穿透由遮罩的 MOUSE_FILTER_STOP 负责，
+## 消费掉会连自己面板里的「上一步/下一步/关闭」按钮都点不动）。
+func _input(event: InputEvent) -> void:
+	if not (event is InputEventKey) or not (event as InputEventKey).pressed:
+		return
+	var k := (event as InputEventKey).keycode
+	if k == KEY_ESCAPE:
+		close_overlay()
+	elif k == KEY_LEFT:
+		_go(-1)
+	elif k == KEY_RIGHT:
+		_go(1)
+	# 其余键同样不放行（翻开/插旗/重开等对局快捷键在教程期间应完全静默）
+	get_viewport().set_input_as_handled()

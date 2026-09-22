@@ -164,12 +164,20 @@ static func load_page(id: String) -> Dictionary:
 
 
 ## 取某个规则组合下的全部页 id（`tutorial_<组合>_<序号>`），按序号数值排序。
+##
+## 序号必须是纯数字（2026-09-23 审查加固）：只做前缀匹配的话，`pages_for("s1")` 会把
+## 将来的混合档页 `tutorial_s1_o1_0` 一并匹配进来（单席教程里混进混合档内容）。
+## 现在混合档还没有教程页，但名单一旦增长这个误匹配是静默的，先堵上。
 static func pages_for(combo: String) -> Array[String]:
 	var prefix := "tutorial_%s_" % combo
 	var out: Array[String] = []
 	for id in list_ids():
-		if id.begins_with(prefix):
-			out.append(id)
+		if not id.begins_with(prefix):
+			continue
+		var seq := id.substr(prefix.length())
+		if not seq.is_valid_int():
+			continue
+		out.append(id)
 	out.sort_custom(func(a: String, b: String) -> bool:
 		return int(a.substr(prefix.length())) < int(b.substr(prefix.length())))
 	return out
