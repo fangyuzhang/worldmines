@@ -29,7 +29,8 @@ const GEN_TIMEOUT_MS := 60000
 ## 普通档（easy）的窗口是 peak 2~3，peak 0~1 是「纯一眼盘」**不进任何档**，
 ## 那样产出的关在选关页/关卡库里没有档位归属、等于白产。
 ## （gen_style_shape_levels 用 1 是因为它那批关还要过自己的风格闸门；本族直接对齐档位。）
-const MIN_PEAK := 2
+# 峰值下限 = Difficulty.PEAK_WINDOWS 的 easy 下沿（**直接引用规范源**；见 gen_geo_levels 同名说明）。
+const MIN_PEAK := Difficulty.PEAK_WINDOWS["easy"]["min"]
 ## 雷密度：对标作品实测各关 36~39%，取 0.30 留一点构造余地。
 const MINE_RATIO := 0.30
 

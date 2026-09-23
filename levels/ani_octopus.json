@@ -1,6 +1,6 @@
 {
   "clue_rule": "classic",
-  "desc": "11×11 章鱼（半圆头 + 5 条触手）",
+  "desc": "11 列 × 10 行章鱼（半圆头 + 触手，60 格）",
   "difficulty_profile": {
     "clue_count": 24,
     "clue_ratio": 0.46,

@@ -487,7 +487,7 @@ const SPECS: Array = [
 		#  本 SPEC 与产物严格对齐（否则批量生成会因本关失败而整批不提交，见 gen_shape_levels.gd 的
 		#  「failures > 0 ⇒ 整批不提交」）。高分辨率重设计（减腿/加粗）是后续独立任务。
 		"file": "ani_octopus.json", "kind": "mask", "name": "章鱼 · 行列凸",
-		"desc": "11×11 章鱼（半圆头 + 5 条触手）",
+		"desc": "11 列 × 10 行章鱼（半圆头 + 触手，60 格）",
 		"style": "holed_grid",
 		"mask": [
 			"....###....",

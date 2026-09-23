@@ -761,7 +761,12 @@ func _initialize() -> void:
 							and (u_peak_max < _peak_window.x or u_peak_min > _peak_window.y):
 						break
 					continue
+				# 2026-09-23 审计：无窗口参数时走旧标量口径 —— 它会产出 intro（旧四档之一），
+				# 而下游 import_batch_to_lib 只认 easy/normal/hard，intro 会被静默丢弃。
+				# 这里保留旧模式（core/difficulty.gd 明确把 intro 留作回退路径），但把风险显式化。
 				var tier := Difficulty.tier_of_peak(peak) if _peak_window.x >= 0 else Difficulty.tier_of(diff)
+				if tier == "intro":
+					push_warning("%s：旧标量口径产出 intro 档 —— 下游导入工具不接收该档，本关不会入库" % str(combo.get("id", "?")))
 				if tier == "":
 					u_tier += 1
 					max_diff_seen = maxf(max_diff_seen, diff)

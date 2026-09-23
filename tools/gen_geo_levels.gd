@@ -32,7 +32,8 @@ const MAX_MINES_BUMP := 3
 const GEN_TIMEOUT_MS := 60000
 ## 峰值下限 = 2（= core/difficulty.gd 普通档下限）。峰值 0~1 的「一眼盘」不进任何档，
 ## 产出来在选关页/库里没有档位归属，等于白产。
-const MIN_PEAK := 2
+# 峰值下限 = Difficulty.PEAK_WINDOWS 的 easy 下沿（**直接引用规范源**，2026-09-23 审计）。
+const MIN_PEAK := Difficulty.PEAK_WINDOWS["easy"]["min"]
 
 ## 雷密度按族给：邻域越小（度越低）信息越稀，需要更低的雷密度才留得出可推的空间。
 ## 三角网格度 3、环盘最内环度 3 —— 都用 0.24；其余 0.28。
@@ -292,8 +293,8 @@ func _group_of(pos: Vector2i, kind: String, spec: Dictionary, mid: Vector2i,
 		var nr: int = (spec["sectors"] as Array).size()
 		return "RING_%d" % clampi(int(float(pos.y) / maxf(float(nr), 1.0) * 3.0), 0, 2)
 	# 其余族：到格心集合质心的 Chebyshev 距离，按该盘实测的最大圈层三等分。
-	# （早先写成「除以 cols/rows」的版本在行数少时会把所有格算成第 0 带 —— 实测 tri_01
-	#   57 格全落 RING_0，分色计数器只有一个色块。改成按实测范围归一才稳定。）
+	# （早先写成「除以 cols/rows」的版本在行数少时会把所有格算成第 0 带 —— 当时实测
+	#   整盘全落 RING_0，分色计数器只有一个色块。改成按实测范围归一才稳定。）
 	var d := maxi(absi(pos.x - mid.x), absi(pos.y - mid.y))
 	var band := 0 if max_ring <= 0 else int(float(d) / float(max_ring + 1) * 3.0)
 	return "RING_%d" % clampi(band, 0, 2)

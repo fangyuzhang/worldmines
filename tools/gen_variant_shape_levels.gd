@@ -148,7 +148,8 @@ func _gen_one(c: Dictionary) -> bool:
 		return false
 	topo = AdjacencyGrid.normalized(topo)
 	var n := topo.cell_count()
-	var mines := maxi(1, int(round(float(n) * 0.3)))   # 与探针同口径（32 格→9 雷，19 格→5 雷）
+	var mines := maxi(1, int(round(float(n) * 0.3)))   # round 口径（32 格→10 雷，19 格→6 雷）。注意 tools/probe_shape_variants.gd 用的是
+	# int 截断（→9/5），两边对不上时以本文件为准（产物按 round 落盘）。
 	var size := topo.size()
 	var shape_cn := "挖洞" if shape == SHAPE_HOLED else "蜂窝"
 

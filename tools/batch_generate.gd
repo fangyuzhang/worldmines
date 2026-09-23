@@ -87,11 +87,11 @@ func _initialize() -> void:
 			print("[seed %d] 失败（%.1fs）" % [seed, dt])
 			continue
 		var dp: Dictionary = level.get("difficulty_profile", {})
-		var diff := float(dp.get("difficulty", 0.0))
-		# v4.0：档位按峰值定（回退旧标量口径以兼容存量产物）
+		# v4.0：档位按峰值定。2026-09-23 审计：**删掉旧标量回退** —— 标量口径的
+		# Difficulty.tier_of() 会产出 intro（旧四档之一），而下游
+		# tools/import_batch_to_lib.gd 只认 easy/normal/hard ⇒ intro 被静默丢弃
+		#（整批内容凭空少掉且无红灯）。画像缺失即硬失败，交给下面的 fail 分支计数。
 		var tier := Difficulty.tier_of_profile(dp)
-		if tier == "":
-			tier = Difficulty.tier_of(diff)
 		if tier == "":
 			_stats["fail"] += 1
 			print("[seed %d] 无档位（%.1fs）" % [seed, dt])

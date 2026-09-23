@@ -65,7 +65,8 @@ const PALETTE_BASE := {
 ##   kind     : "grid" / "hex" / "t488"（t488 用 size）
 ##   taper/persp/arch : 盘面形变（见文件头）
 ##   spiral   : 度/环（逐格旋转；正值逆时针）
-##   shrink   : 尺寸因子（默认 0.95；>1 = 叠瓦）
+##   shrink   : 尺寸因子（默认 1.0 = 不留缝；<1 会引入**缝**，见文件头 ③ 与常量区的
+##               禁止说明；>1 = 叠瓦）
 ##   rot/scale/xf/aspect : 整体线性变换（一次性作用于所有格）
 ##   colors   : 两色组名；pattern: rings/checker/stripes/quad
 ##   globals  : S/Z 轴约束 id（缺省 = 纯 classic）
