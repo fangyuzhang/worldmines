@@ -10145,42 +10145,8 @@
     ]
   },
   "palette": {
+    "theme": "ORANGE",
     "texture": "weave",
-    "background": [
-      20,
-      0,
-      35
-    ],
-    "tile": [
-      127,
-      127,
-      127
-    ],
-    "tile_border": [
-      200,
-      200,
-      200
-    ],
-    "tile_highlight": [
-      255,
-      255,
-      255
-    ],
-    "flagged_tile": [
-      230,
-      230,
-      230
-    ],
-    "revealed": [
-      51,
-      51,
-      51
-    ],
-    "revealed_text": [
-      255,
-      255,
-      255
-    ],
     "groups": {
       "BLUE": "BLUE",
       "INDIGO_DARK": [

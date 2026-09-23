@@ -814,17 +814,8 @@
   ],
   "name": "蜂窝 09 · 斜巢",
   "palette": {
+    "theme": "RED",
     "texture": "comb",
-    "background": [
-      20,
-      0,
-      35
-    ],
-    "flagged_tile": [
-      230,
-      230,
-      230
-    ],
     "groups": {
       "VIOLET": [
         144,
@@ -836,32 +827,7 @@
         210,
         0
       ]
-    },
-    "revealed": [
-      51,
-      51,
-      51
-    ],
-    "revealed_text": [
-      255,
-      255,
-      255
-    ],
-    "tile": [
-      127,
-      127,
-      127
-    ],
-    "tile_border": [
-      200,
-      200,
-      200
-    ],
-    "tile_highlight": [
-      255,
-      255,
-      255
-    ]
+    }
   },
   "revealed": [
     {

@@ -55,6 +55,9 @@ const MAX_TRIES := 12         # 换 seed 次数
 const MAX_MINES_BUMP := 3
 ## 纹理徽记规则源（palette.texture：变体轴 / 形状族的唯一映射表）。
 const TextureMarks := preload("res://tools/texture_marks.gd")
+## 主题配色规则源（palette.theme）。2026-09-24 接入：本族是变体关，
+## theme 缺失时整族退化成同一套灰紫底盘（这正是盘点时发现的缺口）。
+const ThemeMarks := preload("res://tools/theme_marks.gd")
 
 ## 单关**累计**生成时间上限（看门狗）。2026-09-23 审计 #4 补齐，与 gen_shape_levels.gd 同口径。
 ## 理由：CP-SAT 的 max_time_in_seconds 只约束求解阶段，实测 >100 格 + 变体规则时 Solve()
@@ -119,18 +122,24 @@ const HOLES_6X6: Array = [
 const HOLES_7X7: Array = [
 	Vector2i(3, 3), Vector2i(4, 3), Vector2i(3, 4), Vector2i(4, 4)]
 
-## 规格：规则 × 形状。rule_name 来自 ui/codex.gd 的官方中文名（S/Z 轴席位）。
+## 规格：规则 × 形状。name **必须逐字等于** `VariantCatalog.display_name(id)`
+## （即变体 Mod 的 describe()["name"]，见 ui/variant_catalog.gd:153 与 demo/mods/*/entry.gd）。
+##
+## ⚠️ 这里曾经写的是**旧昵称**（不行/稳稳/散散/层层/连排/偶偶/块块/步步），而选关页的变体卡
+## 显示官方名（局部禁形/重心/无环/洋葱/行列凸/度偶数/分量数 K/相邻行锁）——同一屏两套叫法，
+## 玩家会以为「局部禁形」和「局部禁形」是两个东西。2026-09-24 交叉验证发现 83 处不一致后统一。
+## 门禁：test/unit/test_level_naming_contract.gd 会校验关卡名后缀 == display_name。
 const RULES: Array = [
-	{"id": "s1", "name": "不行", "desc": "S1「不行」：禁止几种局部摆法"},
-	{"id": "s2", "name": "稳稳", "desc": "S2「稳稳」：结构约束"},
-	{"id": "s3", "name": "散散", "desc": "S3「散散」：结构约束"},
-	{"id": "s4", "name": "层层", "desc": "S4「层层」：结构约束（仅蜂窝）"},
-	{"id": "s5", "name": "连排", "desc": "S5「连排」：结构约束"},
-	{"id": "s6", "name": "偶偶", "desc": "S6「偶偶」：结构约束（仅蜂窝）"},
-	{"id": "s7", "name": "块块", "desc": "S7「块块」：结构约束"},
-	{"id": "z2", "name": "步步", "desc": "Z2「步步」：逐行增减"},
+	{"id": "s1", "name": "局部禁形", "desc": "S1「局部禁形」：禁止几种局部摆法"},
+	{"id": "s2", "name": "重心", "desc": "S2「重心」：结构约束"},
+	{"id": "s3", "name": "无环", "desc": "S3「无环」：结构约束"},
+	{"id": "s4", "name": "洋葱", "desc": "S4「洋葱」：结构约束（仅蜂窝）"},
+	{"id": "s5", "name": "行列凸", "desc": "S5「行列凸」：结构约束"},
+	{"id": "s6", "name": "度偶数", "desc": "S6「度偶数」：结构约束（仅蜂窝）"},
+	{"id": "s7", "name": "分量数 K", "desc": "S7「分量数 K」：结构约束"},
+	{"id": "z2", "name": "相邻行锁", "desc": "Z2「相邻行锁」：逐行增减"},
 	{"id": "z3", "name": "四象", "desc": "Z3「四象」：四象限雷数相等（偶数盘须雷数 ≡0 mod 4）"},
-	{"id": "dt", "name": "骨牌", "desc": "骨牌：相邻成对"},
+	{"id": "dt", "name": "骨牌边界", "desc": "骨牌：相邻成对"},
 ]
 ## 旧表（无参数模式）的规则序列：**不含 z3**——z3 于 2026-09-23 定向模式加入规则池
 ## （异形页的 z3 此前只有 ani_web 一关、三档缺口大）。把它放进旧表会改变「无参数 =
@@ -164,7 +173,7 @@ var _started := false
 ## 无参数 = 既往 16 关固定表（默认值全空/false 即走老路径）。
 var _ARGS: Dictionary = {
 	"tier": "", "rules": [], "shapes": [], "count": 1, "seed0": 0, "idx0": 1,
-	"probe": false, "seeds": 12, "mines": -1,
+	"probe": false, "seeds": 12, "mines": -1, "isolate": false,
 }
 
 
@@ -174,6 +183,22 @@ var _ARGS: Dictionary = {
 ## 在那里跑只能看到 9 条内置规则 ⇒ generate_with_rules 解析规则失败、**静默返回空**
 ## （表现：48 次尝试全空、peak=-1，极易误判成"该组合数学不可行"）。
 ## 对照：gen_shape_levels.gd 在 _initialize 里跑没事，因为它只用内置 classic。
+## ==== 进程隔离（2026-09-24）====
+## 为什么需要：CP-SAT 的 max_time_in_seconds 只约束**求解**阶段，且 OR-Tools **不提供中止
+## 接口**（求解线程无法被安全强制终止）。实测大网格 + 变体规则时单次 Solve() 会长期不返回
+## —— 进程 CPU 近 0、无输出，从外部与死锁无法区分。
+## 本工具原有的**看门狗只在两次调用之间**检查，对「单次 Solve 挂死」无能为力
+## （实测 hard 档在 holed7 上就是这么挂住的，只能手动杀进程）。
+## 隔离做法：每关起一个 headless 子进程生成，父进程轮询完成标记，超时直接 OS.kill。
+##
+## 取舍（如实说明）：子进程各自提交，放弃了原先「全批通过才统一提交」的**批次**原子性；
+## 但每关仍是「暂存 → 自校验 → 原子转正」，**单关级别**依旧不会留半成品。
+## 子进程崩溃/被杀时该关不落盘，父进程计入失败 —— 这正是我们要的（失败而非挂死）。
+const CHILD_TIMEOUT_MS := 300000      # 单关子进程上限（5 分钟）
+const CHILD_POLL_MS := 250
+const CHILD_WORK_DIR := "user://_child_work"
+
+
 func _run() -> void:
 	_args_parse()
 	print("=== 变体 × 异形 关卡生成 ===")
@@ -196,8 +221,20 @@ func _run() -> void:
 		print("  定向档位模式：%d 关（目标档 %s；验收 = 峰值落窗口 %s）" % [
 			combos.size(), str(_ARGS["tier"]), _windows_text()])
 	var t_all := Time.get_ticks_msec()
+	var isolate := bool(_ARGS["isolate"])
+	if isolate:
+		print("  ** 进程隔离已开启：每关独立子进程 + %d 秒强杀（防 CP-SAT 单次 Solve 挂死）**" % [
+			CHILD_TIMEOUT_MS / 1000])
 	for c: Dictionary in combos:
-		if not _gen_one(c):
+		var ok := false
+		if isolate:
+			var code := _run_isolated(c)
+			ok = code == 0
+			if code == 2:
+				print("  !! %s：超时强杀（该组合在此规模下超出求解器可行域）" % str(c["file"]))
+		else:
+			ok = _gen_one(c)
+		if not ok:
 			_fail += 1
 		else:
 			_ok += 1
@@ -404,13 +441,15 @@ func _gen_one(c: Dictionary) -> bool:
 	level["desc"] = "%s（%s %d 格）" % [str(c["desc"]), shape_cn, n]
 	level["shape_kind"] = "蜂窝盘" if str(spec["kind"]) == SHAPE_HEX else "挖洞方格"
 	level["groups"] = _ring_groups(topo)
-	level["palette"] = _palette()
 	# 纹理徽记（2026-09-23 审计续）：变体关按变体轴解析（规则源 tools/texture_marks.gd）。
 	var _tm_gl: Array = level.get("global_rules", [])
-	if not _tm_gl.is_empty():
-		var _tm := TextureMarks.resolve("", str(_tm_gl[0]), "")
-		if _tm != "":
-			level["palette"]["texture"] = _tm
+	var _tm_variant := str(_tm_gl[0]) if not _tm_gl.is_empty() else ""
+	# 主题配色（2026-09-24）：本族是变体关，theme 尤其关键（没有它整族都是同一套灰紫）。
+	# apply() 删掉七个手写基础键（否则 theme 被逐键短路）并保留 groups。
+	level["palette"] = ThemeMarks.apply(_palette(), "", _tm_variant, "")
+	var _tm := TextureMarks.resolve("", _tm_variant, "")
+	if _tm != "":
+		level["palette"]["texture"] = _tm
 
 	# 2026-09-23 审计修复：先写暂存区、校验通过才原子转正。原实现直接覆盖正式文件、
 	# 校验失败再 remove —— 盘上原有的好文件被「覆盖后删除」，净结果永久丢失。
@@ -510,6 +549,9 @@ func _args_parse() -> void:
 				_ARGS["idx0"] = maxi(1, int(v))
 			"probe":
 				_ARGS["probe"] = true
+			"isolate":
+				# 进程隔离：每关起独立子进程生成，超时强杀（防 CP-SAT 单次 Solve 挂死）
+				_ARGS["isolate"] = true
 			"seeds":
 				_ARGS["seeds"] = maxi(1, int(v))
 			"mines":
@@ -520,6 +562,76 @@ func _args_parse() -> void:
 	_ARGS["shapes"] = shapes
 	if int(_ARGS["seed0"]) <= 0:
 		_ARGS["seed0"] = TIER_SEED0_DEFAULT
+
+
+## 进程隔离：把**一关**放进独立子进程生成，父进程轮询完成标记，超时强杀。
+## 返回 0=成功 / 1=生成失败 / 2=超时被杀。
+## 规格通过 JSON 文件传递（不靠命令行重放 --tier 等参数：子进程的参数表与父进程不同源，
+## 重放会拿到不一样的 combos —— 实测踩过这类"父说 A 子做 B"的坑）。
+func _run_isolated(c: Dictionary) -> int:
+	var file := str(c["file"])
+	DirAccess.make_dir_recursive_absolute(CHILD_WORK_DIR)
+	var spec_path := "%s/%s.spec.json" % [CHILD_WORK_DIR, file]
+	var marker := "%s/%s.done" % [CHILD_WORK_DIR, file]
+	var sf := FileAccess.open(spec_path, FileAccess.WRITE)
+	if sf == null:
+		push_error("%s: 无法写子进程规格 %s" % [file, spec_path])
+		return 1
+	sf.store_string(JSON.stringify(c))
+	sf.close()
+	if FileAccess.file_exists(marker):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(marker))
+	var pid := OS.create_process(OS.get_executable_path(), PackedStringArray([
+		"--headless", "--path", ProjectSettings.globalize_path("res://"),
+		"-s", "res://tools/gen_variant_shape_levels.gd",
+		"--", "child", spec_path, marker,
+	]))
+	if pid <= 0:
+		push_error("%s: 子进程启动失败" % file)
+		return 1
+	var waited := 0
+	while waited < CHILD_TIMEOUT_MS:
+		OS.delay_msec(CHILD_POLL_MS)
+		waited += CHILD_POLL_MS
+		if FileAccess.file_exists(marker):
+			var f := FileAccess.open(marker, FileAccess.READ)
+			var code := 1
+			if f != null:
+				code = int(str(f.get_as_text()).strip_edges())
+				f.close()
+			return code
+	if OS.is_process_running(pid):
+		OS.kill(pid)
+	push_error("%s: 子进程超过 %d 秒未完成 —— 已强杀（CP-SAT 单次 Solve 无中止接口）" % [
+		file, CHILD_TIMEOUT_MS / 1000])
+	return 2
+
+
+## 子进程模式：`-- child <spec.json> <marker>` —— 只生成规格里的那一关，把退出码写进 marker。
+func _run_child_mode() -> void:
+	var a := OS.get_cmdline_user_args()
+	if a.size() < 3:
+		push_error("child 模式用法：-- child <spec.json> <marker>")
+		_request_exit(2)
+		return
+	var spec_file := FileAccess.open(str(a[1]), FileAccess.READ)
+	if spec_file == null:
+		push_error("child: 读不到规格 %s" % str(a[1]))
+		_request_exit(2)
+		return
+	var parsed: Variant = JSON.parse_string(spec_file.get_as_text())
+	spec_file.close()
+	var code := 1
+	if parsed is Dictionary:
+		var c: Dictionary = parsed
+		code = 0 if _gen_one(c) else 1
+	else:
+		push_error("child: 规格不是字典 %s" % str(a[1]))
+	var mf := FileAccess.open(str(a[2]), FileAccess.WRITE)
+	if mf != null:
+		mf.store_string(str(code))
+		mf.close()
+	_request_exit(code)
 
 
 ## 只探不产（决策用）：对（规则 × 形状）在固定雷数下扫 seed，打印每个 seed 的峰值与各档
@@ -651,7 +763,14 @@ func _load_level(path: String) -> Board:
 func _process(_delta: float) -> bool:
 	if not _started:
 		_started = true
-		_run()          # autoload（含 mod 规则装配）此刻已就绪
+		# autoload（含 mod 规则装配）此刻已就绪。
+		# child 模式 = 进程隔离的**子进程侧**：命令行形如 `-- child <spec.json> <marker>`，
+		# 只生成一关、写完成标记、退出。首参数不是 child 就走正常批次流程。
+		var ca := OS.get_cmdline_user_args()
+		if ca.size() >= 1 and str(ca[0]) == "child":
+			_run_child_mode()
+		else:
+			_run()
 		return false
 	if not _exit_pending:
 		return false

@@ -180,8 +180,8 @@
   ],
   "name": "蛛网 · 四象",
   "palette": {
-    "texture": "trail",
-    "theme": "GREY"
+    "texture": "quad",
+    "theme": "CYAN"
   },
   "revealed": [
     {

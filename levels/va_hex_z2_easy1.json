@@ -1,6 +1,6 @@
 {
   "clue_rule": "classic",
-  "desc": "Z2「步步」：逐行增减（蜂窝 19 格）",
+  "desc": "Z2「相邻行锁」：逐行增减（蜂窝 19 格）",
   "difficulty_profile": {
     "clue_count": 2,
     "clue_ratio": 0.15,
@@ -82,18 +82,9 @@
       "r": 3
     }
   ],
-  "name": "蜂窝 · 步步",
+  "name": "蜂窝 · 相邻行锁",
   "palette": {
-    "background": [
-      20,
-      0,
-      35
-    ],
-    "flagged_tile": [
-      230,
-      230,
-      230
-    ],
+    "theme": "GREY",
     "groups": {
       "RING_0": [
         82,
@@ -111,32 +102,7 @@
         87
       ]
     },
-    "revealed": [
-      51,
-      51,
-      51
-    ],
-    "revealed_text": [
-      255,
-      255,
-      255
-    ],
-    "texture": "trail",
-    "tile": [
-      127,
-      127,
-      127
-    ],
-    "tile_border": [
-      200,
-      200,
-      200
-    ],
-    "tile_highlight": [
-      255,
-      255,
-      255
-    ]
+    "texture": "trail"
   },
   "revealed": [
     {

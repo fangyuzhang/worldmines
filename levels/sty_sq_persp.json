@@ -1226,17 +1226,8 @@
   ],
   "name": "方格 08 · 透视",
   "palette": {
+    "theme": "BLUE",
     "texture": "weave",
-    "background": [
-      20,
-      0,
-      35
-    ],
-    "flagged_tile": [
-      230,
-      230,
-      230
-    ],
     "groups": {
       "GREEN": [
         112,
@@ -1248,32 +1239,7 @@
         0,
         234
       ]
-    },
-    "revealed": [
-      51,
-      51,
-      51
-    ],
-    "revealed_text": [
-      255,
-      255,
-      255
-    ],
-    "tile": [
-      127,
-      127,
-      127
-    ],
-    "tile_border": [
-      200,
-      200,
-      200
-    ],
-    "tile_highlight": [
-      255,
-      255,
-      255
-    ]
+    }
   },
   "revealed": [
     {

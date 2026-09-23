@@ -143,7 +143,7 @@ func _ready() -> void:
 
 ## 预热对局场景：首次进入关卡的同步重活发生在玩家点「开始」之后，观感是「点了没反应、画面静止」。
 ##
-## **实测（`tools/_probe_prewarm.gd`，2026-09-19）**：
+## **实测（`archive/tools_probes/_probe_prewarm.gd`，2026-09-19；该探针已于 2026-09-24 归档)**：
 ##   首次 `load("res://ui/board_view.tscn")` = **132 ms**（再次 load 仅 0.004 ms —— 成本全在
 ##   首次的场景 + 依赖资源加载）；而 `instantiate` 仅 0.05 ms、脚本 load 0.01 ms。
 ##   这 132 ms 正是「首次进关顿挫」的最大单项，预热把它前移到玩家还在浏览变体列表时。

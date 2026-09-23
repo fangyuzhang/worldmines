@@ -2590,17 +2590,6 @@
   ],
   "name": "十二边 01 · 大格与小角",
   "palette": {
-    "texture": "weave",
-    "background": [
-      20,
-      0,
-      35
-    ],
-    "flagged_tile": [
-      230,
-      230,
-      230
-    ],
     "groups": {
       "RING_0": [
         82,
@@ -2618,31 +2607,8 @@
         87
       ]
     },
-    "revealed": [
-      51,
-      51,
-      51
-    ],
-    "revealed_text": [
-      255,
-      255,
-      255
-    ],
-    "tile": [
-      127,
-      127,
-      127
-    ],
-    "tile_border": [
-      200,
-      200,
-      200
-    ],
-    "tile_highlight": [
-      255,
-      255,
-      255
-    ]
+    "texture": "weave",
+    "theme": "ORANGE"
   },
   "revealed": [
     {

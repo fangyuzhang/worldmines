@@ -39,6 +39,9 @@
 extends SceneTree
 
 const EXIT_FRAMES := 3
+const ChildIso := preload("res://tools/child_isolation.gd")
+## 本工具的 res:// 路径（隔离模式起子进程时要原样传给它自己）。
+const TOOL_RES_PATH := "res://tools/gen_style_shape_levels.gd"
 const OUT_DIR := "res://levels"
 ## 写盘走「暂存 → 校验 → 原子转正」（原实现会覆盖后删除，失败即丢原文件）。
 const LevelStaging := preload("res://tools/level_staging.gd")
@@ -48,6 +51,9 @@ const MAX_TRIES := 8
 const MAX_MINES_BUMP := 3
 ## 纹理徽记规则源（palette.texture：变体轴 / 形状族的唯一映射表）。
 const TextureMarks := preload("res://tools/texture_marks.gd")
+## 主题配色规则源（palette.theme：变体轴 / 形状族的唯一映射表）。
+## 2026-09-24 接入：此前本族重跑会把 theme 抹掉（palette 只写手写 RGB 底盘）。
+const ThemeMarks := preload("res://tools/theme_marks.gd")
 
 ## 单关**累计**生成时间上限（看门狗）。2026-09-23 审计 #4 补齐，与 gen_shape_levels.gd 同口径。
 ## 理由：CP-SAT 的 max_time_in_seconds 只约束求解阶段，实测 >100 格 + 变体规则时 Solve()
@@ -170,19 +176,19 @@ const SPECS: Array = [
 		"colors": ["RED", "INDIGO"], "pattern": "stripes", "seed": 24031},
 
 	# ================= 第三批：变体规则 × 形状风格（5 关） =================
-	{"file": "sty_var_1.json", "kind": "grid", "name": "菱格 · 不行",
-		"desc": "S1「不行」× 菱形格 · 交错双色", "rot": 45.0, "scale": SQ2, "globals": ["s1"],
+	{"file": "sty_var_1.json", "kind": "grid", "name": "菱格 · 局部禁形",
+		"desc": "S1「局部禁形」× 菱形格 · 交错双色", "rot": 45.0, "scale": SQ2, "globals": ["s1"],
 		"colors": ["GREEN", "ORANGE"], "pattern": "checker", "seed": 25001},
-	{"file": "sty_var_2.json", "kind": "grid", "name": "涡格 · 散散",
-		"desc": "S3「散散」× 涡流格（14°/环）· 环层双色", "spiral": 14.0, "globals": ["s3"],
+	{"file": "sty_var_2.json", "kind": "grid", "name": "涡格 · 无环",
+		"desc": "S3「无环」× 涡流格（14°/环）· 环层双色", "spiral": 14.0, "globals": ["s3"],
 		"colors": ["PINK", "INDIGO"], "pattern": "rings", "seed": 25011},
-	{"file": "sty_var_3.json", "kind": "hex", "size": 5, "name": "扁巢 · 步步",
-		"desc": "Z2「步步」× 压扁六边形 · 交错双色", "aspect": 0.72, "globals": ["z2"],
+	{"file": "sty_var_3.json", "kind": "hex", "size": 5, "name": "扁巢 · 相邻行锁",
+		"desc": "Z2「相邻行锁」× 压扁六边形 · 交错双色", "aspect": 0.72, "globals": ["z2"],
 		"colors": ["GREEN", "PINK"], "pattern": "checker", "seed": 25021},
-	{"file": "sty_var_4.json", "kind": "hex", "size": 5, "name": "斜巢 · 连排",
-		"desc": "S5「连排」× 斜切六边形 · 横带双色", "xf": [1.0, 0.35, 0.0, 1.0], "globals": ["s5"],
+	{"file": "sty_var_4.json", "kind": "hex", "size": 5, "name": "斜巢 · 行列凸",
+		"desc": "S5「行列凸」× 斜切六边形 · 横带双色", "xf": [1.0, 0.35, 0.0, 1.0], "globals": ["s5"],
 		"colors": ["YELLOW", "VIOLET"], "pattern": "stripes", "seed": 25031},
-	{"file": "sty_var_5.json", "kind": "t488", "size": 3, "name": "八角 · 骨牌",
+	{"file": "sty_var_5.json", "kind": "t488", "size": 3, "name": "八角 · 骨牌边界",
 		"desc": "骨牌 × 截角正方形镶嵌 · 环层双色", "globals": ["dt"],
 		"colors": ["ORANGE", "BLUE"], "pattern": "rings", "seed": 25041},
 
@@ -190,30 +196,62 @@ const SPECS: Array = [
 	# 目标：**每个可用变体 ≥ 3 种异形棋盘**，让「先选变体、再选棋盘」的两级浏览每层都有内容。
 	# ⚠️ 变体 × 形状的可行性不是全全组合（实测：s4/s6 在挖洞方格上生成不出，
 	# 详见 gen_variant_shape_levels.gd 头注释）——本批逐条实测，失败项不落盘、下次调整。
-	{"file": "sty_var_6.json", "kind": "grid", "name": "菱格 · 稳稳",
-		"desc": "S2「稳稳」× 菱形格 · 交错双色", "rot": 45.0, "scale": SQ2, "globals": ["s2"],
+	{"file": "sty_var_6.json", "kind": "grid", "name": "菱格 · 重心",
+		"desc": "S2「重心」× 菱形格 · 交错双色", "rot": 45.0, "scale": SQ2, "globals": ["s2"],
 		"colors": ["BLUE", "GREEN"], "pattern": "checker", "seed": 26001},
-	{"file": "sty_var_7.json", "kind": "t488", "size": 3, "name": "八角 · 稳稳",
-		"desc": "S2「稳稳」× 截角正方形镶嵌 · 环层双色", "globals": ["s2"],
+	{"file": "sty_var_7.json", "kind": "t488", "size": 3, "name": "八角 · 重心",
+		"desc": "S2「重心」× 截角正方形镶嵌 · 环层双色", "globals": ["s2"],
 		"colors": ["ORANGE", "GREEN"], "pattern": "rings", "seed": 26011},
-	{"file": "sty_var_8.json", "kind": "t488", "size": 3, "name": "八角 · 层层",
-		"desc": "S4「层层」× 截角正方形镶嵌 · 环层双色", "globals": ["s4"],
+	{"file": "sty_var_8.json", "kind": "t488", "size": 3, "name": "八角 · 洋葱",
+		"desc": "S4「洋葱」× 截角正方形镶嵌 · 环层双色", "globals": ["s4"],
 		"colors": ["RED", "BLUE"], "pattern": "rings", "seed": 26021},
-	{"file": "sty_var_9.json", "kind": "grid", "name": "菱格 · 层层",
-		"desc": "S4「层层」× 菱形格 · 交错双色", "rot": 45.0, "scale": SQ2, "globals": ["s4"],
+	{"file": "sty_var_9.json", "kind": "grid", "name": "菱格 · 洋葱",
+		"desc": "S4「洋葱」× 菱形格 · 交错双色", "rot": 45.0, "scale": SQ2, "globals": ["s4"],
 		"colors": ["VIOLET", "GREEN"], "pattern": "checker", "seed": 26031},
-	{"file": "sty_var_10.json", "kind": "t488", "size": 3, "name": "八角 · 偶偶",
-		"desc": "S6「偶偶」× 截角正方形镶嵌 · 环层双色", "globals": ["s6"],
+	{"file": "sty_var_10.json", "kind": "t488", "size": 3, "name": "八角 · 度偶数",
+		"desc": "S6「度偶数」× 截角正方形镶嵌 · 环层双色", "globals": ["s6"],
 		"colors": ["YELLOW", "INDIGO"], "pattern": "rings", "seed": 26041},
-	{"file": "sty_var_11.json", "kind": "grid", "name": "菱格 · 偶偶",
-		"desc": "S6「偶偶」× 菱形格 · 交错双色", "rot": 45.0, "scale": SQ2, "globals": ["s6"],
+	{"file": "sty_var_11.json", "kind": "grid", "name": "菱格 · 度偶数",
+		"desc": "S6「度偶数」× 菱形格 · 交错双色", "rot": 45.0, "scale": SQ2, "globals": ["s6"],
 		"colors": ["PINK", "ORANGE"], "pattern": "checker", "seed": 26051},
-	{"file": "sty_var_12.json", "kind": "grid", "name": "菱格 · 块块",
-		"desc": "S7「块块」× 菱形格 · 交错双色", "rot": 45.0, "scale": SQ2, "globals": ["s7"],
+	{"file": "sty_var_12.json", "kind": "grid", "name": "菱格 · 分量数 K",
+		"desc": "S7「分量数 K」× 菱形格 · 交错双色", "rot": 45.0, "scale": SQ2, "globals": ["s7"],
 		"colors": ["BLUE", "PINK"], "pattern": "checker", "seed": 26061},
-	{"file": "sty_var_13.json", "kind": "t488", "size": 3, "name": "八角 · 块块",
-		"desc": "S7「块块」× 截角正方形镶嵌 · 环层双色", "globals": ["s7"],
+	{"file": "sty_var_13.json", "kind": "t488", "size": 3, "name": "八角 · 分量数 K",
+		"desc": "S7「分量数 K」× 截角正方形镶嵌 · 环层双色", "globals": ["s7"],
 		"colors": ["GREEN", "VIOLET"], "pattern": "rings", "seed": 26071},
+
+	# ================= 第五批：风格棋盘的变体版（2026-09-24） =================
+	# 现状盘点：24 个「风格棋盘」此前**全无**变体版（最大覆盖空白）。
+	# 本批按「几何特征 ↔ 规则语义」配对：重叠/拱形→s7 块块、透视→s2 稳稳、
+	# 梯形/扇面→s5 连排、涡流→s3 散散、大盘→z2 步步 / dt 骨牌。
+	{"file": "sty_var_14.json", "kind": "grid", "name": "叠瓦 · 分量数 K",
+		"desc": "S7「分量数 K」× 叠瓦格（1.18× 故意重叠）· 横带双色", "shrink": 1.18, "globals": ["s7"],
+		"colors": ["VIOLET", "YELLOW"], "pattern": "stripes", "seed": 27001},
+	{"file": "sty_var_15.json", "kind": "grid", "name": "拱格 · 分量数 K",
+		"desc": "S7「分量数 K」× 拱形格（y 随 |x| 上拱 0.35）· 交错双色", "arch": 0.35, "globals": ["s7"],
+		"colors": ["RED", "YELLOW"], "pattern": "checker", "seed": 27011},
+	{"file": "sty_var_16.json", "kind": "grid", "name": "透视 · 重心",
+		"desc": "S2「重心」× 透视格（下大上小 0.55）· 横带双色", "persp": 0.55, "globals": ["s2"],
+		"colors": ["GREEN", "VIOLET"], "pattern": "stripes", "seed": 27021},
+	{"file": "sty_var_17.json", "kind": "grid", "name": "梯形 · 行列凸",
+		"desc": "S5「行列凸」× 梯面格（x 随行渐缩 0.5）· 环层双色", "taper": 0.5, "globals": ["s5"],
+		"colors": ["BLUE", "ORANGE"], "pattern": "rings", "seed": 27031},
+	{"file": "sty_var_18.json", "kind": "hex", "size": 5, "name": "涡巢 · 无环",
+		"desc": "S3「无环」× 涡流蜂窝（每环转 18°）· 环层双色", "spiral": 18.0, "globals": ["s3"],
+		"colors": ["BLUE", "GREEN"], "pattern": "rings", "seed": 27041},
+	{"file": "sty_var_19.json", "kind": "hex", "size": 5, "name": "扇巢 · 行列凸",
+		"desc": "S5「行列凸」× 扇面蜂窝（x 渐缩 0.55 + 涡流 8°）· 交错双色", "taper": 0.55, "spiral": 8.0, "globals": ["s5"],
+		"colors": ["ORANGE", "PINK"], "pattern": "checker", "seed": 27051},
+	{"file": "sty_var_20.json", "kind": "hex", "size": 7, "name": "大巢 · 相邻行锁",
+		"desc": "Z2「相邻行锁」× 大蜂窝（size 7）· 环层双色", "globals": ["z2"],
+		"colors": ["RED", "BLUE"], "pattern": "rings", "seed": 27061},
+	{"file": "sty_var_21.json", "kind": "t488", "size": 4, "name": "宽嵌 · 骨牌边界",
+		"desc": "DT「骨牌边界」× 截角方形镶嵌（size 4）· 象限双色", "globals": ["dt"],
+		"colors": ["VIOLET", "YELLOW"], "pattern": "quad", "seed": 27071},
+	{"file": "sty_var_22.json", "kind": "t488", "size": 3, "name": "涡嵌 · 无环",
+		"desc": "S3「无环」× 涡流八角镶嵌（每环转 20°）· 横带双色", "spiral": 20.0, "globals": ["s3"],
+		"colors": ["RED", "INDIGO"], "pattern": "stripes", "seed": 27081},
 ]
 
 var _exit_code := 0
@@ -227,7 +265,11 @@ var _ok := 0
 func _process(_delta: float) -> bool:
 	if not _started:
 		_started = true
-		_run()          # autoload 就绪后才跑（规则/CP-SAT 装配时机，见文件头）
+		# child 模式 = 进程隔离的子进程侧：只生成一个规格后退出
+		if ChildIso.is_child_mode():
+			_run_child_mode()
+		else:
+			_run()          # autoload 就绪后才跑（规则/CP-SAT 装配时机，见文件头）
 		return false
 	if not _exit_pending:
 		return false
@@ -242,14 +284,29 @@ func _run() -> void:
 	var want := _selected_families()
 	print("=== 形状风格 异形关生成 ===")
 	var todo: Array = []
-	for spec: Dictionary in SPECS:
+	var todo_idx: Array = []      # 隔离模式按索引找子进程（父子同看 SPECS）
+	for i in SPECS.size():
+		var spec: Dictionary = SPECS[i]
 		if want.is_empty() or want.has(_family_of(spec)):
 			todo.append(spec)
+			todo_idx.append(i)
 	print("  规格 %d / %d 关（clue=classic；峰值要求 ≥ %d）" % [todo.size(), SPECS.size(), MIN_PEAK])
 	DirAccess.make_dir_recursive_absolute(OUT_DIR)
 	var t_all := Time.get_ticks_msec()
-	for spec: Dictionary in todo:
-		if _gen_one(spec):
+	var isolate := OS.get_cmdline_user_args().has("--isolate")
+	if isolate:
+		print("  ** 进程隔离已开启：每关独立子进程 + %d 秒强杀 **" % [ChildIso.DEFAULT_TIMEOUT_MS / 1000])
+	for k in todo.size():
+		var spec: Dictionary = todo[k]
+		var ok := false
+		if isolate:
+			var code := ChildIso.run_child(TOOL_RES_PATH, int(todo_idx[k]))
+			ok = code == 0
+			if code == 2:
+				print("  !! %s：超时强杀（该组合在此规模下超出求解器可行域）" % str(spec["file"]))
+		else:
+			ok = _gen_one(spec)
+		if ok:
 			_ok += 1
 		else:
 			_fail += 1
@@ -277,7 +334,7 @@ func _selected_families() -> Array:
 	var out: Array = []
 	for a in OS.get_cmdline_user_args():
 		var s := str(a).strip_edges().to_lower()
-		if s != "":
+		if s != "" and not s.begins_with("--"):
 			out.append(s)
 	return out
 
@@ -376,7 +433,23 @@ func _gen_one(spec: Dictionary) -> bool:
 	if tex != "":
 		pal["texture"] = tex
 	pal["groups"] = {str(cs[0]): COLORS[str(cs[0])], str(cs[1]): COLORS[str(cs[1])]}
-	level["palette"] = pal
+	# 主题配色（2026-09-24）：规则源 tools/theme_marks.gd（变体轴 > 形状族 kind）。
+	# 不接这一步，本族每次重跑都会把 theme 抹掉 —— 实测 s6/s7/z2 整族缺失就是重跑造成的。
+	# apply() 会删掉七个手写基础键（否则 theme 被逐键短路），并保留 groups / texture。
+	#
+	# **纯风格关额外按 SPECS 索引轮转 9 色**（不用 theme_marks 的族级 BY_KIND）：
+	# 风格族有 24 关，按 kind 就只有 3 种颜色（hex/grid/t488），与本族「每关看起来全新」
+	# 的设计意图相悖。显式传 theme ⇒ 优先级最高 ⇒ 重跑幂等，不会被族级兜底改回去。
+	# 索引按 file 名匹配取得（不用 SPECS.find：Dictionary 的相等语义不宜依赖）。
+	var style_theme := ""
+	if globals.is_empty():
+		var idx := 0
+		for i in SPECS.size():
+			if str((SPECS[i] as Dictionary).get("file", "")) == str(spec.get("file", "")):
+				idx = i
+				break
+		style_theme = ThemeMarks.resolve_indexed(kind, idx)
+	level["palette"] = ThemeMarks.apply(pal, style_theme, str(globals[0]) if not globals.is_empty() else "", kind)
 
 	# 2026-09-23 审计修复：先写暂存区、校验通过才原子转正。原实现直接覆盖正式
 	# 文件、校验失败再 remove —— 盘上原有的好文件被「覆盖后删除」，净结果永久丢失。
@@ -606,6 +679,22 @@ func _load_level(path: String) -> Board:
 		return null
 	var b: Variant = loader.call("load_level", path)
 	return b as Board
+
+
+## 子进程侧（进程隔离）：只生成第 index 个规格，把退出码写进完成标记。
+## 参数形如 `-- child <index> <marker>`；索引直接取 SPECS[index] ⇒ 父子看到同一张表。
+func _run_child_mode() -> void:
+	var a := ChildIso.child_args()
+	var idx := int(a[0])
+	var marker := str(a[1])
+	if idx < 0 or idx >= SPECS.size():
+		ChildIso.write_marker(marker, 2)
+		_request_exit(2)
+		return
+	var spec: Dictionary = SPECS[idx]
+	var code := 0 if _gen_one(spec) else 1
+	ChildIso.write_marker(marker, code)
+	_request_exit(code)
 
 
 func _request_exit(code: int) -> void:

@@ -110,6 +110,11 @@ const WATCHDOG_MS_PER_LEVEL := 240000
 const MAX_MINES_BUMP := 4
 ## 纹理徽记规则源（palette.texture：变体轴 / 形状族的唯一映射表）。
 const TextureMarks := preload("res://tools/texture_marks.gd")
+## 主题配色规则源（palette.theme）。2026-09-24 接入（此前只在 spec 显式声明时才写）。
+const ThemeMarks := preload("res://tools/theme_marks.gd")
+## 进程隔离通用封装（防 CP-SAT 单次 Solve 挂死；用法见该文件头）。
+const ChildIso := preload("res://tools/child_isolation.gd")
+const TOOL_RES_PATH := "res://tools/gen_shape_levels.gd"
 ## 形状关密度上界（低密度设计）：mines + bump 不得超过 格数 × DENSITY_CAP——
 ## 超过说明该形状在小尺寸下数学上难出深推理，此时如实失败并在报告里列出，不无限加雷。
 const DENSITY_CAP := 0.35
@@ -387,7 +392,7 @@ const SPECS: Array = [
 			"........#........",
 		],
 		"cells": 120, "bbox": Vector2i(17, 18), "mines": 34, "seed": 9307,
-		"globals": ["s2"], "theme": "GREEN", "texture": "block", "shape_kind": "动物棋盘",
+		"globals": ["s2"], "shape_kind": "动物棋盘",
 		# 2026-09-23 约束调整记录：2026-09-23 三次换约束：s4 分层在龟形上仍超时（240s×8 次 peak=-1）；s2 最宽松（fish/snowflake 同款成功）
 		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
 		"in_board": [Vector2i(8, 12), Vector2i(7, 0), Vector2i(8, 17)],
@@ -416,7 +421,7 @@ const SPECS: Array = [
 			"...##.......#....",
 		],
 		"cells": 98, "bbox": Vector2i(17, 16), "mines": 27, "seed": 9301,
-		"globals": ["s3"], "theme": "VIOLET", "texture": "spore", "shape_kind": "动物棋盘",
+		"globals": ["s3"], "shape_kind": "动物棋盘",
 		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
 		"in_board": [Vector2i(8, 8), Vector2i(8, 0), Vector2i(12, 15)],
 	},
@@ -446,7 +451,7 @@ const SPECS: Array = [
 			".......#.......",
 		],
 		"cells": 88, "bbox": Vector2i(15, 18), "mines": 25, "seed": 9302,
-		"globals": ["s2"], "theme": "PINK", "texture": "parity", "shape_kind": "动物棋盘",
+		"globals": ["s2"], "shape_kind": "动物棋盘",
 		# 2026-09-23 约束调整记录：2026-09-23 二次换约束：z1 镜像求解超时（240s×14 次 peak=-1）；s2 有 fish 同款先例
 		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
 		"in_board": [Vector2i(7, 9), Vector2i(7, 0), Vector2i(7, 17)],
@@ -477,7 +482,7 @@ const SPECS: Array = [
 			".......#####.......",
 		],
 		"cells": 144, "bbox": Vector2i(19, 18), "mines": 40, "seed": 9303,
-		"globals": ["z3"], "theme": "GREY", "texture": "trail", "shape_kind": "动物棋盘",
+		"globals": ["z3"], "shape_kind": "动物棋盘",
 		# 2026-09-23 约束调整记录：2026-09-23 换约束（原 z2 与形状结构性冲突）
 		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
 		"in_board": [Vector2i(9, 9), Vector2i(9, 0), Vector2i(11, 17)],
@@ -504,7 +509,7 @@ const SPECS: Array = [
 			"#.#..#..#.#",
 		],
 		"cells": 60, "bbox": Vector2i(11, 10), "mines": 8, "seed": 9304,
-		"globals": ["s5"], "theme": "YELLOW", "texture": "chain", "shape_kind": "动物棋盘",
+		"globals": ["s5"], "shape_kind": "动物棋盘",
 		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
 		"in_board": [Vector2i(5, 5), Vector2i(4, 0), Vector2i(10, 9)],
 	},
@@ -533,7 +538,7 @@ const SPECS: Array = [
 			".....####......",
 		],
 		"cells": 166, "bbox": Vector2i(15, 17), "mines": 46, "seed": 9305,
-		"globals": ["s4"], "theme": "ORANGE", "texture": "strata", "shape_kind": "动物棋盘",
+		"globals": ["s4"], "shape_kind": "动物棋盘",
 		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
 		"in_board": [Vector2i(7, 8), Vector2i(3, 0), Vector2i(8, 16)],
 	},
@@ -557,7 +562,7 @@ const SPECS: Array = [
 			"......#.........",
 		],
 		"cells": 110, "bbox": Vector2i(16, 12), "mines": 30, "seed": 9306,
-		"globals": ["s2"], "theme": "BLUE", "texture": "anchor", "shape_kind": "动物棋盘",
+		"globals": ["s2"], "shape_kind": "动物棋盘",
 		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
 		"in_board": [Vector2i(8, 6), Vector2i(6, 0), Vector2i(6, 11)],
 	},
@@ -581,7 +586,7 @@ const SPECS: Array = [
 			"##.................##",
 		],
 		"cells": 112, "bbox": Vector2i(21, 12), "mines": 31, "seed": 9308,
-		"globals": ["s1"], "theme": "RED", "texture": "forbid", "shape_kind": "动物棋盘",
+		"globals": ["s1"], "shape_kind": "动物棋盘",
 		"off_board": [Vector2i(0, 0), Vector2i(5, 0), Vector2i(6, 0)],
 		"in_board": [Vector2i(10, 6), Vector2i(1, 0), Vector2i(20, 11)],
 	},
@@ -592,7 +597,7 @@ const SPECS: Array = [
 		# 两条硬约束：① mask **首行不得全空**（build_from_mask 要求图案贴左上角：留白会被下游
 		# normalized 平移、与 params.mask 原样透传失配）；② 格数取**偶数**——本关配 dt（骨牌），
 		# 每块骨牌占 2 格（158 = 79 块）。
-		"file": "ani_butterfly.json", "kind": "mask", "name": "蝴蝶 · 骨牌",
+		"file": "ani_butterfly.json", "kind": "mask", "name": "蝴蝶 · 骨牌边界",
 		"desc": "17×18 蝴蝶（双触角 + 四翼 + 躯干；158 格）",
 		"style": "holed_grid",
 		"mask": [
@@ -616,7 +621,7 @@ const SPECS: Array = [
 			"...##.......##...",
 		],
 		"cells": 158, "bbox": Vector2i(17, 18), "mines": 45, "seed": 9309,
-		"globals": ["dt"], "theme": "INDIGO", "texture": "pip", "shape_kind": "动物棋盘",
+		"globals": ["dt"], "shape_kind": "动物棋盘",
 		"off_board": [Vector2i(0, 0), Vector2i(0, 1), Vector2i(0, 17)],
 		"in_board": [Vector2i(8, 6), Vector2i(6, 6), Vector2i(1, 4)],
 	},
@@ -657,6 +662,11 @@ func _run() -> void:
 		_request_exit(1)
 		return
 	var only_files := _selected_files()
+	# 进程隔离模式：每关独立子进程 + 超时强杀（防 CP-SAT 单次 Solve 挂死，见 child_isolation.gd）。
+	# 早退而不是改主循环 —— 下面那套「全批通过才统一提交」的 TM5 逻辑一行不动。
+	if OS.get_cmdline_user_args().has("--isolate"):
+		_run_isolated_batch(kinds, only_files)
+		return
 	print("=== 异形关卡生成（T2 挖洞方格 / T3 蜂窝）===")
 	print("  clue_rule=%s  globals=%s  attempts=%d  max_tries=%d  档位要求=%s  max_mines_bump=%d  density_cap=%.2f  本次族=%s（SPECS 含：%s）  文件名过滤=%s" % [
 		CLUE_RULE, str(GLOBALS), ATTEMPTS, MAX_TRIES, REQUIRED_TIER, MAX_MINES_BUMP, DENSITY_CAP,
@@ -701,11 +711,70 @@ func _run() -> void:
 	_request_exit(0)
 
 
+## 隔离批次：逐个规格起子进程生成，超时强杀。舍弃 TM5 的**批次**原子性
+## （每个子进程各自提交，单关级别仍是「暂存→自校验→原子转正」），换取「不卡死」。
+func _run_isolated_batch(kinds: Array, only_files: Array) -> void:
+	print("  ** 进程隔离已开启：每关独立子进程 + %d 秒强杀 **" % [ChildIso.DEFAULT_TIMEOUT_MS / 1000])
+	var t_all := Time.get_ticks_msec()
+	var total := 0
+	var failures := 0
+	for i in SPECS.size():
+		var spec: Dictionary = SPECS[i]
+		if not kinds.has(str(spec["kind"])):
+			continue
+		if not only_files.is_empty() and not only_files.has(str(spec["file"])):
+			continue
+		total += 1
+		var code := ChildIso.run_child(TOOL_RES_PATH, i)
+		if code != 0:
+			failures += 1
+		if code == 2:
+			print("  !! %s：超时强杀（该组合在此规模下超出求解器可行域）" % str(spec["file"]))
+	if total == 0:
+		push_error("族 %s 在 SPECS 里没有对应规格" % ", ".join(kinds))
+		_request_exit(1)
+		return
+	print("=== 隔离批次：成功 %d / 失败 %d，耗时 %.1f s ===" % [
+		total - failures, failures, float(Time.get_ticks_msec() - t_all) / 1000.0])
+	if failures > 0:
+		print("=== SHAPE-LEVELS-FAILED ===")
+		_request_exit(1)
+		return
+	print("=== SHAPE-LEVELS-OK ===")
+	_request_exit(0)
+
+
+## 子进程侧（进程隔离）：只生成 SPECS[index]，并**自己提交**（见下方注释）。
+func _run_child_mode() -> void:
+	var a := ChildIso.child_args()
+	var idx := int(a[0])
+	var marker := str(a[1])
+	if idx < 0 or idx >= SPECS.size():
+		ChildIso.write_marker(marker, 2)
+		_request_exit(2)
+		return
+	_staged.clear()
+	DirAccess.make_dir_recursive_absolute(TMP_DIR)
+	var spec: Dictionary = SPECS[idx]
+	var ok := _gen_one(spec)
+	if ok:
+		# 本工具的 _gen_one 只写暂存（TM5 的批次设计：全批通过才提交）。
+		# 隔离模式下每关自成一个批次 ⇒ 必须在这里 commit，否则文件根本不落盘。
+		ok = _commit_staged() == 0
+	_cleanup_tmp()
+	ChildIso.write_marker(marker, 0 if ok else 1)
+	_request_exit(0 if ok else 1)
+
+
 func _process(_delta: float) -> bool:
 	# 首帧才开始生成（等 autoload 把 S/Z 轴变体规则装进 RuleRegistry，见 _started 上方注释）
 	if not _started:
 		_started = true
-		_run()
+		# child 模式 = 进程隔离的子进程侧：只生成一个规格后退出
+		if ChildIso.is_child_mode():
+			_run_child_mode()
+		else:
+			_run()
 		return false
 	if not _exit_pending:
 		return false
@@ -745,6 +814,8 @@ func _selected_kinds() -> Array[String]:
 		var s := str(a).strip_edges().to_lower()
 		if s.ends_with(".json"):
 			continue   # 文件名过滤参数（见 _selected_files），不是族名
+		if s.begins_with("--"):
+			continue   # 开关参数（--isolate 等）不是族名
 		if s == "":
 			# L7（2026-09-21 审计修复）：空串是"无参数"的误传形态（如 runner 传了 `-- ""`）——
 			# 报错比静默当"全部族"安全。
@@ -908,8 +979,6 @@ func _gen_one(spec: Dictionary) -> bool:
 	if spec.has("globals"):
 		level["global_rules"] = globals
 		level["rule_level"] = true
-	if spec.has("theme"):
-		level["palette"] = {"theme": str(spec["theme"])}
 	# 纹理徽记（2026-09-23 审计续）：规则源统一到 tools/texture_marks.gd ——
 	# spec 显式声明的 texture 优先（art_ / ani_ 走这条），否则按变体轴 / 形状族解析
 	#（holed_ / hex_ 由此自动带上 strata / comb，不再依赖手工补丁；新增族只改那张表）。
@@ -917,9 +986,13 @@ func _gen_one(spec: Dictionary) -> bool:
 	var _tm_gl: Array = globals
 	var _tm_variant := str(_tm_gl[0]) if not _tm_gl.is_empty() else ""
 	var _tm_tex := TextureMarks.resolve(str(spec.get("texture", "")), _tm_variant, kind)
+	# 主题配色（2026-09-24）：规则源 tools/theme_marks.gd —— 变体轴 > 形状族 kind。
+	# 修掉两个老问题：① 原先只在 spec 显式声明 theme 时才写（其余族重跑即丢主题，
+	# 实测 s6/s7/z2 整族缺失）；② 原先写 {"theme": ...} 会**丢掉 groups**
+	#（分色雷数计数器的数据源）。apply() 删掉七个手写基础键（不删会被逐键短路），
+	# 并保留 groups / texture / 任何自定义键。
+	level["palette"] = ThemeMarks.apply(level.get("palette", {}), str(spec.get("theme", "")), _tm_variant, kind)
 	if _tm_tex != "":
-		if not level.has("palette"):
-			level["palette"] = {}
 		level["palette"]["texture"] = _tm_tex
 		level["shape_kind"] = str(spec.get("shape_kind", "形状棋盘"))
 	var tmp_path := "%s/%s" % [TMP_DIR, file_name]

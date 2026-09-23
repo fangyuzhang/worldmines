@@ -1,0 +1,6 @@
+# 服务器任务队列（流水线自动接续；每行一个任务，每批 2 个并行）
+# 格式：<out_dir> <per_type> <seed_max> <limit> <shard_idx> <shard_total> <seed_start> <target_difficulty> <extra_spec> <mod> <per_tier> <timeout_coef> <tiered> <stall>
+# 1) O3 分档：按档定向补产（normal/hard 缺口：7×7 n58/h7、8×8 n60/h20 等）
+user://batch_o3b 10 400 -1 1 1 0 2.5 o3@5-9 o3_fendang 50 3000 tiered 30
+# 2) O1 对穿：按档定向补产（normal/hard 缺口：7×7 n30/h2、8×8 n81/h2 等）
+user://batch_o1c 10 400 -1 1 1 0 2.5 o1@5-9 o1_duichuan 50 3000 tiered 30

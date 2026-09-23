@@ -606,17 +606,8 @@
   ],
   "name": "八角 01 · 素嵌",
   "palette": {
+    "theme": "YELLOW",
     "texture": "octa",
-    "background": [
-      20,
-      0,
-      35
-    ],
-    "flagged_tile": [
-      230,
-      230,
-      230
-    ],
     "groups": {
       "BLUE": [
         82,
@@ -628,32 +619,7 @@
         139,
         37
       ]
-    },
-    "revealed": [
-      51,
-      51,
-      51
-    ],
-    "revealed_text": [
-      255,
-      255,
-      255
-    ],
-    "tile": [
-      127,
-      127,
-      127
-    ],
-    "tile_border": [
-      200,
-      200,
-      200
-    ],
-    "tile_highlight": [
-      255,
-      255,
-      255
-    ]
+    }
   },
   "revealed": [
     {

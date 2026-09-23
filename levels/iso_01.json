@@ -926,16 +926,6 @@
   ],
   "name": "等轴 01 · 三方阵",
   "palette": {
-    "background": [
-      20,
-      0,
-      35
-    ],
-    "flagged_tile": [
-      230,
-      230,
-      230
-    ],
     "groups": {
       "右面": [
         64,
@@ -953,32 +943,8 @@
         255
       ]
     },
-    "revealed": [
-      51,
-      51,
-      51
-    ],
-    "revealed_text": [
-      255,
-      255,
-      255
-    ],
     "texture": "cube",
-    "tile": [
-      127,
-      127,
-      127
-    ],
-    "tile_border": [
-      200,
-      200,
-      200
-    ],
-    "tile_highlight": [
-      255,
-      255,
-      255
-    ]
+    "theme": "GREY"
   },
   "revealed": [
     {

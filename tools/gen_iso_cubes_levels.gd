@@ -25,6 +25,9 @@
 extends SceneTree
 
 const EXIT_FRAMES := 3
+const ChildIso := preload("res://tools/child_isolation.gd")
+## 本工具的 res:// 路径（隔离模式起子进程时要原样传给它自己）。
+const TOOL_RES_PATH := "res://tools/gen_iso_cubes_levels.gd"
 const OUT_DIR := "res://levels"
 ## 写盘走「暂存 → 校验 → 原子转正」（原实现会覆盖后删除，失败即丢原文件）。
 const LevelStaging := preload("res://tools/level_staging.gd")
@@ -34,6 +37,8 @@ const MAX_TRIES := 8
 const MAX_MINES_BUMP := 3
 ## 纹理徽记规则源（palette.texture：变体轴 / 形状族的唯一映射表）。
 const TextureMarks := preload("res://tools/texture_marks.gd")
+## 主题配色规则源（palette.theme）。2026-09-24 接入。
+const ThemeMarks := preload("res://tools/theme_marks.gd")
 
 ## 单关**累计**生成时间上限（看门狗）。2026-09-23 审计 #4 补齐，与 gen_shape_levels.gd 同口径。
 ## 理由：CP-SAT 的 max_time_in_seconds 只约束求解阶段，实测 >100 格 + 变体规则时 Solve()
@@ -106,7 +111,11 @@ var _ok := 0
 func _process(_delta: float) -> bool:
 	if not _started:
 		_started = true
-		_run()
+		# child 模式 = 进程隔离的子进程侧：只生成一个规格后退出
+		if ChildIso.is_child_mode():
+			_run_child_mode()
+		else:
+			_run()
 		return false
 	if not _exit_pending:
 		return false
@@ -121,9 +130,12 @@ func _run() -> void:
 	var want := _selected()
 	print("=== 等轴菱面 异形关生成 ===")
 	var todo: Array = []
-	for spec: Dictionary in SPECS:
+	var todo_idx: Array = []      # 隔离模式按索引找子进程（父子同看 SPECS）
+	for i in SPECS.size():
+		var spec: Dictionary = SPECS[i]
 		if want.is_empty() or want.has(str(spec["file"])):
 			todo.append(spec)
+			todo_idx.append(i)
 	var total_cells := 0
 	for spec: Dictionary in todo:
 		total_cells += int(spec["cols"]) * int(spec["rows"]) * 3
@@ -131,8 +143,20 @@ func _run() -> void:
 		todo.size(), SPECS.size(), MIN_PEAK, total_cells])
 	DirAccess.make_dir_recursive_absolute(OUT_DIR)
 	var t_all := Time.get_ticks_msec()
-	for spec: Dictionary in todo:
-		if _gen_one(spec):
+	var isolate := OS.get_cmdline_user_args().has("--isolate")
+	if isolate:
+		print("  ** 进程隔离已开启：每关独立子进程 + %d 秒强杀 **" % [ChildIso.DEFAULT_TIMEOUT_MS / 1000])
+	for k in todo.size():
+		var spec: Dictionary = todo[k]
+		var ok := false
+		if isolate:
+			var code := ChildIso.run_child(TOOL_RES_PATH, int(todo_idx[k]))
+			ok = code == 0
+			if code == 2:
+				print("  !! %s：超时强杀（该组合在此规模下超出求解器可行域）" % str(spec["file"]))
+		else:
+			ok = _gen_one(spec)
+		if ok:
 			_ok += 1
 		else:
 			_fail += 1
@@ -152,7 +176,8 @@ func _selected() -> Array:
 	for a in OS.get_cmdline_user_args():
 		for piece in str(a).split(","):
 			var s := piece.strip_edges()
-			if s != "":
+			if s != "" and not s.begins_with("--"):
+				# 跳过开关参数（--isolate 等）：它不是文件名
 				out.append(s)
 	return out
 
@@ -250,7 +275,8 @@ func _gen_one(spec: Dictionary) -> bool:
 	# 各少一行）。补上后「重跑 = 幂等」，与 gen_shape_levels 从 SPEC 读 texture 的做法对齐。
 	pal["texture"] = TextureMarks.resolve("", "", "iso_cubes")
 	pal["groups"] = FACE_COLORS.duplicate(true)
-	level["palette"] = pal
+	# 主题配色（2026-09-24）：等轴族按 kind 取灰系；三面明度分组（groups）原样保留
+	level["palette"] = ThemeMarks.apply(pal, "", "", "iso_cubes")
 
 	# 2026-09-23 审计修复：先写暂存区、校验通过才原子转正（原实现会「覆盖后删除」）。
 	var tmp := LevelStaging.write_text(path, JSON.stringify(level, "  "))
@@ -359,6 +385,22 @@ func _load_level(path: String) -> Board:
 		return null
 	var b: Variant = loader.call("load_level", path)
 	return b as Board
+
+
+## 子进程侧（进程隔离）：只生成第 index 个规格，把退出码写进完成标记。
+## 参数形如 `-- child <index> <marker>`；索引直接取 SPECS[index] ⇒ 父子看到同一张表。
+func _run_child_mode() -> void:
+	var a := ChildIso.child_args()
+	var idx := int(a[0])
+	var marker := str(a[1])
+	if idx < 0 or idx >= SPECS.size():
+		ChildIso.write_marker(marker, 2)
+		_request_exit(2)
+		return
+	var spec: Dictionary = SPECS[idx]
+	var code := 0 if _gen_one(spec) else 1
+	ChildIso.write_marker(marker, code)
+	_request_exit(code)
 
 
 func _request_exit(code: int) -> void:

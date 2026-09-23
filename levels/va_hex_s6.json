@@ -1,6 +1,6 @@
 {
   "clue_rule": "classic",
-  "desc": "S6「偶偶」：结构约束（仅蜂窝）（蜂窝 19 格）",
+  "desc": "S6「度偶数」：结构约束（仅蜂窝）（蜂窝 19 格）",
   "difficulty_profile": {
     "clue_count": 3.0,
     "clue_ratio": 0.23,
@@ -82,18 +82,9 @@
       "r": 2.0
     }
   ],
-  "name": "蜂窝 · 偶偶",
+  "name": "蜂窝 · 度偶数",
   "palette": {
-    "background": [
-      20.0,
-      0.0,
-      35.0
-    ],
-    "flagged_tile": [
-      230.0,
-      230.0,
-      230.0
-    ],
+    "theme": "PINK",
     "groups": {
       "RING_0": "BLUE",
       "RING_1": [
@@ -107,32 +98,7 @@
         87.0
       ]
     },
-    "revealed": [
-      51.0,
-      51.0,
-      51.0
-    ],
-    "revealed_text": [
-      255.0,
-      255.0,
-      255.0
-    ],
-    "texture": "parity",
-    "tile": [
-      127.0,
-      127.0,
-      127.0
-    ],
-    "tile_border": [
-      200.0,
-      200.0,
-      200.0
-    ],
-    "tile_highlight": [
-      255.0,
-      255.0,
-      255.0
-    ]
+    "texture": "parity"
   },
   "revealed": [
     {

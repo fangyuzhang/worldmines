@@ -160,6 +160,11 @@ const REJECT_TOAST_THROTTLE_MS := 3000
 
 func _ready() -> void:
 	add_to_group("themed")
+	# 变体纹理的呼吸节拍（低频 Timer，不是 _process —— 理由见 _sync_tex_timer 上方注释）
+	_tex_timer = Timer.new()
+	_tex_timer.wait_time = TEX_PULSE_STEP_S
+	_tex_timer.timeout.connect(_on_tex_pulse)
+	add_child(_tex_timer)
 	ThemeManager.theme_changed.connect(queue_redraw)
 	GameSession.session_started.connect(_on_session_started)
 	if not GameSession.hint_ready.is_connected(_on_hint_ready):
@@ -231,6 +236,7 @@ func _on_session_started() -> void:
 	_clear_reject()
 	_load_drawing()
 	_layout()
+	_sync_tex_timer()      # 换关：新棋盘可能带/不带 palette.texture，节拍跟着切
 	queue_redraw()
 
 
@@ -625,6 +631,200 @@ func _draw_cell_outline(pos: Vector2i, col: Color, width: float, inset: float = 
 		draw_polyline(closed, col, width)
 		return
 	draw_rect(_cell_rect(pos).grow(-inset), col, false, width)
+
+
+# ============ 变体纹理（格子内的主题徽记） ============
+## 目的：让「这一盘是哪个变体 / 哪一族形状」在**不看数字**时也能认出 —— 这是颜色之外的
+## **第二条识别通道**（同色系相邻关卡、色觉障碍玩家都受益；也是「每个变体有独特外观」的落点）。
+##
+## 数据：`palette.texture` 的字符串值，TEXTURE_MARKS 是唯一登记表（新增标记要同时进表与测试）。
+## 几何：徽记一律画在**内容盒内部**（自定义/蜂窝盘的内容盒是内接正方形，见 _custom_content_rect），
+##      外半径取盒宽的 0.21 ⇒ 离多边形边界还有余量，**绝不会溢出格子**。
+## 只画 HIDDEN 格：翻开格已经有数字，再叠纹理是噪声。
+## **零回归**：palette 无 texture（含全部矩形经典关）⇒ 一次绘制都不发生。
+
+const TEXTURE_MARKS: Array[String] = [
+	"forbid",   # ⊘ 局部禁形（s1）
+	"anchor",   # ◎ 稳固锚点（s2）
+	"spore",    # ✳ 散开的孢子（s3）
+	"strata",   # ☰ 岩层横纹（s4 / 挖洞族）
+	"chain",    # ‖ 成排竖链（s5）
+	"parity",   # ◺ 半格奇偶（s6）
+	"block",    # ▦ 分块田字（s7）
+	"trail",    # ⌇ 足迹折线（z2）
+	"quad",     # ⊞ 四象限十字（z3；与 block 的四个小方块刻意区分）
+	"pip",      # ∴ 骰点（dt）
+	"comb",     # ⬡ 蜂窝轮廓（蜂窝族）
+	"weave",    # ✕ 编织菱格（方格风格 / 吉里赫 / 三角族）
+	"halo",     # ◇ 图案光圈（艺术图案族）
+	"petal",    # ❁ 花瓣（雏菊链）
+	"cube",     # ⬒ 等轴立方（等轴族）
+	"octa",     # ⯃ 八角轮廓（截角方形镶嵌）
+	"ring",     # ◎ 同心环（环盘族）
+]
+
+
+## 本关纹理标记（palette.texture）。未声明或未登记 → 空串（不画，静默降级）。
+func _theme_texture() -> String:
+	var t: Variant = _custom_palette().get("texture", "")
+	var s := str(t) if t is String else ""
+	return s if TEXTURE_MARKS.has(s) else ""
+
+
+## ==== 纹理呼吸（缓慢的 alpha 脉动）====
+## **刻意不用 _process 驱动**：本控件的 _process 在无动效时会 `set_process(false)`（静态棋盘
+## 不逐帧醒来，见 _process 末尾的性能条款）。若把脉动挂进 _process，就等于让每一盘
+## 永远每帧重绘 200+ 格 —— 为一个装饰效果付整盘帧率，不划算。
+## 改用 0.2s 的低频 Timer：3 秒一个呼吸周期 = 15 帧/周期，肉眼足够平滑，重绘量只有 5fps。
+const TEX_PULSE_STEP_S := 0.2
+const TEX_PULSE_PERIOD_S := 3.0
+## 呼吸的基准不透明度与幅度（0.20~0.40）：幅度再大就会干扰读数字。
+const TEX_ALPHA_BASE := 0.30
+const TEX_ALPHA_SWING := 0.10
+
+var _tex_timer: Timer = null
+## 本帧的纹理标记与颜色：由 _draw() 开头求值一次后缓存供逐格读取。
+## 为什么缓存：_draw_cell_texture 每格调用一次，若每格都走 _theme_texture()
+## 就是每帧 200+ 次 meta 查询 + 字典查找；且 _texture_color() 还含一次 sin。
+## 5fps 下算不上瓶颈，但这条缓存是"一笔免掉"，没有理由不做。
+var _tex_kind_now := ""
+var _tex_col_now := Color(0, 0, 0, 0)
+
+
+func _on_tex_pulse() -> void:
+	# 特效可能被玩家在设置里**中途关掉**，而那一刻没有任何人回调 _sync_tex_timer
+	# ⇒ 在这里自查一次：已关闭就停表，不再每 0.2s 空转重绘（重绘本身没害，但纯属白烧）。
+	if not _reveal_effects_enabled():
+		_sync_tex_timer()
+		return
+	queue_redraw()
+
+
+## 按「本关是否有纹理 + 动效总闸」决定呼吸节拍是否运行（换关 / 初始化时调用）。
+func _sync_tex_timer() -> void:
+	if _tex_timer == null:
+		return
+	var want := _theme_texture() != "" and _reveal_effects_enabled()
+	if want and _tex_timer.is_stopped():
+		_tex_timer.start()
+	elif not want and not _tex_timer.is_stopped():
+		_tex_timer.stop()
+
+
+## 当前呼吸相位对应的纹理不透明度（动效关闭时恒为基准值 = 完全静止）。
+func texture_alpha_at(ms: int, pulsing: bool) -> float:
+	if not pulsing:
+		return TEX_ALPHA_BASE
+	var t := fmod(float(ms) / 1000.0, TEX_PULSE_PERIOD_S) / TEX_PULSE_PERIOD_S
+	return TEX_ALPHA_BASE + TEX_ALPHA_SWING * sin(t * TAU)
+
+
+## 徽记颜色：palette.texture_tint 可覆盖；默认取格线色并压在基准 alpha 上 —— 同色系、低调，
+## 不与数字/旗子抢注意力（它只负责"这一盘是哪个变体"的潜意识提示）。
+## 动效总闸开启时叠一层缓慢呼吸（见 texture_alpha_at）；显式 tint 则原样返回不带呼吸
+## —— 作者显式指定的颜色不该被我们偷偷改透明度。
+func _texture_color() -> Color:
+	var override := _pal_color("texture_tint", Color(0, 0, 0, 0))
+	if override.a > 0.0:
+		return override
+	var base := _pal_color("tile_border", ThemeManager.grid_line())
+	var a := texture_alpha_at(Time.get_ticks_msec(), _reveal_effects_enabled())
+	return Color(base.r, base.g, base.b, a)
+
+
+## 画一格的变体徽记。`rect` 必须是**内容盒**（调用方已按盘型算好）；
+## 只对 HIDDEN 格生效，无 texture 时空操作。
+func _draw_cell_texture(cell: Cell, rect: Rect2, scale: float) -> void:
+	# kind / col 取 _draw() 本帧算好的缓存（本函数每格调用一次，见 _tex_kind_now 处注释）
+	var kind := _tex_kind_now
+	if kind == "" or cell == null or cell.state != Cell.State.HIDDEN:
+		return
+	var r := minf(rect.size.x, rect.size.y) * 0.21
+	if r < 2.5:
+		return                                   # 格子太小：宁可留白，也不要糊成一团
+	var col := _tex_col_now
+	var c := rect.get_center()
+	var w := maxf(1.0, scale)
+	match kind:
+		"forbid":
+			draw_arc(c, r, 0.0, TAU, 24, col, w * 1.4)
+			var d := Vector2(r, r) * 0.72
+			draw_line(c - d, c + d, col, w * 1.4)
+		"anchor":
+			draw_arc(c, r, 0.0, TAU, 24, col, w)
+			draw_arc(c, r * 0.52, 0.0, TAU, 18, col, w)
+			draw_circle(c, r * 0.16, col)
+		"spore":
+			draw_circle(c, r * 0.26, col)
+			for k in 4:
+				var a := TAU * float(k) / 4.0 + PI * 0.25
+				var dir := Vector2(cos(a), sin(a))
+				draw_line(c + dir * r * 0.5, c + dir * r, col, w)
+		"strata":
+			for k in 3:
+				var y := c.y + (float(k) - 1.0) * r * 0.62
+				draw_line(Vector2(c.x - r, y), Vector2(c.x + r, y), col, w)
+		"chain":
+			for k in 2:
+				var x := c.x + (float(k) * 2.0 - 1.0) * r * 0.45
+				draw_line(Vector2(x, c.y - r), Vector2(x, c.y + r), col, w * 1.3)
+		"parity":
+			draw_colored_polygon(PackedVector2Array([
+					c + Vector2(-r, -r), c + Vector2(r, r), c + Vector2(-r, r)]), col)
+		"block":
+			for k in 4:
+				var o := Vector2(float(k % 2) * 2.0 - 1.0, float(k / 2) * 2.0 - 1.0) * r * 0.5
+				var s2 := Vector2(r * 0.34, r * 0.34)
+				draw_rect(Rect2(c + o - s2, s2 * 2.0), col, false, w)
+		"trail":
+			draw_polyline(PackedVector2Array([
+					c + Vector2(-r, r * 0.62), c + Vector2(-r * 0.28, -r * 0.2),
+					c + Vector2(r * 0.34, r * 0.3), c + Vector2(r, -r * 0.78)]), col, w * 1.2)
+		"quad":
+			# 四象限（z3）：十字分割 + 中心点。
+			# 注意**不能**画成四个小方块 —— 那是 s7 的 "block"，两个徽记会看不出区别。
+			draw_line(Vector2(c.x - r, c.y), Vector2(c.x + r, c.y), col, w)
+			draw_line(Vector2(c.x, c.y - r), Vector2(c.x, c.y + r), col, w)
+			draw_circle(c, r * 0.16, col)
+		"pip":
+			draw_circle(c + Vector2(-r * 0.46, -r * 0.46), r * 0.26, col)
+			draw_circle(c + Vector2(r * 0.46, r * 0.46), r * 0.26, col)
+		"comb":
+			var hp := PackedVector2Array()
+			for k in 6:
+				var a := TAU * float(k) / 6.0 - PI * 0.5
+				hp.append(c + Vector2(cos(a), sin(a)) * r)
+			hp.append(hp[0])                      # draw_polyline 不闭合，手动回起点
+			draw_polyline(hp, col, w)
+		"weave":
+			draw_line(c + Vector2(-r, -r), c + Vector2(r, r), col, w)
+			draw_line(c + Vector2(-r, r), c + Vector2(r, -r), col, w)
+		"halo":
+			var dia := PackedVector2Array([
+					c + Vector2(0, -r), c + Vector2(r, 0), c + Vector2(0, r), c + Vector2(-r, 0)])
+			dia.append(dia[0])
+			draw_polyline(dia, col, w)
+		"petal":
+			for k in 4:
+				var a := TAU * float(k) / 4.0
+				draw_circle(c + Vector2(cos(a), sin(a)) * r * 0.52, r * 0.30, col)
+		"cube":
+			var top := c + Vector2(0, -r)
+			var mid := c + Vector2(0, -r * 0.1)
+			draw_line(top, mid, col, w)
+			draw_line(mid, c + Vector2(-r * 0.85, r * 0.62), col, w)
+			draw_line(mid, c + Vector2(r * 0.85, r * 0.62), col, w)
+			draw_line(mid, c + Vector2(0, r * 0.62), col, w)
+		"octa":
+			var op := PackedVector2Array()
+			for k in 8:
+				var a := TAU * float(k) / 8.0 - PI * 0.5
+				op.append(c + Vector2(cos(a), sin(a)) * r)
+			op.append(op[0])
+			draw_polyline(op, col, w)
+		"ring":
+			draw_arc(c, r, 0.0, TAU, 24, col, w)
+			draw_arc(c, r * 0.55, 0.0, TAU, 18, col, w)
 
 
 # ============ 配色（自定义盘的 palette；无 palette 时逐项回退 ThemeManager） ============
@@ -1195,6 +1395,9 @@ func _draw() -> void:
 	var effects_on := _reveal_effects_enabled()
 	if not effects_on and (not _ripples.is_empty() or not _pops.is_empty()):
 		_clear_wave_state()
+	# 变体纹理：本帧只求值一次，逐格绘制时读缓存（见 _tex_kind_now 声明处）
+	_tex_kind_now = _theme_texture()
+	_tex_col_now = _texture_color() if _tex_kind_now != "" else Color(0, 0, 0, 0)
 
 	var hex := _hex_layout()
 	for r in size.y:
@@ -1232,6 +1435,10 @@ func _draw() -> void:
 				draw_colored_polygon(hex_polygon_px(pos, _hex_unit_px, board_origin, shrink),
 						_cell_base_color(pos, cell, pop_e))
 			_draw_cell(pos, cell, rrect, scale, font, endgame, pop_e)
+			# 变体纹理：用**内容盒**（自定义/蜂窝盘的内接矩形）定位 ⇒ 徽记不会越出多边形；
+			# 仅 HIDDEN 格、仅 palette.texture 非空时绘制（无声明 = 零绘制，零回归）
+			if not endgame:
+				_draw_cell_texture(cell, rect, scale)
 
 	# 波浪颜色脉冲（0 间隙方案：位移/放大被禁 → 颜色通道增强）
 	if not endgame and effects_on:

@@ -2306,17 +2306,6 @@
   ],
   "name": "环盘 02 · 四环",
   "palette": {
-    "texture": "ring",
-    "background": [
-      20,
-      0,
-      35
-    ],
-    "flagged_tile": [
-      230,
-      230,
-      230
-    ],
     "groups": {
       "RING_0": [
         82,
@@ -2334,31 +2323,8 @@
         87
       ]
     },
-    "revealed": [
-      51,
-      51,
-      51
-    ],
-    "revealed_text": [
-      255,
-      255,
-      255
-    ],
-    "tile": [
-      127,
-      127,
-      127
-    ],
-    "tile_border": [
-      200,
-      200,
-      200
-    ],
-    "tile_highlight": [
-      255,
-      255,
-      255
-    ]
+    "texture": "ring",
+    "theme": "YELLOW"
   },
   "revealed": [
     {

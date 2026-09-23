@@ -1,6 +1,6 @@
 {
   "clue_rule": "classic",
-  "desc": "Z2「步步」：逐行增减（挖洞 32 格）",
+  "desc": "Z2「相邻行锁」：逐行增减（挖洞 32 格）",
   "difficulty_profile": {
     "clue_count": 10.0,
     "clue_ratio": 0.48,
@@ -115,18 +115,9 @@
       "r": 4.0
     }
   ],
-  "name": "挖洞 · 步步",
+  "name": "挖洞 · 相邻行锁",
   "palette": {
-    "background": [
-      20.0,
-      0.0,
-      35.0
-    ],
-    "flagged_tile": [
-      230.0,
-      230.0,
-      230.0
-    ],
+    "theme": "GREY",
     "groups": {
       "RING_0": "BLUE",
       "RING_1": [
@@ -140,32 +131,7 @@
         87.0
       ]
     },
-    "revealed": [
-      51.0,
-      51.0,
-      51.0
-    ],
-    "revealed_text": [
-      255.0,
-      255.0,
-      255.0
-    ],
-    "texture": "trail",
-    "tile": [
-      127.0,
-      127.0,
-      127.0
-    ],
-    "tile_border": [
-      200.0,
-      200.0,
-      200.0
-    ],
-    "tile_highlight": [
-      255.0,
-      255.0,
-      255.0
-    ]
+    "texture": "trail"
   },
   "revealed": [
     {

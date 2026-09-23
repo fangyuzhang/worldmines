@@ -1,6 +1,6 @@
 {
   "clue_rule": "classic",
-  "desc": "S1「不行」：禁止几种局部摆法（挖洞 32 格）",
+  "desc": "S1「局部禁形」：禁止几种局部摆法（挖洞 32 格）",
   "difficulty_profile": {
     "clue_count": 5,
     "clue_ratio": 0.23,
@@ -111,18 +111,9 @@
       "r": 5
     }
   ],
-  "name": "挖洞 · 不行",
+  "name": "挖洞 · 局部禁形",
   "palette": {
-    "background": [
-      20,
-      0,
-      35
-    ],
-    "flagged_tile": [
-      230,
-      230,
-      230
-    ],
+    "theme": "RED",
     "groups": {
       "RING_0": [
         82,
@@ -140,32 +131,7 @@
         87
       ]
     },
-    "revealed": [
-      51,
-      51,
-      51
-    ],
-    "revealed_text": [
-      255,
-      255,
-      255
-    ],
-    "texture": "forbid",
-    "tile": [
-      127,
-      127,
-      127
-    ],
-    "tile_border": [
-      200,
-      200,
-      200
-    ],
-    "tile_highlight": [
-      255,
-      255,
-      255
-    ]
+    "texture": "forbid"
   },
   "revealed": [
     {

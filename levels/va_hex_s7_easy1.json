@@ -1,6 +1,6 @@
 {
   "clue_rule": "classic",
-  "desc": "S7「块块」：结构约束（蜂窝 19 格）",
+  "desc": "S7「分量数 K」：结构约束（蜂窝 19 格）",
   "difficulty_profile": {
     "clue_count": 2,
     "clue_ratio": 0.15,
@@ -82,18 +82,9 @@
       "r": 0
     }
   ],
-  "name": "蜂窝 · 块块",
+  "name": "蜂窝 · 分量数 K",
   "palette": {
-    "background": [
-      20,
-      0,
-      35
-    ],
-    "flagged_tile": [
-      230,
-      230,
-      230
-    ],
+    "theme": "GREEN",
     "groups": {
       "RING_0": [
         82,
@@ -111,32 +102,7 @@
         87
       ]
     },
-    "revealed": [
-      51,
-      51,
-      51
-    ],
-    "revealed_text": [
-      255,
-      255,
-      255
-    ],
-    "texture": "block",
-    "tile": [
-      127,
-      127,
-      127
-    ],
-    "tile_border": [
-      200,
-      200,
-      200
-    ],
-    "tile_highlight": [
-      255,
-      255,
-      255
-    ]
+    "texture": "block"
   },
   "revealed": [
     {

@@ -35,6 +35,9 @@
 extends SceneTree
 
 const EXIT_FRAMES := 3
+const ChildIso := preload("res://tools/child_isolation.gd")
+## 本工具的 res:// 路径（隔离模式起子进程时要原样传给它自己）。
+const TOOL_RES_PATH := "res://tools/gen_geo_levels.gd"
 const OUT_DIR := "res://levels"
 ## 写盘走「暂存 → 校验 → 原子转正」（原实现会覆盖后删除，失败即丢原文件）。
 const LevelStaging := preload("res://tools/level_staging.gd")
@@ -44,16 +47,9 @@ const MAX_TRIES := 12
 const MAX_MINES_BUMP := 3
 ## 纹理徽记规则源（palette.texture：变体轴 / 形状族的唯一映射表）。
 const TextureMarks := preload("res://tools/texture_marks.gd")
+## 主题配色规则源（palette.theme：变体轴 / 形状族的唯一映射表）。2026-09-24 接入。
+const ThemeMarks := preload("res://tools/theme_marks.gd")
 
-## 纹理徽记映射（按 kind）。规范值来自产物现状与 64f87c8 的补纹理规则——
-## 由 test_gen_param_parity 的门禁钉住「生成器必须写 palette.texture」。
-const TEXTURE_BY_KIND := {
-	"tri_grid": "weave",
-	"trihex": "weave",
-	"t31212": "weave",
-	"ring": "ring",
-	"poly_set": "petal",
-}
 ## 单关**累计**生成时间上限（看门狗）。2026-09-23 审计 #4 补齐，与 gen_shape_levels.gd 同口径。
 ## 理由：CP-SAT 的 max_time_in_seconds 只约束求解阶段，实测 >100 格 + 变体规则时 Solve()
 ## 长期不返回（CPU 近 0、无输出），从外部与死锁无法区分，只能手动杀进程、整批白跑。
@@ -122,19 +118,51 @@ const SPECS: Array = [
 
 	# ---- 异形 × 变体（S 轴结构 / Z 轴守恒 / dt 骨牌） ----
 	{"file": "vg_tri_s1.json", "kind": "tri_grid", "cols": 4, "rows": 4, "globals": ["s1"],
-		"name": "三角 · 禁形", "desc": "等边三角网格 + S1 局部禁形", "seed": 32101},
+		"name": "三角 · 局部禁形", "desc": "等边三角网格 + S1 局部禁形", "seed": 32101},
 	{"file": "vg_trihex_s2.json", "kind": "trihex", "cols": 3, "rows": 3, "globals": ["s2"],
-		"name": "编织 · 中心", "desc": "3.6.3.6 + S2 中心约束", "seed": 32111},
+		"name": "编织 · 重心", "desc": "3.6.3.6 + S2 中心约束", "seed": 32111},
 	{"file": "vg_trihex_dt.json", "kind": "trihex", "cols": 3, "rows": 3, "globals": ["dt"],
-		"name": "编织 · 骨牌", "desc": "3.6.3.6 + DT 骨牌", "seed": 32121},
+		"name": "编织 · 骨牌边界", "desc": "3.6.3.6 + DT 骨牌", "seed": 32121},
 	{"file": "vg_t31212_s3.json", "kind": "t31212", "cols": 2, "rows": 2, "globals": ["s3"],
-		"name": "十二边 · 环环", "desc": "3.12.12 + S3 禁环", "seed": 32131},
+		"name": "十二边 · 无环", "desc": "3.12.12 + S3 禁环", "seed": 32131},
 	{"file": "vg_ring_s5.json", "kind": "ring", "sectors": [6, 9, 12], "globals": ["s5"],
-		"name": "环盘 · 行列", "desc": "同心环 + S5 行列约束", "seed": 32141},
+		"name": "环盘 · 行列凸", "desc": "同心环 + S5 行列约束", "seed": 32141},
 	{"file": "vg_ring_z2.json", "kind": "ring", "sectors": [6, 9, 12], "globals": ["z2"],
-		"name": "环盘 · 行锁", "desc": "同心环 + Z2 相邻行锁", "seed": 32151},
+		"name": "环盘 · 相邻行锁", "desc": "同心环 + Z2 相邻行锁", "seed": 32151},
 	{"file": "vg_ring_dt.json", "kind": "ring", "sectors": [6, 9, 12], "globals": ["dt"],
-		"name": "环盘 · 骨牌", "desc": "同心环 + DT 骨牌", "seed": 32161},
+		"name": "环盘 · 骨牌边界", "desc": "同心环 + DT 骨牌", "seed": 32161},
+
+	# ---- 第六批：几何族补变体版（2026-09-24）----
+	# 依据本文件头注释的实测清单选型（trihex + z2 不成立 ⇒ 不配 z2）：
+	# 「同类几何换变体」，可行性逐条实测，失败项不落盘。
+	{"file": "vg_tri_s2.json", "kind": "tri_grid", "cols": 4, "rows": 4, "globals": ["s2"],
+		"name": "三角 · 重心", "desc": "等边三角网格 + S2 重心约束", "seed": 32201},
+	{"file": "vg_tri_dt.json", "kind": "tri_grid", "cols": 5, "rows": 4, "globals": ["dt"],
+		"name": "三角 · 骨牌边界", "desc": "等边三角网格 + DT 骨牌", "seed": 32211},
+	{"file": "vg_trihex_s1.json", "kind": "trihex", "cols": 3, "rows": 3, "globals": ["s1"],
+		"name": "编织 · 局部禁形", "desc": "3.6.3.6 + S1 局部禁形", "seed": 32221},
+	{"file": "vg_trihex_s7.json", "kind": "trihex", "cols": 3, "rows": 3, "globals": ["s7"],
+		"name": "编织 · 分量数 K", "desc": "3.6.3.6 + S7 分量数", "seed": 32231},
+	{"file": "vg_t31212_s1.json", "kind": "t31212", "cols": 2, "rows": 2, "globals": ["s1"],
+		"name": "十二边 · 局部禁形", "desc": "3.12.12 + S1 局部禁形", "seed": 32241},
+	{"file": "vg_t31212_dt.json", "kind": "t31212", "cols": 2, "rows": 2, "globals": ["dt"],
+		"name": "十二边 · 骨牌边界", "desc": "3.12.12 + DT 骨牌", "seed": 32251},
+	{"file": "vg_ring_s3.json", "kind": "ring", "sectors": [6, 9, 12], "globals": ["s3"],
+		"name": "环盘 · 无环", "desc": "同心环 + S3 无环约束", "seed": 32261},
+	{"file": "vg_ring_s7.json", "kind": "ring", "sectors": [6, 9, 12], "globals": ["s7"],
+		"name": "环盘 · 分量数 K", "desc": "同心环 + S7 分量数", "seed": 32271},
+
+	# ---- 第七批：给最弱的变体补几何（2026-09-24）----
+	# 盘点：s6（偶偶）只有 3 类几何、其中 3 关是同一个蜂窝盘；s1 有 7 类、s2 有 6 类。
+	# 逐条实测可行性，失败的组合不落盘（几何族不能全组合，见文件头实测清单）。
+	{"file": "vg_trihex_s6.json", "kind": "trihex", "cols": 3, "rows": 3, "globals": ["s6"],
+		"name": "编织 · 度偶数", "desc": "3.6.3.6 + S6 偶偶约束", "seed": 32281},
+	{"file": "vg_ring_s6.json", "kind": "ring", "sectors": [6, 9, 12], "globals": ["s6"],
+		"name": "环盘 · 度偶数", "desc": "同心环 + S6 偶偶约束", "seed": 32291},
+	# ⚠️ t31212 + s6（十二边 · 偶偶）**实测不可行**（2026-09-24）：12 格 3 邻 + 3 格 12 邻的
+	# 混合度数下，「每个雷的度数必须为偶」与 3.12.12 的度数分布冲突，连续尝试全空。
+	# 记录在此供后人参考，不再作为待产规格（避免工具长期报 FAILED）。
+	# 同批的 trihex + s6（编织 · 偶偶）与 ring + s6（环盘 · 偶偶）实测可产，已落盘。
 ]
 
 var _started := false
@@ -148,7 +176,11 @@ var _ok := 0
 func _process(_delta: float) -> bool:
 	if not _started:
 		_started = true
-		_run()
+		# child 模式 = 进程隔离的子进程侧：只生成一个规格后退出
+		if ChildIso.is_child_mode():
+			_run_child_mode()
+		else:
+			_run()
 		return false
 	if not _exit_pending:
 		return false
@@ -163,13 +195,28 @@ func _run() -> void:
 	var want := _selected()
 	print("=== 铺装族 异形关生成 ===")
 	var todo: Array = []
-	for spec: Dictionary in SPECS:
+	var todo_idx: Array = []      # 隔离模式按索引找子进程（父子同看 SPECS）
+	for i in SPECS.size():
+		var spec: Dictionary = SPECS[i]
 		if want.is_empty() or want.has(str(spec["file"])):
 			todo.append(spec)
+			todo_idx.append(i)
 	DirAccess.make_dir_recursive_absolute(OUT_DIR)
 	var t_all := Time.get_ticks_msec()
-	for spec: Dictionary in todo:
-		if _gen_one(spec):
+	var isolate := OS.get_cmdline_user_args().has("--isolate")
+	if isolate:
+		print("  ** 进程隔离已开启：每关独立子进程 + %d 秒强杀 **" % [ChildIso.DEFAULT_TIMEOUT_MS / 1000])
+	for k in todo.size():
+		var spec: Dictionary = todo[k]
+		var ok := false
+		if isolate:
+			var code := ChildIso.run_child(TOOL_RES_PATH, int(todo_idx[k]))
+			ok = code == 0
+			if code == 2:
+				print("  !! %s：超时强杀（该组合在此规模下超出求解器可行域）" % str(spec["file"]))
+		else:
+			ok = _gen_one(spec)
+		if ok:
 			_ok += 1
 		else:
 			_fail += 1
@@ -188,7 +235,8 @@ func _selected() -> Array:
 	for a in OS.get_cmdline_user_args():
 		for piece in str(a).split(","):
 			var s := piece.strip_edges()
-			if s != "":
+			if s != "" and not s.begins_with("--"):
+				# 跳过开关参数（--isolate 等）：它不是文件名
 				out.append(s)
 	return out
 
@@ -305,7 +353,8 @@ func _gen_one(spec: Dictionary) -> bool:
 	if tex != "":
 		pal["texture"] = tex
 	pal["groups"] = RING_COLORS.duplicate(true)
-	level["palette"] = pal
+	# 主题配色（2026-09-24）：规则源 tools/theme_marks.gd；apply() 删短路键 + 保留 groups/texture
+	level["palette"] = ThemeMarks.apply(pal, "", variant, kind)
 
 	# 2026-09-23 审计修复：先写暂存区、校验通过才原子转正。原实现直接覆盖正式
 	# 文件、校验失败再 remove —— 盘上原有的好文件被「覆盖后删除」，净结果永久丢失。
@@ -432,6 +481,22 @@ func _load_level(path: String) -> Board:
 		return null
 	var b: Variant = loader.call("load_level", path)
 	return b as Board
+
+
+## 子进程侧（进程隔离）：只生成第 index 个规格，把退出码写进完成标记。
+## 参数形如 `-- child <index> <marker>`；索引直接取 SPECS[index] ⇒ 父子看到同一张表。
+func _run_child_mode() -> void:
+	var a := ChildIso.child_args()
+	var idx := int(a[0])
+	var marker := str(a[1])
+	if idx < 0 or idx >= SPECS.size():
+		ChildIso.write_marker(marker, 2)
+		_request_exit(2)
+		return
+	var spec: Dictionary = SPECS[idx]
+	var code := 0 if _gen_one(spec) else 1
+	ChildIso.write_marker(marker, code)
+	_request_exit(code)
 
 
 func _request_exit(code: int) -> void:
