@@ -46,6 +46,9 @@ const LEVEL_LOADER_PATH := "res://ui/level_loader.gd"
 const ATTEMPTS := 30
 const MAX_TRIES := 8
 const MAX_MINES_BUMP := 3
+## 纹理徽记规则源（palette.texture：变体轴 / 形状族的唯一映射表）。
+const TextureMarks := preload("res://tools/texture_marks.gd")
+
 ## 单关**累计**生成时间上限（看门狗）。2026-09-23 审计 #4 补齐，与 gen_shape_levels.gd 同口径。
 ## 理由：CP-SAT 的 max_time_in_seconds 只约束求解阶段，实测 >100 格 + 变体规则时 Solve()
 ## 长期不返回（CPU 近 0、无输出），从外部与死锁无法区分，只能手动杀进程、整批白跑。
@@ -365,6 +368,13 @@ func _gen_one(spec: Dictionary) -> bool:
 			str(spec["colors"][1]), str(spec["pattern"]), topo)
 	var pal := PALETTE_BASE.duplicate(true)
 	var cs: Array = spec["colors"]
+	# 纹理徽记（2026-09-23 审计续）：规则源 tools/texture_marks.gd ——
+	# 纯风格关按 kind（hex→comb / grid→weave / t488→octa / poly_set→petal），
+	# 变体关（sty_var_* 带 globals）按变体轴优先。
+	var tex := TextureMarks.resolve(str(spec.get("texture", "")),
+			str(globals[0]) if not globals.is_empty() else "", kind)
+	if tex != "":
+		pal["texture"] = tex
 	pal["groups"] = {str(cs[0]): COLORS[str(cs[0])], str(cs[1]): COLORS[str(cs[1])]}
 	level["palette"] = pal
 

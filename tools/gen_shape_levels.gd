@@ -108,6 +108,8 @@ const MIN_PEAK := 1
 const WATCHDOG_MS_PER_LEVEL := 240000
 ## 档位不达标时的加雷轮数上限（每轮 +1 雷、重搜 MAX_TRIES 个 seed；0 = 只换 seed 不加雷）。
 const MAX_MINES_BUMP := 4
+## 纹理徽记规则源（palette.texture：变体轴 / 形状族的唯一映射表）。
+const TextureMarks := preload("res://tools/texture_marks.gd")
 ## 形状关密度上界（低密度设计）：mines + bump 不得超过 格数 × DENSITY_CAP——
 ## 超过说明该形状在小尺寸下数学上难出深推理，此时如实失败并在报告里列出，不无限加雷。
 const DENSITY_CAP := 0.35
@@ -908,11 +910,17 @@ func _gen_one(spec: Dictionary) -> bool:
 		level["rule_level"] = true
 	if spec.has("theme"):
 		level["palette"] = {"theme": str(spec["theme"])}
-		# 纹理徽记（2026-09-23）：spec 的 texture 一并落盘——否则**每次重生成都会抹掉**
-		# palette.texture（手工补的徽记被覆盖 → test_cell_texture 的「死标记」断言立刻红）。
-		# 与 theme 同源：spec 是唯一事实源，生成产物只做搬运。
-		if spec.has("texture"):
-			level["palette"]["texture"] = str(spec["texture"])
+	# 纹理徽记（2026-09-23 审计续）：规则源统一到 tools/texture_marks.gd ——
+	# spec 显式声明的 texture 优先（art_ / ani_ 走这条），否则按变体轴 / 形状族解析
+	#（holed_ / hex_ 由此自动带上 strata / comb，不再依赖手工补丁；新增族只改那张表）。
+	# 历史：此前只做「spec → 落盘」的搬运，未声明 texture 的族重生成即丢徽记。
+	var _tm_gl: Array = globals
+	var _tm_variant := str(_tm_gl[0]) if not _tm_gl.is_empty() else ""
+	var _tm_tex := TextureMarks.resolve(str(spec.get("texture", "")), _tm_variant, kind)
+	if _tm_tex != "":
+		if not level.has("palette"):
+			level["palette"] = {}
+		level["palette"]["texture"] = _tm_tex
 		level["shape_kind"] = str(spec.get("shape_kind", "形状棋盘"))
 	var tmp_path := "%s/%s" % [TMP_DIR, file_name]
 	DirAccess.make_dir_recursive_absolute(TMP_DIR)

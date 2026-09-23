@@ -109,3 +109,60 @@ func test_product_json_keeps_two_space_indent() -> void:
 				"%s 第 2 行应以 2 空格缩进开头（实得 %s）——1 空格说明被外部进程重写过" % [n, str(lines[1]).left(24)])
 			checked += 1
 	assert_gt(checked, 0, "应至少检查到一个关卡文件")
+
+
+# ==================== 纹理徽记：规则单点 ↔ 登记表 ↔ 产物（2026-09-23 审计续）====================
+#
+# 徽记规则现由 tools/texture_marks.gd 一张表唯一提供（生成器写盘前调用 resolve）。
+# 这两个用例守住「表 ↔ 渲染登记表」与「表 ↔ 全部产物」两条缝：
+#   · 表里声明的每个值都必须登记在 ui/board_view.gd 的 TEXTURE_MARKS（否则玩家看不到）；
+#   · 每个带变体的关卡，其 palette.texture 必须等于表的解析结果（新增变体/族自动覆盖）。
+
+const MARKS := "res://tools/texture_marks.gd"
+
+
+func test_texture_marks_declared_values_are_registered() -> void:
+	var marks: Variant = load(MARKS)
+	assert_not_null(marks, "纹理规则模块应能编译")
+	if marks == null:
+		return
+	var declared: Array = marks.call("declared_values")
+	assert_gt(declared.size(), 0, "规则表应声明至少一个徽记")
+	var bv := _read("res://ui/board_view.gd")
+	assert_ne(bv, "", "应能读到 ui/board_view.gd（渲染侧登记表）")
+	for v in declared:
+		assert_true(bv.contains('"%s"' % str(v)),
+			"徽记「%s」应登记在 board_view.TEXTURE_MARKS" % str(v))
+
+
+func test_all_variant_products_match_texture_marks() -> void:
+	var marks: Variant = load(MARKS)
+	if marks == null:
+		return
+	var d := DirAccess.open("res://levels")
+	assert_not_null(d, "应能打开 res://levels")
+	if d == null:
+		return
+	var checked := 0
+	for fn in d.get_files():
+		if not fn.ends_with(".json"):
+			continue
+		var src := _read("res://levels/" + fn)
+		if src == "":
+			continue
+		var parsed: Variant = JSON.parse_string(src)
+		if not (parsed is Dictionary):
+			continue
+		var lv: Dictionary = parsed
+		var gl: Variant = lv.get("global_rules", [])
+		if not (gl is Array) or (gl as Array).is_empty():
+			continue
+		var variant := str((gl as Array)[0])
+		if not bool(marks.call("variant_has_mark", variant)):
+			continue          # 该变体没有专属徽记（z1/z3/z4/z5 等）
+		var want := str(marks.call("resolve", "", variant, ""))
+		var pal: Variant = lv.get("palette", {})
+		var got := str((pal as Dictionary).get("texture", "")) if pal is Dictionary else ""
+		assert_eq(got, want, "%s（变体 %s）：产物徽记应与规则表一致" % [fn, variant])
+		checked += 1
+	assert_gt(checked, 0, "应至少核到一个带变体的关")

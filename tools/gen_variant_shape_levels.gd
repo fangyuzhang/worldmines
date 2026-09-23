@@ -38,6 +38,9 @@ const LEVEL_LOADER_PATH := "res://ui/level_loader.gd"
 const ATTEMPTS := 30
 const MAX_TRIES := 12         # 换 seed 次数
 const MAX_MINES_BUMP := 3
+## 纹理徽记规则源（palette.texture：变体轴 / 形状族的唯一映射表）。
+const TextureMarks := preload("res://tools/texture_marks.gd")
+
 ## 单关**累计**生成时间上限（看门狗）。2026-09-23 审计 #4 补齐，与 gen_shape_levels.gd 同口径。
 ## 理由：CP-SAT 的 max_time_in_seconds 只约束求解阶段，实测 >100 格 + 变体规则时 Solve()
 ## 长期不返回（CPU 近 0、无输出），从外部与死锁无法区分，只能手动杀进程、整批白跑。
@@ -224,6 +227,12 @@ func _gen_one(c: Dictionary) -> bool:
 	level["shape_kind"] = "蜂窝盘" if shape == SHAPE_HEX else "挖洞方格"
 	level["groups"] = _ring_groups(topo)
 	level["palette"] = _palette()
+	# 纹理徽记（2026-09-23 审计续）：变体关按变体轴解析（规则源 tools/texture_marks.gd）。
+	var _tm_gl: Array = level.get("global_rules", [])
+	if not _tm_gl.is_empty():
+		var _tm := TextureMarks.resolve("", str(_tm_gl[0]), "")
+		if _tm != "":
+			level["palette"]["texture"] = _tm
 
 	# 2026-09-23 审计修复：先写暂存区、校验通过才原子转正。原实现直接覆盖正式文件、
 	# 校验失败再 remove —— 盘上原有的好文件被「覆盖后删除」，净结果永久丢失。

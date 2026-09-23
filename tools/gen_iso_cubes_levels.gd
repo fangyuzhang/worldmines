@@ -32,6 +32,9 @@ const LEVEL_LOADER_PATH := "res://ui/level_loader.gd"
 const ATTEMPTS := 30
 const MAX_TRIES := 8
 const MAX_MINES_BUMP := 3
+## 纹理徽记规则源（palette.texture：变体轴 / 形状族的唯一映射表）。
+const TextureMarks := preload("res://tools/texture_marks.gd")
+
 ## 单关**累计**生成时间上限（看门狗）。2026-09-23 审计 #4 补齐，与 gen_shape_levels.gd 同口径。
 ## 理由：CP-SAT 的 max_time_in_seconds 只约束求解阶段，实测 >100 格 + 变体规则时 Solve()
 ## 长期不返回（CPU 近 0、无输出），从外部与死锁无法区分，只能手动杀进程、整批白跑。
@@ -245,7 +248,7 @@ func _gen_one(spec: Dictionary) -> bool:
 	# 纹理徽记（2026-09-23 审计修复）：本族产物一直带 texture=cube（玩家侧的第二条识别
 	# 通道），但生成器此前不写该字段——重跑会把它悄悄丢掉（实测：一次重跑让 iso_01..05
 	# 各少一行）。补上后「重跑 = 幂等」，与 gen_shape_levels 从 SPEC 读 texture 的做法对齐。
-	pal["texture"] = "cube"
+	pal["texture"] = TextureMarks.resolve("", "", "iso_cubes")
 	pal["groups"] = FACE_COLORS.duplicate(true)
 	level["palette"] = pal
 
