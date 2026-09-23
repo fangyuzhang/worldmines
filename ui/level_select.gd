@@ -1157,8 +1157,11 @@ func _refresh_shape_body() -> void:
 		for v: Dictionary in _shape_variants():
 			flow.add_child(_make_variant_card(v))
 		return
-	# 第二级：返回入口 + 该变体下的全部异形棋盘
+	# 第二级：返回入口 + 教程入口 + 该变体下的全部异形棋盘
 	flow.add_child(_make_shape_back_card())
+	# 教程入口（2026-09-23 审计补齐）：异形页是 ani_*/vg_* 这批**变体形状关**的主入口，
+	# 但此前只有模式弹窗与对局 HUD 有教程按钮——在这一页选 s2/s3/z3/dt 棋盘的玩家无处读规则。
+	flow.add_child(_make_shape_tutorial_card())
 	for info: Dictionary in _shape_levels():
 		if str(info["variant"]) == _shape_variant:
 			flow.add_child(_make_shape_card(info))
@@ -1224,6 +1227,36 @@ func _make_shape_back_card() -> Button:
 	_style_card(btn)
 	var lb := Label.new()
 	lb.text = "← 返回变体列表"
+	lb.add_theme_font_size_override("font_size", 15)
+	lb.add_theme_color_override("font_color", ThemeManager.text_secondary())
+	lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lb.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	lb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	btn.add_child(lb)
+	UiTheme.bind_hover(btn, 1.03)
+	return btn
+
+
+## 第二级的教程入口（2026-09-23 审计补齐）：与返回卡同款卡片，点了看**当前变体**的教程。
+## 为什么需要：异形页是 ani_*/vg_* 这批变体形状关的主入口（模式弹窗里没有它们），
+## 而教程入口此前只在模式弹窗标题栏与对局 HUD——在这一页选 s2/s3/z3/dt 棋盘的玩家无处读规则。
+## 变体 id 与教程页的组合 id 同源（tutorial_s2_0.txt 等），故直接复用 show_for。
+func _make_shape_tutorial_card() -> Button:
+	var btn := Button.new()
+	btn.custom_minimum_size = Vector2(CARD_W, CARD_H)
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.set_meta("card_btn", true)
+	btn.set_meta("shape_tutorial", _shape_variant)   # 测试 / 调试可据此定位
+	var vname := VariantCatalog.display_name(_shape_variant)
+	if vname == "":
+		vname = _shape_variant    # 未登记的变体（未来新增 / Mod）也不至于显示空白
+	btn.tooltip_text = "查看「%s」的教程" % vname
+	btn.pressed.connect(func():
+		TutorialOverlayScript.show_for(self, _shape_variant))
+	_style_card(btn)
+	var lb := Label.new()
+	lb.text = "教程 · %s" % vname
 	lb.add_theme_font_size_override("font_size", 15)
 	lb.add_theme_color_override("font_color", ThemeManager.text_secondary())
 	lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

@@ -213,3 +213,44 @@ func test_is_shape_level_predicate() -> void:
 	assert_false(_view._is_shape_level({"topology": {}}), "topology 为空字典 → 非异形")
 	assert_true(_view._is_shape_level({"topology": {"positions": [{"x": 0, "y": 0}]}}),
 		"非空 topology → 异形")
+
+
+# 2026-09-23 审计补齐：第二级应有「教程」卡。
+# 为什么：异形页是 ani_*/vg_* 这批**变体形状关**的主入口（模式弹窗里没有它们），
+# 而教程入口此前只在模式弹窗标题栏与对局 HUD——在这一页选 s2/s3/z3/dt 棋盘的玩家
+# 无处读规则。这条契约钉住「第二级有且仅有一张教程卡 + 它指向当前变体 + 点击能拉出覆盖层」。
+func test_variant_level_offers_variant_tutorial() -> void:
+	var counts := _counts_by_variant()
+	# 优先挑官方轴上有教程页的变体（s2/s3/z3/dt 均有 tutorial_*_0.txt）；
+	# 其它变体（vg_ 复刻族等）可能没有页，此时覆盖层显示兜底文案——两种都算通过。
+	var vid := ""
+	for prefer in ["s2", "s3", "z3", "dt"]:
+		if counts.has(prefer):
+			vid = prefer
+			break
+	if vid == "":
+		for k: String in counts:
+			if k != "classic":
+				vid = k
+				break
+	if vid == "":
+		pending("本机 levels/ 没有非 classic 变体的异形关")
+		return
+	_view._open_shape_variant(vid)
+	var tut := _cards("shape_tutorial")
+	assert_eq(tut.size(), 1, "变体 %s：第二级应有且仅有一个教程卡片" % vid)
+	if tut.is_empty():
+		return
+	assert_eq(str((tut[0] as Button).get_meta("shape_tutorial")), vid,
+		"教程卡片应指向当前变体（期望 %s）" % vid)
+	(tut[0] as Button).pressed.emit()
+	var ov: Control = null
+	for c in _view.get_children():
+		if c.has_method("close_overlay"):
+			ov = c
+	assert_not_null(ov, "点教程卡应拉出覆盖层（变体 %s）" % vid)
+	if ov == null:
+		return
+	var title: Label = ov.get("_title")
+	assert_true(title.text.find("tutorial_%s" % vid) >= 0 or title.text.find("暂无教程") >= 0,
+		"应加载变体 %s 的教程页或显示兜底（实得：%s）" % [vid, title.text])
