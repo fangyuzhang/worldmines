@@ -254,3 +254,35 @@ func test_variant_level_offers_variant_tutorial() -> void:
 	var title: Label = ov.get("_title")
 	assert_true(title.text.find("tutorial_%s" % vid) >= 0 or title.text.find("暂无教程") >= 0,
 		"应加载变体 %s 的教程页或显示兜底（实得：%s）" % [vid, title.text])
+
+
+# 2026-09-23 新增契约：第二级按**档位分组**（普通 / 困难 / 噩梦 / 未分档）。
+# 为什么：内容目标 =「每个变体 × 每个档位都有较多异形棋盘」（用户口径）；平铺时这个事实
+# 对玩家不可见（卡片只写格数/雷数）。这条钉住「分组标题存在、文案与 Difficulty.tier_text
+# 同源、且分组不改变卡片总数」——分组整段消失（例如有人改回平铺）会在这里红灯。
+func test_second_level_groups_by_tier() -> void:
+	_view._open_shape_variant("classic")   # 内容最多的变体：三档 + 未分档都可能出现
+	var texts: Array[String] = []
+	_collect_labels(_view._shape_body, texts)
+	var tier_headers := 0
+	var none_headers := 0
+	for t in texts:
+		if t.contains("条线索）") and t.contains("·") and t.contains("关"):
+			tier_headers += 1
+		if t.begins_with("未分档"):
+			none_headers += 1
+	assert_gt(tier_headers, 0,
+		"第二级应有档位分组标题（Difficulty.tier_text 文案，如「普通（2–3 条线索）· N 关」）")
+	assert_eq(none_headers, 1,
+		"classic 有未分档关卡（peak≤1/超纲）⇒ 应有且仅有一段「未分档」标题")
+	# 文案来源：与 Difficulty.tier_text 同源（禁止手写第二份档位表）
+	var want_easy := Difficulty.tier_text("easy")
+	var has_want := false
+	for t in texts:
+		if t.begins_with(want_easy):
+			has_want = true
+	assert_true(has_want, "档位标题应以 Difficulty.tier_text(\"easy\") 开头（实得：%s）" % want_easy)
+	# 分组不改变卡片总数：第一级的关卡计数 == 第二级的卡片数
+	var counts := _counts_by_variant()
+	assert_eq(_cards("shape_path").size(), int(counts["classic"]),
+		"按档位分组后 classic 的第二级卡片数应不变")

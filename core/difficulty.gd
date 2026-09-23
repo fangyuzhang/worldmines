@@ -143,3 +143,11 @@ static func tier_text(tier: String) -> String:
 	if w.is_empty():
 		return str(TIERS.get(tier, {}).get("label", tier))
 	return "%s（%d–%d 条线索）" % [str(w["label"]), int(w["min"]), int(w["max"])]
+
+
+## 档位短标签（「普通 / 困难 / 噩梦」）。摘要行（如异形页卡片 tooltip 的难度分布）用——
+## tier_text 带窗口后缀太长，塞不进一行；两者**同源**（都从 PEAK_WINDOWS 的 label 取），
+## 不构成第二份档位表。
+static func tier_short(tier: String) -> String:
+	var w: Dictionary = PEAK_WINDOWS.get(tier, {})
+	return str(w.get("label", tier)) if not w.is_empty() else str(tier)

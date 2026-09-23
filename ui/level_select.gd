@@ -1050,6 +1050,12 @@ func _shape_levels() -> Array[Dictionary]:
 		# 底座席位同名）——**不用空串**：空串在页面状态里是"第一级总览"的哨兵值，混用会令
 		# 「经典」变体永远打不开（实测踩过）。
 		var vid := str(globals[0]) if not globals.is_empty() else "classic"
+		# 档位（v4.1 峰值窗口口径）：第二级按「普通 / 困难 / 噩梦」分组展示，让
+		# 「每个变体 × 每个档位都有较多棋盘」这个内容目标**对玩家可见**。
+		# 判档走 Difficulty.tier_of_profile（唯一事实源，从画像的 max_complexity 定档）；
+		# 判不出（peak ≤1 一眼盘 / ≥21 超纲 / 无画像）返回 ""，展示时归入「未分档」段。
+		var dp_v: Variant = lv.get("difficulty_profile", {})
+		var dp: Dictionary = dp_v if dp_v is Dictionary else {}
 		out.append({
 			"path": path,
 			"title": LevelLoader.get_level_name(path),
@@ -1060,6 +1066,7 @@ func _shape_levels() -> Array[Dictionary]:
 			"variant": vid,
 			"variant_name": "经典" if vid == "classic" else VariantCatalog.display_name(vid),
 			"variant_text": "经典底座（无额外规则）" if vid == "classic" else VariantCatalog.rule_text(vid),
+			"tier": Difficulty.tier_of_profile(dp),
 		})
 	_shape_cache = out
 	_shape_cache_loaded = true
@@ -1123,10 +1130,14 @@ func _shape_variants() -> Array[Dictionary]:
 		var vid := str(info["variant"])
 		if not by.has(vid):
 			by[vid] = {"id": vid, "name": str(info["variant_name"]),
-					"text": str(info["variant_text"]), "levels": 0, "cleared": 0}
+					"text": str(info["variant_text"]), "levels": 0, "cleared": 0, "tiers": {}}
 		by[vid]["levels"] = int(by[vid]["levels"]) + 1
 		if _is_cleared(str(info["path"])):
 			by[vid]["cleared"] = int(by[vid]["cleared"]) + 1
+		# 档位计数（第一级卡片 tooltip 的难度分布；与第二级分组标题同一事实的不同粒度）
+		var td: Dictionary = by[vid]["tiers"]
+		var t := str(info.get("tier", ""))
+		td[t] = int(td.get(t, 0)) + 1
 	var order: Array = ["classic"] + VariantAxes.STRUCT + VariantAxes.CONSERVE
 	var out: Array[Dictionary] = []
 	for vid in order:
@@ -1138,6 +1149,26 @@ func _shape_variants() -> Array[Dictionary]:
 	return out
 
 
+## 第二级的档位分组顺序（v4.1 峰值窗口口径）。"" = 未分档——判不出档的关**不藏**
+## （它们是既有内容），单独一段如实标注。顺序由易到难：玩家从上往下读就是难度曲线。
+const SHAPE_TIER_ORDER: Array = ["easy", "normal", "hard", ""]
+
+
+## 第一级卡片的难度分布摘要（如「普通 3 · 困难 2 · 噩梦 1」；未分档非零时附末尾）。
+## 数据 = _shape_variants 聚合的 tiers 计数。玩家 hover 就能看出该变体的难度覆盖，
+## 不必点进去数（与第二级的分组标题是同一事实的两个粒度）。
+## 标签走 Difficulty.tier_short（同源于 PEAK_WINDOWS），不手写档位名。
+func _tier_summary(v: Dictionary) -> String:
+	var tiers: Dictionary = v.get("tiers", {})
+	var parts: Array = []
+	for t in SHAPE_TIER_ORDER:
+		var n := int(tiers.get(t, 0))
+		if n <= 0:
+			continue
+		parts.append("未分档 %d" % n if str(t) == "" else "%s %d" % [Difficulty.tier_short(str(t)), n])
+	return " · ".join(parts) if not parts.is_empty() else "（无）"
+
+
 ## 重建内容区（切级 / 主题刷新时调用）：只换卡片墙，保住滚动容器本身。
 func _refresh_shape_body() -> void:
 	if _shape_body == null or not is_instance_valid(_shape_body):
@@ -1147,24 +1178,70 @@ func _refresh_shape_body() -> void:
 		# 同一帧内的后续读取仍会看到旧卡片（切级瞬间新旧两批同时存在，实测踩过）。
 		_shape_body.remove_child(c)
 		c.queue_free()
-	var flow := HFlowContainer.new()
-	flow.add_theme_constant_override("h_separation", 14)
-	flow.add_theme_constant_override("v_separation", 14)
-	flow.alignment = FlowContainer.ALIGNMENT_CENTER
-	_shape_body.add_child(flow)
 	if _shape_variant == "":
-		# 第一级：变体卡片（每个变体一张，带该变体的异形棋盘覆盖与通关进度）
+		# 第一级：变体卡片流（每个变体一张，带该变体的异形棋盘覆盖与通关进度）
+		var flow := HFlowContainer.new()
+		flow.add_theme_constant_override("h_separation", 14)
+		flow.add_theme_constant_override("v_separation", 14)
+		flow.alignment = FlowContainer.ALIGNMENT_CENTER
+		_shape_body.add_child(flow)
 		for v: Dictionary in _shape_variants():
 			flow.add_child(_make_variant_card(v))
 		return
-	# 第二级：返回入口 + 教程入口 + 该变体下的全部异形棋盘
-	flow.add_child(_make_shape_back_card())
+	# 第二级：**按档位分组**（普通 / 困难 / 噩梦 / 未分档）。
+	# 为什么分组而不是平铺（2026-09-23，用户口径「每个变体 × 每个档位都要有较多异形关」）：
+	# 平铺时这个内容事实**对玩家不可见**——卡片只写格数/雷数，玩家看不出这座变体的难度分布。
+	# 分组标题（图 Difficulty.tier_text）让「三档各有几关」一眼可见；档位由关卡画像实时算，
+	# 不写进关卡数据（重算窗口时不会失真）。
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 10)
+	_shape_body.add_child(col)
+	var tools := HFlowContainer.new()
+	tools.add_theme_constant_override("h_separation", 14)
+	tools.add_theme_constant_override("v_separation", 10)
+	tools.alignment = FlowContainer.ALIGNMENT_CENTER
+	col.add_child(tools)
+	tools.add_child(_make_shape_back_card())
 	# 教程入口（2026-09-23 审计补齐）：异形页是 ani_*/vg_* 这批**变体形状关**的主入口，
 	# 但此前只有模式弹窗与对局 HUD 有教程按钮——在这一页选 s2/s3/z3/dt 棋盘的玩家无处读规则。
-	flow.add_child(_make_shape_tutorial_card())
+	tools.add_child(_make_shape_tutorial_card())
+	var by_tier: Dictionary = {}
+	for t in SHAPE_TIER_ORDER:
+		by_tier[t] = []
 	for info: Dictionary in _shape_levels():
-		if str(info["variant"]) == _shape_variant:
+		if str(info["variant"]) != _shape_variant:
+			continue
+		var t := str(info.get("tier", ""))
+		if not by_tier.has(t):
+			t = ""
+		(by_tier[t] as Array).append(info)
+	for t in SHAPE_TIER_ORDER:
+		var lst: Array = by_tier[t]
+		if lst.is_empty():
+			continue
+		col.add_child(_make_tier_header(str(t), lst.size()))
+		var flow := HFlowContainer.new()
+		flow.add_theme_constant_override("h_separation", 14)
+		flow.add_theme_constant_override("v_separation", 14)
+		flow.alignment = FlowContainer.ALIGNMENT_CENTER
+		col.add_child(flow)
+		for info: Dictionary in lst:
 			flow.add_child(_make_shape_card(info))
+
+
+## 第二级的档位分组标题（如「困难（4–5 条线索）· 3 关」）。
+## 文案走 Difficulty.tier_text（唯一档位文案源，禁止手写第二份档位表——防漂移）；
+## 「未分档」如实标注原因，不藏关卡（那是既有内容，只是画像判不出档）。
+func _make_tier_header(tier: String, count: int) -> Control:
+	var lb := Label.new()
+	if tier == "":
+		lb.text = "未分档 · %d 关（推理画像不在任何窗口内）" % count
+	else:
+		lb.text = "%s · %d 关" % [Difficulty.tier_text(tier), count]
+	lb.add_theme_font_size_override("font_size", 16)
+	lb.add_theme_color_override("font_color", ThemeManager.text_secondary())
+	lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	return lb
 
 
 ## 第一级卡片：变体名 + 覆盖（「3 / 4」= 已通关 / 该变体的异形棋盘数）。
@@ -1176,8 +1253,8 @@ func _make_variant_card(v: Dictionary) -> Button:
 	btn.set_meta("variant_id", str(v["id"]))       # 测试 / 调试可据此定位变体
 	var total := int(v["levels"])
 	var cleared := int(v["cleared"])
-	btn.tooltip_text = "%s\n%s\n该变体有 %d 个异形棋盘（已通关 %d）\n点击查看全部棋盘" % [
-		str(v["name"]), str(v["text"]), total, cleared]
+	btn.tooltip_text = "%s\n%s\n该变体有 %d 个异形棋盘（已通关 %d）\n难度分布：%s\n点击查看全部棋盘" % [
+		str(v["name"]), str(v["text"]), total, cleared, _tier_summary(v)]
 	btn.pressed.connect(_open_shape_variant.bind(str(v["id"])))
 	_style_card(btn)
 
