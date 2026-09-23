@@ -1,6 +1,11 @@
 #!/bin/bash
 # fill_chain.sh —— 按薄集优先级**串行**补产（每轮先等空闲核，绝不与现有补产链抢核）
 #
+# ⚠️ 已被 tools/fill_level_lib.sh（2026-09-22，`8e45386`）取代——那个是项目自带的**增量补库**入口：
+#    口径自检 + 分片 + 心跳续跑（unit_done → 重跑自动跳过满额单元）+ 可配 PER_TIER/SEED_MAX。
+#    本脚本保留为「按窗口定向补产单席单档」的历史工具（首发 s1 与 s6/s4/o5x/s3/z4 的噩梦批次由它产出，
+#    共 1,988 关，见 `待办项.md`）；新排产请用 fill_level_lib.sh。
+#
 # 依据：tools/thin_cells.py 的优先级（hard@7-9 缺口最大 → 再普通/困难档，后者便宜）
 # 纪律：全部走窗口验收（fill_window.gd 内建校验：坏格式启动即失败、不落盘窗口外关卡）
 # 观测：/root/fill_chain.log（每轮 start/done + 命中率/峰值分布由工具自打印）
