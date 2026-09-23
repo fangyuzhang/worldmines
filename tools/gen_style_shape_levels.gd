@@ -31,9 +31,11 @@
 #   补齐这两项需要专门窗口实跑验证（生成一次数十分钟），故本轮只记录、未实施。
 # ⚠️ 已知缺口（2026-09-23 审计）：本族产物带 palette.texture 徽记，但**生成器不写该字段**
 #   —— 重跑本族会把 texture 悄悄丢掉（iso_cubes 已实测：重跑后 5 个文件各少一行）。
-#   回填需按族/按关核对现值（geo 按 kind：tri_/trihex_/t31212_ = weave、ring_ = ring；
-#   style 的 sty_* 含 block/comb/octa/parity/trail/weave 六种，需逐关对照产物），
-#   属内容层决策，故本轮只记录。
+#   本族回填被三个未知阻塞（2026-09-23 实测）：① sty_* 里混着 10 关**空 texture**（hex 1、
+#   holed_grid 5、t488 4）与 3 关**变体轴值**（hex|trail、holed_grid|block、t488|parity）——
+#   要么是上轮补纹后的重跑受害者，要么本族与 gen_variant_shape_levels 共用文件前缀；
+#   ② 需先确定每个 sty_* 的实际产出者；③ 映射键是生成器的 kind（grid/hex/poly_set/t488）
+#   而非产物的 topology.style。理清后再回填——不盲填（填错会改变玩家看到的纹理）。
 extends SceneTree
 
 const EXIT_FRAMES := 3

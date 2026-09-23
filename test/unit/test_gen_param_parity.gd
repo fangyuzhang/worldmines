@@ -78,3 +78,34 @@ func _read(p: String) -> String:
 	var s := f.get_as_text()
 	f.close()
 	return s
+
+
+# ==================== 纹理徽记与产物缩进（2026-09-23 审计续）====================
+
+func test_shape_generators_declare_texture() -> void:
+	# 产物带 palette.texture 的族，生成器必须写该字段——否则重跑会把纹理徽记悄悄丢掉
+	#（iso_cubes 实测：一次重跑让 5 个文件各少一行；geo 同类风险已按 kind 回填）。
+	# style 族待理清（10 关空值 + 3 关变体值混入，见其文件头警示），暂不列入。
+	for p in ["res://tools/gen_geo_levels.gd", "res://tools/gen_iso_cubes_levels.gd"]:
+		var src := _read(p)
+		assert_ne(src, "", "应能读到 %s" % p)
+		assert_true(src.contains('pal["texture"]'),
+			"%s 应写 palette.texture（否则重跑丢纹理徽记）" % p)
+
+
+func test_product_json_keeps_two_space_indent() -> void:
+	# 2026-09-23 内两次出现「levels/*.json 被外部进程改写成 1 空格缩进」（内容零变化、
+	# 纯格式噪音，波及 47~108 个文件）。这条门禁在它再发生时立刻红灯，省得又在 git diff 里翻找。
+	var names := ["classic_01.json", "holed_01.json", "hex_01.json", "iso_01.json", "art_target.json", "ani_turtle.json"]
+	var checked := 0
+	for n in names:
+		var src := _read("res://levels/" + n)
+		if src == "":
+			continue
+		var lines := src.split("\n")
+		assert_gt(lines.size(), 2, "%s 应有内容" % n)
+		if lines.size() > 1:
+			assert_true(str(lines[1]).begins_with("  \""),
+				"%s 第 2 行应以 2 空格缩进开头（实得 %s）——1 空格说明被外部进程重写过" % [n, str(lines[1]).left(24)])
+			checked += 1
+	assert_gt(checked, 0, "应至少检查到一个关卡文件")

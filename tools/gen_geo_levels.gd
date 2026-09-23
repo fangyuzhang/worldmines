@@ -42,6 +42,15 @@ const LEVEL_LOADER_PATH := "res://ui/level_loader.gd"
 const ATTEMPTS := 30
 const MAX_TRIES := 12
 const MAX_MINES_BUMP := 3
+## 纹理徽记映射（按 kind）。规范值来自产物现状与 64f87c8 的补纹理规则——
+## 由 test_gen_param_parity 的门禁钉住「生成器必须写 palette.texture」。
+const TEXTURE_BY_KIND := {
+	"tri_grid": "weave",
+	"trihex": "weave",
+	"t31212": "weave",
+	"ring": "ring",
+	"poly_set": "petal",
+}
 ## 单关**累计**生成时间上限（看门狗）。2026-09-23 审计 #4 补齐，与 gen_shape_levels.gd 同口径。
 ## 理由：CP-SAT 的 max_time_in_seconds 只约束求解阶段，实测 >100 格 + 变体规则时 Solve()
 ## 长期不返回（CPU 近 0、无输出），从外部与死锁无法区分，只能手动杀进程、整批白跑。
@@ -283,6 +292,13 @@ func _gen_one(spec: Dictionary) -> bool:
 	level["shape_kind"] = _shape_kind_text(kind)
 	level["custom_shapes"] = _custom_shapes(geo, kind, spec)
 	var pal := PALETTE_BASE.duplicate(true)
+	# 纹理徽记（2026-09-23 审计修复）：本族产物一直带 palette.texture，但生成器此前不写
+	# —— 重跑会把它悄悄丢掉（iso_cubes 已实测：一次重跑丢 5 行）。映射取自上一轮补纹理
+	# 时的规则（commit 64f87c8）：tri/trihex/t31212 = weave、ring = ring、poly_set = petal。
+	# 变体关（vg_*）不带形状徽记（它们的识别通道是变体轴纹理，由 variant 生成器负责）。
+	var tex := str(TEXTURE_BY_KIND.get(kind, ""))
+	if tex != "":
+		pal["texture"] = tex
 	pal["groups"] = RING_COLORS.duplicate(true)
 	level["palette"] = pal
 
