@@ -27,6 +27,8 @@ extends SceneTree
 
 const EXIT_FRAMES := 3
 const OUT_DIR := "res://levels"
+## 写盘走「暂存 → 校验 → 原子转正」（原实现会覆盖后删除，失败即丢原文件）。
+const LevelStaging := preload("res://tools/level_staging.gd")
 const LEVEL_LOADER_PATH := "res://ui/level_loader.gd"
 const ATTEMPTS := 30
 const MAX_TRIES := 8
@@ -331,19 +333,22 @@ func _gen_one(spec: Dictionary) -> bool:
 	pal["groups"] = {str(cs[0]): COLORS[str(cs[0])], str(cs[1]): COLORS[str(cs[1])]}
 	level["palette"] = pal
 
-	var f := FileAccess.open(path, FileAccess.WRITE)
-	if f == null:
-		push_error("%s: 无法写入 %s" % [file_name, path])
+	# 2026-09-23 审计修复：先写暂存区、校验通过才原子转正。原实现直接覆盖正式
+	# 文件、校验失败再 remove —— 盘上原有的好文件被「覆盖后删除」，净结果永久丢失。
+	var tmp := LevelStaging.write_text(path, JSON.stringify(level, "  "))
+	if tmp == "":
+		push_error("%s: 无法写入暂存区" % file_name)
 		return false
-	f.store_string(JSON.stringify(level, "  "))
-	f.close()
 
 	# 5. 自校验
-	var board: Board = _load_level(path)
+	var board: Board = _load_level(tmp)
 	if board == null or not board.has_meta("custom_shapes"):
 		push_error("%s: 自校验失败（载入 %s / custom_shapes meta）" % [
 			file_name, "null" if board == null else "ok"])
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+		LevelStaging.discard(tmp)     # 只删自己写的暂存，正式文件原封不动
+		return false
+	if not LevelStaging.promote(tmp, path):
+		push_error("%s: 暂存转正失败，正式文件未改动" % file_name)
 		return false
 	var prof2: Dictionary = level.get("difficulty_profile", {})
 	print("  OK   %-22s %-16s %d 格 · %d 雷 · 峰值 %s%s · %d 次" % [

@@ -36,3 +36,45 @@ func test_min_peak_matches_difficulty_easy_lower_bound() -> void:
 		if consts.has("MIN_PEAK"):
 			assert_eq(int(consts["MIN_PEAK"]), want,
 				"%s 的 MIN_PEAK 应等于 Difficulty.tier_range(\"easy\").x（改回手抄数字会在 core 改窗口时漂移）" % p)
+
+
+# ==================== 暂存写盘机制（2026-09-23 审计）====================
+#
+# 四个生成器原来直接 FileAccess.open("res://levels/<file>", WRITE) 覆盖正式文件、
+# 自校验失败再 remove —— 盘上原有的好文件被「覆盖后删除」，净结果永久丢失；批量在
+# 后半程失败时还会留下半写批次（gen_shape_levels 有 TMP_DIR 机制，四家没有）。
+# 现统一走 tools/level_staging.gd（写 res://levels/_staging/ → 校验 → 原子 rename）。
+
+const STAGING := "res://tools/level_staging.gd"
+const STAGING_USERS: Array = [
+	"res://tools/gen_geo_levels.gd",
+	"res://tools/gen_style_shape_levels.gd",
+	"res://tools/gen_variant_shape_levels.gd",
+	"res://tools/gen_iso_cubes_levels.gd",
+]
+
+
+func test_staging_module_and_users_compile() -> void:
+	assert_not_null(load(STAGING), "暂存模块应能编译")
+	for p in STAGING_USERS:
+		assert_not_null(load(p), "%s 应能编译（暂存改造后）" % p)
+
+
+func test_staging_users_write_through_staging() -> void:
+	for p in STAGING_USERS:
+		var src := _read(p)
+		assert_ne(src, "", "应能读到 %s" % p)
+		assert_true(src.contains("LevelStaging.write_text"), "%s 的写盘应走暂存" % p)
+		assert_true(src.contains("LevelStaging.promote"), "%s 应原子转正" % p)
+		assert_false(src.contains("FileAccess.open(path, FileAccess.WRITE)"),
+			"%s 不应再直接覆盖正式文件（失败会丢原文件）" % p)
+
+
+## 读文本文件（源码级断言用）。
+func _read(p: String) -> String:
+	var f := FileAccess.open(p, FileAccess.READ)
+	if f == null:
+		return ""
+	var s := f.get_as_text()
+	f.close()
+	return s

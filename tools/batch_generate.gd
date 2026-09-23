@@ -87,6 +87,7 @@ func _initialize() -> void:
 			print("[seed %d] 失败（%.1fs）" % [seed, dt])
 			continue
 		var dp: Dictionary = level.get("difficulty_profile", {})
+		var diff := float(dp.get("difficulty", 0.0))    # 批次报告用（回退删除后它仍被统计引用）
 		# v4.0：档位按峰值定。2026-09-23 审计：**删掉旧标量回退** —— 标量口径的
 		# Difficulty.tier_of() 会产出 intro（旧四档之一），而下游
 		# tools/import_batch_to_lib.gd 只认 easy/normal/hard ⇒ intro 被静默丢弃
