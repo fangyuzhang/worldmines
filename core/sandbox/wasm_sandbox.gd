@@ -10,7 +10,11 @@ const MEMORY_MAX_BYTES := 16 * 1024 * 1024
 const PAGE_SIZE := 65536  # wasm 线性内存页 64KB
 const MAX_TICKS := 1_000_000  # host_tick 审计上限（运行时无中断 API，超限仅记录）
 
-var _wasm: Wasm = null
+## `Wasm` 是 godot-wasm GDExtension 注册的类。**此处不写死类型**：未装该插件的平台
+## （如无 GUI 的生产 Linux 机）会在**编译期**因找不到类型失败，并连坐 core/mod_api.gd 的
+## autoload（实测：服务器整链报 "Failed to load script res://core/mod_api.gd"）。
+## 走 ClassDB 动态探测 → 装了插件行为与原来逐字一致，没装则 wasm 路径优雅降级。
+var _wasm: Object = null
 var _exports: Dictionary = {}
 var _tick_count: int = 0
 
@@ -25,7 +29,11 @@ func load_module(wasm_bytes: PackedByteArray) -> bool:
 			or wasm_bytes[0] != 0x00 or wasm_bytes[1] != 0x61 \
 			or wasm_bytes[2] != 0x73 or wasm_bytes[3] != 0x6d:
 		return false
-	var wasm := Wasm.new()
+	# 插件缺失 → 优雅降级（false），不让编译期炸掉整条 autoload 链（见 _wasm 声明处注释）
+	if not ClassDB.class_exists("Wasm"):
+		push_warning("WasmSandbox: 未安装 godot-wasm 插件（ClassDB 无 Wasm）——wasm Mod 路径不可用")
+		return false
+	var wasm: Object = ClassDB.instantiate("Wasm")
 	# 防线 1：宿主只导入 host.tick()
 	var err: int = wasm.load(wasm_bytes, {"env": {"host_tick": Callable(self, "_host_tick")}})
 	if err != 0:
