@@ -392,7 +392,7 @@ const SPECS: Array = [
 	},
 	{
 		# 动物棋盘 2：海星 · 散散 —— 极坐标波形边界：5 臂，尖长 / 谷短；配 s3（散散）
-		"file": "ani_starfish.json", "kind": "mask", "name": "海星 · 散散",
+		"file": "ani_starfish.json", "kind": "mask", "name": "海星 · 无环",
 		"desc": "17×16 高分辨率图案（98 格）",
 		"style": "holed_grid",
 		"mask": [
@@ -486,7 +486,7 @@ const SPECS: Array = [
 		#  腿细传播快够不到 easy 窗口下沿）——因此**保留升级前的 60 格产物与 s5 约束**，
 		#  本 SPEC 与产物严格对齐（否则批量生成会因本关失败而整批不提交，见 gen_shape_levels.gd 的
 		#  「failures > 0 ⇒ 整批不提交」）。高分辨率重设计（减腿/加粗）是后续独立任务。
-		"file": "ani_octopus.json", "kind": "mask", "name": "章鱼 · 连排",
+		"file": "ani_octopus.json", "kind": "mask", "name": "章鱼 · 行列凸",
 		"desc": "11×11 章鱼（半圆头 + 5 条触手）",
 		"style": "holed_grid",
 		"mask": [
@@ -508,7 +508,7 @@ const SPECS: Array = [
 	},
 	{
 		# 动物棋盘 6：蘑菇 · 层层 —— 伞盖椭圆（半轴 7.6×4.6 缩放）+ 直柄；配 s4（层层）
-		"file": "ani_mushroom.json", "kind": "mask", "name": "蘑菇 · 层层",
+		"file": "ani_mushroom.json", "kind": "mask", "name": "蘑菇 · 洋葱",
 		"desc": "15×17 高分辨率图案（166 格）",
 		"style": "holed_grid",
 		"mask": [
@@ -537,7 +537,7 @@ const SPECS: Array = [
 	},
 	{
 		# 动物棋盘 7：小鱼 · 稳稳 —— 纺锤身 + 右尖头 + 左侧分叉尾 + 背鳍 + 腹鳍；配 s2（稳稳）
-		"file": "ani_fish.json", "kind": "mask", "name": "小鱼 · 稳稳",
+		"file": "ani_fish.json", "kind": "mask", "name": "小鱼 · 重心",
 		"desc": "16×12 高分辨率图案（110 格）",
 		"style": "holed_grid",
 		"mask": [
@@ -561,7 +561,7 @@ const SPECS: Array = [
 	},
 	{
 		# 动物棋盘 8：螃蟹 · 不行 —— 蟹身椭圆 + 上方双螯 + 两侧四对分节腿；配 s1（不行）
-		"file": "ani_crab.json", "kind": "mask", "name": "螃蟹 · 不行",
+		"file": "ani_crab.json", "kind": "mask", "name": "螃蟹 · 局部禁形",
 		"desc": "21×12 高分辨率图案（112 格）",
 		"style": "holed_grid",
 		"mask": [

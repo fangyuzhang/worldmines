@@ -211,7 +211,8 @@ func test_ls2_mock_progress_is_not_persisted() -> void:
 
 # LS14：弹窗标题栏应有「教程」入口（2026-09-23 用户决策：教程改上下文相关——
 # 选关页弹窗点的是**当前变体**的教程）。点它 → 覆盖层挂出且加载该变体的页。
-# 用 classic 测：内容缺口席位（o1 等尚无教程页）点了是兜底文案，测经典最稳。
+# 用 classic 测最稳：2026-09-23 起官方席位已全部有教程页（o1 等也有了），
+# 但经典是唯一「必有」的页（其它席位依赖内容创作进度）。
 func test_ls14_popup_offers_variant_tutorial() -> void:
 	var ci: int = int(_view._mode_index.get("classic", -1))
 	assert_gte(ci, 0, "应有 classic 卡片")

@@ -233,3 +233,40 @@ func test_show_for_loads_pages_or_falls_back() -> void:
 	if ov2 != null:
 		var text: RichTextLabel = ov2.get("_text")
 		assert_true(text.text.find("暂无教程") >= 0, "应显示「暂无教程内容」兜底（实得：%s）" % text.text)
+
+
+## show_for 复用同一宿主时的行为（2026-09-23 审计修复）：第二次调用必须**重新加载**
+## 新变体的页，而不是沿用上一批——原来是命中即 return，同帧内换变体看不到变化。
+func test_show_for_reuses_host_and_reloads_pages() -> void:
+	var script: Variant = load("res://ui/tutorial_overlay.gd")
+	assert_true(script != null, "覆盖层脚本可加载")
+	if script == null:
+		return
+	var host := Control.new()
+	add_child_autofree(host)
+	host.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	script.call("show_for", host, "o8")
+	var first: Control = null
+	for c in host.get_children():
+		if c.has_method("open"):
+			first = c
+	assert_not_null(first, "第一次应挂出覆盖层")
+	if first == null:
+		return
+	var t1: Label = first.get("_title")
+	assert_true(t1.text.find("tutorial_o8") >= 0, "第一次应加载 o8 的页（实得 %s）" % t1.text)
+
+	# 同一个宿主再开另一个变体：层数不增加、实例复用、内容必须换
+	script.call("show_for", host, "o10")
+	var layers := 0
+	var second: Control = null
+	for c in host.get_children():
+		if c.has_method("open"):
+			layers += 1
+			second = c
+	assert_eq(layers, 1, "防重入：同一宿主不应叠出第二层")
+	assert_true(second == first, "应复用同一个覆盖层实例")
+	var t2: Label = first.get("_title")
+	assert_true(t2.text.find("tutorial_o10") >= 0,
+		"复用时必须重新加载新变体的页（实得：%s）" % t2.text)

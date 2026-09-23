@@ -39,7 +39,8 @@ const STYLE_OF := {
 	"shape_t31212": "t31212", "shape_ring": "ring",
 }
 ## 各 (mode → tier → {size: 关数}) 的期望表（v4.1 峰值分档口径）：
-## · shape_holed：8×8 两关（holed_01/02）；9×9 四关（holed_03 + 3 个 T7 mask 图案关）；
+## · shape_holed：8×8 两关（holed_01/02）；9×9 一关（holed_03）——art 三关（T7 mask 图案关）
+##   2026-09-23 升级到 17~21 格后超出库尺寸窗，改走选关页「异形棋盘」页，不再入库；
 ## · shape_iso：等轴 01 peak=5 → normal（v4.1 窗口 [4,5]）；其余等轴关尺寸越界（3~4 行）不入库；
 ## · shape_tri：三角 01 peak=2 → easy（4 行 bbox 越界，side=8 恰在窗内）；
 ## · shape_trihex：编织 01 peak=3 → easy（9×9 恰在窗内；编织 02 是 11×11 越界）；

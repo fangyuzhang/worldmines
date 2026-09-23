@@ -10,7 +10,7 @@
 extends GutTest
 
 const HEX5 := "res://levels/hex_01.json"          # 蜂窝 size=5（19 格）
-const ART9 := "res://levels/art_target.json"      # 挖洞方格 9×9（41 格，有洞）
+const ART_TARGET := "res://levels/art_target.json"  # 图案关 21×21（152 格，洞 289 格；2026-09-23 升级）
 
 
 func _load(path: String) -> Board:
@@ -35,8 +35,8 @@ func test_rh1_hint_def_on_hex_board_does_not_crash() -> void:
 
 
 func test_rh1_hint_def_on_holed_grid_does_not_crash() -> void:
-	# 挖洞方格盘同样有洞格（9×9 去掉 40 格）——原实现必崩
-	var b := _load(ART9)
+	# 图案盘同样有洞格（21×21 去掉 152 格 = 289 个盘外格）——原实现必崩
+	var b := _load(ART_TARGET)
 	if b == null:
 		return
 	assert_true(b.grid is AdjacencyGrid, "应为异形盘")

@@ -169,12 +169,15 @@ func _build_ui() -> void:
 static func show_for(parent: Node, variant_id: String) -> Control:
 	if parent == null or not parent.is_inside_tree():
 		return null
-	# 防重入：同一宿主已有一层教程时直接复用它（连点「教程」会叠出多层，
-	# 关掉一层还剩一层——用户以为按钮失灵）。
+	# 页列表要**提前算**：下面的复用分支也需要它（否则会沿用上一批页）。
+	var pages: Array = TutorialData.pages_for(variant_id) if variant_id != "" else []
+	# 防重入：同一宿主已有一层教程时复用它（连点「教程」会叠出多层，关掉一层还剩一层——
+	# 用户以为按钮失灵）。但复用**必须重新 open**：2026-09-23 审计发现，原来命中即 return，
+	# 同帧内「关掉再看另一个变体」会拿到上一个变体的页列表。
 	for c in parent.get_children():
 		if c.has_method("close_overlay") and c.has_method("open"):
+			c.call("open", pages, true)
 			return c as Control
-	var pages: Array = TutorialData.pages_for(variant_id) if variant_id != "" else []
 	# 运行期 load 自身（static 上下文里 preload 自引用有循环风险；且本文件刻意无 class_name）
 	var ov: Control = load("res://ui/tutorial_overlay.gd").new()
 	parent.add_child(ov)
@@ -187,12 +190,17 @@ static func show_for(parent: Node, variant_id: String) -> Control:
 ## explicit_empty（2026-09-23）：show_for 对「该变体无教程页」要的是**空态**（显示兜底
 ## 文案），而本函数的历史语义是「空数组 = 列全部页」（旧主菜单总入口用法）——两者冲突。
 ## 加显式开关：explicit_empty=true 时空数组按空态处理；不传则保持旧语义（测试依赖）。
+##
+## 2026-09-23 审计：本函数可能在**同一实例**上被第二次调用（show_for 复用层、或调用方
+## 复用自己的节点）。首版只在 _pages 为空时才填列表，第二次调用会静默沿用上一批页——
+## 同帧内「换一个变体再看」会显示上一个变体的教程。现在每次调用都按本次参数重建。
 func open(pages: Array = [], explicit_empty := false) -> void:
-	if _pages.is_empty():
-		if pages.is_empty() and not explicit_empty:
-			pages = TutorialData.list_ids()
-		for p in pages:
-			_pages.append(str(p))
+	_pages.clear()
+	var list: Array = pages
+	if list.is_empty() and not explicit_empty:
+		list = TutorialData.list_ids()
+	for p in list:
+		_pages.append(str(p))
 	_index = 0
 	_refresh()
 

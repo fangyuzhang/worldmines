@@ -133,9 +133,9 @@ dotnet build
 
 **关卡库接线（2026-09-22 第三批，完成）**：四族纯 classic 关经
 `tools/import_shape_levels_to_lib.gd` 入库（按峰值分档，v4.1 三档口径）。**入库规则**：
-源文件前缀白名单（`holed_/hex_/art_/iso_/tri_/trihex_/t31212_/ring_`，sty_*/va_*/vg_*
+源文件前缀白名单（`holed_/hex_/iso_/tri_/trihex_/t31212_/ring_`（`art_` 自 2026-09-23 起明确走手工异形页、不再入库），sty_*/va_*/vg_*
 等风格/变体关走手工异形页）+ 库尺寸窗 [5,9]（选关页弹窗只认 SIZES；越界席位会造成
-孤儿 mode）。实际入库 13 集 / 17 关：shape_holed 5 尺寸 9 关、shape_hex 5 尺寸 5 关、
+孤儿 mode）。实际入库 13 集 / 14 关：shape_holed 5 尺寸 6 关、shape_hex 5 尺寸 5 关、
 shape_iso 9×normal 1 关（等轴 01 peak 5）、shape_tri 8×easy 1 关、shape_trihex 9×easy 1 关；
 t31212/ring 全部越界（37/51、12/18 宽）暂不入库、卡片自动隐藏。选关页形状卡扩为 7 席
 （`ui/variant_catalog.gd` shape spec 表），`catalog().has()` 守卫保证空 mode 不出卡。

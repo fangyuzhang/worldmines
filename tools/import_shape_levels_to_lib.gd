@@ -182,7 +182,10 @@ func _scan_levels() -> void:
 		# 少量变体关误灌进「classic-only」的形状档（mode 语义 = 拓扑层 + 经典线索）。
 		# 白名单外的带 style 文件记数跳过、不 fatal——它们由手工异形页直接供给，不是本工具的入库对象。
 		var prefix_ok := false
-		for pre in ["holed_", "hex_", "art_", "iso_", "tri_", "trihex_", "t31212_", "ring_"]:
+		# 2026-09-23 审计：**art_ 显式移出白名单**（而非依赖尺寸窗的副作用）。art_ 三关已升级到
+		# 17~21 格的高分辨率图案关，定位为选关页「异形棋盘」页的固定成品；留在白名单里，一旦
+		# 有人放宽尺寸窗或把分辨率调回 ≤9，它们会静默回库。
+		for pre in ["holed_", "hex_", "iso_", "tri_", "trihex_", "t31212_", "ring_"]:
 			if fn.begins_with(str(pre)):
 				prefix_ok = true
 				break

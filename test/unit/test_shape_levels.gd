@@ -377,8 +377,8 @@ func test_hex_row_length_fingerprint() -> void:
 # ==================== (d) T7 mask 图案关（art_target / art_carpet / art_jelly）====================
 #
 # 期望值来自 tools/gen_shape_levels.gd:SPECS 的手写 mask（逐字符可复核）与实跑结果：
-#   同心靶 41 格 / 9 雷 seed=8002（换 seed 1 次）；分形地毯 64 格 / 13 雷 seed=8106（换 4 次）；
-#   小水母 40 格 / 7 雷 seed=8205（换 2 次）。三关同 shape_holed 9×9，seed 段错开防入库去重碰撞。
+#   同心靶 152 格 / 42 雷 seed=8003、分形地毯 296 格 / 82 雷 seed=8103、小水母 148 格 / 41 雷 seed=8208
+#   （2026-09-23 分辨率升级后的实跑值；方形 bbox 21×21 / 21×21 / 17×17，超库尺寸窗 → 走手工异形页）。
 # row_lens = mask 逐行有格数（图案指纹：形状被改必红灯）；mask 另从**产物 JSON**（topology.params.mask）
 # 独立数一遍与其 cells 比对——「cells 与 mask 数一致」的黑盒复核（生成器自校验之外的第三只眼）。
 const ART_CASES: Array = [
@@ -421,7 +421,7 @@ func test_art_files_load_as_holed_grid_boards() -> void:
 
 func test_art_mask_in_json_matches_cells() -> void:
 	# 产物 JSON 自带审计 mask（to_adjacency_grid 的 "mask" 分支落盘 params.mask）：
-	# 从 JSON 独立数 '#'/X/1 应等于 cells，且 9 行 × 9 列 —— 「cells 与 mask 数一致」的黑盒复核。
+	# 从 JSON 独立数 '#'/X/1 应等于 cells，且行/列数应与 bbox 一致 —— 「cells 与 mask 一致」的黑盒复核。
 	for case: Dictionary in ART_CASES:
 		var topo: Dictionary = _json(case).get("topology", {})
 		var f := str(case["file"])

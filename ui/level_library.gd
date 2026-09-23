@@ -91,7 +91,10 @@ static func total(mode: String) -> int:
 	return n
 
 
-const SIZES: Array = [5, 6, 7, 8, 9]
+# 库尺寸窗：**规范源在 LevelSequence.SIZES**（2026-09-23 审计单点化）。这里原是一份私有
+# 副本，与选关页读的 LevelSequence.SIZES 一旦分叉，进度条分母与弹窗尺寸轴会静默不一致。
+# 测试侧另有一份**刻意独立**的副本（门禁必须独立实现，不能照抄生产常量）。
+const SIZES: Array = LevelSequence.SIZES
 
 
 ## 一个关卡集（levels 数组，按难度升序）。不存在 → 空数组。
