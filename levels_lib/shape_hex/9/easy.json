@@ -76,6 +76,7 @@
       ],
       "name": "蜂窝 03 · 大蜂巢",
       "palette": {
+        "texture": "comb",
         "theme": "BLUE"
       },
       "revealed": [

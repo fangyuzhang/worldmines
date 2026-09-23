@@ -44,6 +44,7 @@
       ],
       "name": "挖洞 05 · 中央方洞",
       "palette": {
+        "texture": "strata",
         "theme": "ORANGE"
       },
       "revealed": [

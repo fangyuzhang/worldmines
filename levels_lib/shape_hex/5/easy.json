@@ -36,6 +36,7 @@
       ],
       "name": "蜂窝 01 · 初环",
       "palette": {
+        "texture": "comb",
         "theme": "BLUE"
       },
       "revealed": [

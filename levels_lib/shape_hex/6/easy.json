@@ -40,6 +40,7 @@
       ],
       "name": "蜂窝 04 · 扁巢",
       "palette": {
+        "texture": "comb",
         "theme": "BLUE"
       },
       "revealed": [
