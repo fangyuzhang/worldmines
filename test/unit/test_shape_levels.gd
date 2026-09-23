@@ -383,22 +383,22 @@ func test_hex_row_length_fingerprint() -> void:
 # 独立数一遍与其 cells 比对——「cells 与 mask 数一致」的黑盒复核（生成器自校验之外的第三只眼）。
 const ART_CASES: Array = [
 	{
-		"file": "art_target.json", "cells": 41, "mines": 9, "seed": 8002, "bbox": Vector2i(9, 9),
-		"row_lens": [9, 2, 2, 5, 5, 5, 2, 2, 9], "edges": 56,
-		"holes": [Vector2i(1, 1), Vector2i(4, 1), Vector2i(2, 4)],
-		"in_board": [Vector2i(0, 0), Vector2i(3, 3), Vector2i(4, 4)],
+		"file": "art_target.json", "cells": 152, "mines": 42, "seed": 8003, "bbox": Vector2i(21, 21),
+		"row_lens": [3, 6, 4, 11, 8, 7, 8, 8, 7, 9, 11, 9, 7, 8, 8, 7, 8, 11, 4, 6, 2], "edges": 206,
+		"holes": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
+		"in_board": [Vector2i(10, 10), Vector2i(9, 0), Vector2i(10, 20)],
 	},
 	{
-		"file": "art_carpet.json", "cells": 64, "mines": 13, "seed": 8106, "bbox": Vector2i(9, 9),
-		"row_lens": [9, 6, 9, 6, 4, 6, 9, 6, 9], "edges": 156,
-		"holes": [Vector2i(1, 1), Vector2i(4, 4), Vector2i(7, 7)],
-		"in_board": [Vector2i(0, 0), Vector2i(2, 2)],
+		"file": "art_carpet.json", "cells": 296, "mines": 82, "seed": 8103, "bbox": Vector2i(21, 21),
+		"row_lens": [21, 14, 21, 15, 10, 15, 21, 14, 21, 12, 8, 12, 9, 6, 9, 12, 8, 12, 21, 14, 21], "edges": 812,
+		"holes": [Vector2i(1, 1), Vector2i(4, 1), Vector2i(7, 1)],
+		"in_board": [Vector2i(10, 8), Vector2i(0, 0), Vector2i(20, 20)],
 	},
 	{
-		"file": "art_jelly.json", "cells": 40, "mines": 7, "seed": 8205, "bbox": Vector2i(9, 9),
-		"row_lens": [5, 7, 9, 7, 5, 2, 2, 2, 1], "edges": 109,
-		"holes": [Vector2i(0, 0), Vector2i(8, 0), Vector2i(0, 4)],
-		"in_board": [Vector2i(4, 2), Vector2i(1, 5), Vector2i(4, 8)],
+		"file": "art_jelly.json", "cells": 142, "mines": 39, "seed": 8206, "bbox": Vector2i(15, 19),
+		"row_lens": [7, 11, 13, 15, 15, 15, 13, 11, 2, 2, 2, 7, 3, 4, 5, 5, 4, 4, 4], "edges": 377,
+		"holes": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
+		"in_board": [Vector2i(7, 7), Vector2i(4, 0), Vector2i(13, 18)],
 	},
 ]
 
@@ -411,7 +411,7 @@ func test_art_files_load_as_holed_grid_boards() -> void:
 		var f := str(case["file"])
 		assert_true(b.grid is AdjacencyGrid, "%s 应重建异形棋盘（AdjacencyGrid）" % f)
 		assert_eq(b.grid.cell_count(), int(case["cells"]), "%s 格数应与 mask 有格数一致" % f)
-		assert_eq(b.grid.size(), case["bbox"], "%s 包围盒应为 9×9" % f)
+		assert_eq(b.grid.size(), case["bbox"], "%s 包围盒应与规格一致" % f)
 		assert_eq(b.total_mines, int(case["mines"]), "%s 雷数应与规格一致" % f)
 		assert_eq(int(_json(case).get("seed", -1)), int(case["seed"]),
 				"%s seed 应与 SPECS 实跑结果一致（换 seed 次数变了这里会红灯）" % f)
@@ -428,10 +428,11 @@ func test_art_mask_in_json_matches_cells() -> void:
 		assert_eq(str(topo.get("style", "")), "holed_grid",
 				"%s topology.style 应为 holed_grid（入库自动归 shape_holed 的依据）" % f)
 		var mask: Array = (topo.get("params", {}) as Dictionary).get("mask", [])
-		assert_eq(mask.size(), 9, "%s 审计 mask 应 9 行" % f)
+		assert_eq(mask.size(), int(case["bbox"].y), "%s 审计 mask 行数应与 bbox 一致" % f)
 		var filled := 0
 		for row in mask:
-			assert_eq(str(row).length(), 9, "%s 审计 mask 每行应 9 列" % f)
+			assert_eq(str(row).length(), int(case["bbox"].x),
+				"%s 审计 mask 每行列数应与 bbox 一致" % f)
 			for ch in str(row):
 				if "#X1".contains(ch):
 					filled += 1
@@ -446,7 +447,7 @@ func test_art_row_length_fingerprint_and_edges() -> void:
 			continue
 		var f := str(case["file"])
 		var counts: Array = []
-		for y in 9:
+		for y in int(case["bbox"].y):
 			var n := 0
 			for p: Vector2i in b.grid.all_positions():
 				if p.y == y:

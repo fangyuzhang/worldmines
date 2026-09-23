@@ -99,6 +99,13 @@ const SEED_STRIDE := 1
 ## 形状关全部入 easy 集 ⇒ 每关必须 tier_of_profile == REQUIRED_TIER（峰值落 [2,3]）。
 ## 不达标的盘一律不落盘（换 seed → 加雷重试）；**不放宽/绕过这条口径**（内容不达标就调内容）。
 const REQUIRED_TIER := "easy"
+## 变体关（spec 带 globals）的峰值下限：只排除「一眼盘」（峰值 0 = 全是 0 值格），不设上限。
+## 与 gen_variant_shape_levels.gd 的 MIN_PEAK 同口径 —— 变体关的难度天然更深。
+const MIN_PEAK := 1
+## 单关生成的**累计**时间上限（看门狗）。超限即放弃本关并报错，**不会**挂着不动。
+## 取值依据：正常关卡实测 1~20 秒（最大 517 秒出现在 12 关一批的合计里，单关最慢 ~90 秒），
+## 4 分钟已给出 2.5 倍余量；再放宽就失去"及早失败"的意义。
+const WATCHDOG_MS_PER_LEVEL := 240000
 ## 档位不达标时的加雷轮数上限（每轮 +1 雷、重搜 MAX_TRIES 个 seed；0 = 只换 seed 不加雷）。
 const MAX_MINES_BUMP := 4
 ## 形状关密度上界（低密度设计）：mines + bump 不得超过 格数 × DENSITY_CAP——
@@ -261,62 +268,360 @@ const SPECS: Array = [
 	{
 		# 9×9 满格挖掉「内两圈」（距边 1、2 的方环：24 + 16 格）⇒ 保留外环带 32 + 内环带 8 + 中心 1 = 41 格
 		"file": "art_target.json", "kind": "mask", "name": "图案 01 · 同心靶",
-		"desc": "9×9 同心靶（外环带 + 内环带 + 中心；洞 = 内两圈方环）",
+		"desc": "21×21 高分辨率图案（152 格）",
 		"style": "holed_grid",
 		"mask": [
-			"#########",
-			"#.......#",
-			"#.......#",
-			"#..###..#",
-			"#..###..#",  # 中行 = 内环带 (x=3,5) + 中心 (x=4) —— 与上下两行的 3×3 内芯一致
-			"#..###..#",
-			"#.......#",
-			"#.......#",
-			"#########",
+			".........###.........",
+			"......###...###......",
+			"....##.........##....",
+			"...##..#######..##...",
+			"..##..##.....##..##..",
+			"..#..#...###...#..#..",
+			".#..#..##...##..#..#.",
+			".#.##.#.......#.##.#.",
+			".#.#..#...#...#..#.#.",
+			"#..#.#...###...#.#..#",
+			"#..#.#..#####..#.#..#",
+			"#..#.#...###...#.#..#",
+			".#.#..#...#...#..#.#.",
+			".#.##.#.......#.##.#.",
+			".#..#..##...##..#..#.",
+			"..#..#...###...#..#..",
+			"..##..##.....##..##..",
+			"...##..#######..##...",
+			"....##.........##....",
+			"......###...###......",
+			".........##..........",
 		],
-		"cells": 41, "bbox": Vector2i(9, 9), "mines": 9, "seed": 8001,
-		"off_board": [Vector2i(1, 1), Vector2i(4, 1), Vector2i(2, 4)],
-		"in_board": [Vector2i(0, 0), Vector2i(3, 3), Vector2i(4, 4)],
+		"cells": 152, "bbox": Vector2i(21, 21), "mines": 42, "seed": 8001, "theme": "BLUE", "texture": "halo",
+		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
+		"in_board": [Vector2i(10, 10), Vector2i(9, 0), Vector2i(10, 20)],
 	},
 	{
 		# 谢尔宾斯基地毯 2 阶：挖 (x%3==1 且 y%3==1) 与 (x//3==1 且 y//3==1) ⇒ 81 − 17 = 64 格
 		"file": "art_carpet.json", "kind": "mask", "name": "图案 02 · 分形地毯",
-		"desc": "9×9 谢尔宾斯基地毯 2 阶（保留 64 格 = 8²）",
+		"desc": "21×21 高分辨率图案（296 格）",
 		"style": "holed_grid",
 		"mask": [
-			"#########",
-			"#.##.##.#",
-			"#########",
-			"###...###",
-			"#.#...#.#",
-			"###...###",
-			"#########",
-			"#.##.##.#",
-			"#########",
+			"#####################",
+			"#.##.##.##.##.##.##.#",
+			"#####################",
+			"###...######...######",
+			"#.#...#.##.#...#.##.#",
+			"###...######...######",
+			"#####################",
+			"#.##.##.##.##.##.##.#",
+			"#####################",
+			"#########.........###",
+			"#.##.##.#.........#.#",
+			"#########.........###",
+			"###...###.........###",
+			"#.#...#.#.........#.#",
+			"###...###.........###",
+			"#########.........###",
+			"#.##.##.#.........#.#",
+			"#########.........###",
+			"#####################",
+			"#.##.##.##.##.##.##.#",
+			"#####################",
 		],
-		"cells": 64, "bbox": Vector2i(9, 9), "mines": 13, "seed": 8102,
-		"off_board": [Vector2i(1, 1), Vector2i(4, 4), Vector2i(7, 7)],
-		"in_board": [Vector2i(0, 0), Vector2i(2, 2)],
+		"cells": 296, "bbox": Vector2i(21, 21), "mines": 82, "seed": 8102, "theme": "VIOLET", "texture": "halo",
+		"off_board": [Vector2i(1, 1), Vector2i(4, 1), Vector2i(7, 1)],
+		"in_board": [Vector2i(10, 8), Vector2i(0, 0), Vector2i(20, 20)],
 	},
 	{
 		# 像素水母：上 5 行伞盖（5/7/9/7/5 对称收放）+ 下 4 行触手（每行 1~2 格，摆动错位）⇒ 40 格
 		"file": "art_jelly.json", "kind": "mask", "name": "图案 03 · 小水母",
-		"desc": "9×9 像素水母剪影（伞盖 + 3 条摆尾触手）",
+		"desc": "15×19 高分辨率图案（142 格）",
 		"style": "holed_grid",
 		"mask": [
-			"..#####..",
-			".#######.",
-			"#########",
-			".#######.",
-			"..#####..",
-			".#...#...",
-			"..#..#...",
-			"...#..#..",
-			"....#....",
+			"....#######....",
+			"..###########..",
+			".#############.",
+			"###############",
+			"###############",
+			"###############",
+			"#.###########.#",
+			"#..#########..#",
+			"#.............#",
+			".#...........#.",
+			"..#.........#..",
+			"..#.##.#.##.#..",
+			"...#...#...#...",
+			"...#..#.#..#...",
+			"...#.#.#.#.#...",
+			"...#.#.#.#.#...",
+			"..#.#.....#.#..",
+			".#..#.....#..#.",
+			".#...#...#...#.",
 		],
-		"cells": 40, "bbox": Vector2i(9, 9), "mines": 7, "seed": 8203,
-		"off_board": [Vector2i(0, 0), Vector2i(8, 0), Vector2i(0, 4)],
-		"in_board": [Vector2i(4, 2), Vector2i(1, 5), Vector2i(4, 8)],
+		"cells": 142, "bbox": Vector2i(15, 19), "mines": 39, "seed": 8203, "theme": "PINK", "texture": "halo",
+		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
+		"in_board": [Vector2i(7, 7), Vector2i(4, 0), Vector2i(13, 18)],
+	},
+
+	# ================= 第五批：动物棋盘（2026-09-23 放大到 11×11）=================
+	{
+		# 动物棋盘 1：海龟 · 块块 —— 椭圆甲（半轴 5.6×6.2 缩放）+ 上方头颈 + 左右前鳍/后鳍 + 尾；配 s7（块块）
+		"file": "ani_turtle.json", "kind": "mask", "name": "海龟 · 块块",
+		"desc": "17×18 高分辨率图案（120 格）",
+		"style": "holed_grid",
+		"mask": [
+			".......###.......",
+			"......#####......",
+			"......#####......",
+			".......###.......",
+			"....#########....",
+			"#################",
+			"######.....######",
+			"..###.......###..",
+			"..##.........##..",
+			"..##.........##..",
+			"..###.......###..",
+			"..####.....####..",
+			".###############.",
+			".###############.",
+			"........#........",
+			".......###.......",
+			".......###.......",
+			"........#........",
+		],
+		"cells": 120, "bbox": Vector2i(17, 18), "mines": 24, "seed": 9307,
+		"globals": ["s7"], "theme": "GREEN", "texture": "block", "shape_kind": "动物棋盘",
+		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
+		"in_board": [Vector2i(8, 12), Vector2i(7, 0), Vector2i(8, 17)],
+	},
+	{
+		# 动物棋盘 2：海星 · 散散 —— 极坐标波形边界：5 臂，尖长 / 谷短；配 s3（散散）
+		"file": "ani_starfish.json", "kind": "mask", "name": "海星 · 散散",
+		"desc": "17×16 高分辨率图案（98 格）",
+		"style": "holed_grid",
+		"mask": [
+			"........#........",
+			".......###.......",
+			".......###.......",
+			".......###.......",
+			".......###.......",
+			".......###.......",
+			"#####..###..#####",
+			".###############.",
+			"..#############..",
+			"......#####......",
+			"......#####......",
+			".....###.###.....",
+			"....####.####....",
+			"...####...####...",
+			"...###.....###...",
+			"...##.......#....",
+		],
+		"cells": 98, "bbox": Vector2i(17, 16), "mines": 27, "seed": 9301,
+		"globals": ["s3"], "theme": "VIOLET", "texture": "spore", "shape_kind": "动物棋盘",
+		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
+		"in_board": [Vector2i(8, 8), Vector2i(8, 0), Vector2i(12, 15)],
+	},
+	{
+		# 动物棋盘 3：雪花 · 偶偶 —— 中心六边形 + 6 条主臂 + 每臂两侧分叉；配 s6（偶偶）
+		"file": "ani_snowflake.json", "kind": "mask", "name": "雪花 · 偶偶",
+		"desc": "15×18 高分辨率图案（88 格）",
+		"style": "holed_grid",
+		"mask": [
+			".......#.......",
+			".......#.......",
+			"......###......",
+			".......#.......",
+			".#...#####...#.",
+			"####...#...####",
+			".###...#...###.",
+			"#..##..#..##..#",
+			"..#..#####..#..",
+			"......###......",
+			"..#..#####..#..",
+			"#..##..#..##..#",
+			".###...#...###.",
+			"####...#...####",
+			".#...#####...#.",
+			".......#.......",
+			"......###......",
+			".......#.......",
+		],
+		"cells": 88, "bbox": Vector2i(15, 18), "mines": 18, "seed": 9302,
+		"globals": ["s6"], "theme": "PINK", "texture": "parity", "shape_kind": "动物棋盘",
+		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
+		"in_board": [Vector2i(7, 9), Vector2i(7, 0), Vector2i(7, 17)],
+	},
+	{
+		# 动物棋盘 4：蛛网 · 步步 —— 4 圈同心环带 + 8 向辐条；配 z2（步步）
+		"file": "ani_web.json", "kind": "mask", "name": "蛛网 · 步步",
+		"desc": "19×18 高分辨率图案（144 格）",
+		"style": "holed_grid",
+		"mask": [
+			".........#.........",
+			".......#####.......",
+			"..#..##..#..##..#..",
+			"...##....#....##...",
+			"...##.#######.##...",
+			"..#..##..#..##..#..",
+			"..#.###.###.###.#..",
+			".#..#..#.#.#..#..#.",
+			".#..#.#.###.#.#..#.",
+			"###################",
+			".#..#.#.###.#.#..#.",
+			".#..#..#.#.#..#..#.",
+			"..#.###.###.###.#..",
+			"..#..##..#..##..#..",
+			"...##.#######.##...",
+			"...##....#....##...",
+			"..#..##..#..##..#..",
+			".......#####.......",
+		],
+		"cells": 144, "bbox": Vector2i(19, 18), "mines": 29, "seed": 9303,
+		"globals": ["z2"], "theme": "GREY", "texture": "trail", "shape_kind": "动物棋盘",
+		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
+		"in_board": [Vector2i(9, 9), Vector2i(9, 0), Vector2i(11, 17)],
+	},
+	{
+		# 动物棋盘 5：章鱼 · 连排 —— 半圆头 + 6 条分离触手，末端二次弯曲外张；配 s5（连排）
+		"file": "ani_octopus.json", "kind": "mask", "name": "章鱼 · 连排",
+		"desc": "15×20 高分辨率图案（162 格）",
+		"style": "holed_grid",
+		"mask": [
+			".......#.......",
+			"....#######....",
+			"...#########...",
+			"..###########..",
+			"..##.#####.##..",
+			"..##.#####.##..",
+			".#############.",
+			"..###########..",
+			"..###########..",
+			"..###########..",
+			"...#########...",
+			".##.#######.##.",
+			"..##..###..##..",
+			"...##.#.#.##...",
+			"...###...###...",
+			"..###..#..###..",
+			"##..#.....#..##",
+			"##..#.....#..##",
+			"##...#...#...##",
+			".##...#.#...##.",
+		],
+		"cells": 162, "bbox": Vector2i(15, 20), "mines": 32, "seed": 9304,
+		"globals": ["s5"], "theme": "YELLOW", "texture": "chain", "shape_kind": "动物棋盘",
+		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
+		"in_board": [Vector2i(7, 10), Vector2i(7, 0), Vector2i(13, 19)],
+	},
+	{
+		# 动物棋盘 6：蘑菇 · 层层 —— 伞盖椭圆（半轴 7.6×4.6 缩放）+ 直柄；配 s4（层层）
+		"file": "ani_mushroom.json", "kind": "mask", "name": "蘑菇 · 层层",
+		"desc": "15×17 高分辨率图案（166 格）",
+		"style": "holed_grid",
+		"mask": [
+			"...#########...",
+			"..###########..",
+			"###############",
+			"###############",
+			"###############",
+			"###############",
+			"###############",
+			"###############",
+			".#############.",
+			"...#########...",
+			"......###......",
+			".....#####.....",
+			".....#####.....",
+			".....#####.....",
+			".....#####.....",
+			"....#######....",
+			".....####......",
+		],
+		"cells": 166, "bbox": Vector2i(15, 17), "mines": 46, "seed": 9305,
+		"globals": ["s4"], "theme": "ORANGE", "texture": "strata", "shape_kind": "动物棋盘",
+		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
+		"in_board": [Vector2i(7, 8), Vector2i(3, 0), Vector2i(8, 16)],
+	},
+	{
+		# 动物棋盘 7：小鱼 · 稳稳 —— 纺锤身 + 右尖头 + 左侧分叉尾 + 背鳍 + 腹鳍；配 s2（稳稳）
+		"file": "ani_fish.json", "kind": "mask", "name": "小鱼 · 稳稳",
+		"desc": "16×12 高分辨率图案（110 格）",
+		"style": "holed_grid",
+		"mask": [
+			"......#.........",
+			".....###........",
+			"....#####..#....",
+			"..###########...",
+			".#############..",
+			"###############.",
+			"#####.##########",
+			"###############.",
+			".#############..",
+			"..###########...",
+			"....#####..#....",
+			"......#.........",
+		],
+		"cells": 110, "bbox": Vector2i(16, 12), "mines": 30, "seed": 9306,
+		"globals": ["s2"], "theme": "BLUE", "texture": "anchor", "shape_kind": "动物棋盘",
+		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
+		"in_board": [Vector2i(8, 6), Vector2i(6, 0), Vector2i(6, 11)],
+	},
+	{
+		# 动物棋盘 8：螃蟹 · 不行 —— 蟹身椭圆 + 上方双螯 + 两侧四对分节腿；配 s1（不行）
+		"file": "ani_crab.json", "kind": "mask", "name": "螃蟹 · 不行",
+		"desc": "21×12 高分辨率图案（112 格）",
+		"style": "holed_grid",
+		"mask": [
+			".####...........####.",
+			".#####.........#####.",
+			".#####...###...#####.",
+			".....###########.....",
+			".....###.###.###.....",
+			".....###########.....",
+			".....###########.....",
+			".....###########.....",
+			"....#############....",
+			"..##.....###.....##..",
+			".##...............##.",
+			"##.................##",
+		],
+		"cells": 112, "bbox": Vector2i(21, 12), "mines": 31, "seed": 9308,
+		"globals": ["s1"], "theme": "RED", "texture": "forbid", "shape_kind": "动物棋盘",
+		"off_board": [Vector2i(0, 0), Vector2i(5, 0), Vector2i(6, 0)],
+		"in_board": [Vector2i(10, 6), Vector2i(1, 0), Vector2i(20, 11)],
+	},
+	{
+		# 动物棋盘 9：蝴蝶 · 骨牌 —— 17×18 高分辨率剪影（双触角 + 上翅大 + 下翅小 + 细长躯干）。
+		# 2026-09-23 分辨率升级：9×10 / 53 格 → 17×18 / 158 格（约 3 倍格数，轮廓细节明显更密，
+		# 玩家揭开后看到的形状更接近完整图像）。
+		# 两条硬约束：① mask **首行不得全空**（build_from_mask 要求图案贴左上角：留白会被下游
+		# normalized 平移、与 params.mask 原样透传失配）；② 格数取**偶数**——本关配 dt（骨牌），
+		# 每块骨牌占 2 格（158 = 79 块）。
+		"file": "ani_butterfly.json", "kind": "mask", "name": "蝴蝶 · 骨牌",
+		"desc": "17×18 蝴蝶（双触角 + 四翼 + 躯干；158 格）",
+		"style": "holed_grid",
+		"mask": [
+			".....#.....#.....",
+			".....#..#..#.....",
+			"..#..#..#..#..#..",
+			".###.#..#..#.###.",
+			"#####.#.#.#.#####",
+			"######..#..######",
+			"#######.#.#######",
+			"#######.#.#######",
+			"######..#..######",
+			"#####...#...#####",
+			".####...#...####.",
+			"..###...#...###..",
+			"...##...#...##...",
+			"..####..#..####..",
+			".####...#...####.",
+			".####...#...####.",
+			"..###...#...###..",
+			"...##.......##...",
+		],
+		"cells": 158, "bbox": Vector2i(17, 18), "mines": 45, "seed": 9309,
+		"globals": ["dt"], "theme": "INDIGO", "texture": "pip", "shape_kind": "动物棋盘",
+		"off_board": [Vector2i(0, 0), Vector2i(0, 1), Vector2i(0, 17)],
+		"in_board": [Vector2i(8, 6), Vector2i(6, 6), Vector2i(1, 4)],
 	},
 ]
 
@@ -334,15 +639,32 @@ const TMP_DIR := "user://_shape_gen_tmp"
 var _staged: Array = []   # 暂存 [{"file":…, "tmp":…}]，全批通过后统一提交
 
 
+## ⚠️ 生成走**第一帧的 _process**，不是 _initialize（T-D3，2026-09-22）：
+## S/Z 轴规则（s1~s7 / z1~z5）以 **Mod 身份**提供（demo/mods/s*_*/entry.gd），由 autoload
+## 在 _ready 时装进 RuleRegistry；而 SceneTree._initialize() 早于 autoload 就绪 —— 在那里跑
+## 只能看到内置规则 ⇒ generate_with_rules 解析规则失败、**静默返回空**（表现：上百次尝试
+## 全空、peak=-1，极易误判成"该组合数学不可行"）。
+## 对照：本工具原先只用内置 classic，所以在 _initialize 里跑没事；加动物棋盘（自带变体规则）
+## 之后必须挪到首帧。同一坑 gen_variant_shape_levels.gd 早已踩过并留了注释。
+var _started := false
+
+
 func _initialize() -> void:
+	# 只登记，不生成：等 autoload 就绪（见 _started 上方注释）
+	pass
+
+
+func _run() -> void:
 	var kinds := _selected_kinds()
 	if kinds.is_empty():
 		_request_exit(1)
 		return
+	var only_files := _selected_files()
 	print("=== 异形关卡生成（T2 挖洞方格 / T3 蜂窝）===")
-	print("  clue_rule=%s  globals=%s  attempts=%d  max_tries=%d  档位要求=%s  max_mines_bump=%d  density_cap=%.2f  本次族=%s（SPECS 含：%s）" % [
+	print("  clue_rule=%s  globals=%s  attempts=%d  max_tries=%d  档位要求=%s  max_mines_bump=%d  density_cap=%.2f  本次族=%s（SPECS 含：%s）  文件名过滤=%s" % [
 		CLUE_RULE, str(GLOBALS), ATTEMPTS, MAX_TRIES, REQUIRED_TIER, MAX_MINES_BUMP, DENSITY_CAP,
-		", ".join(kinds), ", ".join(_all_kinds())])
+		", ".join(kinds), ", ".join(_all_kinds()),
+		"全部" if only_files.is_empty() else ", ".join(only_files)])
 	var t_all := Time.get_ticks_msec()
 	var total := 0
 	var failures := 0
@@ -350,6 +672,8 @@ func _initialize() -> void:
 	DirAccess.make_dir_recursive_absolute(TMP_DIR)
 	for spec: Dictionary in SPECS:
 		if not kinds.has(str(spec["kind"])):
+			continue
+		if not only_files.is_empty() and not only_files.has(str(spec["file"])):
 			continue
 		total += 1
 		if not _gen_one(spec):
@@ -381,6 +705,11 @@ func _initialize() -> void:
 
 
 func _process(_delta: float) -> bool:
+	# 首帧才开始生成（等 autoload 把 S/Z 轴变体规则装进 RuleRegistry，见 _started 上方注释）
+	if not _started:
+		_started = true
+		_run()
+		return false
 	if not _exit_pending:
 		return false
 	_exit_frames += 1
@@ -417,6 +746,8 @@ func _selected_kinds() -> Array[String]:
 	var picked: Array[String] = []
 	for a in OS.get_cmdline_user_args():
 		var s := str(a).strip_edges().to_lower()
+		if s.ends_with(".json"):
+			continue   # 文件名过滤参数（见 _selected_files），不是族名
 		if s == "":
 			# L7（2026-09-21 审计修复）：空串是"无参数"的误传形态（如 runner 传了 `-- ""`）——
 			# 报错比静默当"全部族"安全。
@@ -436,10 +767,26 @@ func _selected_kinds() -> Array[String]:
 	return picked if not picked.is_empty() else all
 
 
+## 文件名过滤（2026-09-23 新增）：参数里以 `.json` 结尾的项收窄到指定关卡，如
+##     godot --headless --path . -s res://tools/gen_shape_levels.gd -- ani_butterfly.json
+## 为什么需要：族过滤的最小粒度是 12 关（mask 族 = 3 图案 + 9 动物），而调图案分辨率、
+## 重生成单关是高频动作——全族跑一次要几十分钟。可与族参数并用（先按族、再按文件名）。
+## 未知文件名不报错也不产关：本次循环自然 0 命中，报告里 total=0 会走"没有对应规格"的
+## 红灯路径（宁可见红，也别让人误以为跑过了）。
+func _selected_files() -> Array[String]:
+	var out: Array[String] = []
+	for a in OS.get_cmdline_user_args():
+		var s := str(a).strip_edges()
+		if s.ends_with(".json"):
+			out.append(s)
+	return out
+
+
 ## 生成一关：形状 → 拓扑 → 生成（内建 R01 验证）→ 落盘 → LevelLoader 重载自校验。
 ## 返回 true 表示该关已产出且通过自校验（失败文件会被删除，不留半成品）。
 func _gen_one(spec: Dictionary) -> bool:
 	var file_name: String = str(spec["file"])
+	var level_t0 := Time.get_ticks_msec()      # 看门狗起点（见 WATCHDOG_MS_PER_LEVEL）
 	var path := "%s/%s" % [OUT_DIR, file_name]
 	# L5（2026-09-21 审计修复）：目标文件已存在但**不是形状关**（无 topology.style）→ 拒绝覆盖。
 	# 防 spec 的 file 名撞经典关（如手滑写成 "classic_01.json"）静默覆盖既有内容。
@@ -458,6 +805,11 @@ func _gen_one(spec: Dictionary) -> bool:
 	var params: Dictionary = spec.get("params", {})
 	if kind == "mask":
 		params = {"style": str(spec.get("style", "")), "mask": spec.get("mask", [])}
+	# T-D3（2026-09-22）：变体规则 + 主题色改为**逐关可声明**（原来写死全局常量 GLOBALS）。
+	# 为什么要这样：动物棋盘的意义在于「同一个变体换一种盘面」，所以每关要各自带
+	# global_rules（不传就还是经典）与 theme（不传就不写 palette）。
+	# 兼容性：既有 hex/holed/art 规格都不带这两个字段 ⇒ 行为与改动前逐字一致。
+	var globals: Array = spec.get("globals", GLOBALS)
 	var mine_count: int = int(spec["mines"])
 	var base_seed: int = int(spec["seed"])
 
@@ -470,6 +822,10 @@ func _gen_one(spec: Dictionary) -> bool:
 	if topo == null:
 		push_error("%s: 坐标归一化失败（kind=%s）" % [file_name, kind])
 		return false
+	# 进度日志：先打一行"进入本关"（含格数），**卡住时日志的最后一行的下一关**就是嫌疑关。
+	# 加它的直接原因：实测大网格卡死时，日志停在上一关的输出上，从外部完全看不出
+	# 到底卡在哪一关 —— 排查全靠猜（本轮为此多花了好几轮）。
+	print("  · 开始 %s（%d 格）…" % [file_name, topo.cell_count()])
 	# 形状自校验先跑：形状本身不对就没必要烧 CP-SAT
 	var shape_problems := _shape_problems(spec, topo)
 	if not shape_problems.is_empty():
@@ -500,16 +856,39 @@ func _gen_one(spec: Dictionary) -> bool:
 			break
 		for t in MAX_TRIES:
 			tries += 1
+			# 看门狗（T-D4，2026-09-23）：单关累计生成时间超限 → 放弃本关（失败而非挂死整批）。
+			# 为什么需要：CP-SAT 的 max_time_in_seconds 只约束**求解**阶段，实测大模型
+			# （>100 格 + 变体规则）下 Solve() 长期不返回——进程 CPU 近 0、无任何输出，
+			# 从外部与死锁无法区分，只能手动杀进程，整批 12 关白跑。
+			# 局限（如实说明）：检查点在**调用之间**，若单次 Solve() 自身卡住则打断不了——
+			# OR-Tools 不提供中止接口（求解线程无法被安全强制终止）。彻底解决需进程隔离。
+			if Time.get_ticks_msec() - level_t0 > WATCHDOG_MS_PER_LEVEL:
+				push_error("%s: 单关累计生成超过 %d 秒（看门狗触发）——判定超出求解器可行域，放弃本关。已尝试 %d 次，最高 peak=%d" % [
+					file_name, WATCHDOG_MS_PER_LEVEL / 1000, tries, best_peak])
+				return false
 			var seed := base_seed + t * SEED_STRIDE
 			# TH2：显式传 GEN_TIMEOUT_MS（不用默认 15s）——降低机器负载对产物的影响。
 			var candidate: Dictionary = gen.generate_with_rules(
-					CLUE_RULE, GLOBALS, size, mine_count + b, seed, 0, ATTEMPTS, topo,
+					CLUE_RULE, globals, size, mine_count + b, seed, 0, ATTEMPTS, topo,
 					GEN_TIMEOUT_MS)
 			if candidate.is_empty():
 				continue
 			var cand_prof: Dictionary = candidate.get("difficulty_profile", {})
-			best_peak = maxi(best_peak, int(cand_prof.get("max_complexity", -1)))
-			if Difficulty.tier_of_profile(cand_prof) == REQUIRED_TIER:
+			var peak := int(cand_prof.get("max_complexity", -1))
+			best_peak = maxi(best_peak, peak)
+			# 档位口径：**纯形状关**走 easy 档（与既有 hex/holed/art 一致，行为不变）；
+			# **变体关**（spec 带 globals）放宽为「峰值 ≥ MIN_PEAK」——S/Z 轴约束令难度天然更深，
+			# 强行卡 easy 档会把这些组合全部拒之门外（同 gen_variant_shape_levels.gd 的口径与理由）。
+			var tier_ok := peak >= MIN_PEAK if spec.has("globals") else Difficulty.tier_of_profile(cand_prof) == REQUIRED_TIER
+			if tier_ok:
+				# 变体关追加「推到底」验收（与 test_level_proof_coverage.gd 的门禁同口径）：
+				# 档位达标只说明盘里有推理步（峰值 ≥ MIN_PEAK），**不等于序贯推演能推完**——
+				# 实测 ani_octopus（章鱼 × s5 连排）就是这样：档位过、证明卡住，全量回归会红。
+				# 在生成期挡掉比事后加豁免干净：豁免名单是给"外部复刻关卡"用的，不该被自家关卡占用。
+				if spec.has("globals"):
+					var proof: Dictionary = ProofLog.build(candidate)
+					if not bool(proof.get("solved", false)):
+						continue
 				level = candidate
 				used_mines = mine_count + b
 				bump = b
@@ -526,6 +905,20 @@ func _gen_one(spec: Dictionary) -> bool:
 
 	# 3. 写**暂存文件**（TM5：不直接改 res://levels/；补中文名；seed 由生成器写入 = 实际用时 seed）
 	level["name"] = str(spec["name"])
+	level["desc"] = str(spec.get("desc", ""))
+	# 变体关：补 global_rules + rule_level（选关页的「异形棋盘」页靠 global_rules 归组，
+	# rule_level 让变体关卡走变体门禁），以及 shape_kind（卡片上的类型标签，避免回退几何猜测）。
+	if spec.has("globals"):
+		level["global_rules"] = globals
+		level["rule_level"] = true
+	if spec.has("theme"):
+		level["palette"] = {"theme": str(spec["theme"])}
+		# 纹理徽记（2026-09-23）：spec 的 texture 一并落盘——否则**每次重生成都会抹掉**
+		# palette.texture（手工补的徽记被覆盖 → test_cell_texture 的「死标记」断言立刻红）。
+		# 与 theme 同源：spec 是唯一事实源，生成产物只做搬运。
+		if spec.has("texture"):
+			level["palette"]["texture"] = str(spec["texture"])
+		level["shape_kind"] = str(spec.get("shape_kind", "形状棋盘"))
 	var tmp_path := "%s/%s" % [TMP_DIR, file_name]
 	DirAccess.make_dir_recursive_absolute(TMP_DIR)
 	var f := FileAccess.open(tmp_path, FileAccess.WRITE)
