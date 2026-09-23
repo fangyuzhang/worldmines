@@ -98,6 +98,18 @@ var _fatal := false
 var _cat_before: Dictionary = {}
 
 
+
+## 非雷格数 = 格子数 − 实际雷数（len(mines) 优先，缺失回退 total_mines）。
+## 与 Board 判胜口径、retier_stock.py 的 terminal_at_load 同一算法（三处必须一致）。
+func _non_mine_count(lv: Dictionary) -> int:
+	var sz: Dictionary = lv.get("size", {})
+	var cells: int = int(sz.get("cols", 0)) * int(sz.get("rows", 0))
+	var mines: Array = lv.get("mines", [])
+	var mine_n: int = mines.size()
+	if mine_n <= 0:
+		mine_n = int(lv.get("total_mines", 0))
+	return maxi(1, cells - mine_n)
+
 func _initialize() -> void:
 	# 导出后 res:// 只读：本工具全程写 res://levels_lib，在 pck 运行时里会静默失败。
 	if OS.has_feature("template"):
@@ -390,6 +402,12 @@ func _check_level(mode: String, size: int, idx: int, lv: Dictionary) -> String:
 		# 峰值画像缺失 / peak 超纲（PEAK_OVER）= 无档可归——不入库（留在手工异形页可玩）。
 		# 与 v4.1 三档窗口同源（core/difficulty.gd）：easy [2,3] / normal [4,5] / hard [6,20]。
 		why = "无档可归（峰值画像缺失或 peak 超纲）"
+	elif (lv.get("revealed", []) as Array).size() >= _non_mine_count(lv):
+		# 2026-09-23 审计补齐：开局即胜死盘（revealed 覆盖全部非雷格）——
+		# import_batch_to_lib 早有此闸门，形状库缺。判据与 Board 判胜、
+		# retier_stock.py 的 terminal_at_load 同算法（三处必须一致）。
+		why = "开局即胜死盘（revealed %d ≥ 非雷格 %d）" % [
+			(lv.get("revealed", []) as Array).size(), _non_mine_count(lv)]
 	elif board.total_mines != int(lv.get("total_mines", -1)):
 		why = "board.total_mines=%d ≠ JSON %d" % [board.total_mines, int(lv.get("total_mines", -1))]
 	else:

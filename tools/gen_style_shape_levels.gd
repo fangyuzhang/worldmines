@@ -23,6 +23,12 @@
 #
 # ⚠️ 生成走第一帧 _process（不是 _initialize）：规则/CP-SAT 由 autoload 装配（同
 #    gen_variant_shape_levels.gd 注释）。
+# ⚠️ 已知缺口（2026-09-23 生成器审计 #4 / #5，与 gen_shape_levels.gd 的口径差）：
+#   ① 本族**没有单关 240s 看门狗**。CP-SAT 的 max_time 只约束求解阶段；>100 格 + 变体规则时
+#      Solve() 可能长期不返回——外部只有 tools/run_batch.ps1 的 taskkill 兜底（且它会撞上
+#      半写批次窗口，见 level_staging 的说明，写盘侧已在 2026-09-23 加固）。
+#   ② 加雷轮**没有密度上界**（gen_shape_levels 有 mines+bump ≤ 格数×0.35）。
+#   补齐这两项需要专门窗口实跑验证（生成一次数十分钟），故本轮只记录、未实施。
 extends SceneTree
 
 const EXIT_FRAMES := 3

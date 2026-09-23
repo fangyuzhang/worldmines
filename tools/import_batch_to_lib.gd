@@ -125,6 +125,13 @@ func _scan_source() -> void:
 			if side <= 0:
 				_bad_sizes.append("%s/%s" % [combo_name, size_dir])
 				continue
+			# 2026-09-23 审计补齐：库尺寸窗（规范源 LevelSequence.SIZES）。越界席位进库后
+			# 选关页永远显示不出来，还会触发 test_level_lib_contract 的孤儿席位红灯。
+			# tools/import_shape_levels_to_lib.gd 早有此闸门（side < 5 or side > 9），本工具缺。
+			if not (side in LevelSequence.SIZES):
+				push_warning("[import] 越界席位跳过（库尺寸窗 %s）：%s/%s(side=%d)" % [
+					str(LevelSequence.SIZES), combo_name, size_dir, side])
+				continue
 			_scan_size(combo_dir, size_dir, side)
 		if _accepted > accepted_before:
 			print("[import]   %-20s → 收 %d 关" % [combo_name, _accepted - accepted_before])
