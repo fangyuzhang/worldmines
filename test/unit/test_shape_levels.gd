@@ -395,10 +395,10 @@ const ART_CASES: Array = [
 		"in_board": [Vector2i(10, 8), Vector2i(0, 0), Vector2i(20, 20)],
 	},
 	{
-		"file": "art_jelly.json", "cells": 142, "mines": 39, "seed": 8206, "bbox": Vector2i(15, 19),
-		"row_lens": [7, 11, 13, 15, 15, 15, 13, 11, 2, 2, 2, 7, 3, 4, 5, 5, 4, 4, 4], "edges": 377,
+		"file": "art_jelly.json", "cells": 148, "mines": 41, "seed": 8208, "bbox": Vector2i(17, 17),
+		"row_lens": [9, 13, 15, 17, 17, 17, 13, 9, 4, 2, 4, 8, 3, 4, 4, 5, 4], "edges": 413,
 		"holes": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
-		"in_board": [Vector2i(7, 7), Vector2i(4, 0), Vector2i(13, 18)],
+		"in_board": [Vector2i(8, 7), Vector2i(4, 0), Vector2i(14, 16)],
 	},
 ]
 
