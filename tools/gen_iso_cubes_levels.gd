@@ -32,6 +32,14 @@ const LEVEL_LOADER_PATH := "res://ui/level_loader.gd"
 const ATTEMPTS := 30
 const MAX_TRIES := 8
 const MAX_MINES_BUMP := 3
+## 单关**累计**生成时间上限（看门狗）。2026-09-23 审计 #4 补齐，与 gen_shape_levels.gd 同口径。
+## 理由：CP-SAT 的 max_time_in_seconds 只约束求解阶段，实测 >100 格 + 变体规则时 Solve()
+## 长期不返回（CPU 近 0、无输出），从外部与死锁无法区分，只能手动杀进程、整批白跑。
+## 局限（如实说明）：检查点在调用之间，单次 Solve() 自身卡住则打断不了（OR-Tools 无中止接口）。
+const WATCHDOG_MS_PER_LEVEL := 240000
+## 密度上界（2026-09-23 审计 #5 补齐）：mines + bump 不得超过 格数 × DENSITY_CAP。
+## 超过说明该形状在此尺寸下数学上难出深推理——如实失败并在报告里列出，不无限加雷。
+const DENSITY_CAP := 0.35
 const GEN_TIMEOUT_MS := 60000
 ## 峰值下限 = 2：与 core/difficulty.gd 的 PEAK_WINDOWS 对齐 ——
 ## 普通档（easy）的窗口是 peak 2~3，peak 0~1 是「纯一眼盘」**不进任何档**，
@@ -191,9 +199,23 @@ func _gen_one(spec: Dictionary) -> bool:
 	var used_mines := 0
 	var best_peak := -1
 	var tries := 0
+	# 密度上界（2026-09-23 审计 #5）：mines + bump 不得超过 格数 × DENSITY_CAP。
+	var max_mines := int(floor(float(n) * DENSITY_CAP))
+	if mines > max_mines:
+		push_error("%s: 基准雷数 %d 已超密度上界 %d（格数 %d × %.2f）——规格本身不合低密度设计" % [
+			file_name, mines, max_mines, n, DENSITY_CAP])
+		return false
+	# 看门狗（2026-09-23 审计 #4）：单关累计时间超限即放弃本关（失败而非挂死整批）。
+	var level_t0 := Time.get_ticks_msec()
 	for b in MAX_MINES_BUMP + 1:
+		if mines + b > max_mines:
+			break
 		for t in MAX_TRIES:
 			tries += 1
+			if Time.get_ticks_msec() - level_t0 > WATCHDOG_MS_PER_LEVEL:
+				push_error("%s: 单关累计生成超过 %d 秒（看门狗触发）——判定超出求解器可行域，放弃本关。已尝试 %d 次，最高 peak=%d" % [
+					file_name, WATCHDOG_MS_PER_LEVEL / 1000, tries, best_peak])
+				return false
 			var cand: Dictionary = gen.generate_with_rules(
 					"classic", [], topo.size(), mines + b, int(spec["seed"]) + t, 0, ATTEMPTS,
 					topo, GEN_TIMEOUT_MS)
@@ -220,6 +242,10 @@ func _gen_one(spec: Dictionary) -> bool:
 	level["shape_kind"] = "等轴菱面"
 	level["custom_shapes"] = _custom_shapes(geo, topo)
 	var pal := PALETTE_BASE.duplicate(true)
+	# 纹理徽记（2026-09-23 审计修复）：本族产物一直带 texture=cube（玩家侧的第二条识别
+	# 通道），但生成器此前不写该字段——重跑会把它悄悄丢掉（实测：一次重跑让 iso_01..05
+	# 各少一行）。补上后「重跑 = 幂等」，与 gen_shape_levels 从 SPEC 读 texture 的做法对齐。
+	pal["texture"] = "cube"
 	pal["groups"] = FACE_COLORS.duplicate(true)
 	level["palette"] = pal
 

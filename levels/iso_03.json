@@ -1426,7 +1426,6 @@
   ],
   "name": "等轴 03 · 凹坑",
   "palette": {
-    "texture": "cube",
     "background": [
       20,
       0,
@@ -1464,6 +1463,7 @@
       255,
       255
     ],
+    "texture": "cube",
     "tile": [
       127,
       127,

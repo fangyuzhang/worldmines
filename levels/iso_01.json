@@ -926,7 +926,6 @@
   ],
   "name": "等轴 01 · 三方阵",
   "palette": {
-    "texture": "cube",
     "background": [
       20,
       0,
@@ -964,6 +963,7 @@
       255,
       255
     ],
+    "texture": "cube",
     "tile": [
       127,
       127,

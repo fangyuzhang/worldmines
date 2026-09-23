@@ -29,6 +29,11 @@
 #      半写批次窗口，见 level_staging 的说明，写盘侧已在 2026-09-23 加固）。
 #   ② 加雷轮**没有密度上界**（gen_shape_levels 有 mines+bump ≤ 格数×0.35）。
 #   补齐这两项需要专门窗口实跑验证（生成一次数十分钟），故本轮只记录、未实施。
+# ⚠️ 已知缺口（2026-09-23 审计）：本族产物带 palette.texture 徽记，但**生成器不写该字段**
+#   —— 重跑本族会把 texture 悄悄丢掉（iso_cubes 已实测：重跑后 5 个文件各少一行）。
+#   回填需按族/按关核对现值（geo 按 kind：tri_/trihex_/t31212_ = weave、ring_ = ring；
+#   style 的 sty_* 含 block/comb/octa/parity/trail/weave 六种，需逐关对照产物），
+#   属内容层决策，故本轮只记录。
 extends SceneTree
 
 const EXIT_FRAMES := 3
@@ -39,6 +44,14 @@ const LEVEL_LOADER_PATH := "res://ui/level_loader.gd"
 const ATTEMPTS := 30
 const MAX_TRIES := 8
 const MAX_MINES_BUMP := 3
+## 单关**累计**生成时间上限（看门狗）。2026-09-23 审计 #4 补齐，与 gen_shape_levels.gd 同口径。
+## 理由：CP-SAT 的 max_time_in_seconds 只约束求解阶段，实测 >100 格 + 变体规则时 Solve()
+## 长期不返回（CPU 近 0、无输出），从外部与死锁无法区分，只能手动杀进程、整批白跑。
+## 局限（如实说明）：检查点在调用之间，单次 Solve() 自身卡住则打断不了（OR-Tools 无中止接口）。
+const WATCHDOG_MS_PER_LEVEL := 240000
+## 密度上界（2026-09-23 审计 #5 补齐）：mines + bump 不得超过 格数 × DENSITY_CAP。
+## 超过说明该形状在此尺寸下数学上难出深推理——如实失败并在报告里列出，不无限加雷。
+const DENSITY_CAP := 0.35
 const GEN_TIMEOUT_MS := 60000
 const MIN_PEAK := 1
 
@@ -305,9 +318,23 @@ func _gen_one(spec: Dictionary) -> bool:
 	var used_mines := 0
 	var best_peak := -1
 	var tries := 0
+	# 密度上界（2026-09-23 审计 #5）：mines + bump 不得超过 格数 × DENSITY_CAP。
+	var max_mines := int(floor(float(n) * DENSITY_CAP))
+	if mines > max_mines:
+		push_error("%s: 基准雷数 %d 已超密度上界 %d（格数 %d × %.2f）——规格本身不合低密度设计" % [
+			file_name, mines, max_mines, n, DENSITY_CAP])
+		return false
+	# 看门狗（2026-09-23 审计 #4）：单关累计时间超限即放弃本关（失败而非挂死整批）。
+	var level_t0 := Time.get_ticks_msec()
 	for b in MAX_MINES_BUMP + 1:
+		if mines + b > max_mines:
+			break
 		for t in MAX_TRIES:
 			tries += 1
+			if Time.get_ticks_msec() - level_t0 > WATCHDOG_MS_PER_LEVEL:
+				push_error("%s: 单关累计生成超过 %d 秒（看门狗触发）——判定超出求解器可行域，放弃本关。已尝试 %d 次，最高 peak=%d" % [
+					file_name, WATCHDOG_MS_PER_LEVEL / 1000, tries, best_peak])
+				return false
 			var cand: Dictionary = gen.generate_with_rules(
 					"classic", globals, topo.size(), mines + b, int(spec["seed"]) + t, 0, ATTEMPTS,
 					topo, GEN_TIMEOUT_MS)
