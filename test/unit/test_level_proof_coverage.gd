@@ -65,7 +65,11 @@ func _level_names() -> Array[String]:
 ## 主门禁：除已知例外外，所有关卡都必须能推出完整证明链。
 func test_all_levels_are_fully_deducible() -> void:
 	if not RuleCpSat.available():
-		pending("C# 后端不可用（跳过）")
+		# 假绿防线（2026-09-24）：后端缺失时本门禁**整条**跳过——套件仍会绿，但没有任何关卡被验证。
+		# 不做硬失败（机器没装 .NET / 未 build 时仍要能跑其它测试；项目风格=警告不失败），
+		# 改为：① 消息里写明后果；② 发布前可用 tools/verify_all.ps1 -StrictUnit 把这种跳过升级为失败。
+		pending("C# 后端不可用 —— 本门禁（levels/ 全量序贯可推）被整条跳过：套件会绿但【未验证任何关卡】。"
+			+ "开发机请先 dotnet build；发布前跑 tools/verify_all.ps1 -StrictUnit 收紧")
 		return
 	var names := _level_names()
 	assert_gt(names.size(), 0, "levels/ 下应有关卡文件")
@@ -101,7 +105,7 @@ func test_all_levels_are_fully_deducible() -> void:
 ## 反向守卫：例外名单一旦失效（那两关被修好）就失败，逼着把例外删掉。
 func test_known_stuck_list_has_not_rotted() -> void:
 	if not RuleCpSat.available():
-		pending("C# 后端不可用（跳过）")
+		pending("C# 后端不可用 —— 例外名单守卫同样被跳过（同 test_all_levels_are_fully_deducible 说明）")
 		return
 	var still_stuck := 0
 	var seen := 0

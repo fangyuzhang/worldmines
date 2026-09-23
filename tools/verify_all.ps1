@@ -1,4 +1,4 @@
-# verify_all.ps1 —— 交付前一键全量验证（C# 编译 + 三套测试）
+﻿# verify_all.ps1 —— 交付前一键全量验证（C# 编译 + 三套测试）
 #
 # 为什么需要：项目有三套测试（unit / ui / integration），分别位于 res://test/ 下的三个
 # 子目录。此前「全量回归」只跑 test/unit，导致 test/ui 的 5 个失败与 test/integration
@@ -7,9 +7,14 @@
 #
 # 用法：powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\verify_all.ps1
 #      （加 -SkipIntegration 可跳过较慢的集成套件）
+#      （加 -StrictUnit 可把「unit 套件有 pending」升级为失败——发布前/开发机自检用。
+#        背景 2026-09-24：C# 后端缺失时 test_level_proof_coverage 会整条 pending，
+#        套件仍全绿但**没有任何关卡被验证**（假绿）；默认不硬失败是为了在没装 .NET 的
+#        机器上仍能跑其它测试，故用显式开关收紧。）
 
 param(
-    [switch] $SkipIntegration
+    [switch] $SkipIntegration,
+    [switch] $StrictUnit
 )
 
 $ErrorActionPreference = 'Continue'
@@ -65,6 +70,12 @@ foreach ($pair in @(@('unit', 'unit'), @('ui', 'ui'), @('integration', 'integrat
     if ($r[0] -gt 0) {
         $failures += $r[0]
         $summary += "$label : $($r[0]) failing"
+    } elseif ($StrictUnit -and $dir -eq 'unit' -and $r[1] -gt 0) {
+        # 2026-09-24：unit 套件「零 pending」= C# 后端与派生门禁真的跑了。
+        # 典型假绿：后端缺失 → test_level_proof_coverage 整条 pending → 套件全绿但未验证任何关卡。
+        $failures += 1
+        Write-Host "  FAILED(-StrictUnit): unit risky/pending=$($r[1]) —— 有门禁被静默跳过（先 dotnet build）" -ForegroundColor Red
+        $summary += "$label : FAILED - risky/pending=$($r[1])（-StrictUnit：跳过按失败计）"
     } elseif ($r[1] -ge 10) {
         # pending 大面积出现 = 核心验证被静默跳过（如 C# 后端缺失时 59+ 处守卫全转 pending），
         # 必须显眼提示而不是混在「OK」里——套件显示绿色但实际什么都没验证
