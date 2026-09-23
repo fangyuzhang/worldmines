@@ -45,7 +45,7 @@ const STYLE_OF := {
 ## · shape_trihex：编织 01 peak=3 → easy（9×9 恰在窗内；编织 02 是 11×11 越界）；
 ## · shape_t31212 / shape_ring：全部越界（37/51、12/18 宽）→ catalog 无键、卡片自动隐藏。
 const EXPECTED_COUNTS := {
-	"shape_holed": {"easy": {5: 1, 6: 1, 7: 1, 8: 2, 9: 4}},
+	"shape_holed": {"easy": {5: 1, 6: 1, 7: 1, 8: 2, 9: 1}},
 	"shape_hex": {"easy": {5: 1, 6: 1, 7: 1, 8: 1, 9: 1}},
 	"shape_iso": {"normal": {9: 1}},
 	"shape_tri": {"easy": {8: 1}},
@@ -104,22 +104,26 @@ func test_specific_counts_from_spec() -> void:
 	#（GUT 的字典比较对 float/int 严格，2.0 ≠ 2）。
 	assert_eq(int(LevelLibrary.counts("shape_holed", 8).get("easy", 0)), 2, "shape_holed 8×8 应有 2 关")
 	assert_eq(int(LevelLibrary.counts("shape_hex", 9).get("easy", 0)), 1, "shape_hex 9×9 应有 1 关")
-	assert_eq(int(LevelLibrary.counts("shape_holed", 9).get("easy", 0)), 4,
-			"shape_holed 9×9 应有 4 关（holed_03 + 3 个 mask 图案关）")
+	# 2026-09-23：art 三关升级到 17~21 格后 side 超出库尺寸窗 5~9（记数跳过、非 fatal），
+	# 覆盖写导入后库里只剩 holed_03——mask 图案关改由选关页「异形棋盘」页供给。
+	assert_eq(int(LevelLibrary.counts("shape_holed", 9).get("easy", 0)), 1,
+			"shape_holed 9×9 应有 1 关（holed_03；art 三关超库尺寸窗，改走手工异形页）")
 	assert_eq(int(LevelLibrary.counts("shape_iso", 9).get("normal", 0)), 1,
 			"shape_iso 9×9 应有 1 关（normal 档：等轴 01 peak=5）")
 	assert_eq(int(LevelLibrary.counts("shape_tri", 8).get("easy", 0)), 1, "shape_tri 8 宽应有 1 关")
 	assert_eq(int(LevelLibrary.counts("shape_trihex", 9).get("easy", 0)), 1, "shape_trihex 9×9 应有 1 关")
 
 
-func test_shape_holed_9_contains_art_levels() -> void:
-	# 三关 mask 图案关真的进库了（不是只改了 catalog 计数）：按名字逐个点名。
+func test_shape_holed_9_excludes_art_levels() -> void:
+	# 2026-09-23 反转守卫：art 三关（17~21 格）超出库尺寸窗 5~9，导入覆盖写后
+	# 不应再出现在 shape_holed/9——若又出现了，说明有人把低分辨率旧版塞回了库。
 	var names: Array = []
 	for lv in LevelLibrary.levels("shape_holed", 9, "easy"):
 		names.append(str((lv as Dictionary).get("name", "")))
-	for want in ["图案 01 · 同心靶", "图案 02 · 分形地毯", "图案 03 · 小水母"]:
-		assert_true(names.has(want),
-			"shape_holed 9×9 应含 mask 图案关「%s」（实际：%s）" % [want, ", ".join(names)])
+	for gone in ["图案 01 · 同心靶", "图案 02 · 分形地毯", "图案 03 · 小水母"]:
+		assert_false(names.has(gone),
+			"shape_holed 9×9 不应再含 mask 图案关「%s」（已升级到 17~21 格、走手工异形页；实际：%s）"
+				% [gone, ", ".join(names)])
 
 
 # ==================== ② 内容可用：加载成异形棋盘 + 集内升序 ====================

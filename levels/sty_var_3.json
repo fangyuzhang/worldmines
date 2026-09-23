@@ -815,7 +815,7 @@
     }
   ],
   "name": "扁巢 · 步步",
-  "palette": {
+  "palette": {"texture": "trail", 
     "background": [
       20,
       0,

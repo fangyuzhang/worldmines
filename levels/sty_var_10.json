@@ -607,7 +607,7 @@
     }
   ],
   "name": "八角 · 偶偶",
-  "palette": {
+  "palette": {"texture": "parity", 
     "background": [
       20,
       0,

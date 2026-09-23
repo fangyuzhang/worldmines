@@ -360,8 +360,8 @@ const SPECS: Array = [
 
 	# ================= 第五批：动物棋盘（2026-09-23 放大到 11×11）=================
 	{
-		# 动物棋盘 1：海龟 · 块块 —— 椭圆甲（半轴 5.6×6.2 缩放）+ 上方头颈 + 左右前鳍/后鳍 + 尾；配 s7（块块）
-		"file": "ani_turtle.json", "kind": "mask", "name": "海龟 · 块块",
+		# 动物棋盘 1：海龟 · 块块 —— 椭圆甲（半轴 5.6×6.2 缩放）+ 上方头颈 + 左右前鳍/后鳍 + 尾；配 z1（块块）
+		"file": "ani_turtle.json", "kind": "mask", "name": "海龟 · 重心",
 		"desc": "17×18 高分辨率图案（120 格）",
 		"style": "holed_grid",
 		"mask": [
@@ -384,8 +384,9 @@ const SPECS: Array = [
 			".......###.......",
 			"........#........",
 		],
-		"cells": 120, "bbox": Vector2i(17, 18), "mines": 24, "seed": 9307,
-		"globals": ["s7"], "theme": "GREEN", "texture": "block", "shape_kind": "动物棋盘",
+		"cells": 120, "bbox": Vector2i(17, 18), "mines": 34, "seed": 9307,
+		"globals": ["s2"], "theme": "GREEN", "texture": "block", "shape_kind": "动物棋盘",
+		# 2026-09-23 约束调整记录：2026-09-23 三次换约束：s4 分层在龟形上仍超时（240s×8 次 peak=-1）；s2 最宽松（fish/snowflake 同款成功）
 		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
 		"in_board": [Vector2i(8, 12), Vector2i(7, 0), Vector2i(8, 17)],
 	},
@@ -418,8 +419,8 @@ const SPECS: Array = [
 		"in_board": [Vector2i(8, 8), Vector2i(8, 0), Vector2i(12, 15)],
 	},
 	{
-		# 动物棋盘 3：雪花 · 偶偶 —— 中心六边形 + 6 条主臂 + 每臂两侧分叉；配 s6（偶偶）
-		"file": "ani_snowflake.json", "kind": "mask", "name": "雪花 · 偶偶",
+		# 动物棋盘 3：雪花 · 偶偶 —— 中心六边形 + 6 条主臂 + 每臂两侧分叉；配 z1（偶偶）
+		"file": "ani_snowflake.json", "kind": "mask", "name": "雪花 · 重心",
 		"desc": "15×18 高分辨率图案（88 格）",
 		"style": "holed_grid",
 		"mask": [
@@ -442,14 +443,15 @@ const SPECS: Array = [
 			"......###......",
 			".......#.......",
 		],
-		"cells": 88, "bbox": Vector2i(15, 18), "mines": 18, "seed": 9302,
-		"globals": ["s6"], "theme": "PINK", "texture": "parity", "shape_kind": "动物棋盘",
+		"cells": 88, "bbox": Vector2i(15, 18), "mines": 25, "seed": 9302,
+		"globals": ["s2"], "theme": "PINK", "texture": "parity", "shape_kind": "动物棋盘",
+		# 2026-09-23 约束调整记录：2026-09-23 二次换约束：z1 镜像求解超时（240s×14 次 peak=-1）；s2 有 fish 同款先例
 		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
 		"in_board": [Vector2i(7, 9), Vector2i(7, 0), Vector2i(7, 17)],
 	},
 	{
-		# 动物棋盘 4：蛛网 · 步步 —— 4 圈同心环带 + 8 向辐条；配 z2（步步）
-		"file": "ani_web.json", "kind": "mask", "name": "蛛网 · 步步",
+		# 动物棋盘 4：蛛网 · 步步 —— 4 圈同心环带 + 8 向辐条；配 z3（步步）
+		"file": "ani_web.json", "kind": "mask", "name": "蛛网 · 四象",
 		"desc": "19×18 高分辨率图案（144 格）",
 		"style": "holed_grid",
 		"mask": [
@@ -472,14 +474,15 @@ const SPECS: Array = [
 			"..#..##..#..##..#..",
 			".......#####.......",
 		],
-		"cells": 144, "bbox": Vector2i(19, 18), "mines": 29, "seed": 9303,
-		"globals": ["z2"], "theme": "GREY", "texture": "trail", "shape_kind": "动物棋盘",
+		"cells": 144, "bbox": Vector2i(19, 18), "mines": 40, "seed": 9303,
+		"globals": ["z3"], "theme": "GREY", "texture": "trail", "shape_kind": "动物棋盘",
+		# 2026-09-23 约束调整记录：2026-09-23 换约束（原 z2 与形状结构性冲突）
 		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
 		"in_board": [Vector2i(9, 9), Vector2i(9, 0), Vector2i(11, 17)],
 	},
 	{
-		# 动物棋盘 5：章鱼 · 连排 —— 半圆头 + 6 条分离触手，末端二次弯曲外张；配 s5（连排）
-		"file": "ani_octopus.json", "kind": "mask", "name": "章鱼 · 连排",
+		# 动物棋盘 5：章鱼 · 连排 —— 半圆头 + 6 条分离触手，末端二次弯曲外张；配 s1（连排）
+		"file": "ani_octopus.json", "kind": "mask", "name": "章鱼 · 四象",
 		"desc": "15×20 高分辨率图案（162 格）",
 		"style": "holed_grid",
 		"mask": [
@@ -504,8 +507,9 @@ const SPECS: Array = [
 			"##...#...#...##",
 			".##...#.#...##.",
 		],
-		"cells": 162, "bbox": Vector2i(15, 20), "mines": 32, "seed": 9304,
-		"globals": ["s5"], "theme": "YELLOW", "texture": "chain", "shape_kind": "动物棋盘",
+		"cells": 162, "bbox": Vector2i(15, 20), "mines": 44, "seed": 9304,
+		"globals": ["z3"], "theme": "YELLOW", "texture": "chain", "shape_kind": "动物棋盘",
+		# 2026-09-23 五轮尝试全败（s5 与 8 腿直接矛盾；s1/s4/z3 求解超时 peak=-1；s2 有解但 peak=1）——结论：章鱼形状（8 细腿 + 实心头）与 easy 档系统性冲突，需重设计形状或放宽档位；levels/ani_octopus.json 暂保持旧 60 格版（s5）。
 		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
 		"in_board": [Vector2i(7, 10), Vector2i(7, 0), Vector2i(13, 19)],
 	},

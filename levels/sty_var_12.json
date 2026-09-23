@@ -1227,7 +1227,7 @@
     }
   ],
   "name": "菱格 · 块块",
-  "palette": {
+  "palette": {"texture": "block", 
     "background": [
       20,
       0,
