@@ -180,6 +180,8 @@ func test_mask_specs_match_products() -> void:
 			"%s：SPEC 的 mines 应与产物雷数一致" % fn)
 		# 两侧都必须归一：SPEC 侧是 `"s2"`（带引号）、产物侧是 `["s2"]`（str 化的数组），
 		# 归一后都成 `s2` 才能比——首版漏了左侧归一，门禁自己先抓到这个 bug。
+		assert_eq(_spec_str(block, "name"), str(lv.get("name", "")),
+			"%s：SPEC 的 name 应与产物一致（曾出现子卡写精灵名「小鱼 · 稳稳」、同屏父卡写规则名「重心」的两套名字并存）" % fn)
 		assert_eq(_norm_globals(_spec_globals(block)), _norm_globals(str(lv.get("global_rules", []))),
 			"%s：SPEC 的 globals 应与产物 global_rules 一致（换约束必须两处同步）" % fn)
 		checked += 1
@@ -266,6 +268,17 @@ func _spec_globals(block: String) -> String:
 		return ""
 	i += pat.length()
 	var j := block.find("]", i)
+	return block.substr(i, j - i) if j > i else ""
+
+
+## SPEC 块里 `"key": "value"` 的字符串（找不到返回空串）。
+func _spec_str(block: String, key: String) -> String:
+	var pat := '"%s": "' % key
+	var i := block.find(pat)
+	if i < 0:
+		return ""
+	i += pat.length()
+	var j := block.find('"', i)
 	return block.substr(i, j - i) if j > i else ""
 
 
