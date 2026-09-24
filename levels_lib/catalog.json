@@ -3,25 +3,27 @@
     "classic": {
       "5": {
         "easy": 5,
+        "hard": 20,
         "normal": 4
       },
       "6": {
         "easy": 6,
-        "hard": 2,
+        "hard": 20,
         "normal": 2
       },
       "7": {
         "easy": 6,
+        "hard": 20,
         "normal": 2
       },
       "8": {
         "easy": 4,
-        "hard": 2,
+        "hard": 20,
         "normal": 4
       },
       "9": {
         "easy": 4,
-        "hard": 4,
+        "hard": 20,
         "normal": 2
       }
     },
@@ -357,17 +359,17 @@
       },
       "7": {
         "easy": 69,
-        "hard": 4,
+        "hard": 22,
         "normal": 31
       },
       "8": {
         "easy": 69,
-        "hard": 22,
+        "hard": 40,
         "normal": 49
       },
       "9": {
         "easy": 85,
-        "hard": 48,
+        "hard": 64,
         "normal": 49
       }
     },
