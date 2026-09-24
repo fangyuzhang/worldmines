@@ -737,7 +737,7 @@ func _prune_clues_rules(oracle: RuleOracle, active: Dictionary, deadline: int, g
 		if pa.y != pb.y:
 			return pa.y < pb.y
 		return pa.x < pb.x)
-	var state := {"target": target_difficulty, "reached": false, "tries": 0, "ok": 0}
+	var state := {"target": target_difficulty, "reached": false, "tries": 0, "ok": 0, "prune_timeout": false}
 	_prune_sequential(oracle, active, keys, deadline, grid_size, total_mines, values, state, masked)
 	return state
 
@@ -749,7 +749,14 @@ func _prune_clues_rules(oracle: RuleOracle, active: Dictionary, deadline: int, g
 func _prune_sequential(oracle: RuleOracle, active: Dictionary, keys: Array, deadline: int,
 		grid_size: Vector2i, total_mines: int, values: Dictionary, state: Dictionary, _masked: Dictionary = {}) -> void:
 	for p in keys:
-		if bool(state["reached"]) or Time.get_ticks_msec() > deadline:
+		if bool(state["reached"]):
+			return
+		if Time.get_ticks_msec() > deadline:
+			# 墙钟兜底触发：**非确定性判停**（负载影响删减数量 ⇒ 重跑波动，
+			# 实测同一批数据重跑后 ani_crab 从可推变不可推）。记录到 state 供上层
+			# 写入 last_call_stats 并打 warning 留痕——缺口必须可见，不能静默截断。
+			# 根治（判停改步数/迭代数 + 删减顺序按信息量排序）属生成算法变更，独立课题。
+			state["prune_timeout"] = true
 			return
 		# 保底：至少保留 1 条线索。全局约束自带开局信息的组合（如 mx+dt：骨牌外强制非雷
 		# + 镜像锁死骨牌内选择 → 无线索即可序贯推完）会把线索全部删光，被上层

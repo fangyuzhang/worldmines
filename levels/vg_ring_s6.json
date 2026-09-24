@@ -1537,6 +1537,7 @@
     "rounds": 4,
     "target_difficulty": 0.0
   },
+  "gen_rev": "v4.2-0924",
   "global_rules": [
     "s6"
   ],
