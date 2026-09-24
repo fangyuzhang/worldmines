@@ -162,3 +162,42 @@ func test_variant_axis_tables_cover_the_same_axes() -> void:
 	assert_eq(missing_theme.size(), 0, "这些变体有纹理无主题：%s" % str(missing_theme))
 	assert_eq(missing_tex.size(), 0,
 		"这些变体有主题但无纹理事席（识别通道不完整）：%s" % str(missing_tex))
+
+
+func test_names_and_descs_free_of_legacy_nicknames() -> void:
+	## 全库 name/desc 不得残留**旧昵称**（2026-09-25 补，堵 desc 盲区）。
+	##
+	## 背景：2026-09-24 已把 122 处名字统一到 display_name，但当时契约只查 name 后缀；
+	## 第三轮交叉验证换维度扫 desc，抓出 vg_ring_s6 / vg_trihex_s6 的 desc 仍写
+	## 「S6 偶偶约束」—— desc 会写进关卡数据，**同样玩家可见**（选关页/详情）。
+	##
+	## 词表口径：
+	##   · 「骨牌」**不在**表内 —— 它是官方名「骨牌边界」的子串，会整族误报。
+	##   · 「洋葱/局部禁形/重心/无环/行列凸/度偶数/分量数/相邻行锁」等官方名也不在表内。
+	##   · 若将来某条 desc 的正常中文措辞撞了词表（如「步步紧逼」），改措辞即可 ——
+	##     与其放宽门禁，不如让玩家可见文本避开这些易混淆的旧叫法。
+	const LEGACY_NICKS: Array[String] = [
+		"不行", "稳稳", "散散", "层层", "连排", "偶偶", "块块", "步步"]
+	var bad: Array[String] = []
+	var checked := 0
+	for path in LevelLoader.list_levels():
+		if not FileAccess.file_exists(path):
+			continue
+		var f := FileAccess.open(path, FileAccess.READ)
+		if f == null:
+			continue
+		var d: Variant = JSON.parse_string(f.get_as_text())
+		f.close()
+		if not (d is Dictionary):
+			continue
+		var lv: Dictionary = d
+		checked += 1
+		for field: String in ["name", "desc"]:
+			var text := str(lv.get(field, ""))
+			for nick: String in LEGACY_NICKS:
+				if text.contains(nick):
+					bad.append("%s 的 %s 残留旧昵称「%s」：%s" % [
+						path.get_file(), field, nick, text])
+	assert_gt(checked, 0, "应至少检查到一个关卡")
+	assert_eq(bad.size(), 0,
+		"玩家可见文本残留旧昵称（应统一为 VariantCatalog.display_name）：\n%s" % "\n".join(bad))

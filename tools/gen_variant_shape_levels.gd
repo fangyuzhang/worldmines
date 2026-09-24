@@ -746,7 +746,12 @@ func _bumps_for(tier: String) -> Array:
 func _proof_ok(level: Dictionary) -> bool:
 	var pl: GDScript = load("res://core/proof_log.gd")
 	if pl == null:
-		return true   # 拿不到推演器时不阻断（门禁测试会兜底）
+		# 推演器拿不到时**按失败处理**（fail-fast，2026-09-25）：proof 复核是产线
+		# 最后一道闸，闸坏了还放行 = 产出**未验证**的盘——而「门禁兜底」要等全量回归
+		# 才能发现，跑批时未必在跑回归。load 失败只发生在文件缺失/编译错误，
+		# 那说明环境已坏：宁可停产，也不产未验证的盘。
+		push_error("proof_log.gd 加载失败——无法复核序贯可解，按失败处理（检查仓库完整性）")
+		return false
 	var log: Variant = pl.call("build", level)
 	return log is Dictionary and bool((log as Dictionary).get("solved", false))
 
