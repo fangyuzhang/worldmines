@@ -116,6 +116,15 @@ func _initialize() -> void:
 			if Time.get_ticks_msec() - t_arm > _budget_s * 1000:
 				arm["budget_hit"] = true
 				break
+			# 逐候选心跳（覆盖写）：**挂死时唯一能拿到「卡在哪个 seed」的线索**——
+			# stdout 是块缓冲的，进程被挂死/OOM 杀掉时未必落盘；文件心跳不依赖缓冲。
+			# 2026-09-24 实测：o4@9 曾出现单候选烧 679s CPU（名义上限 243s）且 900s 预算停不下来，
+			# 当时就是因为没有心跳，只能拿到"卡住"这个事实、拿不到种子。
+			var hb := FileAccess.open("%s/heartbeat.txt" % _out_dir, FileAccess.WRITE)
+			if hb != null:
+				hb.store_string("spec=%s side=%d seed=%d timeout_ms=%d t=%s\n" % [
+					_spec, side, seed, timeout, Time.get_datetime_string_from_system()])
+				hb.close()
 			var t0 := Time.get_ticks_msec()
 			var level: Dictionary = gen.generate_with_rules(clue, globals, Vector2i(side, side), mines, seed,
 				0, 50, null, timeout, float(target))
