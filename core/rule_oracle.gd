@@ -17,8 +17,10 @@ var _total_mines: int = -1
 var _global_pkg: Dictionary = {}      # {"aux":[int..], "ir":[约束..]}
 var _clue_cache: Dictionary = {}      # "x,y=值" -> pkg
 
-## C# CP-SAT 并行搜索 worker 数（0 = 用 C# 默认 4）。由 PuzzleGenerator.num_workers 透传；
-## 分片批跑时设为 1，避免多进程各自开 4 worker 超额订阅。不影响强制格结论。
+## C# CP-SAT 搜索 worker 数（0 = 用 C# 默认；2026-09-24 起 C# 默认 **1=单线程确定性**，
+## 原默认 4 已废弃——多线程搜索非确定（同 seed 不同盘）且有长尾挂死风险，见 solver/RuleSolver.cs）。
+## 由 PuzzleGenerator.num_workers 透传。确需多线程提速请显式设 >1 并在调用处写明理由。
+## 不影响强制格结论。
 var num_workers: int = 0
 
 

@@ -14,7 +14,7 @@ const MAX_MINES_RATIO := 0.4  # 默认雷密度上限
 ## `关卡集供给对账.md`「混版集量化」），而此前没有任何字段能区分版本 → 只能用 clue_ratio 近似，
 ## 无法精确执行「版本优选」。有了戳：① 优选可精确；② 可回归（新盘必带最新戳）。
 ## 约定：老盘（2026-09-24 之前）无此字段，读取方一律按「字段缺失 = 老管线」处理。
-const GEN_REV := "v4.1-0924"
+const GEN_REV := "v4.2-0924"
 
 var _rng := RandomNumberGenerator.new()
 

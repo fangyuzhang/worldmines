@@ -701,12 +701,34 @@ namespace MinesweeperSolver
         private static CpSolver MakeSolver(Godot.Collections.Dictionary spec)
         {
             int timeoutMs = spec.ContainsKey("timeout_ms") ? spec["timeout_ms"].AsInt32() : 8000;
-            // num_workers 可配置（实测调优用；默认 4）。
-            // 注意：unsat_core 路径（_ClueCoreSize）会强制单 worker 保证 core 确定性。
-            int workers = spec.ContainsKey("num_workers") ? spec["num_workers"].AsInt32() : 4;
+            // num_workers 默认 1（2026-09-24，原 4）。两个理由：
+            //   ① 确定性：CP-SAT 多线程搜索非确定 ⇒ 同 seed 两次生成可能得到不同盘面。
+            //      实测重跑同一 SPEC 后 clue_count 12→8、关卡从「可推」变「不可推」——
+            //      多线程是墙钟之外的另一层波动源，而项目目标是「重跑逐字节复现」。
+            //   ② 稳定性：实测 6 个子进程同时挂死（CPU 近 0、无输出、内存停滞），
+            //      多线程长尾/线程互等是嫌疑之一，单 worker 下不存在。
+            // 性能折衷：批量离线场景可用 spec["num_workers"] 显式调回多线程（接口保留），
+            // 但需接受上述两条风险并在调用处写明理由。unsat_core 路径（_ClueCoreSize）仍强制单 worker。
+            int workers = spec.ContainsKey("num_workers") ? spec["num_workers"].AsInt32() : 1;
+            // max_deterministic_time（OR-Tools 确定性工作量上限，单位≈参考机秒）：
+            // 与 max_time_in_seconds 并存、谁先到谁停。它补上墙钟给不了的两件事：
+            //   ① 病态实例的「无限枚举」在确定性工作量上有**硬上界**（墙钟下机器快跑得久、
+            //      慢机器提前停——这正是重跑波动的根源，实测 6 子进程挂死 CPU 近 0）；
+            //   ② 同 seed 同参数 ⇒ 恰好停在同一处 ⇒ 产物逐字节可复现。
+            // 默认取墙钟秒数的 2 倍：正常求解先撞墙钟（行为不变），病态枚举被 det 上界兜住。
+            // 可用 spec["max_deterministic_time"] 显式覆盖。
+            // 注意 double 必须用 InvariantCulture 格式化——区域设置为逗号小数点时
+            // StringParameters 会解析失败（顺带修掉 timeoutMs/1000.0 的同款隐患）。
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            double detSeconds = spec.ContainsKey("max_deterministic_time")
+                ? System.Convert.ToDouble(spec["max_deterministic_time"], inv)
+                : System.Math.Max(4.0, timeoutMs / 1000.0 * 2.0);
+            string pars = string.Format(inv,
+                "max_time_in_seconds:{0} max_deterministic_time:{1} num_search_workers:{2}",
+                timeoutMs / 1000.0, detSeconds, workers);
             return new CpSolver
             {
-                StringParameters = $"max_time_in_seconds:{timeoutMs / 1000.0} num_search_workers:{workers}"
+                StringParameters = pars
             };
         }
     }
