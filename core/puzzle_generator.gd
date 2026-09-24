@@ -414,6 +414,12 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 		last_call_stats["t_prune_ms"] = int(last_call_stats["t_prune_ms"]) + (Time.get_ticks_msec() - t_prune0)
 		last_call_stats["prune_tries"] = int(last_call_stats["prune_tries"]) + int(pr_state.get("tries", 0))
 		last_call_stats["prune_ok"] = int(last_call_stats["prune_ok"]) + int(pr_state.get("ok", 0))
+		# 墙钟兜底触发的留痕（2026-09-24 补完消费链）：_prune_sequential 只负责把
+		# prune_timeout 记进 state，这里负责转成可观测信号 —— 缺了这个中间环节，
+		# 标记会被设但永远没人读，「可观测化」就成了摆设（审计实测发现的半成品）。
+		if bool(pr_state.get("prune_timeout", false)):
+			last_call_stats["prune_timeout"] = int(last_call_stats.get("prune_timeout", 0)) + 1
+			push_warning("generate_with_rules: attempt %d 删线索墙钟触发——删减被提前截断（非确定性判停，重跑可能波动）" % attempt)
 		if active.is_empty():
 			last_call_stats["prune_empty"] = int(last_call_stats["prune_empty"]) + 1
 			continue

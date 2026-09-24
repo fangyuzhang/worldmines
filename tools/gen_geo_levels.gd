@@ -232,6 +232,13 @@ func _run() -> void:
 	var isolate := OS.get_cmdline_user_args().has("--isolate")
 	if isolate:
 		print("  ** 进程隔离已开启：每关独立子进程 + %d 秒强杀 **" % [ChildIso.DEFAULT_TIMEOUT_MS / 1000])
+	# 文件名过滤的自我保护（2026-09-24 审计实测踩坑）：传了过滤名却一个都没匹配上时，
+	# 旧逻辑会静默跑 0 关并报 GEO-OK —— 「成功的空转」比失败更误导（会让人以为批已完成）。
+	# 常见踩法：漏写 .json 后缀（_selected 拿到的是裸名，而 spec["file"] 带后缀）。
+	if not want.is_empty() and todo.is_empty():
+		push_error("文件过滤 %s 没匹配到任何规格（检查是否漏写 .json 后缀）——按失败处理" % str(want))
+		_request_exit(1)
+		return
 	for k in todo.size():
 		var spec: Dictionary = todo[k]
 		var ok := false
