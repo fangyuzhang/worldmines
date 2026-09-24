@@ -2,14 +2,14 @@
   "clue_rule": "classic",
   "desc": "21×12 高分辨率图案（112 格）",
   "difficulty_profile": {
-    "clue_count": 12,
-    "clue_ratio": 0.15,
-    "difficulty": 3.3,
-    "histogram": "2x5,1x8",
+    "clue_count": 8,
+    "clue_ratio": 0.1,
+    "difficulty": 3.27,
+    "histogram": "2x4,1x9",
     "max_active": 80,
-    "max_batch": 15,
+    "max_batch": 16,
     "max_complexity": 2,
-    "profile": "15x1,14x1,13x1,11x3,7x1,6x1,3x3,2x1,1x1",
+    "profile": "16x1,14x2,13x1,11x2,7x1,6x1,3x3,2x1,1x1",
     "rounds": 13,
     "target_difficulty": 0.0
   },
@@ -161,23 +161,7 @@
       "r": 9
     },
     {
-      "c": 18,
-      "r": 10
-    },
-    {
-      "c": 19,
-      "r": 10
-    },
-    {
       "c": 0,
-      "r": 11
-    },
-    {
-      "c": 1,
-      "r": 11
-    },
-    {
-      "c": 20,
       "r": 11
     },
     {

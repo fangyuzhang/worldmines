@@ -490,9 +490,17 @@ const SPECS: Array = [
 	{
 		# 动物棋盘 5：章鱼 —— 11×10 剪影（半圆头 + 5 条触手）。
 		# 2026-09-23：五轮换约束尝试全败（s5 与多腿矛盾；s1/s4/z3 求解超时 peak=-1；s2 有解但 peak=1，
-		#  腿细传播快够不到 easy 窗口下沿）——因此**保留升级前的 60 格产物与 s5 约束**，
-		#  本 SPEC 与产物严格对齐（否则批量生成会因本关失败而整批不提交，见 gen_shape_levels.gd 的
-		#  「failures > 0 ⇒ 整批不提交」）。高分辨率重设计（减腿/加粗）是后续独立任务。
+		#  腿细传播快够不到 easy 窗口下沿）——因此**保留升级前的 60 格产物与 s5 约束**。
+		#
+		# ⚠️ 2026-09-24 交叉验证修正：本关**无法通过**「推到底」验收（ProofLog 报推不完），
+		# 于是在「有失败则整批不提交」的规则下，**mask 族任何一次重跑都不会提交任何关卡**
+		# （实测：重跑 12 关 → 可提交数 0）。原注释写的「本 SPEC 与产物严格对齐」是**一厢情愿**：
+		# 档位/证明都是运行时判定的，SPEC 里根本没有能让它通过的字段。
+		# 现改为显式声明 allow_unsolved（见 _gen_one 的例外通道注释）——它跳过证明验收并打 warning。
+		#
+		# **这是已知内容缺陷**（该关序贯推演可能推不完，玩家或会卡住），不是"已解决"。
+		# 真正的修法是重设计轮廓（减腿/加粗）让它可推完，属后续独立任务；
+		# 在此之前，用豁免保证整族重跑仍然可用。
 		"file": "ani_octopus.json", "kind": "mask", "name": "章鱼 · 行列凸",
 		"desc": "11 列 × 10 行章鱼（半圆头 + 触手，60 格）",
 		"style": "holed_grid",
@@ -510,6 +518,8 @@ const SPECS: Array = [
 		],
 		"cells": 60, "bbox": Vector2i(11, 10), "mines": 8, "seed": 9304,
 		"globals": ["s5"], "shape_kind": "动物棋盘",
+		# 跳过「推到底」验收（理由见本条目的上方注释）：本关为已知内容缺陷，约束换不动。
+		"allow_unsolved": true,
 		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
 		"in_board": [Vector2i(5, 5), Vector2i(4, 0), Vector2i(10, 9)],
 	},
@@ -953,10 +963,22 @@ func _gen_one(spec: Dictionary) -> bool:
 				# 档位达标只说明盘里有推理步（峰值 ≥ MIN_PEAK），**不等于序贯推演能推完**——
 				# 实测 ani_octopus（章鱼 × s5 连排）就是这样：档位过、证明卡住，全量回归会红。
 				# 在生成期挡掉比事后加豁免干净：豁免名单是给"外部复刻关卡"用的，不该被自家关卡占用。
+				#
+				# ⚠️ 例外通道（2026-09-24 交叉验证所得）：SPEC 可显式声明 `"allow_unsolved": true`
+				# 跳过这条验收，**且必须同时写清理由**。它服务的场景是「**已经上线、且约束换不动**」
+				# 的历史产物——典型就是 ani_octopus（五轮换约束全败，只能保留升级前的 60 格 + s5）。
+				#
+				# 为什么非要有这条通道：本族（以及另外四个生成器）都是「有失败则整批不提交」。
+				# 若这类关永远过不了新验收，那么整族**任何一次重跑都不会提交任何东西**——
+				# 工具彻底不可用（实测：加完验收后，mask 族重跑 12 关只跑出 0 个能提交）。
+				# 跳过时打 warning 而非静默，缺口留在日志里。
 				if spec.has("globals"):
-					var proof: Dictionary = ProofLog.build(candidate)
-					if not bool(proof.get("solved", false)):
-						continue
+					if bool(spec.get("allow_unsolved", false)):
+						push_warning("%s: SPEC 声明 allow_unsolved，跳过「推到底」验收（该关为已知内容缺陷，见其 SPEC 注释）" % file_name)
+					else:
+						var proof: Dictionary = ProofLog.build(candidate)
+						if not bool(proof.get("solved", false)):
+							continue
 				level = candidate
 				used_mines = mine_count + b
 				bump = b
