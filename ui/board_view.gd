@@ -682,6 +682,44 @@ const TEX_PULSE_PERIOD_S := 3.0
 const TEX_ALPHA_BASE := 0.30
 const TEX_ALPHA_SWING := 0.10
 
+## 每个徽记的**专属呼吸节拍**（x = 周期秒数，y = 摆动幅度）。
+##
+## 为什么逐标记给参数：若所有变体共用同一个 3 秒节奏，动效就只是**全局装饰**；
+## 而这一层的目的是让玩家不看数字也能感到「这盘不一样」—— **节奏本身就是变体身份的一部分**，
+## 与颜色、几何、徽记形状并列。
+##
+## 分配原则（对照各自语义，不是随机数值）：
+##   · 警示类快而大 —— 局部禁形 2.2s/±0.16，急促让人警觉
+##   · 稳固类慢而小 —— 重心 4.2s/±0.07、四象 3.6s/±0.10，沉稳得像锚住不动
+##   · 交替类最快 —— 度偶数 2.0s/±0.17（"奇偶交替"的动感）
+##   · 流动类中速 —— 足迹 2.8s、编织 3.4s，像在走 / 在织
+##   · 厚重类最慢 —— 洋葱 4.6s、同心环 4.8s，层层压着
+##
+## 取值全部落在测试门禁的安全带内：base 0.30 ± 最大 0.17 ⇒ [0.13, 0.47] ⊂ [0.10, 0.55]。
+const TEX_PULSE_BY_MARK := {
+	# —— 变体轴 ——
+	"forbid": Vector2(2.2, 0.16),   # 局部禁形：急促
+	"anchor": Vector2(4.2, 0.07),   # 重心：几乎不动
+	"spore": Vector2(2.6, 0.15),    # 无环：飘散
+	"strata": Vector2(4.6, 0.09),   # 洋葱：厚重
+	"chain": Vector2(3.0, 0.12),    # 行列凸：规律
+	"parity": Vector2(2.0, 0.17),   # 度偶数：交替（最快）
+	"block": Vector2(4.0, 0.08),    # 分量数 K：块状稳定
+	"trail": Vector2(2.8, 0.13),    # 相邻行锁：行进
+	"quad": Vector2(3.6, 0.10),     # 四象：对称
+	"pip": Vector2(2.4, 0.12),      # 骨牌边界：轻快
+	# —— 形状族 ——
+	"comb": Vector2(3.2, 0.11),     # 蜂窝
+	"weave": Vector2(3.4, 0.10),    # 编织
+	"halo": Vector2(4.0, 0.14),     # 图案光圈：大而慢
+	"petal": Vector2(3.8, 0.13),    # 花瓣
+	"cube": Vector2(4.4, 0.09),     # 等轴立方：慢
+	"octa": Vector2(3.6, 0.10),     # 八角
+	"ring": Vector2(4.8, 0.12),     # 同心环：最慢
+}
+## 未登记标记 / 未指定标记时的节拍（沿用最初的统一口径）。
+const TEX_PULSE_DEFAULT := Vector2(3.0, 0.10)
+
 var _tex_timer: Timer = null
 ## 本帧的纹理标记与颜色：由 _draw() 开头求值一次后缓存供逐格读取。
 ## 为什么缓存：_draw_cell_texture 每格调用一次，若每格都走 _theme_texture()
@@ -712,11 +750,15 @@ func _sync_tex_timer() -> void:
 
 
 ## 当前呼吸相位对应的纹理不透明度（动效关闭时恒为基准值 = 完全静止）。
-func texture_alpha_at(ms: int, pulsing: bool) -> float:
+## `mark` 缺省 = 用统一口径（旧签名兼容：既有测试与调用点都只传前两个参数）。
+func texture_alpha_at(ms: int, pulsing: bool, mark: String = "") -> float:
 	if not pulsing:
 		return TEX_ALPHA_BASE
-	var t := fmod(float(ms) / 1000.0, TEX_PULSE_PERIOD_S) / TEX_PULSE_PERIOD_S
-	return TEX_ALPHA_BASE + TEX_ALPHA_SWING * sin(t * TAU)
+	var beat: Vector2 = TEX_PULSE_BY_MARK.get(mark, TEX_PULSE_DEFAULT)
+	var period := beat.x
+	var swing := beat.y
+	var t := fmod(float(ms) / 1000.0, period) / period
+	return TEX_ALPHA_BASE + swing * sin(t * TAU)
 
 
 ## 徽记颜色：palette.texture_tint 可覆盖；默认取格线色并压在基准 alpha 上 —— 同色系、低调，
@@ -728,7 +770,8 @@ func _texture_color() -> Color:
 	if override.a > 0.0:
 		return override
 	var base := _pal_color("tile_border", ThemeManager.grid_line())
-	var a := texture_alpha_at(Time.get_ticks_msec(), _reveal_effects_enabled())
+	# 传本关的徽记名 → 取该徽记的专属节拍（见 TEX_PULSE_BY_MARK）
+	var a := texture_alpha_at(Time.get_ticks_msec(), _reveal_effects_enabled(), _tex_kind_now)
 	return Color(base.r, base.g, base.b, a)
 
 

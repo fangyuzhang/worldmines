@@ -129,6 +129,37 @@ func test_texture_alpha_breathes_within_a_safe_band() -> void:
 		"动效关闭时必须完全静止（恒定基准值）")
 
 
+func test_each_mark_has_its_own_breath_beat() -> void:
+	## 逐徽记节拍：不同徽记的呼吸周期/幅度必须**真的不同** —— 否则动效就只是全局装饰，
+	## 而不是「变体身份」的一部分（颜色/几何/徽记形状之外的另一条通道）。
+	## 同时守护安全带：任何徽记的极值都不得越出 [0.10, 0.55]（谷底看得见、峰值不盖数字）。
+	var view = load("res://ui/board_view.tscn").instantiate()
+	add_child_autofree(view)
+	await wait_process_frames(1)
+	var periods := {}
+	var problems: Array[String] = []
+	for mark: String in view.TEX_PULSE_BY_MARK:
+		var beat: Vector2 = view.TEX_PULSE_BY_MARK[mark]
+		periods[beat.x] = int(periods.get(beat.x, 0)) + 1
+		var lo := 1.0
+		var hi := 0.0
+		var steps := int(beat.x / 0.05) * 2          # 采满两个周期
+		for i in steps:
+			var a: float = view.texture_alpha_at(i * 50, true, mark)
+			lo = minf(lo, a)
+			hi = maxf(hi, a)
+		if lo <= 0.10:
+			problems.append("%s 谷底 %.3f 太低（徽记会看不见）" % [mark, lo])
+		if hi >= 0.55:
+			problems.append("%s 峰值 %.3f 太高（会盖过格内数字）" % [mark, hi])
+	assert_eq(problems.size(), 0, "呼吸安全带越界：%s" % str(problems))
+	assert_gt(periods.size(), 4,
+		"至少应有 5 种不同周期，否则谈不上「各自节拍」（现有 %d 种）" % periods.size())
+	# 未指定徽记时沿用统一口径（旧签名兼容）+ 动效关仍是恒定基准
+	assert_almost_eq(view.texture_alpha_at(1234, false, "forbid"), 0.30, 0.0001,
+		"动效关闭时任何徽记都必须完全静止")
+
+
 func test_theme_texture_resolves_and_rejects_unknown() -> void:
 	## 渲染层的解析函数：已登记值原样返回、未登记值退化为空串（静默降级，不臆造徽记）。
 	var view = load("res://ui/board_view.tscn").instantiate()
