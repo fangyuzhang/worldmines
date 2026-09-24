@@ -367,6 +367,7 @@ func test_qd_even_board_consistent() -> void:
 func test_mod_bootstrap_rule() -> void:
 	# 完整链路：manifest → entry → on_load 注册 → 生成端到端
 	var api := preload("res://core/mod_api.gd").new()
+	autofree(api)
 	var r := api.load_mod("res://demo/mods/custom_rule_mod")
 	assert_true(r.get("ok", false), "mod 应加载成功: %s" % str(r.get("reason", "")))
 	if not r.get("ok", false):

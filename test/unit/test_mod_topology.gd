@@ -61,6 +61,7 @@ func _write_mod() -> void:
 
 func test_mod_board_load_and_generate() -> void:
 	var api := preload("res://core/mod_api.gd").new()
+	autofree(api)
 	_write_mod()
 	var r := api.load_mod(TEST_MOD_DIR)
 	assert_true(r.get("ok", false), "带 board.json 的 mod 应加载成功: %s" % str(r.get("reason", "")))
@@ -100,6 +101,7 @@ func test_mod_board_load_and_generate() -> void:
 
 func test_mod_board_fallback_rect() -> void:
 	var api := preload("res://core/mod_api.gd").new()
+	autofree(api)
 	# 无 board.json 的 mod → get_board 返回空
 	DirAccess.make_dir_recursive_absolute(TEST_MOD_DIR)
 	var m := {"id": "rect.test", "version": "1.0.0", "entry": {"runtime": "def", "path": "defs"}}

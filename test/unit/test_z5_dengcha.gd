@@ -11,6 +11,7 @@ const TRIALS := 15
 
 func before_all() -> void:
 	var api: Object = load("res://core/mod_api.gd").new()
+	autofree(api)
 	api.load_mod(MOD_DIR)
 
 

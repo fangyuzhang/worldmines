@@ -17,6 +17,7 @@ var _api: Object
 
 func before_each() -> void:
 	_api = load("res://core/mod_api.gd").new()
+	autofree(_api)
 	DirAccess.make_dir_recursive_absolute(SRC_ROOT)
 
 

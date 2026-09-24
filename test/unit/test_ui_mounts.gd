@@ -52,6 +52,7 @@ func _make_mod() -> String:
 
 func test_collect_filter_and_unload() -> void:
 	var api: Object = load("res://core/mod_api.gd").new()
+	autofree(api)
 	var src := _make_mod()
 	assert_true(bool(api.install_from_dir(src).get("ok", false)), "安装应成功")
 	assert_true(bool(api.load_mod("user://mods/%s" % MOD_ID).get("ok", false)), "加载应成功")

@@ -492,15 +492,13 @@ const SPECS: Array = [
 		# 2026-09-23：五轮换约束尝试全败（s5 与多腿矛盾；s1/s4/z3 求解超时 peak=-1；s2 有解但 peak=1，
 		#  腿细传播快够不到 easy 窗口下沿）——因此**保留升级前的 60 格产物与 s5 约束**。
 		#
-		# ⚠️ 2026-09-24 交叉验证修正：本关**无法通过**「推到底」验收（ProofLog 报推不完），
-		# 于是在「有失败则整批不提交」的规则下，**mask 族任何一次重跑都不会提交任何关卡**
-		# （实测：重跑 12 关 → 可提交数 0）。原注释写的「本 SPEC 与产物严格对齐」是**一厢情愿**：
-		# 档位/证明都是运行时判定的，SPEC 里根本没有能让它通过的字段。
-		# 现改为显式声明 allow_unsolved（见 _gen_one 的例外通道注释）——它跳过证明验收并打 warning。
-		#
-		# **这是已知内容缺陷**（该关序贯推演可能推不完，玩家或会卡住），不是"已解决"。
-		# 真正的修法是重设计轮廓（减腿/加粗）让它可推完，属后续独立任务；
-		# 在此之前，用豁免保证整族重跑仍然可用。
+		# 2026-09-24 交叉验证修正（重要，避免后人重蹈）：
+		# 曾一度认为本关「推不到底」（生成期的 ProofLog 检查报 stuck），并据此加了 allow_unsolved 豁免。
+		# **那个判断是错的**：问题出在**验收的输入**——生成期拿的是内存 candidate（尚未补齐落盘
+		# 字段），从残缺状态推导必然失真；而 test_level_proof_coverage 的门禁跑的是**落盘 JSON**，
+		# 对本关判定 **pass（2/2 通过、无 pending）**。
+		# 真正被修的是 gen_shape_levels 的验收位置（已移到写盘之后、且只警告不拒候选）。
+		# ⇒ 本关**不是内容缺陷**，无需豁免。
 		"file": "ani_octopus.json", "kind": "mask", "name": "章鱼 · 行列凸",
 		"desc": "11 列 × 10 行章鱼（半圆头 + 触手，60 格）",
 		"style": "holed_grid",
@@ -518,8 +516,6 @@ const SPECS: Array = [
 		],
 		"cells": 60, "bbox": Vector2i(11, 10), "mines": 8, "seed": 9304,
 		"globals": ["s5"], "shape_kind": "动物棋盘",
-		# 跳过「推到底」验收（理由见本条目的上方注释）：本关为已知内容缺陷，约束换不动。
-		"allow_unsolved": true,
 		"off_board": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
 		"in_board": [Vector2i(5, 5), Vector2i(4, 0), Vector2i(10, 9)],
 	},
@@ -959,26 +955,9 @@ func _gen_one(spec: Dictionary) -> bool:
 			# 强行卡 easy 档会把这些组合全部拒之门外（同 gen_variant_shape_levels.gd 的口径与理由）。
 			var tier_ok := peak >= MIN_PEAK if spec.has("globals") else Difficulty.tier_of_profile(cand_prof) == REQUIRED_TIER
 			if tier_ok:
-				# 变体关追加「推到底」验收（与 test_level_proof_coverage.gd 的门禁同口径）：
-				# 档位达标只说明盘里有推理步（峰值 ≥ MIN_PEAK），**不等于序贯推演能推完**——
-				# 实测 ani_octopus（章鱼 × s5 连排）就是这样：档位过、证明卡住，全量回归会红。
-				# 在生成期挡掉比事后加豁免干净：豁免名单是给"外部复刻关卡"用的，不该被自家关卡占用。
-				#
-				# ⚠️ 例外通道（2026-09-24 交叉验证所得）：SPEC 可显式声明 `"allow_unsolved": true`
-				# 跳过这条验收，**且必须同时写清理由**。它服务的场景是「**已经上线、且约束换不动**」
-				# 的历史产物——典型就是 ani_octopus（五轮换约束全败，只能保留升级前的 60 格 + s5）。
-				#
-				# 为什么非要有这条通道：本族（以及另外四个生成器）都是「有失败则整批不提交」。
-				# 若这类关永远过不了新验收，那么整族**任何一次重跑都不会提交任何东西**——
-				# 工具彻底不可用（实测：加完验收后，mask 族重跑 12 关只跑出 0 个能提交）。
-				# 跳过时打 warning 而非静默，缺口留在日志里。
-				if spec.has("globals"):
-					if bool(spec.get("allow_unsolved", false)):
-						push_warning("%s: SPEC 声明 allow_unsolved，跳过「推到底」验收（该关为已知内容缺陷，见其 SPEC 注释）" % file_name)
-					else:
-						var proof: Dictionary = ProofLog.build(candidate)
-						if not bool(proof.get("solved", false)):
-							continue
+				# ⚠️ 这里**不再**做「推到底」验收（2026-09-24 交叉验证修正，见下）。
+				# 档位达标说明盘里有推理步（峰值 ≥ MIN_PEAK）；"能否序贯推完"改由
+				# _gen_one 第 5 步用**完整产物**检查（那里只警告，门禁才是权威）。
 				level = candidate
 				used_mines = mine_count + b
 				bump = b
@@ -1067,6 +1046,26 @@ func _gen_one(spec: Dictionary) -> bool:
 		if FileAccess.file_exists(tmp_path):
 			DirAccess.remove_absolute(tmp_path)
 		return false
+
+	# 5. 「推到底」**提示性**检查（变体关专属）。
+	#
+	# ⚠️ 这里必须用**完整产物**（暂存文件），不能用内存里的 candidate ——
+	# candidate 是 PuzzleGenerator 的返回，**尚未补齐落盘字段**；从残缺状态做序贯推导，
+	# 会把本来合格的候选误判成"推不完"。实测 ani_octopus：用 candidate 判 stuck，
+	# 而 test_level_proof_coverage 的门禁对**同一个文件**判定 pass（2/2 通过、无 pending）。
+	# 后果曾很严重：误判 → 该关失败 → 本族是「failures > 0 ⇒ 整批不提交」⇒
+	# **mask 族任何一次重跑都提交不了任何关卡**（实测重跑 12 关 → 可提交 0 个）。
+	#
+	# 为什么只警告、不拒候选：**门禁（test_level_proof_coverage.gd，跑完整 JSON）才是权威**，
+	# 生成期做的是提前提示。若这里硬拒，会把"本可交给人判断"的候选悄悄丢掉；
+	# 而若真有推不完的新关落盘，门禁会在全量回归里立刻点名（那条断言要求 KNOWN_STUCK 为空）。
+	if spec.has("globals"):
+		var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(tmp_path))
+		if parsed is Dictionary:
+			var proof: Dictionary = ProofLog.build(parsed)
+			if not bool(proof.get("solved", false)):
+				push_warning("%s: 「推到底」检查未通过（%d 轮后卡住，reason=%s）——已照常产出，交由 proof 门禁判定" % [
+					file_name, int(proof.get("rounds", 0)), str(proof.get("reason", ""))])
 
 	var prof: Dictionary = level.get("difficulty_profile", {})
 	var tier := Difficulty.tier_of_profile(prof)

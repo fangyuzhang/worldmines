@@ -11,6 +11,7 @@ const O4_DIR := "res://demo/mods/o4_bianjing"
 
 func before_all() -> void:
 	var api: Object = load("res://core/mod_api.gd").new()
+	autofree(api)
 	api.load_mod(O5X_DIR)
 	api.load_mod(O4_DIR)
 

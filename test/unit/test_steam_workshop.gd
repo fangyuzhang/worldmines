@@ -50,6 +50,7 @@ func test_poll_degrades_before_init() -> void:
 	var sw := SteamWorkshop.new()
 	assert_false(sw.is_available(), "未初始化时 is_available 应为 false")
 	var api: Object = load("res://core/mod_api.gd").new()
+	autofree(api)
 	var r: Dictionary = sw.poll_subscriptions(api)
 	assert_false(bool(r.get("ok", false)), "未初始化时 poll 应返回 ok=false")
 	assert_true(str(r.get("reason", "")).contains("Steam"), "reason 应说明 Steam 未初始化")
@@ -68,6 +69,7 @@ func test_init_never_crashes() -> void:
 ## dst_name 参数：装到自定义目录名（工坊命名），manifest.id 与目录名解耦。
 func test_install_from_dir_with_dst_name() -> void:
 	var api: Object = load("res://core/mod_api.gd").new()
+	autofree(api)
 	var src := _make_pack("sw_pack_mod")
 	var r: Dictionary = api.install_from_dir(src, DST_NAME)
 	assert_true(bool(r.get("ok", false)), "带 dst_name 应安装成功（reason=%s）" % str(r.get("reason", "")))
@@ -80,6 +82,7 @@ func test_install_from_dir_with_dst_name() -> void:
 ## dst_name 非法（路径符号）→ 拒绝。
 func test_install_rejects_bad_dst_name() -> void:
 	var api: Object = load("res://core/mod_api.gd").new()
+	autofree(api)
 	var src := _make_pack("sw_pack_mod2")
 	var r: Dictionary = api.install_from_dir(src, "a/b")
 	assert_false(bool(r.get("ok", false)), "非法 dst_name 应拒绝")

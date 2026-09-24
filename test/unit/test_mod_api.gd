@@ -40,6 +40,7 @@ func after_each() -> void:
 
 func test_define_and_register_extension() -> void:
 	var api := preload("res://core/mod_api.gd").new()
+	autofree(api)
 	api.define_extension(&"hexworks.ReplayRenderer", ["render", "supports"])
 	var r := FakeRenderer.new()
 	assert_true(api.register_extension(&"hexworks.ReplayRenderer", r), "自举扩展点应可注册")
@@ -49,6 +50,7 @@ func test_define_and_register_extension() -> void:
 
 func test_each_extension() -> void:
 	var api := preload("res://core/mod_api.gd").new()
+	autofree(api)
 	api.define_extension(&"p", ["render"])
 	var a := FakeRenderer.new(&"a")
 	var b := FakeRenderer.new(&"b")
@@ -62,6 +64,7 @@ func test_each_extension() -> void:
 
 func test_load_def_mod() -> void:
 	var api := preload("res://core/mod_api.gd").new()
+	autofree(api)
 	var dir := _write_manifest("def", [])
 	var r := api.load_mod(dir)
 	assert_true(r["ok"], "def runtime Mod 应可加载")
@@ -70,6 +73,7 @@ func test_load_def_mod() -> void:
 
 func test_load_reject_missing_manifest() -> void:
 	var api := preload("res://core/mod_api.gd").new()
+	autofree(api)
 	DirAccess.make_dir_recursive_absolute(TEST_MOD_DIR.path_join("empty"))
 	var r := api.load_mod(TEST_MOD_DIR.path_join("empty"))
 	assert_false(r["ok"], "缺 manifest 应失败")
@@ -77,6 +81,7 @@ func test_load_reject_missing_manifest() -> void:
 
 func test_load_reject_never_capability() -> void:
 	var api := preload("res://core/mod_api.gd").new()
+	autofree(api)
 	var dir := _write_manifest("def", ["board.write_answer", "board.read"])
 	var r := api.load_mod(dir)
 	assert_true(r["ok"], "Mod 本身仍应加载")
@@ -86,6 +91,7 @@ func test_load_reject_never_capability() -> void:
 
 func test_has_capability() -> void:
 	var api := preload("res://core/mod_api.gd").new()
+	autofree(api)
 	var dir := _write_manifest("def", ["clue.register"])
 	api.load_mod(dir)
 	assert_true(api.has_capability("test.mod", &"clue.register"), "声明能力应可用")
@@ -96,6 +102,7 @@ func test_has_capability() -> void:
 
 func test_unload_mod() -> void:
 	var api := preload("res://core/mod_api.gd").new()
+	autofree(api)
 	var dir := _write_manifest("def", [])
 	api.load_mod(dir)
 	assert_true(api.unload_mod("test.mod")["ok"], "unload 应成功")
@@ -104,6 +111,7 @@ func test_unload_mod() -> void:
 
 func test_service_registry_via_api() -> void:
 	var api := preload("res://core/mod_api.gd").new()
+	autofree(api)
 	var svc := RefCounted.new()
 	api.services.provide(&"hex.Math", svc)
 	assert_eq(api.services.get_service(&"hex.Math"), svc, "ModAPI.services 应可达 ServiceRegistry")
@@ -111,6 +119,7 @@ func test_service_registry_via_api() -> void:
 
 func test_sensitive_capability_requires_grant() -> void:
 	var api := preload("res://core/mod_api.gd").new()
+	autofree(api)
 	var dir := _write_manifest("def", ["ui.inject"])
 	api.load_mod(dir)
 	assert_false(api.has_capability("test.mod", &"ui.inject"), "敏感能力未授权应不可用")
@@ -120,6 +129,7 @@ func test_sensitive_capability_requires_grant() -> void:
 
 func test_mod_info_deep_copy() -> void:
 	var api := preload("res://core/mod_api.gd").new()
+	autofree(api)
 	var dir := _write_manifest("def", [])
 	api.load_mod(dir)
 	var info := api.mod_info("test.mod")
@@ -130,6 +140,7 @@ func test_mod_info_deep_copy() -> void:
 ## P0-T7：wasm mod 加载 → 沙箱三道防线 → call_clue 可用 → 卸载释放。
 func test_wasm_mod_load() -> void:
 	var api := preload("res://core/mod_api.gd").new()
+	autofree(api)
 	var dir := TEST_MOD_DIR
 	DirAccess.make_dir_recursive_absolute(dir)
 	# manifest（runtime=wasm）
