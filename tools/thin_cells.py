@@ -52,6 +52,10 @@ SEAT_SPEC = {
 }
 WINDOW = {"easy": "2-3", "normal": "4-5", "hard": "6-20"}
 
+# 单价异常高的席位：按席位下调「每单元目标关数」，避免一个组吃掉十几小时。
+# 依据：s3（无环）实测单候选 113–275 s（全轴最贵，v4.1 补产 4.5h 才出 30 关）。
+SLOW_SEAT_PER_CELL = {"s3": 5}
+
 # 可达性经验（来自探针实测，用于排优先级：便宜的窗口先补）：
 #   easy/normal 窗口在全部尺寸都常见；hard（6-20）在小盘面（5-5/6-6）罕见、7×7 起常见。
 # 因此补产优先顺序 = hard@7-9 → normal → easy（同档内先补关数最少的集）。
@@ -147,11 +151,14 @@ def main() -> int:
         if not spec_t:
             continue
         sizes = sorted(r["size"] for r in rs)
-        spec = spec_t.format(sizes=",".join(str(s) for s in sizes))
+        # ⚠️ 尺寸必须写成**短横区间**（如 5-9）：batch_all_variants 的第 9 参是「额外组合清单」，
+        # 以**逗号**分隔；写成 `@5,6,7,8,9` 会被拆成 5 个伪组合（实测产出 x_6..x_9、0 关空转）。
+        spec = spec_t.format(sizes="%d-%d" % (sizes[0], sizes[-1]))
         out = "user://thinfill_%s_%s" % (mode, tier)
-        seed_max = max(40, args.per_cell * 20)
+        per_cell = SLOW_SEAT_PER_CELL.get(mode, args.per_cell)
+        seed_max = max(40, per_cell * 20)
         cmd = ('bash tools/run_window_production.sh %s_%s "%s" "%s" %s %d %d "%s"'
-               % (mode, tier, WINDOW[tier], spec, out, args.per_cell, seed_max, mod))
+               % (mode, tier, WINDOW[tier], spec, out, per_cell, seed_max, mod))
         cmds.append(cmd)
         print("  %s" % cmd)
 
@@ -167,10 +174,25 @@ def main() -> int:
             "  while [ \"$(ps -eo comm= | grep -c '^Godot')\" -ge \"$(nproc)\" ]; do sleep 120; done",
             "}",
             "# 各轮日志：/root/gen_window_<tag>.log；产物：<out>/<combo>/<SxS>/",
+            "",
+            "# 单轮带重试：机器只有 1.9GB 内存 + 双 Godot（本计划 + 现有链）时会被 OOM SIGKILL——",
+            "# 工具的续跑是幂等的（按心跳跳过满额单元），故重试安全。判据=本轮是否打出 done 行。",
+            "run_round() {",
+            "  local tag=\"$1\" cmd=\"$2\" before",
+            "  for attempt in 1 2 3; do",
+            "    before=$(wc -l < \"$LOG\")",
+            "    eval \"$cmd\" >> \"$LOG\" 2>&1",
+            "    if tail -n +$((before + 1)) \"$LOG\" | grep -q -- \"--- [$tag] done\"; then return 0; fi",
+            "    echo \"[retry] [$tag] 未正常收尾（疑 OOM 被杀），第 $attempt 次重试\" >> \"$LOG\"",
+            "    sleep 30",
+            "  done",
+            "  echo \"[give-up] [$tag] 三次均未正常收尾（记入观察项）\" >> \"$LOG\"",
+            "}",
         ]
         for cmd in cmds:
+            tag = cmd.split()[2]      # bash tools/run_window_production.sh <tag> ...
             lines.append("wait_core")
-            lines.append("%s >> \"$LOG\" 2>&1" % cmd)
+            lines.append("run_round %s \"%s\"" % (tag, cmd))
         lines.append("echo \"=== 计划结束 $(date '+%F %H:%M:%S') ===\" >> \"$LOG\"")
         print("\n--- 服务器脚本体（%d 行，含等空闲核守卫）---" % len(lines))
         for ln in lines[:6]:
