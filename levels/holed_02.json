@@ -2174,5 +2174,6 @@
   "palette": {
     "texture": "strata",
     "theme": "ORANGE"
-  }
+  },
+  "desc": "8×8 − 6 洞（四角 + 中心竖条）"
 }

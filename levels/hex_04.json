@@ -729,5 +729,6 @@
   "palette": {
     "texture": "comb",
     "theme": "BLUE"
-  }
+  },
+  "desc": "蜂窝 size=6（R=2，偶数尺寸：盘心 2×2）"
 }

@@ -1143,5 +1143,6 @@
   "palette": {
     "texture": "comb",
     "theme": "BLUE"
-  }
+  },
+  "desc": "蜂窝 size=7（R=3）"
 }

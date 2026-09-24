@@ -1939,5 +1939,6 @@
   "palette": {
     "texture": "comb",
     "theme": "BLUE"
-  }
+  },
+  "desc": "蜂窝 size=9（R=4）"
 }

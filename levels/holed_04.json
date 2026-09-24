@@ -804,5 +804,6 @@
   "palette": {
     "texture": "strata",
     "theme": "ORANGE"
-  }
+  },
+  "desc": "5×5 − 1 洞（中心单格）"
 }

@@ -567,5 +567,6 @@
   "palette": {
     "texture": "comb",
     "theme": "BLUE"
-  }
+  },
+  "desc": "蜂窝 size=5（R=2）"
 }

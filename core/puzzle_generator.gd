@@ -299,6 +299,18 @@ static func precheck_rules(clue_rule_id: String, global_rule_ids: Array, size: V
 ## timeout_ms：删线索阶段墙钟上限（默认 15s）。
 ## 大盘（9×9+）单盘删线索可能超过 15s——超时会保留冗余线索（关卡偏简单但仍可解）。
 ## 离线批量出关建议放宽（如 60s）以换取线索精简度；UI 交互场景用默认保证响应。
+##
+## ⚠️ 2026-09-24 实测修正：墙钟的影响**不只是**"线索精简度"，它会让产物**不可推**。
+## 上面那句"超时保留冗余线索"只描述了**慢机器**那一侧；实测**快机器上删得更多**
+## （同一关 clue_count 12 → 8）⇒ 线索少到推理链断裂 ⇒ 序贯推演**推不完**
+## （test_level_proof_coverage 门禁报"推不到底"）。也就是说：**同一批 SPEC 重跑两次，
+## 可能得到"可推"与"不可推"两种产物**，取决于当时机器负载 —— 实测 ani_crab / ani_snowflake
+## 就是这样从可推变成不可推的（已回滚数据）。
+##
+## 影响面：任何"重跑以刷数据"的操作都可能把好关卡改成坏关卡。根因是**判停用墙钟**，
+## 正确的确定性判停应改用步数/迭代数（属生成算法变更，独立课题）。
+## 当前缓解：① 库内数据不重跑即不受影响；② 必须重跑时，事后跑 test_level_proof_coverage
+## 复核（它会点名新出现的 stuck 关卡），一旦出现即回滚该批数据。
 ## target_difficulty（P0-A，默认 0=不限制）：>0 时删线索改为「难度驱动」——
 ## 删到难度画像 difficulty 达标即停（早停=提速），同档关卡难度可控（固定 timeout 下难度波动可达 3 倍）。
 func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vector2i, mine_count: int, seed: int, mask_count: int = 0, attempts: int = 50, topology: GridInterface = null, timeout_ms: int = 15_000, target_difficulty: float = 0.0, mask_lo: int = 1, mask_strategy: int = 0, mask_pre: bool = false) -> Dictionary:
