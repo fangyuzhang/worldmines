@@ -116,6 +116,35 @@ func test_variant_level_texture_matches_rule_table() -> void:
 		"以下变体关的 texture 与规则表漂移：\n%s" % "\n".join(bad))
 
 
+func test_every_axis_present_in_library_has_both_channels() -> void:
+	## 库内**实际出现**的每个变体轴都必须同时有主题席与纹理事席。
+	##
+	## 为什么不去"预先给全部 13 个轴补席位"（z1 镜像 / z4 行锁 / z5 等差 目前都没有）：
+	## 为**尚未生成关卡**的轴发明视觉身份是本末倒置 —— 玩家看不到，改版时却要一起维护，
+	## 而且会掩盖"真的漏了一轴"这种情况。正确做法是**让缺口在出现的那一刻就红灯**：
+	## 将来一旦生成 z1/z4/z5 的关卡，这条断言立刻失败并点名（z3 当初就是这么被发现的）。
+	##
+	## 与 test_variant_axis_tables_cover_the_same_axes 的分工：那条查**两张表之间**是否对齐，
+	## 这条查**表与数据之间**是否对齐。
+	var missing: Array[String] = []
+	var seen: Array[String] = []
+	for info: Dictionary in _variant_levels():
+		var vid := str(info["vid"])
+		if seen.has(vid):
+			continue
+		seen.append(vid)
+		var lacks: Array[String] = []
+		if not ThemeMarks.BY_VARIANT.has(vid):
+			lacks.append("主题")
+		if not TextureMarks.BY_VARIANT.has(vid):
+			lacks.append("纹理")
+		if not lacks.is_empty():
+			missing.append("%s（缺 %s）" % [vid, "+".join(lacks)])
+	assert_gt(seen.size(), 0, "库里应有变体关")
+	assert_eq(missing.size(), 0,
+		"以下变体轴已经在关卡库里出现，但还没有识别通道 —— 请在 tools/theme_marks.gd 与 tools/texture_marks.gd 补席位：%s" % str(missing))
+
+
 func test_variant_axis_tables_cover_the_same_axes() -> void:
 	## 主题表与纹理表的变体席位应一致（同一批变体，两条识别通道不该有缺口）。
 	## 缺口会让某个变体「有颜色没徽记」或反之 —— 识别通道不完整。
