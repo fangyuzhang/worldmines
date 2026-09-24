@@ -159,14 +159,17 @@ def main() -> int:
         lines = [
             "#!/bin/bash",
             "# 薄集补齐（由 tools/thin_cells.py --emit-plan 生成；官方窗口启动器串行跑）",
-            "# 每轮前等一个空闲核：绝不与现有补产链抢核（2 核机器上这是 OOM 的主要诱因）。",
+            "# **每轮都等一个空闲核**：绝不与现有补产链抢核（2 核机器上并发是 OOM 的主要诱因）。",
             "cd /root/minesweeper || exit 1",
             "LOG=/root/thin_fill_plan.log",
             "echo \"=== 计划开始 $(date '+%%F %%H:%%M:%%S')（%d 轮，per_cell=%d）===\" >> \"$LOG\"" % (len(cmds), args.per_cell),
-            "while [ \"$(ps -eo comm= | grep -c '^Godot')\" -ge \"$(nproc)\" ]; do sleep 120; done",
+            "wait_core() {",
+            "  while [ \"$(ps -eo comm= | grep -c '^Godot')\" -ge \"$(nproc)\" ]; do sleep 120; done",
+            "}",
             "# 各轮日志：/root/gen_window_<tag>.log；产物：<out>/<combo>/<SxS>/",
         ]
         for cmd in cmds:
+            lines.append("wait_core")
             lines.append("%s >> \"$LOG\" 2>&1" % cmd)
         lines.append("echo \"=== 计划结束 $(date '+%F %H:%M:%S') ===\" >> \"$LOG\"")
         print("\n--- 服务器脚本体（%d 行，含等空闲核守卫）---" % len(lines))
