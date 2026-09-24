@@ -1156,7 +1156,7 @@
     "kind": "poly_set",
     "unit": 1.0
   },
-  "desc": "3.6.3.6 + S6 偶偶约束",
+  "desc": "3.6.3.6 + S6 度偶数约束",
   "difficulty_profile": {
     "clue_count": 7,
     "clue_ratio": 0.29,

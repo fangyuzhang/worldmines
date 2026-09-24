@@ -1524,7 +1524,7 @@
     "kind": "poly_set",
     "unit": 1.0
   },
-  "desc": "同心环 + S6 偶偶约束",
+  "desc": "同心环 + S6 度偶数约束",
   "difficulty_profile": {
     "clue_count": 4,
     "clue_ratio": 0.19,
