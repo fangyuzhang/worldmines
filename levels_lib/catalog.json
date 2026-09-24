@@ -76,27 +76,27 @@
     },
     "o10": {
       "5": {
-        "easy": 66,
+        "easy": 150,
         "hard": 10,
         "normal": 33
       },
       "6": {
-        "easy": 71,
+        "easy": 161,
         "hard": 45,
         "normal": 58
       },
       "7": {
-        "easy": 64,
+        "easy": 98,
         "hard": 72,
         "normal": 69
       },
       "8": {
-        "easy": 91,
+        "easy": 94,
         "hard": 94,
         "normal": 96
       },
       "9": {
-        "easy": 96,
+        "easy": 99,
         "hard": 106,
         "normal": 79
       }
@@ -223,17 +223,17 @@
     },
     "o9": {
       "6": {
-        "easy": 3
+        "easy": 102
       },
       "7": {
-        "easy": 1
+        "easy": 54
       },
       "8": {
-        "easy": 44,
+        "easy": 49,
         "normal": 1
       },
       "9": {
-        "easy": 31,
+        "easy": 37,
         "normal": 8
       }
     },
