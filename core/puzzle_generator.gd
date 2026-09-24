@@ -9,6 +9,13 @@ extends RefCounted
 
 const MAX_MINES_RATIO := 0.4  # 默认雷密度上限
 
+## 生成管线版本戳（2026-09-24）：**生成/删线索逻辑一变就必须递增**（守卫见 test/unit/test_gen_rev_stamp.gd）。
+## 为什么需要：历史集里混着多代产物（实测**同一 peak 组内** clue_ratio 仍离散 0.09–0.82，见
+## `关卡集供给对账.md`「混版集量化」），而此前没有任何字段能区分版本 → 只能用 clue_ratio 近似，
+## 无法精确执行「版本优选」。有了戳：① 优选可精确；② 可回归（新盘必带最新戳）。
+## 约定：老盘（2026-09-24 之前）无此字段，读取方一律按「字段缺失 = 老管线」处理。
+const GEN_REV := "v4.1-0924"
+
 var _rng := RandomNumberGenerator.new()
 
 ## 旧管线实例（2026-09 拆分：旧实现 + 旧布雷策略移入 PuzzleGeneratorLegacy）。
@@ -437,6 +444,8 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 		prof["clue_ratio"] = snappedf(float(active.size()) / float(non_mine), 0.01)
 		prof["target_difficulty"] = target_difficulty  # 生成标签（对标 L 字段：记录「照着哪档参数生成」）
 		level["difficulty_profile"] = prof
+		# 生成管线版本戳落盘（老盘无此字段；守卫 test/unit/test_gen_rev_stamp.gd）
+		level["gen_rev"] = GEN_REV
 		last_call_stats["success"] = 1
 		return level
 	return {}
