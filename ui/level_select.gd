@@ -48,6 +48,10 @@ const SCROLL_THRESHOLD := 2.0   # 滚轮累积阈值（factor 单位）
 const ANIM := 0.22              # 统一过渡时长（0.2~0.25s）
 const POPUP_SIZE := Vector2(1040, 640)
 const TILE := Vector2(116, 84)
+## 卡片 / 按钮的 hover 放大系数（唯一来源）。
+## 2026-09-25 统一：此前同一页混用 1.03 / 1.04 / 1.05 三档（同一种「悬停」在不同控件上
+## 反馈强度不同，属于交互不一致）。取原众数 1.04。
+const HOVER_SCALE := 1.04
 
 # ===== 页面编号 =====
 const PAGE_SINGLE := 0          # 页一：单项变体（经典 + 线索型 + 全局约束）
@@ -291,7 +295,7 @@ func _build_ui() -> void:
 		bar.add_child(b)
 		_tab_btns.append(b)
 		_tab_btn_page.append(int(spec[1]))
-		UiTheme.bind_hover(b, 1.04)
+		UiTheme.bind_hover(b, HOVER_SCALE)
 
 	# 页容器：页签以下的整块区域（滚动由各页自己的 ScrollContainer 负责）
 	_page_host = Control.new()
@@ -482,7 +486,7 @@ func _make_card(mode_idx: int, m: Dictionary) -> Button:
 	desc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(desc)
 
-	UiTheme.bind_hover(btn, 1.03)
+	UiTheme.bind_hover(btn, HOVER_SCALE)
 	_attach_progress(btn, str(m["id"]))
 	return btn
 
@@ -556,7 +560,7 @@ func _build_mixed_page() -> Control:
 		b.pressed.connect(_on_mixed_switch.bind(int(spec[1])))
 		bar.add_child(b)
 		_mixed_btns.append(b)
-		UiTheme.bind_hover(b, 1.04)
+		UiTheme.bind_hover(b, HOVER_SCALE)
 
 	_mixed_host = VBoxContainer.new()
 	_mixed_host.add_theme_constant_override("separation", 12)
@@ -779,7 +783,7 @@ func _combo_cell(mode_id: String, label: String) -> Button:
 	lines.append("已通关 %d / %d" % [_cleared_total(mode_id), SIZES.size() * LEVELS_PER_SET])
 	btn.tooltip_text = "\n".join(lines)
 	btn.pressed.connect(_open_popup.bind(mi))
-	UiTheme.bind_hover(btn, 1.04)
+	UiTheme.bind_hover(btn, HOVER_SCALE)
 	_attach_progress(btn, mode_id)
 	return btn
 
@@ -944,7 +948,7 @@ func _mod_level_buttons(mod_id: String) -> Control:
 		b.set_meta("mod_level_btn", true)
 		_style_card(b)
 		b.pressed.connect(_open_mod_level.bind(p))
-		UiTheme.bind_hover(b, 1.04)
+		UiTheme.bind_hover(b, HOVER_SCALE)
 		flow.add_child(b)
 	return wrap
 
@@ -1099,13 +1103,13 @@ func _shape_levels() -> Array[Dictionary]:
 	return out
 
 
-## 当前浏览的变体（"" = 变体总览 = 第一级；否则 = 该变体 id = 第二级）。
+## 异形页**只有一级**了：变体卡片墙（2026-09-25 起，某变体的棋盘列表改成浮动弹窗，
+## 见 _open_shape_popup —— 原先的「页内第二级」与其配套状态 `_shape_variant` / `_shape_scroll`
+## 已随改造删除，不留只写不读的死状态）。
 ## **为什么以变体为导向**（2026-09-21 改版）：玩家的思考单位是「我想玩哪个变体」，
 ## 而同一个变体在不同异形棋盘上的推理体验差异，才是这一页真正的内容。旧版把 60+ 张
 ## 关卡卡平铺成一面墙，既看不出变体维度、也找不准重点。
-var _shape_variant := ""
 var _shape_body: MarginContainer = null
-var _shape_scroll: ScrollContainer = null
 
 
 ## 异形页内容「延迟一帧填」的状态（2026-09-22 性能）。
@@ -1115,7 +1119,6 @@ var _shape_fill_pending := false
 
 func _build_shape_page() -> Control:
 	var shell := _make_page_shell()
-	_shape_scroll = shell[0] as ScrollContainer
 	_shape_body = shell[1] as MarginContainer
 	_shape_filled = false
 	_schedule_shape_fill()
@@ -1204,55 +1207,16 @@ func _refresh_shape_body() -> void:
 		# 同一帧内的后续读取仍会看到旧卡片（切级瞬间新旧两批同时存在，实测踩过）。
 		_shape_body.remove_child(c)
 		c.queue_free()
-	if _shape_variant == "":
-		# 第一级：变体卡片流（每个变体一张，带该变体的异形棋盘覆盖与通关进度）
-		var flow := HFlowContainer.new()
-		flow.add_theme_constant_override("h_separation", 14)
-		flow.add_theme_constant_override("v_separation", 14)
-		flow.alignment = FlowContainer.ALIGNMENT_CENTER
-		_shape_body.add_child(flow)
-		for v: Dictionary in _shape_variants():
-			flow.add_child(_make_variant_card(v))
-		return
-	# 第二级：**按档位分组**（普通 / 困难 / 噩梦 / 未分档）。
-	# 为什么分组而不是平铺（2026-09-23，用户口径「每个变体 × 每个档位都要有较多异形关」）：
-	# 平铺时这个内容事实**对玩家不可见**——卡片只写格数/雷数，玩家看不出这座变体的难度分布。
-	# 分组标题（图 Difficulty.tier_text）让「三档各有几关」一眼可见；档位由关卡画像实时算，
-	# 不写进关卡数据（重算窗口时不会失真）。
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 10)
-	_shape_body.add_child(col)
-	var tools := HFlowContainer.new()
-	tools.add_theme_constant_override("h_separation", 14)
-	tools.add_theme_constant_override("v_separation", 10)
-	tools.alignment = FlowContainer.ALIGNMENT_CENTER
-	col.add_child(tools)
-	# 返回入口已收编到左上角「返回」键（层级返回，见 _on_back_pressed）——页内不再放返回卡。
-	# 教程入口（2026-09-23 审计补齐）：异形页是 ani_*/vg_* 这批**变体形状关**的主入口，
-	# 但此前只有模式弹窗与对局 HUD 有教程按钮——在这一页选 s2/s3/z3/dt 棋盘的玩家无处读规则。
-	tools.add_child(_make_shape_tutorial_card())
-	var by_tier: Dictionary = {}
-	for t in SHAPE_TIER_ORDER:
-		by_tier[t] = []
-	for info: Dictionary in _shape_levels():
-		if str(info["variant"]) != _shape_variant:
-			continue
-		var t := str(info.get("tier", ""))
-		if not by_tier.has(t):
-			t = ""
-		(by_tier[t] as Array).append(info)
-	for t in SHAPE_TIER_ORDER:
-		var lst: Array = by_tier[t]
-		if lst.is_empty():
-			continue
-		col.add_child(_make_tier_header(str(t), lst.size()))
-		var flow := HFlowContainer.new()
-		flow.add_theme_constant_override("h_separation", 14)
-		flow.add_theme_constant_override("v_separation", 14)
-		flow.alignment = FlowContainer.ALIGNMENT_CENTER
-		col.add_child(flow)
-		for info: Dictionary in lst:
-			flow.add_child(_make_shape_card(info))
+	# 变体卡片流（每个变体一张，带该变体的异形棋盘覆盖与通关进度）。
+	# 2026-09-25：本页**只剩这一级**了 —— 第二级（某变体的棋盘列表）改成了浮动弹窗
+	# （见 _open_shape_popup），与其它三页「点卡片弹弹窗」的交互统一。
+	var flow := HFlowContainer.new()
+	flow.add_theme_constant_override("h_separation", 14)
+	flow.add_theme_constant_override("v_separation", 14)
+	flow.alignment = FlowContainer.ALIGNMENT_CENTER
+	_shape_body.add_child(flow)
+	for v: Dictionary in _shape_variants():
+		flow.add_child(_make_variant_card(v))
 
 
 ## 第二级的档位分组标题（如「困难（4–5 条线索）· 3 关」）。
@@ -1281,7 +1245,7 @@ func _make_variant_card(v: Dictionary) -> Button:
 	var cleared := int(v["cleared"])
 	btn.tooltip_text = "%s\n%s\n该变体有 %d 个异形棋盘（已通关 %d）\n难度分布：%s\n点击查看全部棋盘" % [
 		str(v["name"]), str(v["text"]), total, cleared, _tier_summary(v)]
-	btn.pressed.connect(_open_shape_variant.bind(str(v["id"])))
+	btn.pressed.connect(_open_shape_popup.bind(str(v["id"])))
 	_style_card(btn)
 
 	var box := VBoxContainer.new()
@@ -1314,68 +1278,82 @@ func _make_variant_card(v: Dictionary) -> Button:
 	desc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(desc)
 
-	UiTheme.bind_hover(btn, 1.03)
+	UiTheme.bind_hover(btn, HOVER_SCALE)
 	return btn
 
 
-## 左上角「返回」的统一入口（2026-09-25 用户口径）：**层级返回**。
+## 左上角「返回」：退出选关页回主菜单。
 ##
-## 层级规则：异形棋盘页第二级（正在看某个变体的棋盘列表）→ 先回第一级（变体列表）；
-## 其余情况（第一级 / 其他页）→ 退出选关页回主菜单。
-## 页内不再放「← 返回变体列表」卡片 —— 同一动作只保留一个入口，玩家不必犹豫点哪个。
-##
-## 判断里带 `_tab == PAGE_SHAPE`：玩家可能进过第二级又切去别的页签，
-## 此时返回键应按**当前页签**语义走（退出选关页），而不是莫名跳回异形的列表。
+## 弹窗开着时本键**被遮罩挡住**（不可达）—— 这与其它三页完全一致：
+## 关弹窗走弹窗自己的出口（✕ / 点外部 / ESC，见 _close_popup 与 _unhandled_input）。
+## 2026-09-25：异形页第二级改成弹窗后，这里不再需要「层级返回」特例（原先页内两级
+## 导航才有"先回上一级"的需求）。
 func _on_back_pressed() -> void:
-	if _tab == PAGE_SHAPE and _shape_variant != "":
-		_back_to_shape_variants()
-		return
 	get_tree().change_scene_to_file("res://ui/main_menu.tscn")
 
 
-## 第二级的教程入口（2026-09-23 审计补齐）：与返回卡同款卡片，点了看**当前变体**的教程。
-## 为什么需要：异形页是 ani_*/vg_* 这批变体形状关的主入口（模式弹窗里没有它们），
-## 而教程入口此前只在模式弹窗标题栏与对局 HUD——在这一页选 s2/s3/z3/dt 棋盘的玩家无处读规则。
-## 变体 id 与教程页的组合 id 同源（tutorial_s2_0.txt 等），故直接复用 show_for。
-func _make_shape_tutorial_card() -> Button:
-	var btn := Button.new()
-	btn.custom_minimum_size = Vector2(CARD_W, CARD_H)
-	btn.focus_mode = Control.FOCUS_NONE
-	btn.set_meta("card_btn", true)
-	btn.set_meta("shape_tutorial", _shape_variant)   # 测试 / 调试可据此定位
-	var vname := VariantCatalog.display_name(_shape_variant)
+## 点异形页的变体卡 → **浮动弹窗**展示该变体的全部棋盘卡（与其它三页一致的交互）。
+##
+## 2026-09-25 用户口径：此前异形页是「页内切到第二级」，与单项/混合/Mod 页的「点卡片弹弹窗」
+## 是两种交互（页内还多一个返回入口）——统一成弹窗。内容仍按档位分组，信息不缩水。
+## 点棋盘卡**直接开局**（异形关是固定成品，不需要「尺寸 → 难度 → 开始」两步）。
+func _open_shape_popup(vid: String) -> void:
+	if _overlay != null or _popup_closing:
+		return
+	var vname := VariantCatalog.display_name(vid)
 	if vname == "":
-		vname = _shape_variant    # 未登记的变体（未来新增 / Mod）也不至于显示空白
-	btn.tooltip_text = "查看「%s」的教程" % vname
-	btn.pressed.connect(func():
-		TutorialOverlayScript.show_for(self, _shape_variant))
-	_style_card(btn)
-	var lb := Label.new()
-	lb.text = "教程 · %s" % vname
-	lb.add_theme_font_size_override("font_size", 15)
-	lb.add_theme_color_override("font_color", ThemeManager.text_secondary())
-	lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	lb.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	lb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	btn.add_child(lb)
-	UiTheme.bind_hover(btn, 1.03)
-	return btn
+		vname = vid          # 未登记变体（未来新增 / Mod）：至少不显示空标题
+	var body := _build_popup_shell("%s · 异形棋盘" % vname, vid)
+	# 内容：可滚动的纵向列表（棋盘卡数量随变体不同，最多十几张 —— 必须能滚）
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	body.add_child(scroll)
+	var margin := MarginContainer.new()
+	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	margin.add_theme_constant_override("margin_left", 6)
+	margin.add_theme_constant_override("margin_right", 6)
+	margin.add_theme_constant_override("margin_top", 2)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	scroll.add_child(margin)
+	var col := VBoxContainer.new()
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col.add_theme_constant_override("separation", 10)
+	margin.add_child(col)
+	_fill_shape_popup_col(col, vid)
+	_play_popup_intro()
 
 
-func _open_shape_variant(vid: String) -> void:
-	_shape_variant = vid
-	_refresh_shape_body()
-	# 切级回到顶部：否则会停在上一级留下的滚动位置（看起来像"点了没反应"）
-	if _shape_scroll != null and is_instance_valid(_shape_scroll):
-		_shape_scroll.scroll_vertical = 0
-
-
-func _back_to_shape_variants() -> void:
-	_shape_variant = ""
-	_refresh_shape_body()
-	if _shape_scroll != null and is_instance_valid(_shape_scroll):
-		_shape_scroll.scroll_vertical = 0
+## 把某变体的棋盘卡按档位分组填进容器（弹窗内容；提取自原先的第二级渲染）。
+##
+## 为什么分组而不是平铺（2026-09-23，用户口径「每个变体 × 每个档位都要有较多异形关」）：
+## 平铺时这个内容事实**对玩家不可见**——卡片只写格数/雷数，玩家看不出这座变体的难度分布。
+## 分组标题（图 Difficulty.tier_text）让「三档各有几关」一眼可见；档位由关卡画像实时算，
+## 不写进关卡数据（重算窗口时不会失真）。
+func _fill_shape_popup_col(col: VBoxContainer, vid: String) -> void:
+	var by_tier: Dictionary = {}
+	for t in SHAPE_TIER_ORDER:
+		by_tier[t] = []
+	for info: Dictionary in _shape_levels():
+		if str(info["variant"]) != vid:
+			continue
+		var t := str(info.get("tier", ""))
+		if not by_tier.has(t):
+			t = ""
+		(by_tier[t] as Array).append(info)
+	for t in SHAPE_TIER_ORDER:
+		var lst: Array = by_tier[t]
+		if lst.is_empty():
+			continue
+		col.add_child(_make_tier_header(str(t), lst.size()))
+		var flow := HFlowContainer.new()
+		flow.add_theme_constant_override("h_separation", 14)
+		flow.add_theme_constant_override("v_separation", 14)
+		flow.alignment = FlowContainer.ALIGNMENT_CENTER
+		col.add_child(flow)
+		for info: Dictionary in lst:
+			flow.add_child(_make_shape_card(info))
 
 
 func _make_shape_card(info: Dictionary) -> Button:
@@ -1423,7 +1401,7 @@ func _make_shape_card(info: Dictionary) -> Button:
 	desc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(desc)
 
-	UiTheme.bind_hover(btn, 1.03)
+	UiTheme.bind_hover(btn, HOVER_SCALE)
 	return btn
 
 
@@ -1531,6 +1509,27 @@ func _open_popup(mode_idx: int) -> void:
 	_scroll_accum = 0.0
 	_ensure_mock()
 
+	var body := _build_popup_shell("", str(MODES[mode_idx]["id"]))
+	_build_left(body)
+	_build_right(body)
+	_refresh_popup()
+	_play_popup_intro()
+
+
+## 浮动弹窗的**共用外壳**（2026-09-25 提取）：遮罩 + 面板 + 标题栏（标题 / 教程 / ✕）+ 内容容器。
+##
+## 为什么提取：异形棋盘页原先用「页内切到第二级」呈现某个变体的棋盘列表，而其它三页是
+## 「点卡片弹弹窗」——同一页面两种交互（还多一个页内返回入口），用户要求统一成弹窗。
+## 内容各异（模式弹窗 = 尺寸/难度/网格；异形弹窗 = 按档位分组的棋盘卡），但**外壳完全一样**
+## （同样的遮罩、尺寸、标题栏、关闭方式、入场动画），所以外壳一份、内容各自填。
+##
+## **复用同一套 `_overlay` / `_popup` / `_popup_closing` 状态**：主题刷新（_apply_popup_theme）、
+## 弹窗期间 Mod 变更补建（_modes_dirty）、防重复打开、关闭动画等既有联动因此**自动对两种弹窗生效**，
+## 不必各写一份。
+##
+## title 传空 = 由调用方稍后填（模式弹窗在 `_refresh_popup` 里写）；
+## tutorial_id 决定标题栏「教程」按钮看谁的教程。
+func _build_popup_shell(title: String, tutorial_id: String) -> Control:
 	# 遮罩（点击外部关闭）
 	_overlay = Control.new()
 	_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -1566,6 +1565,7 @@ func _open_popup(mode_idx: int) -> void:
 	root.add_child(head)
 
 	_title_label = Label.new()
+	_title_label.text = title
 	_title_label.add_theme_font_size_override("font_size", 24)
 	_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(_title_label)
@@ -1573,14 +1573,17 @@ func _open_popup(mode_idx: int) -> void:
 	# 教程入口（2026-09-23 用户决策）：从主菜单总入口改为**上下文相关**——标题栏里放
 	# 「教程」，点击看**当前变体**的教程（标题显示的就是变体名，语义直接对应）。
 	# 覆盖层 add 到 self（整页）：弹窗 _overlay 同级但更早，教程节点后加 → 盖在弹窗之上 ✓
+	# 2026-09-25：tutorial_id 参数化 —— 异形弹窗也走这里（此前它另有一张教程卡，位置与
+	# 模式弹窗不一致；现在两种弹窗的教程入口都在标题栏同一位置）。
 	var tut := Button.new()
 	tut.text = "教程"
 	tut.focus_mode = Control.FOCUS_NONE
 	tut.custom_minimum_size = Vector2(72, 40)
 	tut.set_meta("std_btn", true)
+	tut.set_meta("popup_tutorial", tutorial_id)   # 测试 / 调试可据此定位当前看谁的教程
 	tut.tooltip_text = "查看当前变体的教程"
 	tut.pressed.connect(func():
-		TutorialOverlayScript.show_for(self, str(MODES[_mode_idx]["id"])))
+		TutorialOverlayScript.show_for(self, tutorial_id))
 	head.add_child(tut)
 
 	var close := Button.new()
@@ -1591,7 +1594,7 @@ func _open_popup(mode_idx: int) -> void:
 	close.pressed.connect(_close_popup)
 	head.add_child(close)
 
-	# 内容区：左（棋盘框） + 右（面板）
+	# 内容区（各弹窗自行填充；模式弹窗是「左棋盘框 + 右面板」，异形弹窗是可滚动的棋盘列表）
 	var body := HBoxContainer.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_theme_constant_override("separation", 18)
@@ -1600,13 +1603,11 @@ func _open_popup(mode_idx: int) -> void:
 	body.add_theme_constant_override("margin_bottom", 18)
 	root.add_child(body)
 	_popup_body = body
+	return body
 
-	_build_left(body)
-	_build_right(body)
 
-	_refresh_popup()
-
-	# 入场动画：缩放 + 淡入
+## 弹窗入场动画（缩放 + 淡入）。**壳与内容都填好后**再调用，否则会闪一下空面板。
+func _play_popup_intro() -> void:
 	_popup.scale = Vector2(0.92, 0.92)
 	_popup.modulate.a = 0.0
 	var tw := create_tween().set_parallel(true)
@@ -1662,7 +1663,7 @@ func _build_left(parent: Node) -> void:
 		b.pressed.connect(_on_size_selected.bind(i))
 		size_bar.add_child(b)
 		_size_btns.append(b)
-		UiTheme.bind_hover(b, 1.04)
+		UiTheme.bind_hover(b, HOVER_SCALE)
 
 	# 网格区（网格 + 右侧分页圆点）
 	var grid_row := HBoxContainer.new()
@@ -1709,7 +1710,7 @@ func _build_tier_col() -> void:
 		b.pressed.connect(_on_tier_selected.bind(str(t)))
 		_tier_col.add_child(b)
 		_tier_btns.append(b)
-		UiTheme.bind_hover(b, 1.04)
+		UiTheme.bind_hover(b, HOVER_SCALE)
 
 
 ## 档位按钮刷新（文字 = 档名 + 关数；无内容置灰；非库模式整列隐藏）。
@@ -1773,7 +1774,7 @@ func _build_right(parent: Node) -> void:
 	_play_btn.set_meta("std_btn", true)
 	_play_btn.pressed.connect(_on_play)
 	vbox.add_child(_play_btn)
-	UiTheme.bind_hover(_play_btn, 1.03)
+	UiTheme.bind_hover(_play_btn, HOVER_SCALE)
 
 
 func _close_popup() -> void:
@@ -1794,6 +1795,19 @@ func _close_popup() -> void:
 			_rebuild_all())
 	_size_btns.clear()
 	_mode_idx = -1
+
+## ESC 关弹窗（2026-09-25 一致性补齐）。
+##
+## 此前只有教程覆盖层响应 ESC，模式弹窗不响应 —— 同一页里两种「后退」键位不一致。
+## 现在两种弹窗都能按 ESC 关（与 ✕ / 点外部并列的第三条出口）。
+## 用 _unhandled_input 而非 gui_input：后者要控件有焦点才收键盘事件，而页面里
+## 全部按钮都是 FOCUS_NONE（刻意不做键盘焦点链），走全局通道才可靠。
+func _unhandled_input(event: InputEvent) -> void:
+	if _overlay == null or _popup_closing:
+		return
+	if event.is_action_pressed("ui_cancel"):
+		_close_popup()
+		get_viewport().set_input_as_handled()
 
 
 # ==================== 弹窗内容刷新 ====================
@@ -1936,7 +1950,7 @@ func _make_tile(idx: int) -> Button:
 	btn.set_meta("idx", idx)  # 选中态刷新需要回读关卡序号
 	btn.pressed.connect(_on_tile_pressed.bind(idx))
 	_style_tile(btn, idx == _selected, cleared, skipped)
-	UiTheme.bind_hover(btn, 1.05)
+	UiTheme.bind_hover(btn, HOVER_SCALE)
 	return btn
 
 

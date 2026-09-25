@@ -1,17 +1,18 @@
-# test_level_select_shape_page.gd —— 选关页第四页「异形棋盘」（**两级：先选变体，再选棋盘**）
+# test_level_select_shape_page.gd —— 选关页第四页「异形棋盘」（变体卡 → 浮动弹窗选棋盘）
 #
 # 背景：res://levels/ 下的异形关卡（挖洞/蜂窝/图案/风格/复刻 + 变体×棋盘）此前没有入口，
 # 2026-09-21 建页；随后按用户要求改为**以变体为导向**——玩家的思考单位是「想玩哪个变体」，
 # 同一个变体在不同异形棋盘上的推理体验差异才是这一页的内容。
 #
-# 本测试锁定两级契约：
-#   ① 第一级 = 变体卡片（每个可用变体一张，标题带「已通关 / 总数」）；
-#   ② 点变体 → 第二级 = 该变体的全部异形棋盘卡片（**抽样实测** 3 个变体：
+# 本测试锁定契约：
+#   ① 一级 = 变体卡片（每个可用变体一张，标题带「已通关 / 总数」）；
+#   ② 点变体卡 → **浮动弹窗**展示该变体的全部异形棋盘卡片，按档位分组（**抽样实测** 3 个变体：
 #      经典 / 一个 S 轴 / 一个 Z 轴；逐变体的完整性由数据层用例覆盖，避免每个变体都
-#      重建一次卡片墙导致用例跑上百秒）。**页内不放返回卡**（2026-09-25 用户口径：
-#      返回入口只保留左上角「返回」键，见 test_back_button_climbs_one_level）；
+#      重建一次卡片墙导致用例跑上百秒）。2026-09-25 用户口径：弹窗与单项/混合/Mod 页
+#      **共用外壳**（同样的标题栏 / ✕ / 点外部 / ESC），见
+#      test_shape_popup_shares_the_same_shell_as_other_pages；
 #   ③ 汇总两级的关卡归属 == res://levels/ 里全部异形关卡（不重不漏，动态扫描不写死）；
-#   ④ 左上角返回键能在第二级回第一级（层级返回）。
+#   ④ 教程入口在弹窗标题栏，指向当前变体（原先另有页内教程卡，位置与模式弹窗不一致）。
 extends GutTest
 
 var _view
@@ -75,10 +76,11 @@ func _collect(node: Node, meta_key: String, out: Array) -> void:
 		_collect(c, meta_key, out)
 
 
+## 按 meta 键收集卡片。**扫整页**（不只 `_shape_body`）：异形页的棋盘卡自 2026-09-25 起
+## 在浮动弹窗里（`_overlay` 下），只扫 `_shape_body` 会找不到它们。
 func _cards(meta_key: String) -> Array:
 	var out: Array = []
-	if _view._shape_body != null and is_instance_valid(_view._shape_body):
-		_collect(_view._shape_body, meta_key, out)
+	_collect(_view, meta_key, out)
 	return out
 
 
@@ -118,17 +120,19 @@ func test_entering_variant_lists_only_its_levels() -> void:
 		if counts.has(vid):
 			samples.append(vid)
 	for vid in samples:
-		_view._open_shape_variant(vid)
+		_view._open_shape_popup(vid)
 		var cards := _cards("shape_path")
 		assert_eq(cards.size(), int(counts[vid]),
-			"变体 %s：第二级应有 %d 张关卡卡片（实得 %d）" % [vid, int(counts[vid]), cards.size()])
-		assert_eq(_cards("shape_back").size(), 0,
-			"变体 %s：页内不应再有返回卡片（返回已收编到左上角键，见 test_back_button_climbs_one_level）" % vid)
+			"变体 %s：弹窗应有 %d 张关卡卡片（实得 %d）" % [vid, int(counts[vid]), cards.size()])
 		for c in cards:
 			var p := str(c.get_meta("shape_path"))
 			assert_eq(str(_expected().get(p, "MISSING")), vid,
-				"变体 %s 的第二级不应混入其它变体的关卡（%s 属于 %s）" % [vid, p, str(_expected().get(p, "?"))])
-		_view._back_to_shape_variants()
+				"变体 %s 的弹窗不应混入其它变体的关卡（%s 属于 %s）" % [vid, p, str(_expected().get(p, "?"))])
+		_view._close_popup()
+		# 必须等**出场动画走完**再开下一个：关闭期间 `_popup_closing` 为真，打开请求会被守卫
+		# 忽略（真实交互无所谓——玩家不可能 0.22s 内连点两张卡）；而旧 overlay 是延迟释放的，
+		# 不等就会让下一轮的 `_cards`（全树扫描）扫到它的残留卡片（首版测试就报了这个假失败）。
+		await wait_seconds(0.3)
 
 
 ## 数据层完整性（不建 UI，避免逐变体重建卡片墙）：两级统计之和 == 全部异形关卡，不重不漏。
@@ -146,41 +150,60 @@ func test_variant_index_covers_every_shape_level() -> void:
 	assert_eq(prod, counts, "生产端分组应与独立扫描一致（变体 id 口径不得漂移）")
 
 
-func test_back_returns_to_variant_list() -> void:
-	var before := _cards("variant_id").size()
-	assert_gt(before, 0, "第一级应有变体卡片")
-	_view._open_shape_variant("classic")
-	assert_eq(_cards("variant_id").size(), 0, "第二级不应再有变体卡片")
-	_view._back_to_shape_variants()
-	assert_eq(_cards("variant_id").size(), before, "返回后应回到变体总览（且不残留第二级卡片）")
-
-
-## 左上角「返回」键的**层级语义**（2026-09-25 用户口径）：在第二级（某变体的棋盘列表）
-## 时先回第一级（变体列表），而不是直接退出选关页——页内返回卡片已删除，
-## 这个键是异形页两级导航的唯一返回入口。
-## 注：只在第二级调用。第一级分支是 change_scene_to_file（真切场景），测试环境不能触发。
-func test_back_button_climbs_one_level() -> void:
-	var before := _cards("variant_id").size()
-	assert_gt(before, 0, "第一级应有变体卡片")
-	# 模拟真实玩家路径：**先在异形页**（_tab == PAGE_SHAPE）才可能点进第二级。
-	# 若跳过这一步，_tab 还是默认的单项变体页，层级判断不成立（首版测试就撞在这）。
+func test_variant_card_opens_popup_with_its_levels() -> void:
+	## 点变体卡 → **浮动弹窗**（2026-09-25 用户口径：与单项/混合/Mod 页的交互统一，
+	## 不再是页内切第二级）。弹窗里有且只有该变体的棋盘卡。
+	var counts := _counts_by_variant()
+	assert_gt(_cards("variant_id").size(), 0, "一级应有变体卡片")
 	_view._show_tab(_view.PAGE_SHAPE)
-	assert_eq(_view._tab, _view.PAGE_SHAPE, "应已切到异形棋盘页")
-	_view._open_shape_variant("classic")
-	assert_eq(_cards("variant_id").size(), 0, "第二级不应有变体卡片")
-	# 左上角返回键存在且唯一（测试/调试用 meta 定位）
-	var found: Array = []
-	_collect(_view, "back_btn", found)
-	assert_eq(found.size(), 1, "左上角应有且仅有一个返回键")
-	_view._on_back_pressed()
-	assert_eq(_view._shape_variant, "", "第二级按返回应先回变体列表（层级返回）")
-	assert_eq(_cards("variant_id").size(), before, "返回后第一级变体卡片应恢复")
+	assert_null(_view._overlay, "未点卡片时不应有弹窗")
+	_view._open_shape_popup("classic")
+	assert_not_null(_view._overlay, "点变体卡应弹出浮动弹窗")
+	assert_not_null(_view._popup, "弹窗主体应存在")
+	assert_eq(_view._title_label.text, "%s · 异形棋盘" % VariantCatalog.display_name("classic"),
+		"弹窗标题应是该变体名（玩家要知道自己在看哪个变体）")
+	var cards := _cards("shape_path")
+	assert_eq(cards.size(), int(counts["classic"]),
+		"弹窗里应有经典变体的全部 %d 张棋盘卡（实得 %d）" % [int(counts["classic"]), cards.size()])
+	for c in cards:
+		var p := str(c.get_meta("shape_path"))
+		assert_eq(str(_expected().get(p, "MISSING")), "classic",
+			"弹窗不应混入别的变体的关卡（%s 属于 %s）" % [p, str(_expected().get(p, "?"))])
+	_view._close_popup()
+	assert_null(_view._overlay, "关闭后遮罩引用应立即释放")
+
+
+func test_shape_popup_shares_the_same_shell_as_other_pages() -> void:
+	## 弹窗外壳一致性（改造的核心诉求）：异形弹窗与模式弹窗共用 `_build_popup_shell`，
+	## 因此同样的标题栏（标题 / 教程 / ✕）、同样的关闭方式。这条防「改造后少一个出口」。
+	_view._show_tab(_view.PAGE_SHAPE)
+	_view._open_shape_popup("classic")
+	# ✕ 关闭按钮
+	var closes: Array = []
+	_collect(_view._overlay, "std_btn", closes)
+	var has_close := false
+	for c: Button in closes:
+		if c.text == "✕":
+			has_close = true
+	assert_true(has_close, "浮窗应有关闭按钮（与其它页弹窗一致）")
+	# 教程入口：位置统一到标题栏，且指向当前变体（原先异形页是页内教程卡，位置与模式弹窗不一致）
+	var tuts: Array = []
+	_collect(_view._overlay, "popup_tutorial", tuts)
+	assert_eq(tuts.size(), 1, "标题栏应有且仅有一个教程入口")
+	assert_eq(str((tuts[0] as Button).get_meta("popup_tutorial")), "classic",
+		"教程入口应指向当前变体")
+	# ESC 关弹窗（2026-09-25 一致性补齐：此前只有教程覆盖层响应 ESC，模式弹窗不响应）
+	var esc := InputEventAction.new()
+	esc.action = "ui_cancel"
+	esc.pressed = true
+	_view._unhandled_input(esc)
+	assert_null(_view._overlay, "ESC 应能关掉弹窗（与 ✕ / 点外部并列出口）")
 
 
 func test_daisy_chain_is_in_classic_variant() -> void:
 	assert_eq(str(_expected().get("res://levels/daisy_chain.json", "MISSING")), "classic",
 		"雏菊链应是经典变体（无 global_rules）")
-	_view._open_shape_variant("classic")
+	_view._open_shape_popup("classic")
 	var paths: Array[String] = []
 	for c in _cards("shape_path"):
 		paths.append(str(c.get_meta("shape_path")))
@@ -204,7 +227,7 @@ func test_new_tiling_families_are_reachable_from_the_shape_page() -> void:
 		assert_true(landed.has(pre2), "异形页应列出 %s* 关卡" % pre2)
 
 	# 全部归在经典变体下（这些几何都不带 global_rules 的变体关除外）
-	_view._open_shape_variant("classic")
+	_view._open_shape_popup("classic")
 	var paths: Array[String] = []
 	for c in _cards("shape_path"):
 		paths.append(str(c.get_meta("shape_path")))
@@ -222,7 +245,7 @@ func test_new_tiling_families_are_reachable_from_the_shape_page() -> void:
 
 
 func test_every_listed_level_actually_loads() -> void:
-	_view._open_shape_variant("classic")
+	_view._open_shape_popup("classic")
 	var n := 0
 	for c in _cards("shape_path"):
 		var p := str(c.get_meta("shape_path"))
@@ -239,10 +262,11 @@ func test_is_shape_level_predicate() -> void:
 		"非空 topology → 异形")
 
 
-# 2026-09-23 审计补齐：第二级应有「教程」卡。
+# 2026-09-23 审计补齐、2026-09-25 迁移：异形页应能读到**当前变体**的教程。
 # 为什么：异形页是 ani_*/vg_* 这批**变体形状关**的主入口（模式弹窗里没有它们），
 # 而教程入口此前只在模式弹窗标题栏与对局 HUD——在这一页选 s2/s3/z3/dt 棋盘的玩家
-# 无处读规则。这条契约钉住「第二级有且仅有一张教程卡 + 它指向当前变体 + 点击能拉出覆盖层」。
+# 无处读规则。改造后入口统一到**弹窗标题栏**（原先另有页内教程卡，位置与模式弹窗
+# 不一致）——这条契约钉住「标题栏有且仅有一个教程入口 + 它指向当前变体 + 点击能拉出覆盖层」。
 func test_variant_level_offers_variant_tutorial() -> void:
 	var counts := _counts_by_variant()
 	# 优先挑官方轴上有教程页的变体（s2/s3/z3/dt 均有 tutorial_*_0.txt）；
@@ -260,19 +284,21 @@ func test_variant_level_offers_variant_tutorial() -> void:
 	if vid == "":
 		pending("本机 levels/ 没有非 classic 变体的异形关")
 		return
-	_view._open_shape_variant(vid)
-	var tut := _cards("shape_tutorial")
-	assert_eq(tut.size(), 1, "变体 %s：第二级应有且仅有一个教程卡片" % vid)
+	_view._open_shape_popup(vid)
+	# 教程入口在弹窗标题栏（复用 _build_popup_shell，与模式弹窗同一位置）
+	var tut: Array = []
+	_collect(_view._overlay, "popup_tutorial", tut)
+	assert_eq(tut.size(), 1, "变体 %s：标题栏应有且仅有一个教程入口" % vid)
 	if tut.is_empty():
 		return
-	assert_eq(str((tut[0] as Button).get_meta("shape_tutorial")), vid,
-		"教程卡片应指向当前变体（期望 %s）" % vid)
+	assert_eq(str((tut[0] as Button).get_meta("popup_tutorial")), vid,
+		"教程入口应指向当前变体（期望 %s）" % vid)
 	(tut[0] as Button).pressed.emit()
 	var ov: Control = null
 	for c in _view.get_children():
 		if c.has_method("close_overlay"):
 			ov = c
-	assert_not_null(ov, "点教程卡应拉出覆盖层（变体 %s）" % vid)
+	assert_not_null(ov, "点教程入口应拉出覆盖层（变体 %s）" % vid)
 	if ov == null:
 		return
 	var title: Label = ov.get("_title")
@@ -280,14 +306,15 @@ func test_variant_level_offers_variant_tutorial() -> void:
 		"应加载变体 %s 的教程页或显示兜底（实得：%s）" % [vid, title.text])
 
 
-# 2026-09-23 新增契约：第二级按**档位分组**（普通 / 困难 / 噩梦 / 未分档）。
+# 2026-09-23 新增契约、2026-09-25 迁移到弹窗：棋盘卡按**档位分组**（普通 / 困难 / 噩梦 / 未分档）。
 # 为什么：内容目标 =「每个变体 × 每个档位都有较多异形棋盘」（用户口径）；平铺时这个事实
 # 对玩家不可见（卡片只写格数/雷数）。这条钉住「分组标题存在、文案与 Difficulty.tier_text
 # 同源、且分组不改变卡片总数」——分组整段消失（例如有人改回平铺）会在这里红灯。
-func test_second_level_groups_by_tier() -> void:
-	_view._open_shape_variant("classic")   # 内容最多的变体：三档 + 未分档都可能出现
+func test_shape_popup_groups_by_tier() -> void:
+	_view._open_shape_popup("classic")   # 内容最多的变体：三档 + 未分档都可能出现
+	# 分组标题现在在**弹窗**里（原先在页内第二级）⇒ 扫整页，不再只扫 _shape_body
 	var texts: Array[String] = []
-	_collect_labels(_view._shape_body, texts)
+	_collect_labels(_view, texts)
 	var tier_headers := 0
 	var none_headers := 0
 	for t in texts:
@@ -296,7 +323,7 @@ func test_second_level_groups_by_tier() -> void:
 		if t.begins_with("未分档"):
 			none_headers += 1
 	assert_gt(tier_headers, 0,
-		"第二级应有档位分组标题（Difficulty.tier_text 文案，如「普通（2–3 条线索）· N 关」）")
+		"弹窗应有档位分组标题（Difficulty.tier_text 文案，如「普通（2–3 条线索）· N 关」）")
 	assert_eq(none_headers, 1,
 		"classic 有未分档关卡（peak≤1/超纲）⇒ 应有且仅有一段「未分档」标题")
 	# 文案来源：与 Difficulty.tier_text 同源（禁止手写第二份档位表）
