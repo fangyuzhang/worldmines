@@ -85,7 +85,11 @@ func _add_button(text: String, tip: String, on_pressed: Callable) -> Button:
     var b := Button.new()
     b.text = text
     b.tooltip_text = tip
-    b.focus_mode = Control.FOCUS_NONE
+    # 键盘可聚焦（2026-09-25 审计补）：对局 HUD 此前一律 FOCUS_NONE —— 进了对局之后
+    # 除棋盘外的所有按钮（教程 / 暂停 / 提示 / 撤销 / 设置 / 重开 / 关卡列表 / 主菜单）
+    # **只能用鼠标**，键盘用户连暂停都按不了。焦点样式由 UiTheme.style_button 提供
+    # （见 _apply_theme；那里此前还有个容器类型 bug，一并修了）。
+    b.focus_mode = Control.FOCUS_ALL
     b.pressed.connect(on_pressed)
     _box.add_child(b)
     return b
@@ -241,11 +245,13 @@ func _apply_theme() -> void:
     if _mines_label != null:
         _mines_label.add_theme_color_override("font_color", ThemeManager.text())
         _time_label.add_theme_color_override("font_color", ThemeManager.text())
-        for n in get_children():
-            if n is HBoxContainer:
-                for c in n.get_children():
-                    if c is Button:
-                        UiTheme.style_button(c)
+        # 直接遍历 `_box` 的子节点，不再按容器类型猜（2026-09-25 修 bug）：
+        # 这里原写 `if n is HBoxContainer`，而 _box 在窄窗换行改造时已换成
+        # **HFlowContainer** ⇒ 条件永远不成立 ⇒ 所有 HUD 按钮的样式（含 focus 态）
+        # 从未被应用。按类型找容器是脆的，按钮都在 _box 里，直接扫它。
+        for c in _box.get_children():
+            if c is Button:
+                UiTheme.style_button(c)
     queue_redraw()
 
 

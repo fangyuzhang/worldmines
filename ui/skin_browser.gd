@@ -40,10 +40,14 @@ func _build_ui() -> void:
 	tip.add_theme_font_size_override("font_size", 14)
 	tip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bar.add_child(tip)
+	# 键盘可聚焦 + 自带统一样式（2026-09-25 审计补）：本文件此前没有 style_button 调用，
+	# 只靠设置页的递归主题刷新——改 FOCUS_ALL 却看不到焦点态等于没做，故这里显式套一次
+	# （style_button 是幂等的 override 设置，与父级递归重复应用无害）。
 	var import_btn := Button.new()
 	import_btn.text = "导入皮肤"
-	import_btn.focus_mode = Control.FOCUS_NONE
+	import_btn.focus_mode = Control.FOCUS_ALL
 	import_btn.pressed.connect(_on_import)
+	UiTheme.style_button(import_btn)
 	bar.add_child(import_btn)
 	vbox.add_child(bar)
 
@@ -127,14 +131,16 @@ func _make_card(skin: Dictionary) -> Control:
 	if not skin["builtin"]:
 		var del := Button.new()
 		del.text = "删除"
-		del.focus_mode = Control.FOCUS_NONE
+		del.focus_mode = Control.FOCUS_ALL
 		del.pressed.connect(_on_delete.bind(skin["id"], skin["name"]))
+		UiTheme.style_button(del)
 		row.add_child(del)
 	var info := Button.new()
 	info.text = "i"
-	info.focus_mode = Control.FOCUS_NONE
+	info.focus_mode = Control.FOCUS_ALL
 	info.tooltip_text = "详情"
 	info.pressed.connect(_on_info.bind(skin))
+	UiTheme.style_button(info)
 	row.add_child(info)
 	vb.add_child(row)
 

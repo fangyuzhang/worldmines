@@ -147,7 +147,10 @@ func _build_ui() -> void:
     # 返回按钮：统一右上角（独立定位，从底部移到右上）
     var back := Button.new()
     back.text = "返回"
-    back.focus_mode = Control.FOCUS_NONE
+    # 键盘可聚焦（2026-09-25 审计补）：规则图鉴是玩家查规则的地方，此前「返回」
+    # 只能鼠标点——键盘用户进去就出不来。样式/焦点态由本文件 225 行的
+    # UiTheme.style_button 提供。
+    back.focus_mode = Control.FOCUS_ALL
     back.custom_minimum_size = Vector2(96, 40)
     back.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
     back.offset_left = -120

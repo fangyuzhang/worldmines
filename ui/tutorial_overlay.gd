@@ -139,22 +139,29 @@ func _build_ui() -> void:
 	bar.add_theme_constant_override("separation", 16)
 	vbox.add_child(bar)
 
+	# 键盘可操作（2026-09-25 审计补）：教程是**玩家读规则**的地方，此前三个按钮
+	# 一律 FOCUS_NONE —— 键盘用户能打开（HUD/弹窗入口可聚焦）却翻不了页、关不掉。
+	# 并调用 UiTheme.style_button 统一样式：本文件此前没走它，改 FOCUS_ALL 却没有
+	# focus 态样式 = 焦点**看不见**，等于没做。
 	_prev_btn = Button.new()
 	_prev_btn.text = "上一步"
-	_prev_btn.focus_mode = Control.FOCUS_NONE
+	_prev_btn.focus_mode = Control.FOCUS_ALL
 	_prev_btn.pressed.connect(func(): _go(-1))
+	UiTheme.style_button(_prev_btn)
 	bar.add_child(_prev_btn)
 
 	_next_btn = Button.new()
 	_next_btn.text = "下一步"
-	_next_btn.focus_mode = Control.FOCUS_NONE
+	_next_btn.focus_mode = Control.FOCUS_ALL
 	_next_btn.pressed.connect(func(): _go(1))
+	UiTheme.style_button(_next_btn)
 	bar.add_child(_next_btn)
 
 	var close := Button.new()
 	close.text = "关闭"
-	close.focus_mode = Control.FOCUS_NONE
+	close.focus_mode = Control.FOCUS_ALL
 	close.pressed.connect(close_overlay)
+	UiTheme.style_button(close)
 	bar.add_child(close)
 
 

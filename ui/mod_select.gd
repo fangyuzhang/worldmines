@@ -126,7 +126,7 @@ func _build_ui() -> void:
 	# 同一个 ModAPI.install_from_dir 入口，无需改 UI 流程）
 	var imp := Button.new()
 	imp.text = "导入 Mod（文件夹）"
-	imp.focus_mode = Control.FOCUS_NONE
+	imp.focus_mode = Control.FOCUS_ALL
 	imp.custom_minimum_size = Vector2(190, 40)
 	if OS.has_feature("web"):
 		# Web 导出无文件系统访问权限（审计 M3）：禁用并说明，不让入口静默失效
@@ -139,7 +139,7 @@ func _build_ui() -> void:
 	#（完整编写规范 + 空白模板 + 本机安装路径），用户丢给任意 AI 即可产出可安装的 mod
 	var ai := Button.new()
 	ai.text = "AI Mod 任务包"
-	ai.focus_mode = Control.FOCUS_NONE
+	ai.focus_mode = Control.FOCUS_ALL
 	ai.custom_minimum_size = Vector2(170, 40)
 	ai.pressed.connect(_export_ai_task_pack)
 	top.add_child(ai)
@@ -150,7 +150,7 @@ func _build_ui() -> void:
 		var ws := SteamWorkshop.new()
 		var wbtn := Button.new()
 		wbtn.text = "同步创意工坊"
-		wbtn.focus_mode = Control.FOCUS_NONE
+		wbtn.focus_mode = Control.FOCUS_ALL
 		wbtn.custom_minimum_size = Vector2(170, 40)
 		wbtn.tooltip_text = "把创意工坊订阅的 Mod 同步到本地（需 Steam 客户端运行；已装的不覆盖）"
 		wbtn.pressed.connect(func():
@@ -170,7 +170,7 @@ func _build_ui() -> void:
 	# 返回按钮：统一右上角（独立定位）
 	var back := Button.new()
 	back.text = "返回"
-	back.focus_mode = Control.FOCUS_NONE
+	back.focus_mode = Control.FOCUS_ALL
 	back.custom_minimum_size = Vector2(96, 40)
 	back.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	back.offset_left = -120
@@ -221,7 +221,7 @@ func _rebuild_list() -> void:
 	ex_row.add_child(ex_lb)
 	var ex_btn := Button.new()
 	ex_btn.text = "安装"
-	ex_btn.focus_mode = Control.FOCUS_NONE
+	ex_btn.focus_mode = Control.FOCUS_ALL
 	ex_btn.custom_minimum_size = Vector2(100, 40)
 	ex_btn.pressed.connect(func():
 		var r: Dictionary = ExampleMod.install()
@@ -243,7 +243,7 @@ func _rebuild_list() -> void:
 	demo_row.add_child(demo_lb)
 	var demo_btn := Button.new()
 	demo_btn.text = "安装"
-	demo_btn.focus_mode = Control.FOCUS_NONE
+	demo_btn.focus_mode = Control.FOCUS_ALL
 	demo_btn.custom_minimum_size = Vector2(100, 40)
 	demo_btn.pressed.connect(func():
 		var dr: Dictionary = ExampleMod.install_demo_rule_mod()
@@ -314,7 +314,7 @@ func _build_tier_picker() -> HBoxContainer:
 	lb.add_theme_font_size_override("font_size", 16)
 	row.add_child(lb)
 	var opt := OptionButton.new()
-	opt.focus_mode = Control.FOCUS_NONE
+	opt.focus_mode = Control.FOCUS_ALL
 	opt.custom_minimum_size = Vector2(260, 34)
 	opt.tooltip_text = "生成入口按该档的峰值窗口验收（峰值 = 单步最大必要线索数，见 变体规则编写规范.md）"
 	var ids: Array = Difficulty.PEAK_WINDOWS.keys()
@@ -361,7 +361,7 @@ func _make_mod_row(mod_name: String) -> VBoxContainer:
 	row.add_child(lb)
 	var btn := Button.new()
 	btn.text = "卸载" if loaded else "加载"
-	btn.focus_mode = Control.FOCUS_NONE
+	btn.focus_mode = Control.FOCUS_ALL
 	btn.custom_minimum_size = Vector2(100, 40)
 	btn.pressed.connect(func():
 		if ModAPI.list_mods().has(mod_name):
@@ -433,7 +433,7 @@ func _make_wasm_row(mod_name: String) -> HBoxContainer:
 	for kind in [["clue", "线索关"], ["global", "约束关"]]:
 		var btn := Button.new()
 		btn.text = "生成%s" % kind[1]
-		btn.focus_mode = Control.FOCUS_NONE
+		btn.focus_mode = Control.FOCUS_ALL
 		btn.custom_minimum_size = Vector2(110, 34)
 		btn.pressed.connect(func(): _generate_wasm_levels(mod_name, kind[0]))
 		row.add_child(btn)
@@ -458,7 +458,7 @@ func _open_gen_dialog(title: String) -> void:
 	_gen_sub_lb = sub
 	var cancel := Button.new()
 	cancel.text = "取消"
-	cancel.focus_mode = Control.FOCUS_NONE
+	cancel.focus_mode = Control.FOCUS_ALL
 	cancel.custom_minimum_size = Vector2(0, 40)
 	cancel.pressed.connect(func():
 		_gen_cancel = true
@@ -529,7 +529,7 @@ func _make_def_row(mod_name: String, def_name: String) -> HBoxContainer:
 	row.add_child(lb)
 	var gen_btn := Button.new()
 	gen_btn.text = "生成 5 关"
-	gen_btn.focus_mode = Control.FOCUS_NONE
+	gen_btn.focus_mode = Control.FOCUS_ALL
 	gen_btn.custom_minimum_size = Vector2(120, 34)
 	gen_btn.pressed.connect(func(): _generate_levels(mod_name, def_name))
 	row.add_child(gen_btn)
@@ -582,14 +582,14 @@ func _make_rule_row(rule_id: String) -> HBoxContainer:
 	var gen_btn := Button.new()
 	# v4.0：按钮文案带上当前目标档——生成是按峰值窗口验收的，点之前就该知道在产哪一档。
 	gen_btn.text = "生成 5 关（%s）" % _tier_label(_gen_tier)
-	gen_btn.focus_mode = Control.FOCUS_NONE
+	gen_btn.focus_mode = Control.FOCUS_ALL
 	gen_btn.custom_minimum_size = Vector2(170, 34)
 	gen_btn.tooltip_text = "按当前目标档（%s）的峰值窗口验收：窗口外的盘不落盘" % _tier_label(_gen_tier)
 	gen_btn.pressed.connect(func(): _generate_rule_levels(rule_id))
 	row.add_child(gen_btn)
 	var probe_btn := Button.new()
 	probe_btn.text = "探测能力"
-	probe_btn.focus_mode = Control.FOCUS_NONE
+	probe_btn.focus_mode = Control.FOCUS_ALL
 	probe_btn.custom_minimum_size = Vector2(100, 34)
 	probe_btn.tooltip_text = "本机实测该变体在各尺寸的可达档位（%d 个候选/尺寸，最多 %d 个尺寸），写入能力档案；要完整档案请用 CLI tools/capability_probe.gd" % [PROBE_N, PROBE_MAX_SIDES]
 	probe_btn.pressed.connect(func(): _probe_rule_capability(rule_id))

@@ -143,7 +143,10 @@ func _build_ui() -> void:
 
     var close := Button.new()
     close.text = "关闭"
-    close.focus_mode = Control.FOCUS_NONE
+    # 键盘可聚焦（2026-09-25 审计补）：对局内设置弹窗的「关闭」此前 FOCUS_NONE，
+    # 而弹窗里的 CheckButton / OptionButton 本身可聚焦 —— 键盘用户能改设置却关不掉
+    # 弹窗（只能按 ✕ 或点外部）。焦点样式由 _apply_theme 的 UiTheme.style_button 提供。
+    close.focus_mode = Control.FOCUS_ALL
     close.custom_minimum_size = Vector2(0, 40)
     close.pressed.connect(func(): hide())
     vbox.add_child(close)

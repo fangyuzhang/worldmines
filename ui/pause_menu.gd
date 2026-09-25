@@ -89,7 +89,10 @@ func popup_center_refreshed() -> void:
 func _add_button(parent: Node, text: String, on_pressed: Callable) -> void:
     var b := Button.new()
     b.text = text
-    b.focus_mode = Control.FOCUS_NONE
+    # 键盘可聚焦（2026-09-25 审计补）：暂停菜单此前按钮一律 FOCUS_NONE —— 键盘用户
+    # 能按 Esc 暂停却**没法用键盘继续**（只能 Esc 或鼠标点）。焦点样式由
+    # _apply_theme 里的 UiTheme.style_button 提供（该文件 122 行）。
+    b.focus_mode = Control.FOCUS_ALL
     b.custom_minimum_size = Vector2(0, 44)
     b.pressed.connect(on_pressed)
     parent.add_child(b)
