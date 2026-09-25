@@ -247,7 +247,11 @@ func _on_session_started() -> void:
 	# 首次入局引导（2026-09-25 引导审计）：新玩家此前**没有任何上手提示**——
 	# 「左键翻格、右键插旗」只写在教程文件里，得主动去点才发现（审计确认为「高」）。
 	# 开局给一次、仅一次（持久化标记），8 秒够读完两行；之后玩家可随时点顶部「教程」。
-	if not SettingsManager.seen_play_hint:
+	# headless（GUT 测试 / CI）下既不弹也不置位（2026-09-25 自查修）：测试会实例化本场景
+	# 并触发本函数，若照常写盘，`seen_play_hint` 会被**测试**置成 true —— 玩家真机上的
+	# 首次引导就再也不弹了。本项目已有「测试写真实 user:// 设置」的先例（settings 测试
+	# 都靠手动保存/还原规避），这里用环境判断把这类污染挡在源头。
+	if not SettingsManager.seen_play_hint and DisplayServer.get_name() != "headless":
 		SettingsManager.set_seen_play_hint(true)
 		UiToast.popup(self,
 				"左键翻开隐藏格 · 右键插旗（按住右键拖过格子可连续插）\n"
@@ -353,7 +357,7 @@ func _on_guess_rejected(pos: Vector2i) -> void:
 	_request_frames()
 	if now_ms - _reject_toast_ms > REJECT_TOAST_THROTTLE_MS:
 		_reject_toast_ms = now_ms
-		UiToast.popup(self, "这一格无法纯逻辑推出（无猜模式不允许猜测）")
+		UiToast.popup(self, "这一格无法纯逻辑推出（无猜模式不允许猜测）", true)
 	queue_redraw()
 
 

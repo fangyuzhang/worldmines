@@ -1967,7 +1967,9 @@ func _rebuild_dots() -> void:
 	for i in n:
 		var d := Button.new()
 		d.custom_minimum_size = Vector2(14, 14)
-		d.focus_mode = Control.FOCUS_ALL
+		# 分页圆点**刻意不可聚焦**（2026-09-25 自查）：只有 14×14，且不是内容导航 ——
+		# 让 Tab 在每页 5 个小点上停留纯属打扰；键盘用户用尺寸按钮/翻页键即可。
+		d.focus_mode = Control.FOCUS_NONE
 		d.pressed.connect(_go_page.bind(i))
 		_style_dot(d, i == _page)
 		_dots_box.add_child(d)
@@ -2441,6 +2443,13 @@ func _style_choice(b: Button, active: bool) -> void:
 	sb.content_margin_bottom = 8
 	b.add_theme_stylebox_override("normal", sb)
 	b.add_theme_color_override("font_color", ThemeManager.text())
+	# 键盘焦点态（2026-09-25 自查补）：页签开了 FOCUS_ALL，但此前只覆盖 normal ⇒
+	# 聚焦时会落到引擎默认焦点框（浅色细线，与深色主题冲突，且与「选中」难以区分）。
+	# 复用同一底色，仅把描边换强调色并加粗 —— 与选中态靠底色区分。
+	var fsb: StyleBoxFlat = sb.duplicate()
+	fsb.set_border_width_all(2)
+	fsb.border_color = ThemeManager.accent()
+	b.add_theme_stylebox_override("focus", fsb)
 
 
 ## 关卡方块四态：选中蓝色高亮 / 已通关绿 / 已跳过中性偏蓝 / 未解锁灰（禁用）。
@@ -2469,6 +2478,13 @@ func _style_tile(b: Button, selected: bool, cleared: bool, skipped: bool = false
 	b.add_theme_stylebox_override("normal", sb)
 	b.add_theme_stylebox_override("hover", sb)
 	b.add_theme_stylebox_override("pressed", sb)
+	# 键盘焦点态（2026-09-25 自查补）：关卡方块开了 FOCUS_ALL，但此前三态都没覆盖 focus
+	# ⇒ 聚焦落到引擎默认框。这里**保留状态底色**（选中/通关/跳过各自颜色本身就是信息），
+	# 只把描边换强调色并加粗 —— 焦点提示不得覆盖状态语义。
+	var fsb: StyleBoxFlat = sb.duplicate()
+	fsb.set_border_width_all(3)
+	fsb.border_color = ThemeManager.accent()
+	b.add_theme_stylebox_override("focus", fsb)
 	b.add_theme_color_override("font_color", ThemeManager.text())
 	# 禁用态必须用 font_disabled_color（font_color 对 disabled 无效）
 	b.add_theme_color_override("font_disabled_color", ThemeManager.text_secondary().darkened(0.25))

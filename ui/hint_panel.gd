@@ -195,7 +195,9 @@ func _fit_ghost_size() -> void:
 	var h := _content.get_content_height()
 	if h <= 0.0:
 		return
-	size = Vector2(w, clampf(h, 24.0, vp.y * 0.85))
+	# + 唤醒热区高度（2026-09-25 自查修）：_ghost_grip 在 VBox 里占位，而本行原先只按
+	# 内容高度设窗口 —— 不加这 8px，无痕态的文字底部会被裁掉最后一行的下半截。
+	size = Vector2(w, clampf(h + GHOST_GRIP_H, 24.0, vp.y * 0.85))
 	_clamp_to_viewport()
 
 
