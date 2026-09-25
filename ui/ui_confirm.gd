@@ -72,6 +72,11 @@ static func confirm_restart(parent: Node, on_ok: Callable) -> void:
 	dlg.ok_button_text = "确定"
 	dlg.cancel_button_text = "取消"
 	dlg.exclusive = true
+	# 确认框按钮套统一样式（2026-09-25）：引擎默认主题的按钮与项目深色风格不符
+	if dlg.get_ok_button() != null:
+		UiTheme.style_button(dlg.get_ok_button())
+	if dlg.get_cancel_button() != null:
+		UiTheme.style_button(dlg.get_cancel_button())
 	var chk := CheckBox.new()
 	chk.text = "不再提示"
 	dlg.add_child(chk)

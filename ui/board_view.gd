@@ -165,6 +165,12 @@ func _ready() -> void:
 	_tex_timer.wait_time = TEX_PULSE_STEP_S
 	_tex_timer.timeout.connect(_on_tex_pulse)
 	add_child(_tex_timer)
+	# 触摸长按判定（一次性；见 TOUCH_LONG_PRESS_MS 处注释）
+	_touch_timer = Timer.new()
+	_touch_timer.one_shot = true
+	_touch_timer.wait_time = float(TOUCH_LONG_PRESS_MS) / 1000.0
+	_touch_timer.timeout.connect(_on_touch_long_press)
+	add_child(_touch_timer)
 	ThemeManager.theme_changed.connect(queue_redraw)
 	GameSession.session_started.connect(_on_session_started)
 	if not GameSession.hint_ready.is_connected(_on_hint_ready):
@@ -758,6 +764,19 @@ const TEX_PULSE_BY_MARK := {
 }
 ## 未登记标记 / 未指定标记时的节拍（沿用最初的统一口径）。
 const TEX_PULSE_DEFAULT := Vector2(3.0, 0.10)
+
+## ==== 触摸手势（2026-09-25 无障碍审计）====
+## 此前零触摸处理，而 Godot 默认把触摸合成**左键** ⇒ 触屏永远无法插旗（丢一半操作）。
+## 交互：短按 = 翻开；**长按 0.4s = 插旗**（触屏没有右键，这是移动端扫雷的通行方案），
+## 长按已翻开的数字格 = 一键展开（与鼠标二次点击同口径）；拖动 = 取消长按。
+const TOUCH_LONG_PRESS_MS := 400
+## 触摸会**同时**合成鼠标事件（`emulate_mouse_from_touch` 必须保持开——否则触屏上所有
+## 按钮失效）。故收到触摸后的这个窄窗口内，把随之而来的模拟鼠标事件吞掉，避免双触发。
+const TOUCH_MOUSE_SUPPRESS_MS := 350
+var _touch_timer: Timer = null
+var _touch_pos := Vector2i(-1, -1)
+var _touch_long_fired := false
+var _last_touch_ms := -100000
 
 var _tex_timer: Timer = null
 ## 本帧的纹理标记与颜色：由 _draw() 开头求值一次后缓存供逐格读取。
@@ -2213,7 +2232,102 @@ func _draw_hl_polyline(pts: PackedVector2Array, taper: Array, col: Color) -> voi
 
 # ============ 输入（§10.9；一切入口第一行检查 state == PLAYING） ============
 
+## 语音播报（2026-09-25 无障碍审计）：棋盘内容全是 _draw 绘制，屏幕阅读器读不到任何
+## 信息 —— 盲人玩家此前无法获知盘面。只在设置开启且有可用语音时播报；
+## headless / 无语音环境自动跳过（测试零副作用）。
+func _speak(text: String) -> void:
+	if SettingsManager == null or not SettingsManager.tts_enabled or text == "":
+		return
+	if DisplayServer.tts_get_voices().is_empty():
+		return
+	DisplayServer.tts_stop()      # 打断上一句：连续移动时不排队积压
+	DisplayServer.tts_speak(text, "")
+
+
+## 播报光标格的位置与**玩家可见**状态（红线：不得泄露雷位；星号/遮蔽格如实说明）。
+func _announce_cursor(pos: Vector2i) -> void:
+	var board: Board = GameSession.board
+	if board == null or board.grid == null:
+		return
+	var cell: Cell = board.grid.get_cell(pos)
+	if cell == null:
+		return
+	var where := "第 %d 行 第 %d 列" % [pos.y + 1, pos.x + 1]
+	match cell.state:
+		Cell.State.HIDDEN:
+			_speak(where + "，未翻开")
+		Cell.State.FLAGGED:
+			_speak(where + "，已插旗")
+		Cell.State.QUESTION:
+			_speak(where + "，问号")
+		Cell.State.REVEALED:
+			if cell.starred:
+				_speak(where + "，线索已隐藏")
+			elif cell.is_hidden_clue():
+				_speak(where + "，遮蔽线索格")
+			elif cell.value is int:
+				var n := int(cell.value)
+				_speak((where + "，数字 %d" % n) if n > 0 else (where + "，空白"))
+			else:
+				_speak(where + "，特殊线索格")
+
+
+## 触摸事件处理：短按翻开 / 长按插旗（计时器到点触发）/ 拖动取消（见 _gui_input 的 drag 分支）。
+func _handle_screen_touch(ev: InputEventScreenTouch) -> void:
+	_last_touch_ms = Time.get_ticks_msec()
+	accept_event()
+	if GameSession.state != GameSession.State.PLAYING:
+		_touch_timer.stop()
+		_touch_pos = Vector2i(-1, -1)
+		return
+	var pos := _pick(ev.position)
+	if ev.pressed:
+		if pos.x < 0:
+			_touch_pos = Vector2i(-1, -1)
+			return
+		_touch_pos = pos
+		_touch_long_fired = false
+		_touch_timer.start()
+	else:
+		_touch_timer.stop()
+		var tap_ok := pos.x >= 0 and pos == _touch_pos and not _touch_long_fired
+		_touch_pos = Vector2i(-1, -1)
+		_touch_long_fired = false
+		if not tap_ok:
+			return
+		# 短按 = 与鼠标左键同口径（点已翻开的数字格则一键展开）
+		if _quick_actions_enabled() and _is_revealed(pos):
+			GameSession.chord(pos)
+		else:
+			GameSession.reveal(pos)
+
+
+## 长按判定到点：插旗（触屏没有右键）；已翻开的数字格则一键展开（替代鼠标二次点击）。
+## 震动反馈只在移动设备有效，桌面静默忽略。
+func _on_touch_long_press() -> void:
+	if _touch_pos.x < 0 or GameSession.state != GameSession.State.PLAYING:
+		return
+	_touch_long_fired = true
+	if _is_revealed(_touch_pos):
+		GameSession.chord(_touch_pos)
+	else:
+		GameSession.toggle_flag(_touch_pos)
+	Input.vibrate_handheld(30)
+
+
 func _gui_input(event: InputEvent) -> void:
+	# 触摸手势（独立于模拟鼠标，见 TOUCH_LONG_PRESS_MS 处注释）
+	if event is InputEventScreenTouch:
+		_handle_screen_touch(event as InputEventScreenTouch)
+		return
+	if event is InputEventScreenDrag:
+		_touch_timer.stop()              # 拖动 = 取消长按（否则拖过格子会误插旗）
+		_touch_pos = Vector2i(-1, -1)
+		return
+	if event is InputEventMouseButton \
+			and Time.get_ticks_msec() - _last_touch_ms < TOUCH_MOUSE_SUPPRESS_MS:
+		# 该鼠标事件是触摸合成的：手势已由 _handle_screen_touch 处理，这里吞掉避免双触发
+		return
 	if event is InputEventMouseButton:
 		if GameSession.state != GameSession.State.PLAYING:
 			return  # 终局冻结（重开/返回是 HUD/GameOver 层的例外按钮）
@@ -2293,11 +2407,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	# 隐藏→旗→问号 间循环、长按 H 反复扣提示充能、长按空格连发翻格、长按 R 连弹重开框。
 	# **移动键例外**：它本来就靠 echo 连发（长按方向键连续移动是期望行为，见下方 match）。
 	if event.echo:
-		match event.keycode:
-			KEY_W, KEY_A, KEY_S, KEY_D, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT:
-				pass
-			_:
-				return
+		var kc_echo: int = (event as InputEventKey).keycode
+		if kc_echo in [KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT,
+				SettingsManager.key_for("move_up"), SettingsManager.key_for("move_down"),
+				SettingsManager.key_for("move_left"), SettingsManager.key_for("move_right")]:
+			pass
+		else:
+			return
 	# ESC 关闭最上层弹窗（Godot 的 Window/Popup 不自带 ESC 关闭行为）
 	if event.keycode == KEY_ESCAPE:
 		var top := _first_visible_popup()
@@ -2310,14 +2426,14 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if SettingsManager != null and not SettingsManager.keyboard_enabled:
 		return
 	if GameSession.state != GameSession.State.PLAYING:
-		# R 重开是终局例外（HUD/GameOver 也有按钮；键盘通道同样允许）。
+		# 重开是终局例外（HUD/GameOver 也有按钮；键盘通道同样允许）。
 		# PAUSED 不放行：对局仍在进行，直接重开会绕过 ui_confirm 的二次确认（误触丢进度）。
-		if event.keycode == KEY_R and GameSession.state == GameSession.State.ENDED:
+		if event.keycode == SettingsManager.key_for("restart") and GameSession.state == GameSession.State.ENDED:
 			GameSession.restart()
 			accept_event()
 		return
-	# P 键切换绘画模式
-	if event.keycode == KEY_P and not event.ctrl_pressed and not event.shift_pressed:
+	# 绘画模式切换键（可重绑定）
+	if event.keycode == SettingsManager.key_for("draw") and not event.ctrl_pressed and not event.shift_pressed:
 		_toggle_paint_mode()
 		accept_event()
 		return
@@ -2326,8 +2442,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		if _handle_paint_key(event):
 			accept_event()
 		return
-	# ESC：暂停 / 继续（State.PAUSED 此前从未被任何 UI 触发，这里给它的真实入口）
-	if event.keycode == KEY_ESCAPE:
+	# 暂停 / 继续键（State.PAUSED 此前从未被任何 UI 触发，这里给它的真实入口）
+	if event.keycode == SettingsManager.key_for("pause"):
 		_toggle_pause()
 		accept_event()
 		return
@@ -2338,59 +2454,64 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	var size := board.grid.size()
 	var cur: Vector2i = GameSession.cursor
 	var handled := true
-	match event.keycode:
-		KEY_R:
-			_confirm_restart()
-		KEY_Z:
-			# 游戏操作撤销（与绘画模式的 Ctrl+Z 撤销笔迹独立：绘画模式此处分流不到这）
-			if event.ctrl_pressed and not event.shift_pressed:
-				GameSession.undo_move()
-			else:
-				handled = false
-		KEY_F:
-			GameSession.toggle_flag(cur)
-		KEY_H:
-			GameSession.request_hint()
-		KEY_SPACE, KEY_ENTER:
-			# 与鼠标同口径：光标停在已翻开的数字格上时执行一键展开
-			if _quick_actions_enabled() and _is_revealed(cur):
-				GameSession.chord(cur)
-			else:
-				GameSession.reveal(cur)
-		KEY_HOME:
-			cur.x = 0
-		KEY_END:
-			cur.x = size.x - 1
-		KEY_PAGEUP:
-			cur.y = 0
-		KEY_PAGEDOWN:
-			cur.y = size.y - 1
-		KEY_W, KEY_UP:
-			cur.y = maxi(cur.y - 1, 0)
-		KEY_S, KEY_DOWN:
-			cur.y = mini(cur.y + 1, size.y - 1)
-		KEY_A, KEY_LEFT:
-			if cur.x == 0:
-				# 回环：左边界 → 上一行右端
-				if cur.y > 0:
-					cur.y -= 1
-					cur.x = size.x - 1
-			else:
-				cur.x -= 1
-		KEY_D, KEY_RIGHT:
-			if cur.x == size.x - 1:
-				# 回环：右边界 → 下一行左端
-				if cur.y < size.y - 1:
-					cur.y += 1
-					cur.x = 0
-			else:
-				cur.x += 1
-		_:
+	# 键位查表（2026-09-25 无障碍审计）：所有动作走 SettingsManager.key_for ——
+	# 玩家可在设置页「按键」分区重绑定。**方向键/回车/翻页键仍是硬编码附加键**
+	# （不参与重绑定，见 SettingsManager.RESERVED_KEYS），保证改键后导航能力永不丢失。
+	var kc: int = (event as InputEventKey).keycode
+	if kc == SettingsManager.key_for("restart"):
+		_confirm_restart()
+	elif kc == SettingsManager.key_for("undo"):
+		# 游戏操作撤销（与绘画模式的 Ctrl+Z 撤销笔迹独立：绘画模式此处分流不到这）
+		if event.ctrl_pressed and not event.shift_pressed:
+			GameSession.undo_move()
+		else:
 			handled = false
+	elif kc == SettingsManager.key_for("flag"):
+		GameSession.toggle_flag(cur)
+	elif kc == SettingsManager.key_for("hint"):
+		GameSession.request_hint()
+	elif kc == SettingsManager.key_for("reveal") or kc == KEY_ENTER:
+		# 与鼠标同口径：光标停在已翻开的数字格上时执行一键展开（回车是附加键）
+		if _quick_actions_enabled() and _is_revealed(cur):
+			GameSession.chord(cur)
+		else:
+			GameSession.reveal(cur)
+	elif kc == KEY_HOME:
+		cur.x = 0
+	elif kc == KEY_END:
+		cur.x = size.x - 1
+	elif kc == KEY_PAGEUP:
+		cur.y = 0
+	elif kc == KEY_PAGEDOWN:
+		cur.y = size.y - 1
+	elif kc == SettingsManager.key_for("move_up") or kc == KEY_UP:
+		cur.y = maxi(cur.y - 1, 0)
+	elif kc == SettingsManager.key_for("move_down") or kc == KEY_DOWN:
+		cur.y = mini(cur.y + 1, size.y - 1)
+	elif kc == SettingsManager.key_for("move_left") or kc == KEY_LEFT:
+		if cur.x == 0:
+			# 回环：左边界 → 上一行右端
+			if cur.y > 0:
+				cur.y -= 1
+				cur.x = size.x - 1
+		else:
+			cur.x -= 1
+	elif kc == SettingsManager.key_for("move_right") or kc == KEY_RIGHT:
+		if cur.x == size.x - 1:
+			# 回环：右边界 → 下一行左端
+			if cur.y < size.y - 1:
+				cur.y += 1
+				cur.x = 0
+		else:
+			cur.x += 1
+	else:
+		handled = false
 	if handled:
 		GameSession.cursor = cur
 		queue_redraw()
 		accept_event()
+		# 语音播报（2026-09-25 无障碍）：键盘是无障碍主通道，操作后播报光标格状态
+		_announce_cursor(cur)
 
 
 # ============ 绘画模式（P 键 / 快捷键） ============

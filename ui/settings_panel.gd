@@ -110,6 +110,9 @@ func _build_ui() -> void:
     tabs.add_child(video_page)
     var play_page := _make_page("玩法")
     tabs.add_child(play_page)
+    # 按键页（2026-09-25 无障碍审计）：键位重绑定，此前全部硬编码、Dvorak/单手玩家无解。
+    var keys_page := _make_page("按键")
+    tabs.add_child(keys_page)
     var audio_page := _make_page("音效")
     tabs.add_child(audio_page)
 
@@ -123,6 +126,7 @@ func _build_ui() -> void:
     # 注：_make_page 返回外层 ScrollContainer，往里填行走它的第 0 个子节点（VBoxContainer）
     _build_video_page(video_page.get_child(0) as VBoxContainer)
     _build_play_page(play_page.get_child(0) as VBoxContainer)
+    _build_keys_page(keys_page.get_child(0) as VBoxContainer)
     _build_audio_page(audio_page.get_child(0) as VBoxContainer)
     _build_data_page(data_page.get_child(0) as VBoxContainer)
 
@@ -223,6 +227,10 @@ func _build_play_page(page: VBoxContainer) -> void:
     # 重开前确认：玩家在重开弹窗勾「不再提示」后会被置 false —— 本项是唯一的改回入口
     _restart_confirm_chk = _add_check_row(page, "重开前确认",
         func(v: bool): SettingsManager.set_restart_confirm(v), SettingsManager.restart_confirm)
+    # 语音播报（2026-09-25 无障碍）：棋盘内容纯 _draw 绘制、屏幕阅读器读不到 ——
+    # 开启后键盘操作会播报光标格的位置与状态（键盘用户正是本项的目标人群）。
+    _add_check_row(page, "语音播报（屏幕阅读器）",
+        func(v: bool): SettingsManager.set_tts_enabled(v), SettingsManager.tts_enabled)
 
     # 无猜模式（对标 doc10 §2；核心玩法开关，此前只能改配置文件）：关闭 / 专家 / 终极
     _no_guess_opt = _add_opt_row(page, "无猜模式")
@@ -251,6 +259,83 @@ func _build_play_page(page: VBoxContainer) -> void:
         func(v: bool): SettingsManager.set_ult_hide_deducible(v), SettingsManager.ult_hide_deducible)
     _ult_auto_reveal_chk = _add_check_row(page, "终极：卡住时自动揭星",
         func(v: bool): SettingsManager.set_ult_auto_reveal(v), SettingsManager.ult_auto_reveal)
+
+
+# ============================ 按键（2026-09-25 无障碍审计新增）============================
+
+## action -> Button（显示当前键位；点击进入捕获态）
+var _key_rows: Dictionary = {}
+## 正在等待玩家按下新键的动作（"" = 未捕获）。捕获期间本页 `_input` 优先消费按键。
+var _capturing_action := ""
+
+
+func _build_keys_page(page: VBoxContainer) -> void:
+    _add_section_label(page, "对局快捷键（点右侧按钮，再按下新键；Esc 取消，Del 恢复该项默认）")
+    _key_rows.clear()
+    for action: String in SettingsManager.DEFAULT_KEYS:
+        var row := HBoxContainer.new()
+        row.add_theme_constant_override("separation", 24)
+        _add_label(row, str(SettingsManager.KEY_ACTION_LABELS.get(action, action)))
+        var btn := Button.new()
+        btn.text = SettingsManager.key_label(SettingsManager.key_for(action))
+        btn.focus_mode = Control.FOCUS_ALL
+        btn.custom_minimum_size = Vector2(140, 32)
+        btn.set_meta("key_action", action)      # 测试 / 调试可据此定位
+        btn.pressed.connect(_on_key_bind_pressed.bind(action))
+        row.add_child(btn)
+        page.add_child(row)
+        _key_rows[action] = btn
+    _add_section_label(page, "方向键（移动）、回车（翻开）与 Home / End / PageUp / PageDown（跳行）"
+        + "始终可用 —— 它们不参与重绑定，保证改键后导航能力不会丢。")
+    _add_button_row(page, "恢复默认键位", "恢复默认", func():
+        SettingsManager.reset_key_bindings()
+        _refresh_key_rows()
+        _toast("已恢复默认键位", false))
+
+
+func _on_key_bind_pressed(action: String) -> void:
+    _capturing_action = action
+    _refresh_key_rows()
+    _toast("请按下新的按键（Esc 取消 / Del 恢复该项默认）", false)
+
+
+func _refresh_key_rows() -> void:
+    for action: String in _key_rows:
+        var btn: Button = _key_rows[action]
+        if not is_instance_valid(btn):
+            continue
+        btn.text = "按新键…" if action == _capturing_action \
+            else SettingsManager.key_label(SettingsManager.key_for(action))
+
+
+## 捕获阶段消费按键。用 `_input`（比 GUI 更早收到按键），只在捕获中才动作 ——
+## 平时立刻返回，不影响页面其它交互。
+func _input(event: InputEvent) -> void:
+    if _capturing_action == "":
+        return
+    if not (event is InputEventKey) or not event.pressed:
+        return
+    var kc: int = (event as InputEventKey).keycode
+    if kc == KEY_ESCAPE:
+        _capturing_action = ""      # Esc = 取消捕获（不改变绑定）
+        _refresh_key_rows()
+        return
+    get_viewport().set_input_as_handled()
+    var act := _capturing_action
+    _capturing_action = ""
+    if kc == KEY_DELETE or kc == KEY_BACKSPACE:
+        SettingsManager.reset_key_binding(act)
+        _toast("已恢复「%s」的默认键" % str(SettingsManager.KEY_ACTION_LABELS.get(act, act)), false)
+    elif SettingsManager.is_reserved_key(kc):
+        _toast("方向键 / 回车 / 翻页键是保留键，不能占用", true)
+    else:
+        var other := SettingsManager.key_conflict(act, kc)
+        if other != "":
+            _toast("「%s」已占用该键 —— 先改它再绑这里"
+                % str(SettingsManager.KEY_ACTION_LABELS.get(other, other)), true)
+        else:
+            SettingsManager.set_key_binding(act, kc)
+    _refresh_key_rows()
 
 
 # ============================ 音效 ============================
@@ -294,6 +379,13 @@ func _confirm(text: String, ok_text: String, on_ok: Callable) -> void:
     dlg.dialog_text = text
     dlg.ok_button_text = ok_text
     dlg.cancel_button_text = "取消"
+    # 按钮套统一样式（2026-09-25）：引擎默认主题与项目深色风格不符；顺带补上标题
+    # （此前用引擎默认英文标题 "Alert!"，整个界面的唯一英文残留）。
+    dlg.title = "请确认"
+    if dlg.get_ok_button() != null:
+        UiTheme.style_button(dlg.get_ok_button())
+    if dlg.get_cancel_button() != null:
+        UiTheme.style_button(dlg.get_cancel_button())
     dlg.confirmed.connect(on_ok)
     dlg.visibility_changed.connect(func():
         if not dlg.visible:

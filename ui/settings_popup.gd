@@ -133,6 +133,13 @@ func _build_ui() -> void:
     # 绘画草稿是否写入存档（与设置页同项）：关闭后存档不含草稿，恢复不还原
     _add_check_row(vbox, "绘画草稿存入存档",
         func(v: bool): SettingsManager.set_drawing_in_save(v), SettingsManager.drawing_in_save)
+    # 重开前确认（2026-09-25 审计补）：对局内正是 R 键误触的**发生地**，玩家想关/开它时
+    # 必须能就地改 —— 此前只能退回主菜单的设置页（两套设置 UI 的唯一实质缺口）。
+    _add_check_row(vbox, "重开前确认", func(v: bool): SettingsManager.set_restart_confirm(v),
+        SettingsManager.restart_confirm)
+    # 语音播报（2026-09-25 无障碍）：与主菜单设置页同一开关（键盘用户常在局内才想起开）
+    _add_check_row(vbox, "语音播报（屏幕阅读器）", func(v: bool): SettingsManager.set_tts_enabled(v),
+        SettingsManager.tts_enabled)
 
     var close := Button.new()
     close.text = "关闭"

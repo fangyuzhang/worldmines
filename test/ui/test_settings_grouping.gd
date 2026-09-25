@@ -15,7 +15,8 @@ extends GutTest
 const CFG := "user://settings.cfg"
 
 ## 期望的页签（顺序即展示顺序）
-const EXPECTED_TABS := ["画面", "玩法", "音效", "皮肤", "数据"]
+## 2026-09-25：新增「按键」页（键位重绑定，无障碍审计）。
+const EXPECTED_TABS := ["画面", "玩法", "按键", "音效", "皮肤", "数据"]
 
 ## 「应有入口」清单：页签 → 行文案 → 期望控件类型。
 ## 含任务二要求补入口的全部字段（no_guess/hint_mode/hint_charge/drawing_opacity/ult×3/restart_confirm）。
@@ -37,6 +38,10 @@ const EXPECTED_ENTRIES := [
     {"page": "玩法", "label": "终极：隐藏可断定格数", "kind": "CheckButton"},
     {"page": "玩法", "label": "终极：卡住时自动揭星", "kind": "CheckButton"},
     {"page": "音效", "label": "音效", "kind": "CheckButton"},
+    # 2026-09-25 无障碍审计新增：语音播报（玩法页）+ 按键重绑定（按键页）
+    {"page": "玩法", "label": "语音播报（屏幕阅读器）", "kind": "CheckButton"},
+    {"page": "按键", "label": "上移", "kind": "Button"},
+    {"page": "按键", "label": "恢复默认键位", "kind": "Button"},
     {"page": "数据", "label": "绘画草稿存入存档", "kind": "CheckButton"},
     {"page": "数据", "label": "通关进度", "kind": "Button"},
     {"page": "数据", "label": "绘画草稿", "kind": "Button"},
@@ -224,7 +229,7 @@ func test_toggle_ui_scale_updates_manager() -> void:
 func test_theme_covers_all_new_tabs() -> void:
     var panel := _make_panel()
     var tabs := _tabs(panel)
-    for page_name in ["画面", "玩法", "音效", "数据"]:
+    for page_name in ["画面", "玩法", "按键", "音效", "数据"]:
         var page: Node = _page(tabs, page_name)
         var labels: Array = []
         for c in _all_controls(page):

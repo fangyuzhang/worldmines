@@ -28,6 +28,45 @@ var hint_font_size: int = 16
 ## 上手提示 —— 左键翻格 / 右键插旗只写在教程文件里，要玩家主动去点才发现。
 ## 只弹一次，弹过即置 true 持久化。
 var seen_play_hint: bool = false
+
+# ===== 对局快捷键（2026-09-25 无障碍审计：此前全硬编码，Dvorak/单手/残障玩家无法改键）=====
+## 可重绑定的动作 → 默认键位。
+## **方向键刻意不在表内**：它们作为「附加移动键」始终可用、不参与重绑定 ——
+## 这样玩家即使把 WASD 改掉，也不会失去移动能力（也给了键位冲突的天然兜底）。
+const DEFAULT_KEYS := {
+    "move_up": KEY_W,
+    "move_down": KEY_S,
+    "move_left": KEY_A,
+    "move_right": KEY_D,
+    "reveal": KEY_SPACE,
+    "flag": KEY_F,
+    "hint": KEY_H,
+    "undo": KEY_Z,
+    "restart": KEY_R,
+    "pause": KEY_ESCAPE,
+    "draw": KEY_P,
+}
+## 动作的界面显示名（设置页「按键」分区用）。
+const KEY_ACTION_LABELS := {
+    "move_up": "上移",
+    "move_down": "下移",
+    "move_left": "左移",
+    "move_right": "右移",
+    "reveal": "翻开 / 一键展开",
+    "flag": "插旗",
+    "hint": "提示",
+    "undo": "撤销（配合 Ctrl）",
+    "restart": "重开本关",
+    "pause": "暂停 / 继续",
+    "draw": "绘画模式",
+}
+## 玩家覆盖（action → keycode）。不含的 action 取 DEFAULT_KEYS。
+var key_bindings: Dictionary = {}
+
+## 语音播报（2026-09-25 无障碍审计）：棋盘是纯 _draw 绘制，屏幕阅读器拿不到任何内容 ——
+## 盲人玩家此前完全无法获知盘面。开启后，键盘操作会播报光标格的位置与状态
+## （玩家视角信息，不泄露雷位）。默认关（避免对普通玩家造成打扰）。
+var tts_enabled: bool = false
 var hint_window_pos: Vector2 = Vector2.ZERO
 var hint_window_size: Vector2 = Vector2(320, 200)
 # 提示三档（对齐对标游戏 doc10 §3.2）：
@@ -121,6 +160,14 @@ func load_cfg() -> void:
     restart_confirm = _get_bool(cfg, "restart_confirm", true)
     question_mark_enabled = _get_bool(cfg, "question_mark_enabled", false)
     ui_scale = clampf(float(cfg.get_value("game", "ui_scale", 1.0)), 1.0, 1.5)
+    tts_enabled = _get_bool(cfg, "tts_enabled", false)
+    # 按键覆盖：只收「DEFAULT_KEYS 里存在的动作」，脏数据（旧版本/手改）直接忽略。
+    key_bindings = {}
+    if cfg.has_section("keys"):
+        for a in cfg.get_section_keys("keys"):
+            var act := str(a)
+            if DEFAULT_KEYS.has(act):
+                key_bindings[act] = int(cfg.get_value("keys", a, 0))
     # 注：AudioManager.enabled 的开机同步已移入 AudioManager._ready——本 autoload 注册序(4)
     # 早于 AudioManager(7)，此处反向引用会因 _ready 时序失败，导致持久化的音效开关开机不生效；
     # 且测试手工实例化 SettingsManager 调 load_cfg 时不应产生改写真实 AudioManager 的全局副作用。
@@ -161,6 +208,13 @@ func save() -> void:
     cfg.set_value("game", "quick_actions", quick_actions)
     cfg.set_value("game", "restart_confirm", restart_confirm)
     cfg.set_value("game", "ui_scale", ui_scale)
+    cfg.set_value("game", "tts_enabled", tts_enabled)
+    # 按键覆盖（独立 section：与游戏设置分开，便于人工阅读/编辑）。
+    # 不需要（也不能）先清空：这里的 cfg 是**新建**对象、只写当前字段，本就不会残留旧键；
+    # 而 erase_section 在该 section 不存在时会直接抛错（Godot 4 的断言
+    # "Condition !values.has(p_section)"）—— 空绑定时每次 save 都会报，测试当场抓到。
+    for a in key_bindings:
+        cfg.set_value("keys", str(a), int(key_bindings[a]))
     cfg.save(PATH)
 
 
@@ -198,6 +252,75 @@ func set_keyboard_enabled(v: bool) -> void:
 
 func set_seen_play_hint(v: bool) -> void:
     seen_play_hint = v
+    save()
+    settings_changed.emit()
+
+
+func set_tts_enabled(v: bool) -> void:
+    tts_enabled = v
+    save()
+    settings_changed.emit()
+
+
+# ============ 按键绑定（读写 + 冲突检测；2026-09-25 无障碍审计新增）============
+
+## 保留键（不可被重绑定占用，2026-09-25）：方向键是附加移动键、回车是附加翻开键、
+## Home/End/PageUp/PageDown 是棋盘导航键 —— 它们**始终硬编码可用**，一旦被某个动作
+## 占用就会双触发或让移动失效。数据层直接拒绝（UI 也会提示），比事后排查划算。
+const RESERVED_KEYS := [KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_ENTER,
+    KEY_HOME, KEY_END, KEY_PAGEUP, KEY_PAGEDOWN]
+
+
+static func is_reserved_key(code: int) -> bool:
+    return RESERVED_KEYS.has(code)
+
+
+## 该动作当前的键位（玩家覆盖优先，否则默认）。
+func key_for(action: String) -> int:
+    return int(key_bindings.get(action, DEFAULT_KEYS.get(action, 0)))
+
+
+## 键位显示文本（设置页用）：常用键给中文，其余走引擎的键名（"W" / "F5"…）。
+static func key_label(code: int) -> String:
+    match code:
+        KEY_SPACE: return "空格"
+        KEY_ESCAPE: return "Esc"
+        KEY_ENTER: return "回车"
+        KEY_TAB: return "Tab"
+        KEY_BACKSPACE: return "退格"
+    var s := OS.get_keycode_string(code)
+    return s if s != "" else "（未设）"
+
+
+## 该键是否已被**其它**动作占用：返回占用者 action，无冲突返回 ""。
+func key_conflict(action: String, code: int) -> String:
+    for a: String in DEFAULT_KEYS:
+        if a != action and key_for(a) == code:
+            return a
+    return ""
+
+
+## 重绑一个动作（冲突检查由调用方负责，并把结果告诉玩家）。
+func set_key_binding(action: String, code: int) -> void:
+    if not DEFAULT_KEYS.has(action) or code == 0:
+        return
+    if is_reserved_key(code):
+        return      # 保留键：方向/回车/翻页导航，见 RESERVED_KEYS 注释
+    key_bindings[action] = code
+    save()
+    settings_changed.emit()
+
+
+## 单个动作恢复默认。
+func reset_key_binding(action: String) -> void:
+    key_bindings.erase(action)
+    save()
+    settings_changed.emit()
+
+
+## 全部恢复默认。
+func reset_key_bindings() -> void:
+    key_bindings.clear()
     save()
     settings_changed.emit()
 

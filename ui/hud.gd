@@ -16,7 +16,7 @@ var _time_label: Label
 var _hint_btn: Button
 var _settings_popup: PopupPanel
 
-var _box: HBoxContainer
+var _box: HFlowContainer
 var _last_shown_sec: int = -1
 var _flag_cache: int = -1
 # 「可断定格数」0.5s 节流缓存：推导含 CP-SAT 全盘哈希，终极模式常开时每帧全算白付性能
@@ -31,7 +31,10 @@ func _ready() -> void:
     offset_bottom = 64  # 明确顶栏高度，避免 28px 字体溢出顶部被裁剪
     custom_minimum_size = Vector2(0, 64)
 
-    _box = HBoxContainer.new()
+    # HFlowContainer（2026-09-25 审计）：窄窗口下按钮排自动换行 —— 此前 HBoxContainer
+    # 会把右端按钮推出屏外（无 clip，直接不可见、不可点）。窗口最小尺寸（1024×576）已挡
+    # 住主要场景，这里再兜一层。
+    _box = HFlowContainer.new()
     _box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     _box.offset_left = 24
     _box.offset_right = -24

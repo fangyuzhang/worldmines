@@ -159,7 +159,8 @@ func test_b9_hud_tutorial_entry_sits_after_mines() -> void:
 	if tut == null:
 		return
 	var box := tut.get_parent()
-	assert_true(box is HBoxContainer, "教程按钮应在 HUD 的按钮排（_box）里")
+	assert_true(box is HFlowContainer or box is HBoxContainer,
+		"教程按钮应在 HUD 的按钮排（_box）里（2026-09-25 起为 HFlowContainer：窄窗自动换行）")
 	assert_eq(tut.get_index(), 1, "应在「雷数」之后（索引 0 = 雷数标签）= 左上角")
 	assert_true(box.get_child(tut.get_index() - 1) is Label,
 		"教程按钮的前一个兄弟应是「雷数」标签（左上角定位语义）")
