@@ -465,7 +465,7 @@ powershell -File tools\_analyze_issues.ps1                        # 本地分析
 - **守护**：systemd 服务 `wm-gen-watchdog`（10 分钟巡检：状态摘要写 /root/watchdog.log、分片异常退出自动重启续跑、服务器重启后自动拉起）；
 - **记录**：`issues_shard_0X.jsonl`（empty / empty_timeout / tier_empty / proof_fail / dup_fp / similar 逐事件 + unit_done 心跳含 tried/made/耗时）。
 
-**当前状态**：2026-09-13 03:05 启动，预计 4~6 小时（约 07:00~09:00 完成）。产物在服务器 `user://batch_all`（372 单元 × 10 关）。
+**该批次状态（2026-09-13 快照，**不是**"现在还在跑"）**：2026-09-13 03:05 启动，预计 4~6 小时（约 07:00~09:00 完成）。产物在服务器 `user://batch_all`（372 单元 × 10 关）。
 
 **恢复流程（明天/新会话照此执行）**：
 1. **查完成**：`runfile _remote_progress.sh`——看两分片 `all_report_shard_0X.json` 是否都已生成、进程是否已退出、watchdog.log 尾部；若分片消失且未完成 → watchdog 应已重启（查日志）；若 watchdog 也死 → 重发 `_remote_launch_full.sh` 续跑。
