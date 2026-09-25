@@ -77,6 +77,14 @@ func bootstrap_bundled_mods() -> int:
 	var dir := DirAccess.open(BUNDLED_MODS_DIR)
 	if dir == null:
 		return 0
+	# 导出版（pck）分支：pck 内脚本已被编译为 .gdc，而安装流程用 FileAccess 检查
+	# 与复制 entry.gd —— 在 pck 里该路径恒不存在，于是**每个内置 Mod 都安装失败**
+	# （导出版实测刷出 20+ 条「内置算子 Mod 安装失败: o1_duichuan ...」）。
+	# 而加载侧本就走 `load()`（ResourceLoader 能把 entry.gd 自动映射到 entry.gdc），
+	# 故导出版**不需要拷贝**：直接从 res:// 加载即可。
+	# 编辑器态（含 headless 跑测试）保持原「拷贝到 user://」流程不变：玩家可编辑。
+	if not OS.has_feature("editor"):
+		return _bootstrap_bundled_from_pack()
 	DirAccess.make_dir_recursive_absolute(MODS_DIR)
 	var loaded := 0
 	for mod_dir in dir.get_directories():
@@ -104,6 +112,36 @@ func bootstrap_bundled_mods() -> int:
 		if _mods.has(mod_dir):
 			continue
 		var r := load_mod(dst)
+		if bool(r.get("ok", false)):
+			loaded += 1
+			_bundled[str(r.get("mod_id", mod_dir))] = true
+		else:
+			push_warning("内置算子 Mod 加载失败: %s（%s）" % [mod_dir, str(r.get("reason", ""))])
+	return loaded
+
+
+## 导出版专用：直接从 res:// 加载内置 Mod，**不做拷贝**。
+##
+## 为什么不能沿用拷贝流程：导出版把 .gd 编译为 .gdc 打进 pck，
+## `FileAccess.file_exists("res://demo/mods/x/entry.gd")` 恒为 false
+## ⇒ `_copy_code_mod` 判定「包不完整」直接失败（2026-09-25 导出实测）。
+## 而 `load()` 走 ResourceLoader，请求 .gd 时会自动命中 .gdc，所以直接加载是通的。
+## manifest.json 是数据文件，在 pck 里就是原文件，FileAccess 读它没问题。
+func _bootstrap_bundled_from_pack() -> int:
+	var dir := DirAccess.open(BUNDLED_MODS_DIR)
+	if dir == null:
+		return 0
+	var loaded := 0
+	for mod_dir in dir.get_directories():
+		if BUNDLED_SKIP.has(mod_dir):
+			continue
+		var src := "%s/%s" % [BUNDLED_MODS_DIR, mod_dir]
+		if not FileAccess.file_exists(src.path_join("manifest.json")):
+			continue
+		_bundled[mod_dir] = true
+		if _mods.has(mod_dir):
+			continue
+		var r := load_mod(src)
 		if bool(r.get("ok", false)):
 			loaded += 1
 			_bundled[str(r.get("mod_id", mod_dir))] = true
