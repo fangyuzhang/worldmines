@@ -278,7 +278,7 @@ func test_ls6_pending_focus_on_mixed_switches_page_and_tab() -> void:
 # LS7：Mod 页签的可见性与「是否装了 Mod」一致；无 Mod 时该页不可达且显示空状态
 func test_ls7_mod_tab_follows_loaded_mods() -> void:
 	var expected := not ModAPI.list_mods().is_empty()
-	assert_eq(_view._tab_btns[_view.PAGE_MOD].visible, expected,
+	assert_eq(_view._tab_btn_for(_view.PAGE_MOD).visible, expected,
 			"Mod 页签可见性必须与已加载 Mod 一致（空页签只会让人点进去看空）")
 	if expected:
 		return
@@ -301,7 +301,7 @@ func test_ls9_mod_variant_lands_on_mod_page() -> void:
 		return
 	var v2 = load("res://ui/level_select.tscn").instantiate()
 	add_child_autofree(v2)
-	assert_true(v2._tab_btns[v2.PAGE_MOD].visible, "装了 Mod 后 Mod 页签应可见")
+	assert_true(v2._tab_btn_for(v2.PAGE_MOD).visible, "装了 Mod 后 Mod 页签应可见")
 	assert_true(v2._mode_index.has("x2diag"), "Mod 注册的规则应进入变体表")
 	var mi: int = int(v2._mode_index.get("x2diag", -1))
 	assert_eq(v2._page_of(v2.MODES[mi]), v2.PAGE_MOD, "Mod 变体应归 Mod 页")
@@ -324,7 +324,7 @@ func test_ls10_def_mod_lists_its_defs() -> void:
 		return
 	var v2 = load("res://ui/level_select.tscn").instantiate()
 	add_child_autofree(v2)
-	assert_true(v2._tab_btns[v2.PAGE_MOD].visible, "装了 Mod（哪怕只是 Def 包）页签就应可见")
+	assert_true(v2._tab_btn_for(v2.PAGE_MOD).visible, "装了 Mod（哪怕只是 Def 包）页签就应可见")
 	assert_true(_has_label_containing(v2._pages[v2.PAGE_MOD], "LsDir4N"), "应列出该 Mod 的 Def 线索名")
 	assert_true(_has_label_containing(v2._pages[v2.PAGE_MOD], "LsMirror"), "应列出该 Mod 的 Def 约束名")
 	assert_false(_has_label_containing(v2._pages[v2.PAGE_MOD], "未注册可玩变体"),
@@ -591,6 +591,31 @@ func _remove_mod_level() -> void:
 	var parent := DirAccess.open("user://mods/%s" % DEF_MOD_ID)
 	if parent != null:
 		parent.remove("levels")
+
+
+# LS10（2026-09-25 用户实测反馈）：页签高亮必须跟着**页面**走，而不是按钮数组下标。
+# 回归背景：页面常量值顺序（SINGLE=0, MIXED=1, MOD=2, SHAPE=3）与页签**视觉顺序**
+# （单项变体 / 混合档 / 异形棋盘 / Mod）在后两者上不同，旧实现直接拿 `_tab_btns[PAGE_*]`
+# 当「第 PAGE_* 个按钮」用 ⇒ 点「异形棋盘」亮的是 Mod 页签。页签**可见性**也被同源写法
+# 互换过（无 Mod 时消失的竟是异形棋盘页签）。这条把「点哪个页、哪个页签亮」钉死。
+func test_ls10_tab_highlight_follows_page_id_not_index() -> void:
+	var shape_btn: Button = _view._tab_btn_for(_view.PAGE_SHAPE)
+	assert_not_null(shape_btn, "异形棋盘页签应存在（本库必有异形关）")
+	var mod_btn: Button = _view._tab_btn_for(_view.PAGE_MOD)
+	assert_not_null(mod_btn, "Mod 页签按钮应存在（不可见时也建）")
+	assert_ne(shape_btn, mod_btn, "异形棋盘与 Mod 必须是两个不同按钮（映射退化为下标时会先炸在这里）")
+	# 切到异形棋盘：异形按钮亮（_style_choice 选中态 = 2px 边框）、Mod 按钮不亮（1px）
+	_view._show_tab(_view.PAGE_SHAPE)
+	assert_eq(_view._tab, _view.PAGE_SHAPE, "异形棋盘页应可达")
+	var sb_shape := shape_btn.get_theme_stylebox("normal") as StyleBoxFlat
+	assert_not_null(sb_shape, "页签应有 normal 样式")
+	assert_eq(sb_shape.border_width_top, 2, "切到异形棋盘后，异形页签必须是选中态")
+	var sb_mod := mod_btn.get_theme_stylebox("normal") as StyleBoxFlat
+	assert_eq(sb_mod.border_width_top, 1, "切到异形棋盘后 Mod 页签不得是选中态（旧 bug：两者高亮互换）")
+	# 切回单项变体：异形按钮熄灭
+	_view._show_tab(_view.PAGE_SINGLE)
+	assert_eq((shape_btn.get_theme_stylebox("normal") as StyleBoxFlat).border_width_top, 1,
+		"离开异形棋盘后其页签应熄灭")
 
 
 func _find_button(node: Node, text: String) -> Button:

@@ -80,6 +80,14 @@ var MODES: Array = []
 static var _tab_memory := PAGE_SINGLE
 var _tab := PAGE_SINGLE
 var _tab_btns: Array[Button] = []
+## 每个页签按钮对应的**页面 id**（与 `_tab_btns` 同序）。
+##
+## 为什么需要（2026-09-25 修 bug）：原先高亮/可见性都用 `i == PAGE_*` 直接拿按钮数组
+## 下标当页面 id 用 —— 这隐含假设「按钮数组顺序 == 常量值顺序」。而页签的**视觉顺序**
+## 是「单项变体 / 混合档 / 异形棋盘 / Mod」，常量值却是 SINGLE=0, MIXED=1, MOD=2, SHAPE=3：
+## 后两者互换 ⇒ 点「异形棋盘」亮的是 Mod 页签（且无 Mod 时消失的是异形棋盘页签）。
+## 现在按钮携带自己的页面 id，两套顺序**解耦**：将来插入/调整页签不再错位。
+var _tab_btn_page: Array[int] = []
 var _page_host: Control = null
 var _pages: Array[Control] = []
 ## 变体 id -> MODES 下标（交叉表按 id 找条目，不依赖列表顺序）。
@@ -248,7 +256,9 @@ func _build_ui() -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	add_child(title)
 
-	# 返回按钮（左上）
+	# 返回按钮（左上）：**层级返回**——异形棋盘页第二级先回变体列表，其余情况退回主菜单。
+	# 为什么收编页内的「← 返回变体列表」卡片（2026-09-25 用户口径）：一个页面两个返回入口
+	# （左上角 + 页内卡片）会让人犹豫点哪个；统一由左上角承担后退语义后，页内不再放返回卡。
 	var back := Button.new()
 	back.text = "返回"
 	back.focus_mode = Control.FOCUS_NONE
@@ -257,7 +267,8 @@ func _build_ui() -> void:
 	back.offset_left = 24
 	back.offset_top = 14
 	back.set_meta("std_btn", true)
-	back.pressed.connect(func(): get_tree().change_scene_to_file("res://ui/main_menu.tscn"))
+	back.set_meta("back_btn", true)   # 测试 / 调试可据此定位
+	back.pressed.connect(_on_back_pressed)
 	add_child(back)
 
 	# 页签栏（三个页面各一个标签）
@@ -279,6 +290,7 @@ func _build_ui() -> void:
 		b.pressed.connect(_show_tab.bind(int(spec[1])))
 		bar.add_child(b)
 		_tab_btns.append(b)
+		_tab_btn_page.append(int(spec[1]))
 		UiTheme.bind_hover(b, 1.04)
 
 	# 页容器：页签以下的整块区域（滚动由各页自己的 ScrollContainer 负责）
@@ -316,7 +328,18 @@ func _show_tab(t: int) -> void:
 		if is_instance_valid(_pages[i]):
 			_pages[i].visible = (i == t)
 	for i in _tab_btns.size():
-		_style_choice(_tab_btns[i], i == t)
+		# 用按钮**自带**的页面 id 判高亮（不是数组下标 —— 下标仅代表视觉次序，见 _tab_btn_page 注释）
+		_style_choice(_tab_btns[i], _tab_btn_page[i] == t)
+
+
+## 取某个页面 id 对应的页签按钮（不存在时 null）。
+## 页签的**视觉顺序**与页面常量值顺序不同，凡是要操作某个具体页签的地方都必须走这里，
+## 不能用 `_tab_btns[PAGE_*]`（那正是 2026-09-25 修掉的下标错位 bug 的写法）。
+func _tab_btn_for(page: int) -> Button:
+	for i in _tab_btn_page.size():
+		if _tab_btn_page[i] == page:
+			return _tab_btns[i]
+	return null
 
 
 ## 该变体属于哪一页。**三种数量级不同的内容各占一页**：
@@ -362,11 +385,14 @@ func _rebuild_pages() -> void:
 	for p in _pages:
 		_page_host.add_child(p)
 	# Mod 页签的可见性：没有 Mod 就整个隐藏（不是置灰——空页签只会让人点进去看空）
-	if _tab_btns.size() > PAGE_MOD:
-		_tab_btns[PAGE_MOD].visible = not ModAPI.list_mods().is_empty()
+	# 注意用 `_tab_btn_for` 按**页面 id** 取按钮：下标代表视觉次序，两者顺序不同（见 _tab_btn_page）
+	var mod_btn := _tab_btn_for(PAGE_MOD)
+	if mod_btn != null:
+		mod_btn.visible = not ModAPI.list_mods().is_empty()
 	# 异形棋盘页签同理：一个异形关都没有就隐藏（空页签只会让人点进去看一片空白）
-	if _tab_btns.size() > PAGE_SHAPE:
-		_tab_btns[PAGE_SHAPE].visible = not _shape_levels().is_empty()
+	var shape_btn := _tab_btn_for(PAGE_SHAPE)
+	if shape_btn != null:
+		shape_btn.visible = not _shape_levels().is_empty()
 	_show_tab(_tab)
 
 
@@ -1201,7 +1227,7 @@ func _refresh_shape_body() -> void:
 	tools.add_theme_constant_override("v_separation", 10)
 	tools.alignment = FlowContainer.ALIGNMENT_CENTER
 	col.add_child(tools)
-	tools.add_child(_make_shape_back_card())
+	# 返回入口已收编到左上角「返回」键（层级返回，见 _on_back_pressed）——页内不再放返回卡。
 	# 教程入口（2026-09-23 审计补齐）：异形页是 ani_*/vg_* 这批**变体形状关**的主入口，
 	# 但此前只有模式弹窗与对局 HUD 有教程按钮——在这一页选 s2/s3/z3/dt 棋盘的玩家无处读规则。
 	tools.add_child(_make_shape_tutorial_card())
@@ -1292,27 +1318,19 @@ func _make_variant_card(v: Dictionary) -> Button:
 	return btn
 
 
-## 第二级的返回入口（同尺寸卡片，网格里不突兀）。
-func _make_shape_back_card() -> Button:
-	var btn := Button.new()
-	btn.custom_minimum_size = Vector2(CARD_W, CARD_H)
-	btn.focus_mode = Control.FOCUS_NONE
-	btn.set_meta("card_btn", true)
-	btn.set_meta("shape_back", true)
-	btn.tooltip_text = "返回变体列表"
-	btn.pressed.connect(_back_to_shape_variants)
-	_style_card(btn)
-	var lb := Label.new()
-	lb.text = "← 返回变体列表"
-	lb.add_theme_font_size_override("font_size", 15)
-	lb.add_theme_color_override("font_color", ThemeManager.text_secondary())
-	lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	lb.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	lb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	btn.add_child(lb)
-	UiTheme.bind_hover(btn, 1.03)
-	return btn
+## 左上角「返回」的统一入口（2026-09-25 用户口径）：**层级返回**。
+##
+## 层级规则：异形棋盘页第二级（正在看某个变体的棋盘列表）→ 先回第一级（变体列表）；
+## 其余情况（第一级 / 其他页）→ 退出选关页回主菜单。
+## 页内不再放「← 返回变体列表」卡片 —— 同一动作只保留一个入口，玩家不必犹豫点哪个。
+##
+## 判断里带 `_tab == PAGE_SHAPE`：玩家可能进过第二级又切去别的页签，
+## 此时返回键应按**当前页签**语义走（退出选关页），而不是莫名跳回异形的列表。
+func _on_back_pressed() -> void:
+	if _tab == PAGE_SHAPE and _shape_variant != "":
+		_back_to_shape_variants()
+		return
+	get_tree().change_scene_to_file("res://ui/main_menu.tscn")
 
 
 ## 第二级的教程入口（2026-09-23 审计补齐）：与返回卡同款卡片，点了看**当前变体**的教程。

@@ -6,11 +6,12 @@
 #
 # 本测试锁定两级契约：
 #   ① 第一级 = 变体卡片（每个可用变体一张，标题带「已通关 / 总数」）；
-#   ② 点变体 → 第二级 = 返回入口 + 该变体的全部异形棋盘卡片（**抽样实测** 3 个变体：
+#   ② 点变体 → 第二级 = 该变体的全部异形棋盘卡片（**抽样实测** 3 个变体：
 #      经典 / 一个 S 轴 / 一个 Z 轴；逐变体的完整性由数据层用例覆盖，避免每个变体都
-#      重建一次卡片墙导致用例跑上百秒）；
+#      重建一次卡片墙导致用例跑上百秒）。**页内不放返回卡**（2026-09-25 用户口径：
+#      返回入口只保留左上角「返回」键，见 test_back_button_climbs_one_level）；
 #   ③ 汇总两级的关卡归属 == res://levels/ 里全部异形关卡（不重不漏，动态扫描不写死）；
-#   ④ 返回能回到第一级。
+#   ④ 左上角返回键能在第二级回第一级（层级返回）。
 extends GutTest
 
 var _view
@@ -121,7 +122,8 @@ func test_entering_variant_lists_only_its_levels() -> void:
 		var cards := _cards("shape_path")
 		assert_eq(cards.size(), int(counts[vid]),
 			"变体 %s：第二级应有 %d 张关卡卡片（实得 %d）" % [vid, int(counts[vid]), cards.size()])
-		assert_eq(_cards("shape_back").size(), 1, "变体 %s：第二级应有且仅有一个返回卡片" % vid)
+		assert_eq(_cards("shape_back").size(), 0,
+			"变体 %s：页内不应再有返回卡片（返回已收编到左上角键，见 test_back_button_climbs_one_level）" % vid)
 		for c in cards:
 			var p := str(c.get_meta("shape_path"))
 			assert_eq(str(_expected().get(p, "MISSING")), vid,
@@ -151,6 +153,28 @@ func test_back_returns_to_variant_list() -> void:
 	assert_eq(_cards("variant_id").size(), 0, "第二级不应再有变体卡片")
 	_view._back_to_shape_variants()
 	assert_eq(_cards("variant_id").size(), before, "返回后应回到变体总览（且不残留第二级卡片）")
+
+
+## 左上角「返回」键的**层级语义**（2026-09-25 用户口径）：在第二级（某变体的棋盘列表）
+## 时先回第一级（变体列表），而不是直接退出选关页——页内返回卡片已删除，
+## 这个键是异形页两级导航的唯一返回入口。
+## 注：只在第二级调用。第一级分支是 change_scene_to_file（真切场景），测试环境不能触发。
+func test_back_button_climbs_one_level() -> void:
+	var before := _cards("variant_id").size()
+	assert_gt(before, 0, "第一级应有变体卡片")
+	# 模拟真实玩家路径：**先在异形页**（_tab == PAGE_SHAPE）才可能点进第二级。
+	# 若跳过这一步，_tab 还是默认的单项变体页，层级判断不成立（首版测试就撞在这）。
+	_view._show_tab(_view.PAGE_SHAPE)
+	assert_eq(_view._tab, _view.PAGE_SHAPE, "应已切到异形棋盘页")
+	_view._open_shape_variant("classic")
+	assert_eq(_cards("variant_id").size(), 0, "第二级不应有变体卡片")
+	# 左上角返回键存在且唯一（测试/调试用 meta 定位）
+	var found: Array = []
+	_collect(_view, "back_btn", found)
+	assert_eq(found.size(), 1, "左上角应有且仅有一个返回键")
+	_view._on_back_pressed()
+	assert_eq(_view._shape_variant, "", "第二级按返回应先回变体列表（层级返回）")
+	assert_eq(_cards("variant_id").size(), before, "返回后第一级变体卡片应恢复")
 
 
 func test_daisy_chain_is_in_classic_variant() -> void:
