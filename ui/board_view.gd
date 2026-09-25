@@ -777,6 +777,8 @@ var _touch_timer: Timer = null
 var _touch_pos := Vector2i(-1, -1)
 var _touch_long_fired := false
 var _last_touch_ms := -100000
+## 语音可用性缓存（-1 未查 / 0 无 / 1 有；见 _speak）
+var _tts_available := -1
 
 var _tex_timer: Timer = null
 ## 本帧的纹理标记与颜色：由 _draw() 开头求值一次后缓存供逐格读取。
@@ -2238,7 +2240,10 @@ func _draw_hl_polyline(pts: PackedVector2Array, taper: Array, col: Color) -> voi
 func _speak(text: String) -> void:
 	if SettingsManager == null or not SettingsManager.tts_enabled or text == "":
 		return
-	if DisplayServer.tts_get_voices().is_empty():
+	if _tts_available < 0:
+		# 语音枚举有开销，只查一次（测试/无语音环境恒为 0，之后直接短路）
+		_tts_available = 0 if DisplayServer.tts_get_voices().is_empty() else 1
+	if _tts_available == 0:
 		return
 	DisplayServer.tts_stop()      # 打断上一句：连续移动时不排队积压
 	DisplayServer.tts_speak(text, "")
@@ -2280,7 +2285,9 @@ func _handle_screen_touch(ev: InputEventScreenTouch) -> void:
 		_touch_timer.stop()
 		_touch_pos = Vector2i(-1, -1)
 		return
-	var pos := _pick(ev.position)
+	# 坐标换算：InputEventScreenTouch.position 是**屏幕坐标**（鼠标事件在 _gui_input 里
+	# 已被引擎换算成控件局部坐标，触摸没有）——减去控件原点才是 _pick 期望的局部坐标。
+	var pos := _pick(ev.position - global_position)
 	if ev.pressed:
 		if pos.x < 0:
 			_touch_pos = Vector2i(-1, -1)

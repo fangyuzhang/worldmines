@@ -313,6 +313,11 @@ func _refresh_key_rows() -> void:
 func _input(event: InputEvent) -> void:
     if _capturing_action == "":
         return
+    # 捕获期间点鼠标 = 放弃捕获（否则"点了改键又去点别处"会让下一次按键被无辜吞掉）
+    if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
+        _capturing_action = ""
+        _refresh_key_rows()
+        return
     if not (event is InputEventKey) or not event.pressed:
         return
     var kc: int = (event as InputEventKey).keycode
