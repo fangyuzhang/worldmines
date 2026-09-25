@@ -1,7 +1,12 @@
 # 交接索引（精简版）
 
-> 完整交接文档见：**`C:\Users\zjh30\Desktop\世界扫雷_Agent交接文档_v2.9.3.md`**。
+> **完整交接文档：工程内 `交接文档.md`**（现状 / 规划 / 验收标准，照它可继续推进）。
 > 本文档只放「新 Agent 上手前 30 分钟」必须知道的信息。
+>
+> ⚠️ 2026-09-26 修正：此处原指向桌面 `世界扫雷_Agent交接文档_v2.9.3.md`，
+> 但那个文件**已不在任何位置**（桌面/文档/下载/工程内/OneDrive 全无），换机接手会撞死链。
+> 现在「设计真源」由这些承担：工程内 `GDD_最终版.md`(1411 行) + `交接文档.md` + 本文，
+> 外加随备份提供的 `桌面文档\`（`UI待办.md` / `待办项.md` / 异形棋盘分析等）。
 
 ## 30 秒速览
 
@@ -10,8 +15,8 @@
 | 项目 | 世界扫雷（15 变体 + 绘画 + 自举式 Mod 平台） |
 | 引擎 | Godot 4.7.2 **.NET(mono)** + GDScript/C# 混合（OR-Tools 9.15 CP-SAT） |
 | 主场景 | `res://ui/main_menu.tscn` |
-| 版本控制 | **git（`main`）+ 远端备份**（工程外裸仓库 `C:\Users\zjh30\worldmines_git_backup\worldmines.git`）。改完 `git push origin main` |
-| 测试 | GUT，**unit 701 用例全绿 + UI 171 用例全绿（5 pending=probe40 未生成）**（2026-09-22 形状库接线后基线） |
+| 版本控制 | **git（`main`，307 提交）+ 双备份**：工程外裸仓库 `C:\Users\zjh30\worldmines_git_backup\worldmines.git`（改完 `git push origin main`）+ U 盘 `世界扫雷_备份_2026-09-25\project\`，三者同 hash |
+| 测试 | GUT 全量（unit+ui+integration）：**941 用例 / 940 通过 / 1 pending / 0 失败**（2026-09-26 基线）。<br>此前写的「unit 701 + UI 171 全绿、5 pending」已过期。那 1 个 pending 是 `test_variant_levels_solvable.gd` 的**有意占位**，不是故障 |
 | Mod 平台 | 单一 ModAPI（Def 数据包 / GDScript 代码 Mod / wasm Mod 三条创作路径） |
 
 ## 跑起来（必须先装 .NET 版 Godot）
