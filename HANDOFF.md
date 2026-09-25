@@ -82,6 +82,12 @@ dotnet build
 | **四族铺装几何 / 异形×变体产关** | `tools/gen_geo_levels.gd`（SPECS 里加一行即多一关）；几何内核在 `core/shape_generator.gd` 的 `build_from_cells` 之后 |
 | 异形页有哪些关 | `ui/level_select.gd::_shape_levels()`：扫 `res://levels/*.json`，**判据 = 含非空 topology 字段**（不维护白名单，新族自动进页） |
 | 绘画 | `ui/drawing_layer.gd` |
+| **对局快捷键（绑定 / 重绑）** | `ui/settings_manager.gd`（`DEFAULT_KEYS` 默认表 / `key_bindings` 玩家覆盖 / `key_for()` / `RESERVED_KEYS` 保留键）+ `ui/board_view.gd::_unhandled_key_input`（**一律查表，禁止再硬编码 `KEY_*`**）+ 设置页「按键」分区（`ui/settings_panel.gd::_build_keys_page`） |
+| **触摸手势** | `ui/board_view.gd::_handle_screen_touch()` / `_on_touch_long_press()`（短按翻开、**长按 0.4s 插旗**、拖动取消；触摸后 350ms 内的**模拟鼠标事件必须吞掉**，见坑表 #43） |
+| **语音播报（无障碍）** | `ui/settings_manager.gd::tts_enabled` + `ui/board_view.gd::_speak()` / `_announce_cursor()`。**只播玩家可见状态**（数字/空白/旗/问号，星号与遮蔽格如实区分），**不得泄露雷位** —— 与 R01 同一红线 |
+| **浮动弹窗外壳（选关页）** | `ui/level_select.gd::_build_popup_shell()`（模式弹窗与异形弹窗**共用同一套** `_overlay`/`_popup`/`_popup_closing`）；异形页第二级已改弹窗，见「UI / 交互与无障碍」节 |
+| **对比度 / 取色** | `ui/theme_manager.gd`：`board_grid()`（棋盘格线；深色底必须用**浅色线**，加深无效）/ `danger_text()`（文字版危险色；图形填充仍用 `danger()`） |
+| **无猜守卫缓存** | `ui/no_guess_guard.gd`（**信号驱动失效**：挂 `Board.cell_state_changed`，覆盖 reveal/插旗/问号/星号/undo/引爆；**不要改回全盘哈希遍历**，见坑表 #44） |
 
 ## 异形棋盘（形状族，2026-09-22）
 
@@ -641,6 +647,64 @@ func on_load() -> bool:
    矩形路径（`draw_rect`）不受影响。**`test_shape_tilings.gd` 的 `_vkey` 已同步升到 1e-7**——
    今后再动几何落盘精度或生成公式，先跑这个测试；它红了大概率是几何又分裂，不是测试过严。
    截图核验口径：全图孤立背景缝像素应为 0（HUD 文字的 2 个是固有杂点，与棋盘无关）。
+
+
+40. **`ConfigFile` 的两个 API 陷阱**（2026-09-25 踩到，测试当场抓出）：
+   ① Godot 4 **没有** `remove_section`（只有 `erase_section`）——凭记忆写会直接 `Invalid call`。
+   ② `erase_section(section)` 在该 section **不存在时会断言报错**（`Condition "!values.has(p_section)"`）。
+   而 `SettingsManager.save()` 里的 `cfg` 是**新建**对象、只写当前字段——本来就不存在"残留旧键"
+   这回事，所以清空是多余的。结论：**save 里只 set_value，不要 erase**（`set_value` 会自动建 section）。
+
+41. **测试会写真实的 `user://settings.cfg`**（2026-09-25 发现）：GUT 跑 UI 测试会实例化
+   `board_view` / 设置面板，任何「自动 set + save」的代码都会**把测试值写进玩家配置**。
+   典型受害者是「首次引导只弹一次」这类持久化标记 —— 跑一次测试，玩家真机上就再也不弹了。
+   本项目的处置：首次引导在 **headless 下不弹也不置位**（`DisplayServer.get_name() != "headless"`）。
+   新增同类「一次性标记」时照此办理；设置类测试则沿用 `test_settings_grouping.gd` 的
+   「before_each 快照 / after_each 还原」写法。
+
+42. **初始化代码别写在 `_exit_tree()` 里**（2026-09-25 修的历史 bug）：
+   `board_view` 曾把 `viewport.size_changed.connect()` 与首次 `_layout()` 放在 `_exit_tree()`，
+   结果这个连接**从不生效**（进场时没人连，退出时才连给一个正在销毁的节点）——
+   表现为拖动/最大化窗口后棋盘不重排。现在连在 `_ready()`、`_exit_tree()` 只做 disconnect。
+   凡是「连接信号 / 初始化布局」都应出现在 `_ready()` 或 `_enter_tree()`。
+
+43. **触摸坐标是屏幕坐标，不是控件局部坐标**（2026-09-25）：
+   `InputEventScreenTouch.position` 在**屏幕/viewport** 空间；而 `_gui_input` 里的鼠标事件
+   `position` 被引擎换算成了控件局部坐标。所以触摸要走 `_pick(ev.position - global_position)`。
+   board_view 恰好铺满视口（减 0 结果相同），靠巧合正确——换个有偏移的控件就会错位。
+
+44. **无猜守卫别改成「全盘哈希判缓存是否过期」**（2026-09-25 重写）：
+   旧实现每次调用都全盘遍历算哈希（O(格数)），且盘面一变就触发一次全盘 CP-SAT ——
+   「无猜-专家」档下**每翻一格**都付这两笔钱（chord 还会逐格调用 reveal），大盘上表现为
+   「点了没反应」。现改为挂 `Board.cell_state_changed`（已逐点核对覆盖全部影响玩家可见信息的
+   变更点：reveal / 插旗 / 问号 / **星号** / undo 恢复 / 引爆）。想再优化只能做**求解器线程安全**
+   专项（C# 侧静态缓存与并发状态需先审计），不要顺手把计算丢进 WorkerThreadPool。
+
+
+## UI / 交互与无障碍（2026-09-25 现状）
+
+> 这一节记录 2026-09-24 ~ 09-25 的交互/UX 专项成果。**改交互前先读**，避免把已定的口径改回去。
+
+**选关页交互统一**：异形棋盘页原先是「页内切到第二级」，与单项/混合/Mod 三页的「点卡片弹浮动弹窗」
+是两套交互。现已统一为**浮动弹窗**（`_build_popup_shell()` 共用外壳：同样的遮罩/标题栏/✕/入场动画，
+关闭方式 = ✕ / 点外部 / **ESC**）。左上角「返回」恢复单一语义（退出选关页），不再有页内返回卡。
+
+**可访问性三项**：
+- **按键重绑定**：11 个动作可在设置页改；方向键/回车/Home-End-PageUp-Down 是**保留键**（始终硬编码可用，
+  不可被占用）——保证改键后导航能力不丢。
+- **触摸**：短按翻开、长按 0.4s 插旗、拖动取消、插旗时震动反馈。
+- **语音播报**：`tts_enabled`（默认关）开启后，键盘操作播报光标格的玩家可见状态。
+
+**对比度**：棋盘格线走 `ThemeManager.board_grid()`（深色底用**浅色线**——黑色线在深底上再加深
+也只有 ≈1.3:1，达不到 WCAG 非文本的 3:1）；文字场景用 `danger_text()`（≈6:1），图形填充仍用 `danger()`。
+
+**几个不该退回的口径**：
+- toast 默认**中性色**（`danger` 默认 false），只有真错误显式传 `true`——颜色是语义信号，滥用就没信号。
+- HUD 顶栏写「**剩余**雷数」（= 总雷数 − 已插旗）；为负时注明「旗标多了」，分色面板同口径（不再 clamp 到 0）。
+- 分页圆点（14×14）刻意 `FOCUS_NONE`——Tab 在小点上停留是打扰。
+- 重开确认：暂停态**也要确认**（曾因 `state != PLAYING` 短路而完全不弹，一次误点丢整局）。
+
+**已知未做**：无猜求解的后台线程化（见坑表 #44，属求解器线程安全专项，不是顺手能改）。
 
 
 ## 接手后第一步
