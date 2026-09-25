@@ -36,6 +36,57 @@ dotnet build
 
 ⚠️ **不要用 Steam 版 Godot**（只有非 .NET 版，C# 编译不过）。
 
+## 导出 exe（发布用；2026-09-25 全流程实测通过）
+
+### 前置：装导出模板（一次性，不在项目里）
+
+导出模板在本机 `%APPDATA%\Godot\export_templates\<版本>\`，**不随项目走**。
+本项目需要 **.NET 版**模板（标准版不含 C# 支持），版本目录名必须是 `4.7.2.stable.mono`
+（等于模板包内 `version.txt` 的内容）：
+
+- 编辑器里装：编辑器菜单 → 管理导出模板 → 下载并安装（约 1.15 GB）
+- 网络受限时：U 盘备份里带了整份模板（`godot_export_templates\4.7.2.stable.mono\`），
+  整个目录拷到 `%APPDATA%\Godot\export_templates\` 即可，无需下载
+
+### 导出命令
+
+```powershell
+$GODOT = "D:\Godot.NET\Godot_v4.7.2-stable_mono_win64\Godot_v4.7.2-stable_mono_win64_console.exe"
+cd "C:\Users\zjh30\CodeBuddy\20260906184916"
+
+& $GODOT --headless --path . --import          # 先刷新导入（新增资源后必跑）
+& $GODOT --headless --path . --export-release "Windows Desktop" "..\builds\世界扫雷.exe"
+```
+
+产物 = `世界扫雷.exe`（约 180 MB）+ 3 个依赖 DLL（`godot-wasm.dll`、
+`libgodotsteam.windows.template_release.x86_64.dll`、`steam_api64.dll`），
+引擎会自动放到同一目录。**分发时整个 `builds\` 目录一起给**——缺 DLL 起不来。
+
+### ⚠️ 坑 1：预设名含空格，用 Start-Process 会传错
+
+```powershell
+Start-Process ... -ArgumentList '--export-release','Windows Desktop', $exe   # ❌
+# Godot 实际收到 "Windows" → ERROR: Invalid export preset name: Windows.
+```
+
+`Start-Process -ArgumentList` 按空格拆参，必须再套一层引号（`'"Windows Desktop"'`）；
+**更省事的是用 `&` 调用操作符**（如上例，PowerShell 会正确按数组传参）。
+2026-09-25 实测因这个坑白等 12 分钟（跑到导出阶段才报错）。
+
+### ⚠️ 坑 2：导出版必须**实际运行**验收，别只看「文件已生成」
+
+导出版与编辑器态存在真实行为差异。2026-09-25 实测：导出版启动刷 20+ 条
+「内置算子 Mod 安装失败」，**全部内置 Mod 装不上 ⇒ 顶级模式全废**，
+而编辑器里一切正常。根因是 pck 内脚本被编译成 `.gdc`，而安装流程用
+`FileAccess` 检查/复制 `entry.gd`（该路径在 pck 里恒不存在）。
+已修：导出版跳过拷贝、直接从 `res://` 加载（`core/mod_api.gd` 的
+`_bootstrap_bundled_from_pack`）。
+
+```powershell
+& "..\builds\世界扫雷.exe" --headless --quit-after 300
+# 期望输出只有一行引擎版本（Godot Engine v4.7.2.stable.mono.official...）：零警告零错误
+```
+
 ## 目录速记（平铺，非子目录）
 
 | 目录 | 放什么 |
@@ -751,4 +802,8 @@ GDD §10.1 档位校正为 **3 档**并补上「规划容量 vs 代码可达」�
 5. **改生成器前先读本文「生成器能力边界」章节**（含实测耗时与 O(n²) 根因），避免重复踩大盘性能坑。
 6. 跑 `test_mod_topology.gd` + `test_mod_api.gd` 理解 Mod 创作契约（`board.json` 任意形状 / 三种 Mod 形式）。
 7. 跑 `test_difficulty.gd` + `test_difficulty_tiers.gd` 理解难度体系（必要线索数复杂度 / 三档分档）。
-8. 补 git 首次提交（当前无版本控制，见开放问题 #1）。
+8. **git 已就位**（2026-09-25 更新；此前「当前无版本控制」的说法已过期）：306 个提交，
+   工作区干净，本地 / 镜像仓库（`C:\Users\zjh30\worldmines_git_backup\worldmines.git`）/
+   U 盘备份三者同 hash。接手时先 `git log --oneline -5` 对齐进度。
+   ⚠️ 写提交信息**不要用 PowerShell 脚本**（BOM/GBK 会把中文写成乱码，历史上有 11 条乱码提交，
+   已重写修正）——用 python 写 msg 文件 + `git commit -F`，或直接命令行传中文。
