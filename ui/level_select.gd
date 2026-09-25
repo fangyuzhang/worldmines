@@ -265,7 +265,7 @@ func _build_ui() -> void:
 	# （左上角 + 页内卡片）会让人犹豫点哪个；统一由左上角承担后退语义后，页内不再放返回卡。
 	var back := Button.new()
 	back.text = "返回"
-	back.focus_mode = Control.FOCUS_NONE
+	back.focus_mode = Control.FOCUS_ALL
 	back.custom_minimum_size = Vector2(96, 42)
 	back.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
 	back.offset_left = 24
@@ -287,7 +287,7 @@ func _build_ui() -> void:
 	for spec in [["单项变体", PAGE_SINGLE], ["混合档", PAGE_MIXED], ["异形棋盘", PAGE_SHAPE], ["Mod", PAGE_MOD]]:
 		var b := Button.new()
 		b.text = str(spec[0])
-		b.focus_mode = Control.FOCUS_NONE
+		b.focus_mode = Control.FOCUS_ALL
 		b.custom_minimum_size = Vector2(148, 42)
 		# 选中态由 _style_choice 负责；打标记让 _apply_theme 不要把它刷回默认按钮样式
 		b.set_meta("choice_btn", true)
@@ -450,7 +450,7 @@ const CARD_H := 104
 func _make_card(mode_idx: int, m: Dictionary) -> Button:
 	var btn := Button.new()
 	btn.custom_minimum_size = Vector2(CARD_W, CARD_H)
-	btn.focus_mode = Control.FOCUS_NONE
+	btn.focus_mode = Control.FOCUS_ALL
 	btn.tooltip_text = _card_tooltip(m)
 	btn.set_meta("card_btn", true)
 	btn.pressed.connect(_open_popup.bind(mode_idx))
@@ -555,7 +555,7 @@ func _build_mixed_page() -> Control:
 	for spec in [["C 类 · 结构×观测", 0], ["F 类 · 结构×结构", 1], ["T4 · 叠加守恒", 2]]:
 		var b := Button.new()
 		b.text = str(spec[0])
-		b.focus_mode = Control.FOCUS_NONE
+		b.focus_mode = Control.FOCUS_ALL
 		b.custom_minimum_size = Vector2(184, 36)
 		b.pressed.connect(_on_mixed_switch.bind(int(spec[1])))
 		bar.add_child(b)
@@ -943,7 +943,7 @@ func _mod_level_buttons(mod_id: String) -> Control:
 		var b := Button.new()
 		b.text = str(p.get_file().get_basename())
 		b.custom_minimum_size = Vector2(140, 40)
-		b.focus_mode = Control.FOCUS_NONE
+		b.focus_mode = Control.FOCUS_ALL
 		b.tooltip_text = "直接开始这一关\n%s" % p
 		b.set_meta("mod_level_btn", true)
 		_style_card(b)
@@ -957,7 +957,7 @@ func _mod_level_buttons(mod_id: String) -> Control:
 ## 异形或损坏关卡会被 LevelLoader 拒绝 → 只提示、不切场景（避免进了棋盘才发现是坏档）。
 func _open_mod_level(path: String) -> void:
 	if not GameSession.start_level(path):
-		UiToast.popup(self, "关卡加载失败：%s" % path.get_file())
+		UiToast.popup(self, "关卡加载失败：%s" % path.get_file(), true)
 		return
 	get_tree().change_scene_to_file("res://ui/board_view.tscn")
 
@@ -1238,7 +1238,7 @@ func _make_tier_header(tier: String, count: int) -> Control:
 func _make_variant_card(v: Dictionary) -> Button:
 	var btn := Button.new()
 	btn.custom_minimum_size = Vector2(CARD_W, CARD_H)
-	btn.focus_mode = Control.FOCUS_NONE
+	btn.focus_mode = Control.FOCUS_ALL
 	btn.set_meta("card_btn", true)
 	btn.set_meta("variant_id", str(v["id"]))       # 测试 / 调试可据此定位变体
 	var total := int(v["levels"])
@@ -1359,7 +1359,7 @@ func _fill_shape_popup_col(col: VBoxContainer, vid: String) -> void:
 func _make_shape_card(info: Dictionary) -> Button:
 	var btn := Button.new()
 	btn.custom_minimum_size = Vector2(CARD_W, CARD_H)
-	btn.focus_mode = Control.FOCUS_NONE
+	btn.focus_mode = Control.FOCUS_ALL
 	btn.set_meta("card_btn", true)
 	btn.set_meta("shape_path", str(info["path"]))   # 测试 / 调试可据此定位关卡
 	var desc_txt := str(info["desc"])
@@ -1422,7 +1422,7 @@ func _open_shape_level(path: String) -> void:
 		get_tree().change_scene_to_file("res://ui/board_view.tscn")
 	else:
 		# 异形或损坏关卡会被 LevelLoader 拒绝 → 只提示、不切场景（避免进了棋盘才发现坏档）
-		UiToast.popup(self, "关卡加载失败：%s" % path.get_file())
+		UiToast.popup(self, "关卡加载失败：%s" % path.get_file(), true)
 
 
 func _style_card(btn: Button) -> void:
@@ -1545,12 +1545,18 @@ func _build_popup_shell(title: String, tutorial_id: String) -> Control:
 			_close_popup())
 	_overlay.add_child(shade)
 
-	# 弹窗主体（固定尺寸）
+	# 弹窗主体（2026-09-25：尺寸随**视口**收缩，不再硬编码 POPUP_SIZE）。
+	# 背景：界面缩放 125%/150% 时 content 空间只有 1024×576 / 853×480，而弹窗是 1040×640
+	# —— 溢出屏幕、底部按钮点不到（审计确认）。用视口的 92% 作上限，正常尺寸下与原来一致。
+	var vp_size := get_viewport_rect().size
+	var psize := Vector2(
+		minf(POPUP_SIZE.x, vp_size.x * 0.92),
+		minf(POPUP_SIZE.y, vp_size.y * 0.92))
 	_popup = PanelContainer.new()
-	_popup.custom_minimum_size = POPUP_SIZE
+	_popup.custom_minimum_size = psize
 	_popup.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	_popup.position = -POPUP_SIZE * 0.5
-	_popup.pivot_offset = POPUP_SIZE * 0.5
+	_popup.position = -psize * 0.5
+	_popup.pivot_offset = psize * 0.5
 	_overlay.add_child(_popup)
 
 	var root := VBoxContainer.new()
@@ -1577,7 +1583,7 @@ func _build_popup_shell(title: String, tutorial_id: String) -> Control:
 	# 模式弹窗不一致；现在两种弹窗的教程入口都在标题栏同一位置）。
 	var tut := Button.new()
 	tut.text = "教程"
-	tut.focus_mode = Control.FOCUS_NONE
+	tut.focus_mode = Control.FOCUS_ALL
 	tut.custom_minimum_size = Vector2(72, 40)
 	tut.set_meta("std_btn", true)
 	tut.set_meta("popup_tutorial", tutorial_id)   # 测试 / 调试可据此定位当前看谁的教程
@@ -1588,7 +1594,7 @@ func _build_popup_shell(title: String, tutorial_id: String) -> Control:
 
 	var close := Button.new()
 	close.text = "✕"
-	close.focus_mode = Control.FOCUS_NONE
+	close.focus_mode = Control.FOCUS_ALL
 	close.custom_minimum_size = Vector2(40, 40)
 	close.set_meta("std_btn", true)
 	close.pressed.connect(_close_popup)
@@ -1658,7 +1664,7 @@ func _build_left(parent: Node) -> void:
 		var s: int = SIZES[i]
 		var b := Button.new()
 		b.text = "%d×%d" % [s, s]
-		b.focus_mode = Control.FOCUS_NONE
+		b.focus_mode = Control.FOCUS_ALL
 		b.custom_minimum_size = Vector2(104, 40)
 		b.pressed.connect(_on_size_selected.bind(i))
 		size_bar.add_child(b)
@@ -1703,7 +1709,7 @@ func _build_tier_col() -> void:
 	_tier_col.add_child(cap)
 	for t in LevelLibrary.TIER_ORDER:
 		var b := Button.new()
-		b.focus_mode = Control.FOCUS_NONE
+		b.focus_mode = Control.FOCUS_ALL
 		b.custom_minimum_size = Vector2(120, 54)
 		b.clip_text = true
 		b.set_meta("choice_btn", true)
@@ -1770,7 +1776,7 @@ func _build_right(parent: Node) -> void:
 
 	_play_btn = Button.new()
 	_play_btn.custom_minimum_size = Vector2(0, 54)
-	_play_btn.focus_mode = Control.FOCUS_NONE
+	_play_btn.focus_mode = Control.FOCUS_ALL
 	_play_btn.set_meta("std_btn", true)
 	_play_btn.pressed.connect(_on_play)
 	vbox.add_child(_play_btn)
@@ -1920,7 +1926,7 @@ func _rebuild_grid() -> void:
 func _make_tile(idx: int) -> Button:
 	var btn := Button.new()
 	btn.custom_minimum_size = TILE
-	btn.focus_mode = Control.FOCUS_NONE
+	btn.focus_mode = Control.FOCUS_ALL
 	var unlocked := _is_unlocked(idx)
 	var cleared := _is_cleared(_level_key(idx))
 	# 跳过态必须与「已通关 ✓」区分：玩家看到「第 2 关没打勾却能进第 3 关」
@@ -1961,7 +1967,7 @@ func _rebuild_dots() -> void:
 	for i in n:
 		var d := Button.new()
 		d.custom_minimum_size = Vector2(14, 14)
-		d.focus_mode = Control.FOCUS_NONE
+		d.focus_mode = Control.FOCUS_ALL
 		d.pressed.connect(_go_page.bind(i))
 		_style_dot(d, i == _page)
 		_dots_box.add_child(d)
@@ -2143,7 +2149,7 @@ func _on_play() -> void:
 				_play_btn.disabled = false
 				_refresh_stat()
 			UiToast.popup(self, "关卡数据缺失（%s 档第 %d 关）" % [
-					_tier_text(_tier), _selected + 1])
+					_tier_text(_tier), _selected + 1], true)
 			return
 		if _try_resume_saved(lp):
 			return
@@ -2153,7 +2159,7 @@ func _on_play() -> void:
 		if is_instance_valid(_play_btn):
 			_play_btn.disabled = false
 			_refresh_stat()
-		UiToast.popup(self, "关卡加载失败")
+		UiToast.popup(self, "关卡加载失败", true)
 		return
 	_play_btn.disabled = true
 	_play_btn.text = "校验中…"
@@ -2164,7 +2170,7 @@ func _on_play() -> void:
 	if int(rr["mines"]) < 0:
 		_play_btn.disabled = false
 		_refresh_stat()
-		UiToast.popup(self, "该变体在 %d×%d 的全部候选雷数下数学无解——请换尺寸或换变体" % [s, s])
+		UiToast.popup(self, "该变体在 %d×%d 的全部候选雷数下数学无解——请换尺寸或换变体" % [s, s], true)
 		return
 	# 候选雷数回退提示（非阻断 toast，GDD 终版 §8.1 口径）：标准雷数与守恒算子互斥时，
 	# 生成器自动改用候选列表下一项——明确告知玩家，不打断流程。
@@ -2176,7 +2182,7 @@ func _on_play() -> void:
 	if not pre["ok"]:
 		_play_btn.disabled = false
 		_refresh_stat()
-		UiToast.popup(self, str(pre["reason"]))
+		UiToast.popup(self, str(pre["reason"]), true)
 		return
 	# 2) 组合可行，进入生成。
 	#    生成是同步阻塞的（CP-SAT 全管线单次调用不可中断），原先只能干等到它跑完——
@@ -2198,7 +2204,7 @@ func _on_play() -> void:
 	else:
 		_play_btn.disabled = false
 		_refresh_stat()
-		UiToast.popup(self, "关卡加载失败")
+		UiToast.popup(self, "关卡加载失败", true)
 
 
 ## 自动续档：存档存在、未终局、level_path 与本关一致、且本关尚未通关 → 恢复并进对局。
@@ -2341,7 +2347,7 @@ func _open_gen_dialog(side: int) -> PopupPanel:
 
 	var cancel := Button.new()
 	cancel.text = "取消"
-	cancel.focus_mode = Control.FOCUS_NONE
+	cancel.focus_mode = Control.FOCUS_ALL
 	cancel.custom_minimum_size = Vector2(0, 44)
 	cancel.pressed.connect(func():
 		_gen_cancel = true

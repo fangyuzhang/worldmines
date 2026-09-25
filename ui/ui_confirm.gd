@@ -45,8 +45,17 @@ static func ask(parent: Node, text: String, ok_text: String, cancel_text: String
 ## v3.3：本关有绘画草稿时提示「草稿也会被清除」；「不再提示」勾选后持久化，
 ## 此后重开直接执行（不再弹任何确认）。
 static func confirm_restart(parent: Node, on_ok: Callable) -> void:
-	if GameSession.state != GameSession.State.PLAYING or GameSession.elapsed < TRIVIAL_SEC:
-		on_ok.call()
+	# 2026-09-25 修 bug：原条件是 `state != PLAYING or elapsed < 5s` —— 而暂停菜单里
+	# state 恒为 PAUSED ≠ PLAYING ⇒ 第一个条件即真 ⇒ **暂停中重开从不弹确认**
+	# （一次误点丢整局），与「重开需确认」的初衷自相矛盾。
+	# 现在只按「本局太短（没什么可丢）」免确认；PAUSED 与 PLAYING 一律走确认。
+	# ENDED/IDLE 仍在外面被挡（终局页有它自己的流程，不该弹这个框）。
+	if GameSession.state == GameSession.State.PLAYING or GameSession.state == GameSession.State.PAUSED:
+		if GameSession.elapsed < TRIVIAL_SEC:
+			on_ok.call()               # 本局刚开始（没什么可丢）：不打扰
+			return
+	else:
+		on_ok.call()                   # ENDED / IDLE：不该弹「重开本关」确认
 		return
 	if SettingsManager != null and not SettingsManager.restart_confirm:
 		on_ok.call()

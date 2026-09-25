@@ -11,6 +11,8 @@ const RESIZE_MARGIN := 18
 const MIN_FONT := 12
 const MAX_FONT := 32
 const GHOST_AFTER_MS := 5000
+## 无痕态顶部唤醒热区的高度（无痕态文字区点击穿透，这块窄条保留「点一下唤醒」的入口）。
+const GHOST_GRIP_H := 8
 
 var _panel: PanelContainer
 var _content: RichTextLabel
@@ -19,6 +21,7 @@ var _font_label: Label
 var _btn_close: Button
 var _btn_dec: Button
 var _btn_inc: Button
+var _ghost_grip: Control
 var _title_bar: Control
 var _sep1: HSeparator
 var _sep2: HSeparator
@@ -61,6 +64,19 @@ func _build() -> void:
 	_panel.add_child(v)
 
 	# 标题栏（拖拽手柄，无痕态隐藏）
+	# 无痕态唤醒热区（2026-09-25）：无痕态下文字区改为**点击穿透**（否则浮窗压在盘上时
+	# 那块区域点不动，且因点不动就触发不了「盘面变化清除浮窗」，形成自锁死区——审计发现）。
+	# 但穿透会失去「点文字唤醒」这条路，所以顶部留一条极窄热区：点它 = 唤醒。
+	_ghost_grip = Control.new()
+	_ghost_grip.custom_minimum_size = Vector2(0, GHOST_GRIP_H)
+	_ghost_grip.mouse_filter = Control.MOUSE_FILTER_STOP
+	_ghost_grip.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	_ghost_grip.tooltip_text = "点击唤醒提示窗（可拖动 / 调字体）"
+	_ghost_grip.gui_input.connect(func(ev: InputEvent):
+		if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT and ev.pressed:
+			_set_ghost(false))
+	v.add_child(_ghost_grip)
+
 	_title_bar = Control.new()
 	_title_bar.custom_minimum_size = Vector2(0, TITLE_H)
 	_title_bar.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -141,7 +157,7 @@ func show_hint(steps: Array) -> void:
 	if steps.is_empty():
 		_content.text = _empty_hint_text()
 	else:
-		var mine_hex := _hex(ThemeManager.danger())
+		var mine_hex := _hex(ThemeManager.danger_text())   # 文字场景用提亮版（WCAG AA 对比）
 		var safe_hex := _hex(ThemeManager.safe())
 		var parts: Array[String] = []
 		parts.append("[b]当前可 100% 确定的推理[/b]")
@@ -236,6 +252,11 @@ func _set_ghost(g: bool) -> void:
 			n.visible = not g
 	if _content != null:
 		_content.scroll_active = not g
+		# 无痕态：文字区**穿透**（点击落到棋盘上）；唤醒态：恢复接收（可选中/复制文本）。
+		# 上一行热区负责无痕态的唤醒入口（见 _build 里 _ghost_grip 的注释）。
+		_content.mouse_filter = Control.MOUSE_FILTER_IGNORE if g else Control.MOUSE_FILTER_STOP
+	if _ghost_grip != null:
+		_ghost_grip.visible = g
 	_apply_theme()
 
 

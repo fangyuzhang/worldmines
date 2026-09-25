@@ -24,6 +24,10 @@ var drawing_in_save: bool = true
 var active_skin: String = ""      # 激活的皮肤 id（"" = 内置主题）
 # 提示浮动窗口（HintPanel）：位置 / 大小 / 字体大小
 var hint_font_size: int = 16
+## 是否已经看过「首次入局引导」（2026-09-25 无障碍/引导审计）：新玩家此前没有任何
+## 上手提示 —— 左键翻格 / 右键插旗只写在教程文件里，要玩家主动去点才发现。
+## 只弹一次，弹过即置 true 持久化。
+var seen_play_hint: bool = false
 var hint_window_pos: Vector2 = Vector2.ZERO
 var hint_window_size: Vector2 = Vector2(320, 200)
 # 提示三档（对齐对标游戏 doc10 §3.2）：
@@ -103,6 +107,7 @@ func load_cfg() -> void:
     drawing_in_save = _get_bool(cfg, "drawing_in_save", true)
     active_skin = _get_str(cfg, "active_skin", "")
     hint_font_size = int(cfg.get_value("game", "hint_font_size", 16))
+    seen_play_hint = _get_bool(cfg, "seen_play_hint", false)
     hint_window_pos = cfg.get_value("game", "hint_window_pos", Vector2.ZERO)
     hint_window_size = cfg.get_value("game", "hint_window_size", Vector2(320, 200))
     hint_mode = clampi(int(cfg.get_value("game", "hint_mode", 0)), 0, 2)
@@ -143,6 +148,7 @@ func save() -> void:
     cfg.set_value("game", "drawing_in_save", drawing_in_save)
     cfg.set_value("game", "active_skin", active_skin)
     cfg.set_value("game", "hint_font_size", hint_font_size)
+    cfg.set_value("game", "seen_play_hint", seen_play_hint)
     cfg.set_value("game", "hint_window_pos", hint_window_pos)
     cfg.set_value("game", "hint_window_size", hint_window_size)
     cfg.set_value("game", "hint_mode", hint_mode)
@@ -186,6 +192,12 @@ func set_autosave_enabled(v: bool) -> void:
 
 func set_keyboard_enabled(v: bool) -> void:
     keyboard_enabled = v
+    save()
+    settings_changed.emit()
+
+
+func set_seen_play_hint(v: bool) -> void:
+    seen_play_hint = v
     save()
     settings_changed.emit()
 
@@ -343,4 +355,8 @@ func _apply_window_mode() -> void:
         DisplayServer.WINDOW_MODE_FULLSCREEN if fullscreen else DisplayServer.WINDOW_MODE_WINDOWED
     )
     win.mode = Window.MODE_FULLSCREEN if fullscreen else Window.MODE_WINDOWED
+    # 最小窗口尺寸（2026-09-25 审计）：此前没有下限 —— 窗口可缩到任意小，棋盘格随之
+    # 缩到 20px 级、HUD 按钮被推出屏外。1024×576 = 设计分辨率 1280×720 的 80%，
+    # 是「9×9 棋盘 + 顶栏 + 底栏」的实测下限。仅窗口模式生效（全屏无意义）。
+    win.min_size = Vector2i.ZERO if fullscreen else Vector2i(1024, 576)
     _apply_content_scale()  # mode 切换后再设一次，避免被 reset

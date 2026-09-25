@@ -183,6 +183,25 @@ func accent() -> Color:
 func danger() -> Color:
     return _active.get("danger", _DARK.danger)
 
+
+## 危险色的**文字**版本（2026-09-25 无障碍审计）：原 danger(#C0504D) 作 18px 正文压在
+## 深色底上只有 ≈3.55:1，达不到 WCAG AA 的 4.5:1。文字场景一律用这个（提亮后 ≈6:1）；
+## 图形填充（旗子 / 危险格 / 雷 / 引爆高亮）继续用 danger()——那里门槛是 3:1，原标题色够用。
+func danger_text() -> Color:
+    return danger().lightened(0.30)
+
+
+## 棋盘格线专用色（2026-09-25 无障碍审计）。
+##
+## 通用 `grid_line()` 是 0.20 alpha 的柔和描边，服务卡片边框；但棋盘的**相邻同色格之间
+## 只靠这条线分隔** —— 0.20 压在深色底上只有 ≈1.2:1（WCAG 非文本对比要求 ≥3:1），
+## 低视力玩家在一个 9×9 灰盘上看不出格子边界（审计确认）。
+##
+## 关键点：深色底上**不能靠加深**来提对比（黑线再黑也只到 1.3:1），必须换**浅色线**。
+## 此函数只被棋盘格线使用，卡片边框仍走 grid_line，整体视觉风格不大改。
+func board_grid() -> Color:
+    return Color(1, 1, 1, 0.34) if mode == "dark" else Color(0, 0, 0, 0.42)
+
 ## 提示「必安全」高亮色（§8.4 扩展：提示系统用色）
 func safe() -> Color:
     return _active.get("safe", _DARK.safe)

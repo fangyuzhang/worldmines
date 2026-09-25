@@ -14,8 +14,13 @@ const DEFAULT_TTL := 2.0
 
 ## 弹出一条提示。返回创建的 Label（一般无需使用）。
 ## parent 必须已在场景树中（需要 SceneTree 计时器）。
-## danger=true → 危险/错误色；false → 普通文本色。
-static func popup(parent: Node, msg: String, danger: bool = true) -> Label:
+## danger=true → 危险/错误色；false（默认）→ 普通文本色。
+##
+## 2026-09-25 审计：默认值原为 `true`，于是「已取消生成」「已清除」这类**中性信息**
+## 被一律染成危险红 —— 颜色是语义信号，滥用就没信号了。现改为默认中性，
+## 只有真错误（加载失败 / 数据缺失 / 不可行）才显式传 true。
+## ttl：停留秒数（默认 2s；首局引导这类「要读完的信息」传更长）。
+static func popup(parent: Node, msg: String, danger: bool = false, ttl: float = DEFAULT_TTL) -> Label:
 	if parent == null or not parent.is_inside_tree():
 		return null
 	var lb := Label.new()
@@ -34,13 +39,14 @@ static func popup(parent: Node, msg: String, danger: bool = true) -> Label:
 	lb.custom_minimum_size = Vector2(0, 32)
 	parent.add_child(lb)
 	if ThemeManager != null:
+		# 文字用 danger_text()（提亮版，对比 ≈6:1 达 WCAG AA）；图形填充才用 danger()
 		lb.add_theme_color_override("font_color",
-				ThemeManager.danger() if danger else ThemeManager.text())
+				ThemeManager.danger_text() if danger else ThemeManager.text())
 	# 定时器挂在 toast 自己身上：随它一起释放。
 	# 不要写成 create_timer(n).timeout.connect(lambda 捕获 lb) —— 场景切换后 lb 先被释放，
 	# 2 秒后定时器回调会报「Lambda capture ... was freed」（实测在 GUT 里复现）。
 	var timer := Timer.new()
-	timer.wait_time = DEFAULT_TTL
+	timer.wait_time = maxf(ttl, 0.5)
 	timer.one_shot = true
 	lb.add_child(timer)
 	timer.timeout.connect(lb.queue_free)

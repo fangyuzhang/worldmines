@@ -10,6 +10,7 @@ var _undo_btn: Button
 var _next_btn: Button
 var _skip_btn: Button
 var _again_btn: Button
+var _back_btn: Button
 
 
 func _ready() -> void:
@@ -41,7 +42,7 @@ func _ready() -> void:
 
     _undo_btn = Button.new()
     _undo_btn.text = "撤回"
-    _undo_btn.focus_mode = Control.FOCUS_NONE
+    _undo_btn.focus_mode = Control.FOCUS_ALL
     _undo_btn.custom_minimum_size = Vector2(240, 44)
     _undo_btn.pressed.connect(func(): GameSession.undo())
     vbox.add_child(_undo_btn)
@@ -50,7 +51,7 @@ func _ready() -> void:
     # 与「下一关」对称：胜利给前进、失败给绕行，两者都不必退回选关页重走。
     _skip_btn = Button.new()
     _skip_btn.text = "跳过本关"
-    _skip_btn.focus_mode = Control.FOCUS_NONE
+    _skip_btn.focus_mode = Control.FOCUS_ALL
     _skip_btn.custom_minimum_size = Vector2(240, 44)
     _skip_btn.pressed.connect(_on_skip_level)
     vbox.add_child(_skip_btn)
@@ -59,26 +60,26 @@ func _ready() -> void:
     # 而关卡解锁依赖「通关上一关」，玩家每次都得手动退回选关页重走一遍）。
     _next_btn = Button.new()
     _next_btn.text = "下一关"
-    _next_btn.focus_mode = Control.FOCUS_NONE
+    _next_btn.focus_mode = Control.FOCUS_ALL
     _next_btn.custom_minimum_size = Vector2(240, 44)
     _next_btn.pressed.connect(_on_next_level)
     vbox.add_child(_next_btn)
 
     _again_btn = Button.new()
     _again_btn.text = "重新开始"
-    _again_btn.focus_mode = Control.FOCUS_NONE
+    _again_btn.focus_mode = Control.FOCUS_ALL
     _again_btn.custom_minimum_size = Vector2(240, 44)
     _again_btn.pressed.connect(func(): GameSession.restart())
     vbox.add_child(_again_btn)
 
-    var back := Button.new()
-    back.text = "返回菜单"
-    back.focus_mode = Control.FOCUS_NONE
-    back.custom_minimum_size = Vector2(240, 44)
-    back.pressed.connect(func():
+    _back_btn = Button.new()
+    _back_btn.text = "返回菜单"
+    _back_btn.focus_mode = Control.FOCUS_ALL
+    _back_btn.custom_minimum_size = Vector2(240, 44)
+    _back_btn.pressed.connect(func():
         SaveCoordinator.clear()
         get_tree().change_scene_to_file("res://ui/main_menu.tscn"))
-    vbox.add_child(back)
+    vbox.add_child(_back_btn)
 
     GameSession.game_ended.connect(_on_game_ended)
     # 重新开始 / 撤回后隐藏终局覆盖层（否则遮住新棋盘 → 「再来一次没反应」）
@@ -130,6 +131,18 @@ func _on_game_ended(won: bool) -> void:
     var s: int = total % 60
     _sub_label.text = "用时 %02d:%02d · 翻开 %d 格" % [m, s, revealed_n]
     _apply_theme()
+    # 键盘可达（2026-09-25 无障碍审计）：终局按钮此前全 FOCUS_NONE ⇒ 键盘玩家在
+    # 「失败后撤回 / 胜利后下一关」这两条挽回与推进路径上完全无路。现在进场把焦点
+    # 给第一个**可用**按钮（延迟一帧：可见性在本函数里刚改过，需等布局生效）。
+    _focus_first_actionable.call_deferred()
+
+
+## 把焦点给第一个「可见且未禁用」的动作按钮（键盘/手柄用户的入口）。
+func _focus_first_actionable() -> void:
+    for b: Button in [_next_btn, _undo_btn, _skip_btn, _again_btn, _back_btn]:
+        if b != null and b.visible and not b.disabled:
+            b.grab_focus()
+            return
 
 
 ## 前往下一关（可能跨尺寸：本尺寸打完接下一个尺寸的第 1 关）。

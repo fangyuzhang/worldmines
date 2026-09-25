@@ -48,6 +48,18 @@ static func style_button(btn: Button) -> void:
 	btn.add_theme_stylebox_override("pressed", pressed)
 	btn.add_theme_color_override("font_pressed_color", ThemeManager.text())
 
+	# 键盘焦点样式（2026-09-25 无障碍审计）：与 hover 同款但描边**更粗** —— 焦点必须
+	# 比悬停更显眼（键盘用户全靠它定位）。此前没有 focus 样式 ⇒ 聚焦时会落到引擎默认
+	# 焦点框（浅色细线，与项目深色主题格格不入）。
+	var focus_sb := StyleBoxFlat.new()
+	_set_pad(focus_sb)
+	focus_sb.bg_color = ThemeManager.card().lightened(0.06)
+	focus_sb.set_corner_radius_all(6)
+	focus_sb.set_border_width_all(2)
+	focus_sb.border_color = ThemeManager.accent()
+	btn.add_theme_stylebox_override("focus", focus_sb)
+	btn.add_theme_color_override("font_focus_color", ThemeManager.text())
+
 	bind_hover(btn, 1.03)
 
 

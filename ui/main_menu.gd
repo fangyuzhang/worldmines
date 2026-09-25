@@ -90,13 +90,23 @@ func _build_ui() -> void:
     title.custom_minimum_size = Vector2(400, 64)
     vbox.add_child(title)
 
+    # 键盘可达（2026-09-25 无障碍审计）：此前全部 FOCUS_NONE ⇒ 键盘-only 玩家
+    # **连游戏都进不去**（对局内键盘支持很完整，却卡在门外）。主菜单是总入口，先开这里。
+    # VBoxContainer 内的按钮由引擎自动推导上下邻居（方向键/Tab 可走）。
+    var first_btn: Button = null
     for cap in ["开始游戏", "规则图鉴", "设置", "模组", "退出"]:
         var btn := Button.new()
         btn.text = cap
-        btn.focus_mode = Control.FOCUS_NONE
+        btn.focus_mode = Control.FOCUS_ALL
         btn.custom_minimum_size = Vector2(240, 48)
         btn.pressed.connect(_on_button.bind(cap))
         vbox.add_child(btn)
+        if first_btn == null:
+            first_btn = btn
+    # 进场把焦点给「开始游戏」：键盘用户开屏即可回车进入（延迟一帧：场景刚实例化时
+    # 节点还未完成布局，立即 grab_focus 可能被引擎丢弃）。
+    if first_btn != null:
+        first_btn.grab_focus.call_deferred()
     _title_label = title
     # Mod 纯数据挂载点（P4）：显示在按钮列末尾；无挂载时不产生任何节点
     UiMounts.append(vbox, UiMounts.SLOT_MAIN_MENU, self)

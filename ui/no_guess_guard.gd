@@ -19,18 +19,20 @@ const NO_GUESS_ULTIMATE := 2 # 终极：新翻开的线索格打星号（值隐�
 
 ## 推导结果缓存：Vector2i -> true（当前盘面下必然安全）
 var _safe_cache: Dictionary = {}
-## 缓存对应的推理步总数（用于判断缓存是否过期；每步走一步直推计数）
-var _cache_step: int = 0
+## 缓存是否仍然有效（2026-09-25 审计重写：由 Board 信号驱动失效，见 _bind_board）。
+var _cache_valid := false
+## 当前绑定的 Board（用于信号连接与换盘检测）。
+var _bound_board: Board = null
 ## 本局被拒次数（统计用）
 var _rejected: int = 0
 
 
-## 新对局开始时清空缓存与计数。不持有 Board 引用——盘面由调用方按次传入，
-## 避免「session 换盘（测试直赋 board / 恢复存档）而守卫引用失步」的隐患。
+## 新对局开始时清空缓存与计数。
 func reset() -> void:
     _safe_cache = {}
-    _cache_step = -1
+    _cache_valid = false
     _rejected = 0
+    # 注意：不清 _bound_board —— 换盘时 _bind_board 自会识别并换绑（见下）。
 
 
 ## 猜测被拒时由 session 调用（计数归守卫持有）。
@@ -44,12 +46,12 @@ func rejected_count() -> int:
 
 
 ## 该格在当前玩家视角下是否「必然安全」（可 100% 推导）。
-## 结果按「已推出的结论集大小」做缓存：盘面一变（翻格/插旗）结论集就变，缓存自然失效。
 ## 注意：只读玩家视角约束（HintSolver 契约），不读真实雷位。
 func is_deducible_safe(b: Board, pos: Vector2i) -> bool:
     if b == null:
         return false
-    if _cache_step != _deduce_stamp(b):
+    _bind_board(b)
+    if not _cache_valid:
         _rebuild_cache(b)
     return _safe_cache.has(pos)
 
@@ -59,27 +61,32 @@ func is_deducible_safe(b: Board, pos: Vector2i) -> bool:
 func deducible_safe_count(b: Board) -> int:
     if b == null:
         return 0
-    if _cache_step != _deduce_stamp(b):
+    _bind_board(b)
+    if not _cache_valid:
         _rebuild_cache(b)
     return _safe_cache.size()
 
 
-## 缓存有效性标记。必须同时覆盖三件事，否则会误命中过期缓存：
-##   ① 盘面实例（同关卡重开得到的新 Board 状态图案可能完全相同）；
-##   ② 每格的 状态 + 星号位（星号改变玩家可见信息，但不改 state）；
-##   ③ 位置（防止「状态计数相同但换位」的情况）。
-## 历史 bug：只用「位置 + 状态」哈希 → 星号变化与换 Board 都不失效，
-## 实测表现为「新盘面复用了上一局的可断定结论」。
-func _deduce_stamp(b: Board) -> int:
-    var h := int(b.get_instance_id()) % 2147483647
-    var sz: Vector2i = b.grid.size()
-    for y in sz.y:
-        for x in sz.x:
-            var c: Cell = b.grid.get_cell(Vector2i(x, y))
-            var st: int = c.state if c != null else -1
-            var star: int = 1 if (c != null and c.starred) else 0
-            h = (h * 31 + st * 131 + star * 17 + x * 7 + y) % 2147483647
-    return h
+## 把守卫绑定到当前 Board，并挂上「盘面变化即失效」的信号（2026-09-25 审计重写）。
+##
+## 原实现每次调用都**全盘遍历**算一个哈希来判断缓存是否过期（O(格数)），且盘面一变就
+## 触发一次全盘 CP-SAT 求解 —— 在「无猜-专家」档，每翻一格都付这两笔钱（chord 还会
+## 逐格调用 reveal，一次 chord 多次求解），大盘上表现为「点了没反应」。
+##
+## 现改为信号驱动：`Board.cell_state_changed` 覆盖全部影响玩家可见信息的变更点
+## （reveal / 插旗 / 问号 / **星号** / undo 恢复 / 引爆 —— 已逐点核对 core/board.gd），
+## 信号一来把缓存标记失效。零遍历、语义等价，也不会再有「换位哈希碰撞」这类隐患。
+func _bind_board(b: Board) -> void:
+    if _bound_board == b:
+        return
+    _bound_board = b
+    _cache_valid = false
+    if not b.cell_state_changed.is_connected(_on_board_changed):
+        b.cell_state_changed.connect(_on_board_changed)
+
+
+func _on_board_changed(_pos: Vector2i) -> void:
+    _cache_valid = false
 
 
 func _rebuild_cache(b: Board) -> void:
@@ -95,4 +102,4 @@ func _rebuild_cache(b: Board) -> void:
     for st in steps:
         if st.state == "safe":
             _safe_cache[st.pos] = true
-    _cache_step = _deduce_stamp(b)
+    _cache_valid = true

@@ -151,16 +151,23 @@ func _process(_delta: float) -> void:
         return
     _last_shown_sec = total
     if board == null:
-        _mines_label.text = "雷数 0"
+        _mines_label.text = "剩余雷数 0"
         _time_label.text = "时间 00:00"
         return
     # 终极模式附加开关（doc10 §2.3 AddOnMines / AddOnHideCount）：
     # 勾选「隐藏剩余雷数」时只显示符号，不泄露计数。
     var ult: bool = SettingsManager.no_guess_mode == GameSession.NO_GUESS_ULTIMATE
     if ult and SettingsManager.ult_hide_mines:
-        _mines_label.text = "雷数 ?"
+        _mines_label.text = "剩余雷数 ?"
     else:
-        _mines_label.text = "雷数 %d" % (board.total_mines - _flag_count(board))
+        # 文案与语义对齐（2026-09-25 审计）：显示的是**剩余**雷数（总雷数 − 已插旗），
+        # 原名「雷数」会让玩家以为是总数。为负 = 旗插多了 —— 明确说出来，
+        # 而不是摆一个玩家看不懂的负数（原先就只显示「雷数 -3」）。
+        var left_mines: int = board.total_mines - _flag_count(board)
+        if left_mines >= 0:
+            _mines_label.text = "剩余雷数 %d" % left_mines
+        else:
+            _mines_label.text = "剩余雷数 %d（旗标多了）" % left_mines
     # AddOnEarlyMineCount 的反面：默认隐藏「剩余可断定格数」；开启时才显示。
     # 只在显示时才算（推导含 CP-SAT，避免默认路径白付性能）。
     if ult and not SettingsManager.ult_hide_deducible:

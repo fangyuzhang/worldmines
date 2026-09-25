@@ -204,6 +204,12 @@ func _ready() -> void:
 		if SettingsManager.drawing_in_save and GameSession.level_path != "":
 			SaveCoordinator.save_drawing(GameSession.level_path, _drawing.get_save_data())
 			GameSession.request_autosave())
+	# 窗口尺寸变化 → 重排棋盘（格子大小/原点都依赖视口）。
+	# 2026-09-25 修 bug：这个连接原先**写在 _exit_tree() 里**（且在那里还调了一次 _layout）——
+	# 后果是从不生效（进入场景时没人连接，退出时才连给一个正在销毁的节点），
+	# 拖动/最大化窗口后棋盘保持旧尺寸不再居中。现在连在 _ready（`_on_session_started`
+	# 里已有一处 _layout 应付进场，此处只负责后续 resize）。
+	get_viewport().size_changed.connect(_layout)
 	# 双时序兼容：_ready 里手动调一次（恢复路径时 session 先开好、场景后进来）
 	_on_session_started()
 
@@ -213,8 +219,8 @@ func _ready() -> void:
 ## 之后的自动存档会在引擎层报错（见 GameSession._get_drawing 的同名注释）。
 func _exit_tree() -> void:
 	GameSession.set_drawing_provider(Callable())
-	get_viewport().connect("size_changed", _layout)
-	_layout()
+	if get_viewport().size_changed.is_connected(_layout):
+		get_viewport().size_changed.disconnect(_layout)
 
 
 var _game_over: Control
@@ -238,6 +244,15 @@ func _on_session_started() -> void:
 	_layout()
 	_sync_tex_timer()      # 换关：新棋盘可能带/不带 palette.texture，节拍跟着切
 	queue_redraw()
+	# 首次入局引导（2026-09-25 引导审计）：新玩家此前**没有任何上手提示**——
+	# 「左键翻格、右键插旗」只写在教程文件里，得主动去点才发现（审计确认为「高」）。
+	# 开局给一次、仅一次（持久化标记），8 秒够读完两行；之后玩家可随时点顶部「教程」。
+	if not SettingsManager.seen_play_hint:
+		SettingsManager.set_seen_play_hint(true)
+		UiToast.popup(self,
+				"左键翻开隐藏格 · 右键插旗（按住右键拖过格子可连续插）\n"
+				+ "点已翻开的数字格 = 一键展开邻域（数字 = 它周围 8 格的雷数）",
+				false, 8.0)
 
 
 ## 恢复对局时载入存档中的绘画；新对局则清空
@@ -487,14 +502,34 @@ func _ensure_custom_cache() -> void:
 		var d: Dictionary = c
 		if not (d.has("x") and d.has("y") and d.has("center") and d.has("poly")):
 			continue
-		var ctr: Array = d["center"]
-		var rel_arr: Array = d["poly"]
+		# 坏数据防御（2026-09-25 审计）：此前只查「键存在」，不查**类型** —— 若 MOD/手写关卡
+		# 把 center 写成数字、或 poly 元素写成标量，`var ctr: Array = d["center"]` 赋值即抛错；
+		# 而本函数在 _layout 路径上被 _draw 依赖 ⇒ 整帧不绘制（视觉等同卡死）。
+		# 这里显式判类型，坏格跳过（宁可少画一格，也不能整盘不画）。
+		var ctr_v: Variant = d["center"]
+		var rel_v: Variant = d["poly"]
+		if not (ctr_v is Array) or not (rel_v is Array):
+			continue
+		var ctr: Array = ctr_v
+		var rel_arr: Array = rel_v
 		if ctr.size() < 2 or rel_arr.size() < 3:
+			continue
+		if not (ctr[0] is float or ctr[0] is int) or not (ctr[1] is float or ctr[1] is int):
 			continue
 		var center := Vector2(float(ctr[0]), float(ctr[1]))
 		var rel := PackedVector2Array()
+		var bad_poly := false
 		for v in rel_arr:
-			rel.append(Vector2(float(v[0]), float(v[1])))
+			if not (v is Array) or (v as Array).size() < 2:
+				bad_poly = true
+				break
+			var vv: Array = v
+			if not (vv[0] is float or vv[0] is int) or not (vv[1] is float or vv[1] is int):
+				bad_poly = true
+				break
+			rel.append(Vector2(float(vv[0]), float(vv[1])))
+		if bad_poly:
+			continue
 		var abs_poly := PackedVector2Array()
 		for v in rel:
 			abs_poly.append(center + v)
@@ -939,7 +974,7 @@ func _cell_revealed_color() -> Color:
 
 ## 格子轮廓线色（palette.tile_border / 主题网格线色）。
 func _outline_color() -> Color:
-	return _pal_color("tile_border", ThemeManager.grid_line())
+	return _pal_color("tile_border", ThemeManager.board_grid())
 
 
 ## 格子底色（与 _draw_cell 的状态分支同口径；REVEALED 时含 pop 颜色插值）。
@@ -1096,12 +1131,17 @@ func _refresh_group_panel() -> void:
 	for g in _group_rows:
 		var rec: Dictionary = _group_rows[g]
 		var total := int(rec["total"])
-		var left := maxi(0, total - int(flags.get(g, 0)))
+		# 与顶栏**同口径**（2026-09-25 审计）：允许为负 = 该色旗标多了。
+		# 原先这里 clamp 到 0，于是「多标 2 面」显示成「0 / N」——看起来像刚好标完，
+		# 与顶栏的「剩余雷数 -2」互相矛盾。
+		var left := total - int(flags.get(g, 0))
 		var lb: Label = rec["label"]
-		var txt := "%d / %d" % [left, total]
+		var txt := "%d / %d" % [left, total] if left >= 0 else "%d / %d（多了）" % [left, total]
 		if lb.text != txt:
 			lb.text = txt
-		lb.add_theme_color_override("font_color", _group_color(g).lightened(0.3))
+		# 多标 = 明确的错误信号，用危险色（正常态仍用组色）
+		lb.add_theme_color_override("font_color",
+				ThemeManager.danger() if left < 0 else _group_color(g).lightened(0.3))
 	_group_dirty = false
 
 
@@ -1218,14 +1258,28 @@ static func custom_visual_bounds(cells: Array) -> Rect2:
 		var d: Dictionary = c
 		if not (d.has("center") and d.has("poly")):
 			continue
-		var ctr: Array = d["center"]
+		# 类型校验（2026-09-25 审计）：与 _rebuild_custom_cells 同源问题 —— 此前
+		# `var ctr: Array = d["center"]` 与 `for v in (d["poly"] as Array)` 在坏数据上
+		# 直接抛错，而本函数被 _layout 调用 ⇒ 整帧不绘制。坏格跳过即可。
+		var ctr_v: Variant = d["center"]
+		var poly_v: Variant = d["poly"]
+		if not (ctr_v is Array) or not (poly_v is Array):
+			continue
+		var ctr: Array = ctr_v
 		if ctr.size() < 2:
+			continue
+		if not (ctr[0] is float or ctr[0] is int) or not (ctr[1] is float or ctr[1] is int):
 			continue
 		var center := Vector2(float(ctr[0]), float(ctr[1]))
 		lo = Vector2(minf(lo.x, center.x), minf(lo.y, center.y))
 		hi = Vector2(maxf(hi.x, center.x), maxf(hi.y, center.y))
-		for v in (d["poly"] as Array):
-			var pt := center + Vector2(float(v[0]), float(v[1]))
+		for v in (poly_v as Array):
+			if not (v is Array) or (v as Array).size() < 2:
+				continue
+			var vv: Array = v
+			if not (vv[0] is float or vv[0] is int) or not (vv[1] is float or vv[1] is int):
+				continue
+			var pt := center + Vector2(float(vv[0]), float(vv[1]))
 			lo = Vector2(minf(lo.x, pt.x), minf(lo.y, pt.y))
 			hi = Vector2(maxf(hi.x, pt.x), maxf(hi.y, pt.y))
 	if lo.x > hi.x or lo.y > hi.y:
@@ -1688,6 +1742,23 @@ func _draw_mines_reveal(board: Board, scale: float) -> void:
 		draw_line(center - Vector2(0, 6.0 * scale), center - Vector2(0, 6.0 * scale + spike), body_col, 1.5 * scale)
 		draw_line(center + Vector2(6.0 * scale, 0), center + Vector2(6.0 * scale + spike, 0), body_col, 1.5 * scale)
 		draw_line(center - Vector2(6.0 * scale, 0), center - Vector2(6.0 * scale + spike, 0), body_col, 1.5 * scale)
+	# 插错旗画红叉（2026-09-25）：教程（tutorial_classic_0.txt）一直承诺
+	# 「插错的旗会显示红叉」，但实现里从未画过 —— 典型的「文案承诺 ≠ 实现」。
+	# **只在终局揭晓时画**：对局中判断旗的对错等于泄露雷位（作弊）。
+	var wrong_col := ThemeManager.danger()
+	var gsz: Vector2i = board.grid.size()
+	for gy in gsz.y:
+		for gx in gsz.x:
+			var wc: Cell = board.grid.get_cell(Vector2i(gx, gy))
+			if wc == null or wc.state != Cell.State.FLAGGED:
+				continue
+			var wp := Vector2i(gx, gy)
+			if board.is_mine(wp):
+				continue
+			var wctr := _cell_center(wp)
+			var wr: float = 9.0 * scale
+			draw_line(wctr + Vector2(-wr, -wr), wctr + Vector2(wr, wr), wrong_col, 2.5 * scale)
+			draw_line(wctr + Vector2(wr, -wr), wctr + Vector2(-wr, wr), wrong_col, 2.5 * scale)
 
 
 ## §8.4.4 悬停高亮：中心格内陷（恒有，保证鼠标有落点反馈）
@@ -2146,6 +2217,12 @@ func _gui_input(event: InputEvent) -> void:
 		if pos.x < 0:
 			return
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			# 双击的第二下必须忽略（2026-09-25 审计）：第一次点击已把该格翻开，
+			# 第二下会落到下面的 chord 分支 —— 玩家只是手快连点，却可能因
+			# 「邻域旗数恰好等于数字」而当场引爆。单击才是 chord 的唯一入口。
+			if event.double_click:
+				accept_event()
+				return
 			# 左键点已翻开的数字格 = 一键展开（chord）；点未翻开格 = 正常翻开
 			if _quick_actions_enabled() and _is_revealed(pos):
 				GameSession.chord(pos)
@@ -2208,6 +2285,15 @@ func _scan_window(n: Node) -> Window:
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.pressed:
 		return
+	# 长按按键的自动重复（echo）必须忽略（2026-09-25 审计）：否则长按 F 会在
+	# 隐藏→旗→问号 间循环、长按 H 反复扣提示充能、长按空格连发翻格、长按 R 连弹重开框。
+	# **移动键例外**：它本来就靠 echo 连发（长按方向键连续移动是期望行为，见下方 match）。
+	if event.echo:
+		match event.keycode:
+			KEY_W, KEY_A, KEY_S, KEY_D, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT:
+				pass
+			_:
+				return
 	# ESC 关闭最上层弹窗（Godot 的 Window/Popup 不自带 ESC 关闭行为）
 	if event.keycode == KEY_ESCAPE:
 		var top := _first_visible_popup()
