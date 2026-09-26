@@ -798,6 +798,48 @@ GDD §10.1 档位校正为 **3 档**并补上「规划容量 vs 代码可达」�
 > 核对用的临时诊断脚本 `tools/_diag_csv_check.gd` 已归档到 `archive/tools_probes/`（可复跑取证）。
 
 
+## 已知技术债（2026-09-26 深度审计记录，非故障）
+
+### 测试盲区（零直接测试提及的文件，10 个）
+
+grep 全部测试文件对「文件名/类名」的引用，以下文件**没有任何测试直接覆盖**
+（autoload 类可能被集成测试间接碰到，但改动时没有回归网）：
+
+| 文件 | 行数 |
+|---|---|
+| `ui/hint_panel.gd` | 326 |
+| `ui/theme_manager.gd` | 232 |
+| `ui/skin_service.gd` | 218 |
+| `core/variant_capability.gd` | 180 |
+| `ui/ui_theme.gd` | 121 |
+| `ui/hint_coordinator.gd` | 111 |
+| `ui/no_guess_guard.gd` | 106 |
+| `ui/audio_manager.gd` | 59 |
+| `ui/ui_toast.gd` | 55 |
+| `core/level_artifact.gd` | 7 |
+
+补测试优先 `theme_manager`（全项目视觉都依赖它）与 `hint_panel`（最大盲区）。
+
+### 发布卫生（导出 exe 的已知构成）
+
+`--export-release`（`export_filter=all_resources`）会把 **addons/ 全部打包**。当前 exe 里含
+godot_ai 插件（含 `_mcp_game_helper` autoload）、debug_menu、gut 测试框架、godot-wasm。
+功能无害（导出版实测零警告），但**正式分发**若想瘦身/收敛面：在导出预设加 `exclude_filter`
+或临时禁用编辑器插件后导出，并**重跑导出版冒烟**——剔除插件后行为可能变化（见「导出 exe」坑 2）。
+
+### gdscript 警告压制（project.godot `[debug]` 段，两处 `=0`）
+
+- `integer_division=0`：扫雷坐标计算大量整除，**合理的压制**。
+- `shadowed_global_identifier=0`：当时为消除一批噪音而关。**若要重新开启，先清存量
+  shadowing**，否则警告洪水会淹没真问题。
+
+### 配置清理记录（2026-09-26）
+
+- 删除 `[physics] 3d/physics_engine="Jolt Physics"`：2D 游戏零使用 3D 物理（全项目 grep 证实），
+  疑似编辑器误触残留。
+- `DebugMenu` autoload 从 `uid://cggqb75a8w8r` 改为 `res://addons/debug_menu/debug_menu.tscn`：
+  与其余 8 个 autoload 一致、可读、不依赖 uid 解析。改后冒烟 + 窄测试通过。
+
 ## 接手后第一步
 
 1. 跑通 `dotnet build` + 全量测试，确认基线绿。
