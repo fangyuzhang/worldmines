@@ -4,7 +4,7 @@
 # 而量产入库的正式关卡（0000 关级）没有任何入口——游戏里找不到。
 # 本模块让「正式关卡」成为一等公民：
 #
-#   数据：levels_lib/catalog.json            —— 索引 {mode: {size: {tier: count}}}
+#   数据：levels_lib/catalog.json            —— 索引。**结构：顶层是 {catalog: {mode: {size: {tier: count}}}, schema: <版本>}，取 mode 表要先下钻 `catalog` 键**（2026-09-26 审计时因把顶层直接当 mode 表而空手而归）
 #         levels_lib/<mode>/<size>/<tier>.json —— 一个关卡集（levels 数组，按难度升序）
 #   读取：catalog() / counts() / levels() / get_level() / materialize()
 #
