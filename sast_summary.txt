@@ -1,0 +1,38 @@
+=== SAST 扫描汇总（去重后 140 条诊断；源: sast_report.txt）===
+
+--- 按规则族 ---
+  Sonar(S*)                77
+  内置分析器(CA*)               63
+
+--- Top 12 规则 ---
+  S1104        25  Make this field 'private' and encapsulate it in a 'public' property. [C:\Users\zjh30\CodeB
+  CA1051       22  不要声明可见实例字段 (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca
+  S3604        15  Remove the member initializer, all constructors set an initial value for the member. [C:\U
+  CA1805       11  成员“dialogueResource”已显式初始化为其默认值 (https://learn.microsoft.com/dotnet/fundamentals/code-anal
+  S112          9  'System.Exception' should not be thrown by user code. [C:\Users\zjh30\CodeBuddy\2026090618
+  CA2201        9  异常类型 System.Exception 不够具体 (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/
+  CA1711        7  重命名类型名称 DialogueStartedEventHandler，使其不以“EventHandler”结尾 (https://learn.microsoft.com/dotn
+  S3267         5  Loops should be simplified using the "Where" LINQ method [C:\Users\zjh30\CodeBuddy\2026090
+  S3168         5  Return 'Task' instead. [C:\Users\zjh30\CodeBuddy\20260906184916\世界扫雷 (Copy).csproj]
+  S2325         5  Make 'OnResponseMouseEntered' a static method. [C:\Users\zjh30\CodeBuddy\20260906184916\世界
+  CA1310        4  “string.StartsWith(string)”的行为可能因当前用户的区域设置而异。请将“DialogueManagerRuntime.DialogueResponse.Ha
+  CA1822        4  成员“OnResponseMouseEntered”不访问实例数据，可标记为 static (https://learn.microsoft.com/dotnet/fundamen
+
+--- 按文件 ---
+    51  DialogueManager.cs                                                S3604×15, CA1711×7, S3267×5, CA1310×4
+    19  DialogueLabel.cs                                                  CA1051×6, S1104×6, CA1805×5, S1125×1
+    18  ExampleBalloon.cs                                                 CA1051×5, S1104×5, S3168×3, CA1805×2
+    16  DialogueResponsesMenu.cs                                          CA1051×5, S1104×5, S3265×2, CA1805×1
+    15  RuleSolver.cs                                                     S112×6, CA2201×6, S2325×1, S2234×1
+     8  DialogueActionable3D.cs                                           S1104×3, CA1051×2, CA1805×1, CA2211×1
+     8  DialogueActionable2D.cs                                           S1104×3, CA1051×2, CA1805×1, CA2211×1
+     2  DialogueMarker2D.cs                                               CA1051×1, S1104×1
+     2  DialogueMarker3D.cs                                               CA1051×1, S1104×1
+     1  DialogueStateContext.cs                                           CA1805×1
+
+=== format_report.json 结构探查 ===
+  元素键: ['DocumentId', 'FileName', 'FilePath', 'FileChanges']
+  ExampleBalloon.cs  warnings=0
+  DialogueManager.cs  warnings=0
+  DialogueManager.cs  warnings=0
+  FormatWarnings 合计: 0

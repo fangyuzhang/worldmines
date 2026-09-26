@@ -1,0 +1,2792 @@
+[
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "90f6cf88-1584-45ca-90ab-a8c93edb73c9"
+    },
+    "FileName": "ExampleBalloon.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\example_balloon\\ExampleBalloon.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 5,
+        "CharNumber": 2,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 3 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 6,
+        "CharNumber": 52,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 3 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 7,
+        "CharNumber": 4,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 8,
+        "CharNumber": 47,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 9,
+        "CharNumber": 48,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 10,
+        "CharNumber": 44,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 11,
+        "CharNumber": 53,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 12,
+        "CharNumber": 53,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 15,
+        "CharNumber": 21,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 16,
+        "CharNumber": 34,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 17,
+        "CharNumber": 33,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 18,
+        "CharNumber": 41,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 19,
+        "CharNumber": 24,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 6 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 21,
+        "CharNumber": 63,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 22,
+        "CharNumber": 36,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 23,
+        "CharNumber": 34,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 6 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 25,
+        "CharNumber": 31,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 26,
+        "CharNumber": 30,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 27,
+        "CharNumber": 6,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 28,
+        "CharNumber": 27,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 29,
+        "CharNumber": 10,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 30,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 31,
+        "CharNumber": 54,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 32,
+        "CharNumber": 27,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 33,
+        "CharNumber": 10,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 11 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 34,
+        "CharNumber": 29,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 11 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 35,
+        "CharNumber": 12,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 13 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 36,
+        "CharNumber": 25,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 11 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 37,
+        "CharNumber": 12,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 11 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 38,
+        "CharNumber": 15,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 11 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 39,
+        "CharNumber": 12,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 13 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 40,
+        "CharNumber": 20,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 11 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 41,
+        "CharNumber": 12,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 11 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 42,
+        "CharNumber": 18,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 43,
+        "CharNumber": 10,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 10 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 45,
+        "CharNumber": 30,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 46,
+        "CharNumber": 29,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 47,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 48,
+        "CharNumber": 6,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 6 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 50,
+        "CharNumber": 42,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 53,
+        "CharNumber": 34,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 54,
+        "CharNumber": 6,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 55,
+        "CharNumber": 46,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 56,
+        "CharNumber": 66,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 57,
+        "CharNumber": 64,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 58,
+        "CharNumber": 72,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 59,
+        "CharNumber": 50,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 8 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 61,
+        "CharNumber": 22,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 8 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 63,
+        "CharNumber": 38,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 64,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 65,
+        "CharNumber": 36,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 66,
+        "CharNumber": 10,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 11 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 67,
+        "CharNumber": 157,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 11 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 68,
+        "CharNumber": 74,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 11 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 69,
+        "CharNumber": 55,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 11 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 70,
+        "CharNumber": 12,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 13 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 71,
+        "CharNumber": 47,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 13 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 72,
+        "CharNumber": 40,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 13 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 73,
+        "CharNumber": 20,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 11 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 74,
+        "CharNumber": 12,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 75,
+        "CharNumber": 10,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 10 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 77,
+        "CharNumber": 40,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 78,
+        "CharNumber": 54,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 10 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 80,
+        "CharNumber": 43,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 10 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 82,
+        "CharNumber": 136,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 83,
+        "CharNumber": 10,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 11 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 84,
+        "CharNumber": 37,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 85,
+        "CharNumber": 10,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 86,
+        "CharNumber": 100,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 87,
+        "CharNumber": 10,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 11 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 88,
+        "CharNumber": 37,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 89,
+        "CharNumber": 10,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 90,
+        "CharNumber": 9,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 8 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 92,
+        "CharNumber": 58,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 93,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 94,
+        "CharNumber": 47,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 95,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 96,
+        "CharNumber": 54,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 97,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 98,
+        "CharNumber": 31,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 99,
+        "CharNumber": 9,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 102,
+        "CharNumber": 53,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 103,
+        "CharNumber": 40,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 104,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 105,
+        "CharNumber": 29,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 106,
+        "CharNumber": 10,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 11 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 107,
+        "CharNumber": 35,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 11 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 108,
+        "CharNumber": 26,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 109,
+        "CharNumber": 10,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 110,
+        "CharNumber": 9,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 111,
+        "CharNumber": 34,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 8 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 113,
+        "CharNumber": 44,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 8 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 115,
+        "CharNumber": 21,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 116,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 117,
+        "CharNumber": 48,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 118,
+        "CharNumber": 10,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 11 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 119,
+        "CharNumber": 76,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 120,
+        "CharNumber": 10,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 121,
+        "CharNumber": 17,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 122,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 8 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 124,
+        "CharNumber": 25,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 125,
+        "CharNumber": 31,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 126,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 127,
+        "CharNumber": 149,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 128,
+        "CharNumber": 24,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 129,
+        "CharNumber": 9,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 130,
+        "CharNumber": 72,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 131,
+        "CharNumber": 33,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 132,
+        "CharNumber": 37,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 133,
+        "CharNumber": 29,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 134,
+        "CharNumber": 6,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 137,
+        "CharNumber": 37,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 138,
+        "CharNumber": 6,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 139,
+        "CharNumber": 44,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 140,
+        "CharNumber": 6,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 143,
+        "CharNumber": 60,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 144,
+        "CharNumber": 6,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 145,
+        "CharNumber": 72,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 146,
+        "CharNumber": 41,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 147,
+        "CharNumber": 6,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 150,
+        "CharNumber": 55,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 151,
+        "CharNumber": 6,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 152,
+        "CharNumber": 97,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 153,
+        "CharNumber": 84,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 154,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 155,
+        "CharNumber": 57,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 156,
+        "CharNumber": 122,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 157,
+        "CharNumber": 33,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 158,
+        "CharNumber": 10,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 11 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 159,
+        "CharNumber": 38,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 160,
+        "CharNumber": 10,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 161,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 162,
+        "CharNumber": 6,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 165,
+        "CharNumber": 48,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 166,
+        "CharNumber": 6,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 167,
+        "CharNumber": 28,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 8 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 169,
+        "CharNumber": 41,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 170,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 171,
+        "CharNumber": 122,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 172,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 173,
+        "CharNumber": 6,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 176,
+        "CharNumber": 120,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 177,
+        "CharNumber": 6,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 178,
+        "CharNumber": 101,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 179,
+        "CharNumber": 33,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 8 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 181,
+        "CharNumber": 45,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 182,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 183,
+        "CharNumber": 45,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 184,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 185,
+        "CharNumber": 23,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 186,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 187,
+        "CharNumber": 32,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 188,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 8 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 190,
+        "CharNumber": 119,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 191,
+        "CharNumber": 14,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 192,
+        "CharNumber": 6,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 195,
+        "CharNumber": 42,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 196,
+        "CharNumber": 6,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 197,
+        "CharNumber": 111,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 198,
+        "CharNumber": 6,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 202,
+        "CharNumber": 1,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 6 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 204,
+        "CharNumber": 43,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 205,
+        "CharNumber": 6,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 206,
+        "CharNumber": 31,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 8 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 208,
+        "CharNumber": 33,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 209,
+        "CharNumber": 53,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 210,
+        "CharNumber": 27,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 8 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 212,
+        "CharNumber": 35,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 213,
+        "CharNumber": 78,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 214,
+        "CharNumber": 68,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 8 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 216,
+        "CharNumber": 29,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 217,
+        "CharNumber": 28,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 218,
+        "CharNumber": 49,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 8 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 220,
+        "CharNumber": 30,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 221,
+        "CharNumber": 28,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 222,
+        "CharNumber": 56,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 8 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 224,
+        "CharNumber": 27,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 225,
+        "CharNumber": 22,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 226,
+        "CharNumber": 31,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 227,
+        "CharNumber": 28,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 228,
+        "CharNumber": 52,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 229,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 230,
+        "CharNumber": 33,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 231,
+        "CharNumber": 80,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 232,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 8 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 234,
+        "CharNumber": 24,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 235,
+        "CharNumber": 44,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 236,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 237,
+        "CharNumber": 56,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 238,
+        "CharNumber": 30,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 239,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 240,
+        "CharNumber": 57,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 241,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 242,
+        "CharNumber": 25,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 243,
+        "CharNumber": 58,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 244,
+        "CharNumber": 10,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 11 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 245,
+        "CharNumber": 51,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 246,
+        "CharNumber": 10,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 247,
+        "CharNumber": 79,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 248,
+        "CharNumber": 35,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 249,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 250,
+        "CharNumber": 11,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 251,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 252,
+        "CharNumber": 34,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 253,
+        "CharNumber": 55,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 254,
+        "CharNumber": 29,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 255,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 256,
+        "CharNumber": 6,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 260,
+        "CharNumber": 1,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 6 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 263,
+        "CharNumber": 1,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 6 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 265,
+        "CharNumber": 48,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 266,
+        "CharNumber": 6,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 267,
+        "CharNumber": 40,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 268,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 269,
+        "CharNumber": 35,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 270,
+        "CharNumber": 32,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 9 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 271,
+        "CharNumber": 38,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 272,
+        "CharNumber": 8,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 5 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 273,
+        "CharNumber": 6,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u5C06 7 \u5B57\u7B26\u66FF\u6362\u4E3A \u0027\\r\\n\\r\\n\\r\\n\\s\\s\\s\\s\\s\\s\\s\\s\u0027\u3002"
+      },
+      {
+        "LineNumber": 277,
+        "CharNumber": 3,
+        "DiagnosticId": "WHITESPACE",
+        "FormatDescription": "\u4FEE\u590D\u7A7A\u683C\u683C\u5F0F\u3002 \u63D2\u5165\u201C\\s\\s\u201D\u3002"
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 1129,
+        "CharNumber": 25,
+        "DiagnosticId": "CA1310",
+        "FormatDescription": "warning CA1310: \u201Cstring.StartsWith(string)\u201D\u7684\u884C\u4E3A\u53EF\u80FD\u56E0\u5F53\u524D\u7528\u6237\u7684\u533A\u57DF\u8BBE\u7F6E\u800C\u5F02\u3002\u8BF7\u5C06\u201CDialogueManagerRuntime.DialogueResponse.HasTag(string)\u201D\u4E2D\u7684\u6B64\u8C03\u7528\u66FF\u6362\u4E3A\u5BF9\u201Cstring.StartsWith(string, System.StringComparison)\u201D\u7684\u8C03\u7528\u3002"
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 1149,
+        "CharNumber": 21,
+        "DiagnosticId": "CA1310",
+        "FormatDescription": "warning CA1310: \u201Cstring.StartsWith(string)\u201D\u7684\u884C\u4E3A\u53EF\u80FD\u56E0\u5F53\u524D\u7528\u6237\u7684\u533A\u57DF\u8BBE\u7F6E\u800C\u5F02\u3002\u8BF7\u5C06\u201CDialogueManagerRuntime.DialogueResponse.GetTagValue(string)\u201D\u4E2D\u7684\u6B64\u8C03\u7528\u66FF\u6362\u4E3A\u5BF9\u201Cstring.StartsWith(string, System.StringComparison)\u201D\u7684\u8C03\u7528\u3002"
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 1026,
+        "CharNumber": 25,
+        "DiagnosticId": "CA1310",
+        "FormatDescription": "warning CA1310: \u201Cstring.StartsWith(string)\u201D\u7684\u884C\u4E3A\u53EF\u80FD\u56E0\u5F53\u524D\u7528\u6237\u7684\u533A\u57DF\u8BBE\u7F6E\u800C\u5F02\u3002\u8BF7\u5C06\u201CDialogueManagerRuntime.DialogueLine.HasTag(string)\u201D\u4E2D\u7684\u6B64\u8C03\u7528\u66FF\u6362\u4E3A\u5BF9\u201Cstring.StartsWith(string, System.StringComparison)\u201D\u7684\u8C03\u7528\u3002"
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 1046,
+        "CharNumber": 21,
+        "DiagnosticId": "CA1310",
+        "FormatDescription": "warning CA1310: \u201Cstring.StartsWith(string)\u201D\u7684\u884C\u4E3A\u53EF\u80FD\u56E0\u5F53\u524D\u7528\u6237\u7684\u533A\u57DF\u8BBE\u7F6E\u800C\u5F02\u3002\u8BF7\u5C06\u201CDialogueManagerRuntime.DialogueLine.GetTagValue(string)\u201D\u4E2D\u7684\u6B64\u8C03\u7528\u66FF\u6362\u4E3A\u5BF9\u201Cstring.StartsWith(string, System.StringComparison)\u201D\u7684\u8C03\u7528\u3002"
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 790,
+        "CharNumber": 22,
+        "DiagnosticId": "S3168",
+        "FormatDescription": "warning S3168: Return \u0027Task\u0027 instead."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 80,
+        "CharNumber": 40,
+        "DiagnosticId": "S2245",
+        "FormatDescription": "warning S2245: Use a cryptographically strong random number generator."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 202,
+        "CharNumber": 49,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 812,
+        "CharNumber": 25,
+        "DiagnosticId": "S2219",
+        "FormatDescription": "warning S2219: Use the \u0027IsInstanceOfType()\u0027 method instead."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 1127,
+        "CharNumber": 37,
+        "DiagnosticId": "S3267",
+        "FormatDescription": "warning S3267: Loops should be simplified using the \u0022Where\u0022 LINQ method"
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 1147,
+        "CharNumber": 33,
+        "DiagnosticId": "S3267",
+        "FormatDescription": "warning S3267: Loops should be simplified using the \u0022Where\u0022 LINQ method"
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 1024,
+        "CharNumber": 37,
+        "DiagnosticId": "S3267",
+        "FormatDescription": "warning S3267: Loops should be simplified using the \u0022Where\u0022 LINQ method"
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 1044,
+        "CharNumber": 33,
+        "DiagnosticId": "S3267",
+        "FormatDescription": "warning S3267: Loops should be simplified using the \u0022Where\u0022 LINQ method"
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 578,
+        "CharNumber": 40,
+        "DiagnosticId": "S3267",
+        "FormatDescription": "warning S3267: Loops should be simplified using the \u0022Where\u0022 LINQ method"
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 921,
+        "CharNumber": 40,
+        "DiagnosticId": "S3604",
+        "FormatDescription": "warning S3604: Remove the member initializer, all constructors set an initial value for the member."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 1075,
+        "CharNumber": 44,
+        "DiagnosticId": "S3604",
+        "FormatDescription": "warning S3604: Remove the member initializer, all constructors set an initial value for the member."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 1080,
+        "CharNumber": 45,
+        "DiagnosticId": "S3604",
+        "FormatDescription": "warning S3604: Remove the member initializer, all constructors set an initial value for the member."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 926,
+        "CharNumber": 42,
+        "DiagnosticId": "S3604",
+        "FormatDescription": "warning S3604: Remove the member initializer, all constructors set an initial value for the member."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 1090,
+        "CharNumber": 42,
+        "DiagnosticId": "S3604",
+        "FormatDescription": "warning S3604: Remove the member initializer, all constructors set an initial value for the member."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 1095,
+        "CharNumber": 46,
+        "DiagnosticId": "S3604",
+        "FormatDescription": "warning S3604: Remove the member initializer, all constructors set an initial value for the member."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 931,
+        "CharNumber": 44,
+        "DiagnosticId": "S3604",
+        "FormatDescription": "warning S3604: Remove the member initializer, all constructors set an initial value for the member."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 1100,
+        "CharNumber": 57,
+        "DiagnosticId": "S3604",
+        "FormatDescription": "warning S3604: Remove the member initializer, all constructors set an initial value for the member."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 936,
+        "CharNumber": 47,
+        "DiagnosticId": "S3604",
+        "FormatDescription": "warning S3604: Remove the member initializer, all constructors set an initial value for the member."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 941,
+        "CharNumber": 42,
+        "DiagnosticId": "S3604",
+        "FormatDescription": "warning S3604: Remove the member initializer, all constructors set an initial value for the member."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 946,
+        "CharNumber": 46,
+        "DiagnosticId": "S3604",
+        "FormatDescription": "warning S3604: Remove the member initializer, all constructors set an initial value for the member."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 961,
+        "CharNumber": 56,
+        "DiagnosticId": "S3604",
+        "FormatDescription": "warning S3604: Remove the member initializer, all constructors set an initial value for the member."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 966,
+        "CharNumber": 85,
+        "DiagnosticId": "S3604",
+        "FormatDescription": "warning S3604: Remove the member initializer, all constructors set an initial value for the member."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 976,
+        "CharNumber": 56,
+        "DiagnosticId": "S3604",
+        "FormatDescription": "warning S3604: Remove the member initializer, all constructors set an initial value for the member."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 981,
+        "CharNumber": 57,
+        "DiagnosticId": "S3604",
+        "FormatDescription": "warning S3604: Remove the member initializer, all constructors set an initial value for the member."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 568,
+        "CharNumber": 21,
+        "DiagnosticId": "S2325",
+        "FormatDescription": "warning S2325: Make \u0027ThingHasConstant\u0027 a static method."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 660,
+        "CharNumber": 17,
+        "DiagnosticId": "S2325",
+        "FormatDescription": "warning S2325: Make \u0027ConvertOtherValueToVariant\u0027 a static method."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 725,
+        "CharNumber": 30,
+        "DiagnosticId": "S2325",
+        "FormatDescription": "warning S2325: Make \u0027ConvertToVariantType\u0027 a static method."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 194,
+        "CharNumber": 34,
+        "DiagnosticId": "S2376",
+        "FormatDescription": "warning S2376: Provide a getter for \u0027GetCurrentScene\u0027 or replace the property with a \u0027SetGetCurrentScene\u0027 method."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 212,
+        "CharNumber": 69,
+        "DiagnosticId": "S2376",
+        "FormatDescription": "warning S2376: Provide a getter for \u0027ValidateMemberAccess\u0027 or replace the property with a \u0027SetValidateMemberAccess\u0027 method."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 202,
+        "CharNumber": 49,
+        "DiagnosticId": "S2223",
+        "FormatDescription": "warning S2223: Change the visibility of \u0027LoadFromWithinDialogue\u0027 or make it \u0027const\u0027 or \u0027readonly\u0027."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 601,
+        "CharNumber": 31,
+        "DiagnosticId": "S112",
+        "FormatDescription": "warning S112: \u0027System.Exception\u0027 should not be thrown by user code."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "0c29d788-5f54-4971-aaa5-ec2b4695e4f5"
+    },
+    "FileName": "DialogueManager.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\DialogueManager.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 606,
+        "CharNumber": 19,
+        "DiagnosticId": "S112",
+        "FormatDescription": "warning S112: \u0027System.Exception\u0027 should not be thrown by user code."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "9d00f395-0f32-46fd-a316-d941f566ddcd"
+    },
+    "FileName": "RuleSolver.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\solver\\RuleSolver.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 671,
+        "CharNumber": 22,
+        "DiagnosticId": "S2325",
+        "FormatDescription": "warning S2325: Make \u0027Apply\u0027 a static method."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "9d00f395-0f32-46fd-a316-d941f566ddcd"
+    },
+    "FileName": "RuleSolver.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\solver\\RuleSolver.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 645,
+        "CharNumber": 38,
+        "DiagnosticId": "S2234",
+        "FormatDescription": "warning S2234: Parameters to \u0027AddImplication\u0027 have the same names but not the same order as the method arguments."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "9d00f395-0f32-46fd-a316-d941f566ddcd"
+    },
+    "FileName": "RuleSolver.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\solver\\RuleSolver.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 578,
+        "CharNumber": 19,
+        "DiagnosticId": "S112",
+        "FormatDescription": "warning S112: \u0027System.Exception\u0027 should not be thrown by user code."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "9d00f395-0f32-46fd-a316-d941f566ddcd"
+    },
+    "FileName": "RuleSolver.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\solver\\RuleSolver.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 600,
+        "CharNumber": 27,
+        "DiagnosticId": "S112",
+        "FormatDescription": "warning S112: \u0027System.Exception\u0027 should not be thrown by user code."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "9d00f395-0f32-46fd-a316-d941f566ddcd"
+    },
+    "FileName": "RuleSolver.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\solver\\RuleSolver.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 607,
+        "CharNumber": 19,
+        "DiagnosticId": "S112",
+        "FormatDescription": "warning S112: \u0027System.Exception\u0027 should not be thrown by user code."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "9d00f395-0f32-46fd-a316-d941f566ddcd"
+    },
+    "FileName": "RuleSolver.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\solver\\RuleSolver.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 556,
+        "CharNumber": 19,
+        "DiagnosticId": "S112",
+        "FormatDescription": "warning S112: \u0027System.Exception\u0027 should not be thrown by user code."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "9d00f395-0f32-46fd-a316-d941f566ddcd"
+    },
+    "FileName": "RuleSolver.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\solver\\RuleSolver.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 447,
+        "CharNumber": 27,
+        "DiagnosticId": "S112",
+        "FormatDescription": "warning S112: \u0027System.Exception\u0027 should not be thrown by user code."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "9d00f395-0f32-46fd-a316-d941f566ddcd"
+    },
+    "FileName": "RuleSolver.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\solver\\RuleSolver.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 667,
+        "CharNumber": 27,
+        "DiagnosticId": "S112",
+        "FormatDescription": "warning S112: \u0027System.Exception\u0027 should not be thrown by user code."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "da28e57d-9791-4c54-9056-8604c7488fec"
+    },
+    "FileName": "DialogueLabel.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\dialogue_label\\DialogueLabel.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 160,
+        "CharNumber": 22,
+        "DiagnosticId": "S3168",
+        "FormatDescription": "warning S3168: Return \u0027Task\u0027 instead."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "da28e57d-9791-4c54-9056-8604c7488fec"
+    },
+    "FileName": "DialogueLabel.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\dialogue_label\\DialogueLabel.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 95,
+        "CharNumber": 65,
+        "DiagnosticId": "S1125",
+        "FormatDescription": "warning S1125: Remove the unnecessary Boolean literal(s)."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "da28e57d-9791-4c54-9056-8604c7488fec"
+    },
+    "FileName": "DialogueLabel.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\dialogue_label\\DialogueLabel.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 37,
+        "CharNumber": 36,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "da28e57d-9791-4c54-9056-8604c7488fec"
+    },
+    "FileName": "DialogueLabel.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\dialogue_label\\DialogueLabel.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 42,
+        "CharNumber": 31,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "da28e57d-9791-4c54-9056-8604c7488fec"
+    },
+    "FileName": "DialogueLabel.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\dialogue_label\\DialogueLabel.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 47,
+        "CharNumber": 32,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "da28e57d-9791-4c54-9056-8604c7488fec"
+    },
+    "FileName": "DialogueLabel.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\dialogue_label\\DialogueLabel.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 52,
+        "CharNumber": 32,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "da28e57d-9791-4c54-9056-8604c7488fec"
+    },
+    "FileName": "DialogueLabel.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\dialogue_label\\DialogueLabel.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 64,
+        "CharNumber": 31,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "da28e57d-9791-4c54-9056-8604c7488fec"
+    },
+    "FileName": "DialogueLabel.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\dialogue_label\\DialogueLabel.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 59,
+        "CharNumber": 34,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "90f6cf88-1584-45ca-90ab-a8c93edb73c9"
+    },
+    "FileName": "ExampleBalloon.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\example_balloon\\ExampleBalloon.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 176,
+        "CharNumber": 22,
+        "DiagnosticId": "S3168",
+        "FormatDescription": "warning S3168: Return \u0027Task\u0027 instead."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "90f6cf88-1584-45ca-90ab-a8c93edb73c9"
+    },
+    "FileName": "ExampleBalloon.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\example_balloon\\ExampleBalloon.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 195,
+        "CharNumber": 22,
+        "DiagnosticId": "S3168",
+        "FormatDescription": "warning S3168: Return \u0027Task\u0027 instead."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "90f6cf88-1584-45ca-90ab-a8c93edb73c9"
+    },
+    "FileName": "ExampleBalloon.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\example_balloon\\ExampleBalloon.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 204,
+        "CharNumber": 23,
+        "DiagnosticId": "S3168",
+        "FormatDescription": "warning S3168: Return \u0027Task\u0027 instead."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "90f6cf88-1584-45ca-90ab-a8c93edb73c9"
+    },
+    "FileName": "ExampleBalloon.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\example_balloon\\ExampleBalloon.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 87,
+        "CharNumber": 17,
+        "DiagnosticId": "S1871",
+        "FormatDescription": "warning S1871: Either merge this branch with the identical one on line 83 or change one of the implementations."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "90f6cf88-1584-45ca-90ab-a8c93edb73c9"
+    },
+    "FileName": "ExampleBalloon.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\example_balloon\\ExampleBalloon.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 8,
+        "CharNumber": 34,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "90f6cf88-1584-45ca-90ab-a8c93edb73c9"
+    },
+    "FileName": "ExampleBalloon.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\example_balloon\\ExampleBalloon.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 9,
+        "CharNumber": 32,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "90f6cf88-1584-45ca-90ab-a8c93edb73c9"
+    },
+    "FileName": "ExampleBalloon.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\example_balloon\\ExampleBalloon.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 10,
+        "CharNumber": 30,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "90f6cf88-1584-45ca-90ab-a8c93edb73c9"
+    },
+    "FileName": "ExampleBalloon.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\example_balloon\\ExampleBalloon.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 11,
+        "CharNumber": 32,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "90f6cf88-1584-45ca-90ab-a8c93edb73c9"
+    },
+    "FileName": "ExampleBalloon.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\example_balloon\\ExampleBalloon.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 12,
+        "CharNumber": 32,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "90f6cf88-1584-45ca-90ab-a8c93edb73c9"
+    },
+    "FileName": "ExampleBalloon.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\example_balloon\\ExampleBalloon.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 119,
+        "CharNumber": 27,
+        "DiagnosticId": "S112",
+        "FormatDescription": "warning S112: \u0027System.Exception\u0027 should not be thrown by user code."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "fb3da227-f6f7-4501-a500-a3b60c72981e"
+    },
+    "FileName": "DialogueResponsesMenu.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\responses_menu\\DialogueResponsesMenu.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 294,
+        "CharNumber": 13,
+        "DiagnosticId": "S1871",
+        "FormatDescription": "warning S1871: Either merge this branch with the identical one on line 289 or change one of the implementations."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "fb3da227-f6f7-4501-a500-a3b60c72981e"
+    },
+    "FileName": "DialogueResponsesMenu.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\responses_menu\\DialogueResponsesMenu.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 35,
+        "CharNumber": 30,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "fb3da227-f6f7-4501-a500-a3b60c72981e"
+    },
+    "FileName": "DialogueResponsesMenu.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\responses_menu\\DialogueResponsesMenu.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 40,
+        "CharNumber": 30,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "fb3da227-f6f7-4501-a500-a3b60c72981e"
+    },
+    "FileName": "DialogueResponsesMenu.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\responses_menu\\DialogueResponsesMenu.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 25,
+        "CharNumber": 33,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "fb3da227-f6f7-4501-a500-a3b60c72981e"
+    },
+    "FileName": "DialogueResponsesMenu.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\responses_menu\\DialogueResponsesMenu.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 30,
+        "CharNumber": 36,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "fb3da227-f6f7-4501-a500-a3b60c72981e"
+    },
+    "FileName": "DialogueResponsesMenu.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\responses_menu\\DialogueResponsesMenu.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 45,
+        "CharNumber": 30,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "fb3da227-f6f7-4501-a500-a3b60c72981e"
+    },
+    "FileName": "DialogueResponsesMenu.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\responses_menu\\DialogueResponsesMenu.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 276,
+        "CharNumber": 22,
+        "DiagnosticId": "S2325",
+        "FormatDescription": "warning S2325: Make \u0027OnResponseMouseEntered\u0027 a static method."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "fb3da227-f6f7-4501-a500-a3b60c72981e"
+    },
+    "FileName": "DialogueResponsesMenu.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\responses_menu\\DialogueResponsesMenu.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 204,
+        "CharNumber": 121,
+        "DiagnosticId": "S3265",
+        "FormatDescription": "warning S3265: Remove this bitwise operation; the enum \u0027DuplicateFlags\u0027 is not marked with \u0027Flags\u0027 attribute."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "fb3da227-f6f7-4501-a500-a3b60c72981e"
+    },
+    "FileName": "DialogueResponsesMenu.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\responses_menu\\DialogueResponsesMenu.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 204,
+        "CharNumber": 96,
+        "DiagnosticId": "S3265",
+        "FormatDescription": "warning S3265: Remove this bitwise operation; the enum \u0027DuplicateFlags\u0027 is not marked with \u0027Flags\u0027 attribute."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "8ed9e0b9-c80d-49e4-8db4-9c18606a7a99"
+    },
+    "FileName": "DialogueActionable2D.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\actionable\\DialogueActionable2D.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 56,
+        "CharNumber": 21,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "8ed9e0b9-c80d-49e4-8db4-9c18606a7a99"
+    },
+    "FileName": "DialogueActionable2D.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\actionable\\DialogueActionable2D.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 51,
+        "CharNumber": 32,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "8ed9e0b9-c80d-49e4-8db4-9c18606a7a99"
+    },
+    "FileName": "DialogueActionable2D.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\actionable\\DialogueActionable2D.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 61,
+        "CharNumber": 68,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "8ed9e0b9-c80d-49e4-8db4-9c18606a7a99"
+    },
+    "FileName": "DialogueActionable2D.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\actionable\\DialogueActionable2D.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 61,
+        "CharNumber": 68,
+        "DiagnosticId": "S2223",
+        "FormatDescription": "warning S2223: Change the visibility of \u0027StartDialogue\u0027 or make it \u0027const\u0027 or \u0027readonly\u0027."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "c4571bb2-e800-4503-acdd-e4b40059dbce"
+    },
+    "FileName": "DialogueActionable3D.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\actionable\\DialogueActionable3D.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 56,
+        "CharNumber": 21,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "c4571bb2-e800-4503-acdd-e4b40059dbce"
+    },
+    "FileName": "DialogueActionable3D.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\actionable\\DialogueActionable3D.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 51,
+        "CharNumber": 32,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "c4571bb2-e800-4503-acdd-e4b40059dbce"
+    },
+    "FileName": "DialogueActionable3D.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\actionable\\DialogueActionable3D.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 61,
+        "CharNumber": 68,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "c4571bb2-e800-4503-acdd-e4b40059dbce"
+    },
+    "FileName": "DialogueActionable3D.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\actionable\\DialogueActionable3D.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 61,
+        "CharNumber": 68,
+        "DiagnosticId": "S2223",
+        "FormatDescription": "warning S2223: Change the visibility of \u0027StartDialogue\u0027 or make it \u0027const\u0027 or \u0027readonly\u0027."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "2dc458bf-575b-4627-81d3-615ea719cfea"
+    },
+    "FileName": "DialogueMarker3D.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\marker\\DialogueMarker3D.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 17,
+        "CharNumber": 32,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  },
+  {
+    "DocumentId": {
+      "ProjectId": {
+        "Id": "4354243a-aab2-4b02-b1fc-376e25da01a3"
+      },
+      "Id": "1ae7419e-da1b-434e-9275-e2510000bd4c"
+    },
+    "FileName": "DialogueMarker2D.cs",
+    "FilePath": "C:\\Users\\zjh30\\CodeBuddy\\20260906184916\\addons\\dialogue_manager\\nodes\\marker\\DialogueMarker2D.cs",
+    "FileChanges": [
+      {
+        "LineNumber": 17,
+        "CharNumber": 32,
+        "DiagnosticId": "S1104",
+        "FormatDescription": "warning S1104: Make this field \u0027private\u0027 and encapsulate it in a \u0027public\u0027 property."
+      }
+    ]
+  }
+]

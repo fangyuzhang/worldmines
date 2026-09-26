@@ -3,8 +3,22 @@
     <TargetFramework>net9.0</TargetFramework>
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <Nullable>disable</Nullable>
+    <!-- ===== SAST 配置（2026-09-26）===== -->
+    <!-- 启用 SDK 内置 Roslyn 分析器（CA 规则）的推荐档；build 时即执行，无需额外安装 -->
+    <AnalysisMode>Recommended</AnalysisMode>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <!-- 让 .editorconfig 的代码风格规则也在 build 时生效（与 dotnet format 同一套规则） -->
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <!-- 只编译自己的源码：排除 Godot 缓存/导入目录（bin/ obj/ 由 SDK 自动排除） -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);.godot/**;.mono/**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Google.OrTools" Version="9.15.*" />
+    <!-- SonarAnalyzer.CSharp（SonarSource 免费社区分析器，随 build 执行，不需要 SonarQube 服务器）。
+         PrivateAssets=all：只作为编译期分析器，不会传递给引用本项目的其它工程。 -->
+    <PackageReference Include="SonarAnalyzer.CSharp" Version="10.34.0.3385">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
 </Project>
