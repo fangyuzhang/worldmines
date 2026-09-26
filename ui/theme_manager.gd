@@ -188,7 +188,10 @@ func danger() -> Color:
 ## 深色底上只有 ≈3.55:1，达不到 WCAG AA 的 4.5:1。文字场景一律用这个（提亮后 ≈6:1）；
 ## 图形填充（旗子 / 危险格 / 雷 / 引爆高亮）继续用 danger()——那里门槛是 3:1，原标题色够用。
 func danger_text() -> Color:
-    return danger().lightened(0.30)
+    # 分主题（2026-09-26 补的 WCAG 测试抓出的 bug）：dark 底上提亮 0.30 ≈6:1 ✓；
+    # 但 light 底是**浅色**，提亮是反向操作（越提越贴近底色），实测只有 3.51:1 ❌——
+    # 浅底直接用原 danger（#B71C1C 压 #F4F4F0 ≈5.9:1）即达标。
+    return danger().lightened(0.30) if mode == "dark" else danger()
 
 
 ## 棋盘格线专用色（2026-09-25 无障碍审计）。
@@ -200,7 +203,10 @@ func danger_text() -> Color:
 ## 关键点：深色底上**不能靠加深**来提对比（黑线再黑也只到 1.3:1），必须换**浅色线**。
 ## 此函数只被棋盘格线使用，卡片边框仍走 grid_line，整体视觉风格不大改。
 func board_grid() -> Color:
-    return Color(1, 1, 1, 0.34) if mode == "dark" else Color(0, 0, 0, 0.42)
+    # alpha 值经实测校准（2026-09-26）：0.34/0.42 在 **alpha 混合后**压 cell_hidden
+    # 只有 2.75/2.86:1（<3 ❌）—— 旧注释的对比数字按线色直接算、没算混合，是错的。
+    # 提到 0.42/0.48 后混合对比 ≈3.3/3.4:1 ✓（新补的 WCAG 测试按混合口径抓出）。
+    return Color(1, 1, 1, 0.42) if mode == "dark" else Color(0, 0, 0, 0.48)
 
 ## 提示「必安全」高亮色（§8.4 扩展：提示系统用色）
 func safe() -> Color:
