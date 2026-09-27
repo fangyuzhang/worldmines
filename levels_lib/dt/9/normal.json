@@ -3,6 +3,7 @@
   "levels": [
     {
       "clue_rule": "classic",
+      "difficulty": 0.13,
       "difficulty_profile": {
         "clue_count": 4.0,
         "clue_ratio": 0.08,
@@ -499,6 +500,7 @@
     },
     {
       "clue_rule": "classic",
+      "difficulty": 0.62,
       "difficulty_profile": {
         "clue_count": 3.0,
         "clue_ratio": 0.06,
@@ -991,6 +993,7 @@
     },
     {
       "clue_rule": "classic",
+      "difficulty": 0.21,
       "difficulty_profile": {
         "clue_count": 2.0,
         "clue_ratio": 0.04,
@@ -1479,6 +1482,7 @@
     },
     {
       "clue_rule": "classic",
+      "difficulty": 0.28,
       "difficulty_profile": {
         "clue_count": 4.0,
         "clue_ratio": 0.08,
@@ -1975,6 +1979,7 @@
     },
     {
       "clue_rule": "classic",
+      "difficulty": 0.23,
       "difficulty_profile": {
         "clue_count": 2.0,
         "clue_ratio": 0.04,
@@ -2463,6 +2468,7 @@
     },
     {
       "clue_rule": "classic",
+      "difficulty": 0.23,
       "difficulty_profile": {
         "clue_count": 3.0,
         "clue_ratio": 0.06,
@@ -2955,6 +2961,7 @@
     },
     {
       "clue_rule": "classic",
+      "difficulty": 0.26,
       "difficulty_profile": {
         "clue_count": 3.0,
         "clue_ratio": 0.06,
@@ -3447,6 +3454,7 @@
     },
     {
       "clue_rule": "classic",
+      "difficulty": 0.24,
       "difficulty_profile": {
         "clue_count": 4.0,
         "clue_ratio": 0.08,
@@ -3943,6 +3951,7 @@
     },
     {
       "clue_rule": "classic",
+      "difficulty": 0.77,
       "difficulty_profile": {
         "clue_count": 3.0,
         "clue_ratio": 0.06,
@@ -4435,6 +4444,7 @@
     },
     {
       "clue_rule": "classic",
+      "difficulty": 0.37,
       "difficulty_profile": {
         "clue_count": 3.0,
         "clue_ratio": 0.06,
@@ -4927,6 +4937,7 @@
     },
     {
       "clue_rule": "classic",
+      "difficulty": 0.39,
       "difficulty_profile": {
         "clue_count": 2.0,
         "clue_ratio": 0.04,
@@ -5415,6 +5426,7 @@
     },
     {
       "clue_rule": "classic",
+      "difficulty": 0.8,
       "difficulty_profile": {
         "clue_count": 4.0,
         "clue_ratio": 0.08,
@@ -5911,6 +5923,7 @@
     },
     {
       "clue_rule": "classic",
+      "difficulty": 0.58,
       "difficulty_profile": {
         "clue_count": 7.0,
         "clue_ratio": 0.14,
@@ -6419,6 +6432,7 @@
     },
     {
       "clue_rule": "classic",
+      "difficulty": 0.4,
       "difficulty_profile": {
         "clue_count": 3.0,
         "clue_ratio": 0.06,
@@ -6911,6 +6925,7 @@
     },
     {
       "clue_rule": "classic",
+      "difficulty": 0.47,
       "difficulty_profile": {
         "clue_count": 5.0,
         "clue_ratio": 0.1,
@@ -7411,6 +7426,7 @@
     },
     {
       "clue_rule": "classic",
+      "difficulty": 0.74,
       "difficulty_profile": {
         "clue_count": 1.0,
         "clue_ratio": 0.02,
@@ -7895,6 +7911,7 @@
     },
     {
       "clue_rule": "classic",
+      "difficulty": 0.9,
       "difficulty_profile": {
         "clue_count": 1.0,
         "clue_ratio": 0.02,
@@ -8379,6 +8396,7 @@
     },
     {
       "clue_rule": "classic",
+      "difficulty": 0.88,
       "difficulty_profile": {
         "clue_count": 3.0,
         "clue_ratio": 0.06,
@@ -8871,6 +8889,7 @@
     },
     {
       "clue_rule": "classic",
+      "difficulty": 0.58,
       "difficulty_profile": {
         "clue_count": 3.0,
         "clue_ratio": 0.06,
@@ -9363,6 +9382,7 @@
     },
     {
       "clue_rule": "classic",
+      "difficulty": 0.39,
       "difficulty_profile": {
         "clue_count": 1.0,
         "clue_ratio": 0.02,

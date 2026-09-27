@@ -1,5 +1,5 @@
 {
-  "count": 3,
+  "count": 8,
   "levels": [
     {
       "clue_rule": "classic",
@@ -110,6 +110,101 @@
       ],
       "rule_level": true,
       "seed": 125.0,
+      "size": {
+        "cols": 5.0,
+        "rows": 5.0
+      },
+      "total_mines": 10.0
+    },
+    {
+      "clue_rule": "classic",
+      "difficulty": 0.96,
+      "difficulty_profile": {
+        "clue_count": 6.0,
+        "clue_ratio": 0.4,
+        "difficulty": 0.96,
+        "histogram": "6x1,2x1,1x2",
+        "max_active": 14.0,
+        "max_batch": 8.0,
+        "max_complexity": 6.0,
+        "profile": "8x1,4x2,3x1",
+        "rounds": 4.0,
+        "target_difficulty": 0.0
+      },
+      "global_rules": [
+        "s3"
+      ],
+      "mines": [
+        {
+          "c": 4.0,
+          "r": 0.0
+        },
+        {
+          "c": 0.0,
+          "r": 1.0
+        },
+        {
+          "c": 4.0,
+          "r": 4.0
+        },
+        {
+          "c": 0.0,
+          "r": 2.0
+        },
+        {
+          "c": 1.0,
+          "r": 3.0
+        },
+        {
+          "c": 2.0,
+          "r": 4.0
+        },
+        {
+          "c": 3.0,
+          "r": 0.0
+        },
+        {
+          "c": 2.0,
+          "r": 2.0
+        },
+        {
+          "c": 4.0,
+          "r": 3.0
+        },
+        {
+          "c": 1.0,
+          "r": 0.0
+        }
+      ],
+      "name": "hard_05",
+      "revealed": [
+        {
+          "c": 1.0,
+          "r": 1.0
+        },
+        {
+          "c": 4.0,
+          "r": 2.0
+        },
+        {
+          "c": 3.0,
+          "r": 3.0
+        },
+        {
+          "c": 0.0,
+          "r": 4.0
+        },
+        {
+          "c": 1.0,
+          "r": 4.0
+        },
+        {
+          "c": 3.0,
+          "r": 4.0
+        }
+      ],
+      "rule_level": true,
+      "seed": 77.0,
       "size": {
         "cols": 5.0,
         "rows": 5.0
@@ -300,6 +395,398 @@
       ],
       "rule_level": true,
       "seed": 388.0,
+      "size": {
+        "cols": 5.0,
+        "rows": 5.0
+      },
+      "total_mines": 10.0
+    },
+    {
+      "clue_rule": "classic",
+      "difficulty": 1.67,
+      "difficulty_profile": {
+        "clue_count": 6.0,
+        "clue_ratio": 0.4,
+        "difficulty": 1.67,
+        "histogram": "6x1,3x2,2x1,1x1",
+        "max_active": 14.0,
+        "max_batch": 6.0,
+        "max_complexity": 6.0,
+        "profile": "6x2,3x1,2x2",
+        "rounds": 5.0,
+        "target_difficulty": 0.0
+      },
+      "global_rules": [
+        "s3"
+      ],
+      "mines": [
+        {
+          "c": 4.0,
+          "r": 3.0
+        },
+        {
+          "c": 3.0,
+          "r": 2.0
+        },
+        {
+          "c": 4.0,
+          "r": 0.0
+        },
+        {
+          "c": 3.0,
+          "r": 0.0
+        },
+        {
+          "c": 2.0,
+          "r": 0.0
+        },
+        {
+          "c": 2.0,
+          "r": 2.0
+        },
+        {
+          "c": 0.0,
+          "r": 1.0
+        },
+        {
+          "c": 1.0,
+          "r": 0.0
+        },
+        {
+          "c": 0.0,
+          "r": 3.0
+        },
+        {
+          "c": 1.0,
+          "r": 4.0
+        }
+      ],
+      "name": "hard_02",
+      "revealed": [
+        {
+          "c": 1.0,
+          "r": 1.0
+        },
+        {
+          "c": 4.0,
+          "r": 2.0
+        },
+        {
+          "c": 1.0,
+          "r": 3.0
+        },
+        {
+          "c": 0.0,
+          "r": 4.0
+        },
+        {
+          "c": 3.0,
+          "r": 4.0
+        },
+        {
+          "c": 4.0,
+          "r": 4.0
+        }
+      ],
+      "rule_level": true,
+      "seed": 4.0,
+      "size": {
+        "cols": 5.0,
+        "rows": 5.0
+      },
+      "total_mines": 10.0
+    },
+    {
+      "clue_rule": "classic",
+      "difficulty": 0.53,
+      "difficulty_profile": {
+        "clue_count": 6.0,
+        "clue_ratio": 0.4,
+        "difficulty": 0.53,
+        "histogram": "7x1,5x1,3x1",
+        "max_active": 12.0,
+        "max_batch": 9.0,
+        "max_complexity": 7.0,
+        "profile": "9x1,6x1,4x1",
+        "rounds": 3.0,
+        "target_difficulty": 0.0
+      },
+      "global_rules": [
+        "s3"
+      ],
+      "mines": [
+        {
+          "c": 1.0,
+          "r": 0.0
+        },
+        {
+          "c": 2.0,
+          "r": 0.0
+        },
+        {
+          "c": 1.0,
+          "r": 2.0
+        },
+        {
+          "c": 2.0,
+          "r": 3.0
+        },
+        {
+          "c": 3.0,
+          "r": 1.0
+        },
+        {
+          "c": 0.0,
+          "r": 2.0
+        },
+        {
+          "c": 3.0,
+          "r": 3.0
+        },
+        {
+          "c": 0.0,
+          "r": 0.0
+        },
+        {
+          "c": 4.0,
+          "r": 2.0
+        },
+        {
+          "c": 4.0,
+          "r": 0.0
+        }
+      ],
+      "name": "hard_01",
+      "revealed": [
+        {
+          "c": 0.0,
+          "r": 4.0
+        },
+        {
+          "c": 0.0,
+          "r": 1.0
+        },
+        {
+          "c": 2.0,
+          "r": 1.0
+        },
+        {
+          "c": 4.0,
+          "r": 1.0
+        },
+        {
+          "c": 2.0,
+          "r": 4.0
+        },
+        {
+          "c": 4.0,
+          "r": 4.0
+        }
+      ],
+      "rule_level": true,
+      "seed": 2.0,
+      "size": {
+        "cols": 5.0,
+        "rows": 5.0
+      },
+      "total_mines": 10.0
+    },
+    {
+      "clue_rule": "classic",
+      "difficulty": 2.44,
+      "difficulty_profile": {
+        "clue_count": 8.0,
+        "clue_ratio": 0.53,
+        "difficulty": 2.44,
+        "histogram": "7x1,2x1,1x3",
+        "max_active": 14.0,
+        "max_batch": 9.0,
+        "max_complexity": 7.0,
+        "profile": "9x1,3x1,2x2,1x1",
+        "rounds": 5.0,
+        "target_difficulty": 0.0
+      },
+      "global_rules": [
+        "s3"
+      ],
+      "mines": [
+        {
+          "c": 4.0,
+          "r": 2.0
+        },
+        {
+          "c": 0.0,
+          "r": 3.0
+        },
+        {
+          "c": 1.0,
+          "r": 2.0
+        },
+        {
+          "c": 2.0,
+          "r": 1.0
+        },
+        {
+          "c": 3.0,
+          "r": 4.0
+        },
+        {
+          "c": 4.0,
+          "r": 1.0
+        },
+        {
+          "c": 1.0,
+          "r": 0.0
+        },
+        {
+          "c": 4.0,
+          "r": 0.0
+        },
+        {
+          "c": 2.0,
+          "r": 3.0
+        },
+        {
+          "c": 0.0,
+          "r": 0.0
+        }
+      ],
+      "name": "hard_03",
+      "revealed": [
+        {
+          "c": 3.0,
+          "r": 1.0
+        },
+        {
+          "c": 0.0,
+          "r": 2.0
+        },
+        {
+          "c": 3.0,
+          "r": 2.0
+        },
+        {
+          "c": 3.0,
+          "r": 3.0
+        },
+        {
+          "c": 4.0,
+          "r": 3.0
+        },
+        {
+          "c": 0.0,
+          "r": 4.0
+        },
+        {
+          "c": 1.0,
+          "r": 4.0
+        },
+        {
+          "c": 4.0,
+          "r": 4.0
+        }
+      ],
+      "rule_level": true,
+      "seed": 16.0,
+      "size": {
+        "cols": 5.0,
+        "rows": 5.0
+      },
+      "total_mines": 10.0
+    },
+    {
+      "clue_rule": "classic",
+      "difficulty": 1.67,
+      "difficulty_profile": {
+        "clue_count": 7.0,
+        "clue_ratio": 0.47,
+        "difficulty": 1.67,
+        "histogram": "7x1,4x1,2x1,1x2",
+        "max_active": 14.0,
+        "max_batch": 6.0,
+        "max_complexity": 7.0,
+        "profile": "6x1,4x2,2x2",
+        "rounds": 5.0,
+        "target_difficulty": 0.0
+      },
+      "global_rules": [
+        "s3"
+      ],
+      "mines": [
+        {
+          "c": 3.0,
+          "r": 1.0
+        },
+        {
+          "c": 0.0,
+          "r": 4.0
+        },
+        {
+          "c": 1.0,
+          "r": 4.0
+        },
+        {
+          "c": 2.0,
+          "r": 4.0
+        },
+        {
+          "c": 1.0,
+          "r": 1.0
+        },
+        {
+          "c": 4.0,
+          "r": 4.0
+        },
+        {
+          "c": 0.0,
+          "r": 0.0
+        },
+        {
+          "c": 3.0,
+          "r": 0.0
+        },
+        {
+          "c": 2.0,
+          "r": 2.0
+        },
+        {
+          "c": 3.0,
+          "r": 3.0
+        }
+      ],
+      "name": "hard_04",
+      "revealed": [
+        {
+          "c": 4.0,
+          "r": 0.0
+        },
+        {
+          "c": 0.0,
+          "r": 1.0
+        },
+        {
+          "c": 4.0,
+          "r": 1.0
+        },
+        {
+          "c": 0.0,
+          "r": 2.0
+        },
+        {
+          "c": 0.0,
+          "r": 3.0
+        },
+        {
+          "c": 1.0,
+          "r": 3.0
+        },
+        {
+          "c": 3.0,
+          "r": 4.0
+        }
+      ],
+      "rule_level": true,
+      "seed": 56.0,
       "size": {
         "cols": 5.0,
         "rows": 5.0

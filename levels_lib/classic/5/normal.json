@@ -1,6 +1,95 @@
 {
-  "count": 4,
+  "count": 20,
   "levels": [
+    {
+      "clue_rule": "classic",
+      "difficulty": 0.21,
+      "difficulty_profile": {
+        "clue_count": 5.0,
+        "clue_ratio": 0.33,
+        "difficulty": 0.21,
+        "histogram": "4x1,1x1",
+        "max_active": 11.0,
+        "max_batch": 12.0,
+        "max_complexity": 4.0,
+        "profile": "12x1,8x1",
+        "rounds": 2.0,
+        "target_difficulty": 0.0
+      },
+      "global_rules": [],
+      "mines": [
+        {
+          "c": 4.0,
+          "r": 3.0
+        },
+        {
+          "c": 3.0,
+          "r": 3.0
+        },
+        {
+          "c": 0.0,
+          "r": 0.0
+        },
+        {
+          "c": 1.0,
+          "r": 2.0
+        },
+        {
+          "c": 1.0,
+          "r": 0.0
+        },
+        {
+          "c": 4.0,
+          "r": 0.0
+        },
+        {
+          "c": 0.0,
+          "r": 2.0
+        },
+        {
+          "c": 2.0,
+          "r": 4.0
+        },
+        {
+          "c": 2.0,
+          "r": 0.0
+        },
+        {
+          "c": 2.0,
+          "r": 1.0
+        }
+      ],
+      "name": "normal_15",
+      "revealed": [
+        {
+          "c": 0.0,
+          "r": 4.0
+        },
+        {
+          "c": 3.0,
+          "r": 0.0
+        },
+        {
+          "c": 0.0,
+          "r": 1.0
+        },
+        {
+          "c": 3.0,
+          "r": 4.0
+        },
+        {
+          "c": 4.0,
+          "r": 4.0
+        }
+      ],
+      "rule_level": true,
+      "seed": 67.0,
+      "size": {
+        "cols": 5.0,
+        "rows": 5.0
+      },
+      "total_mines": 10.0
+    },
     {
       "clue_rule": "classic",
       "difficulty": 0.5,
@@ -59,7 +148,7 @@
           "r": 2.0
         }
       ],
-      "name": "easy_05",
+      "name": "normal_02",
       "revealed": [
         {
           "c": 0.0,
@@ -84,6 +173,860 @@
       ],
       "rule_level": true,
       "seed": 7.0,
+      "size": {
+        "cols": 5.0,
+        "rows": 5.0
+      },
+      "total_mines": 10.0
+    },
+    {
+      "clue_rule": "classic",
+      "difficulty": 0.44,
+      "difficulty_profile": {
+        "clue_count": 4.0,
+        "clue_ratio": 0.27,
+        "difficulty": 0.44,
+        "histogram": "4x1,2x1,1x1",
+        "max_active": 12.0,
+        "max_batch": 9.0,
+        "max_complexity": 4.0,
+        "profile": "9x1,6x2",
+        "rounds": 3.0,
+        "target_difficulty": 0.0
+      },
+      "global_rules": [],
+      "mines": [
+        {
+          "c": 3.0,
+          "r": 0.0
+        },
+        {
+          "c": 1.0,
+          "r": 2.0
+        },
+        {
+          "c": 0.0,
+          "r": 4.0
+        },
+        {
+          "c": 4.0,
+          "r": 1.0
+        },
+        {
+          "c": 2.0,
+          "r": 3.0
+        },
+        {
+          "c": 1.0,
+          "r": 4.0
+        },
+        {
+          "c": 3.0,
+          "r": 4.0
+        },
+        {
+          "c": 2.0,
+          "r": 1.0
+        },
+        {
+          "c": 0.0,
+          "r": 0.0
+        },
+        {
+          "c": 1.0,
+          "r": 0.0
+        }
+      ],
+      "name": "normal_05",
+      "revealed": [
+        {
+          "c": 0.0,
+          "r": 2.0
+        },
+        {
+          "c": 1.0,
+          "r": 3.0
+        },
+        {
+          "c": 3.0,
+          "r": 3.0
+        },
+        {
+          "c": 4.0,
+          "r": 4.0
+        }
+      ],
+      "rule_level": true,
+      "seed": 18.0,
+      "size": {
+        "cols": 5.0,
+        "rows": 5.0
+      },
+      "total_mines": 10.0
+    },
+    {
+      "clue_rule": "classic",
+      "difficulty": 0.53,
+      "difficulty_profile": {
+        "clue_count": 6.0,
+        "clue_ratio": 0.4,
+        "difficulty": 0.53,
+        "histogram": "4x1,2x1,1x1",
+        "max_active": 13.0,
+        "max_batch": 9.0,
+        "max_complexity": 4.0,
+        "profile": "9x1,6x1,4x1",
+        "rounds": 3.0,
+        "target_difficulty": 0.0
+      },
+      "global_rules": [],
+      "mines": [
+        {
+          "c": 3.0,
+          "r": 1.0
+        },
+        {
+          "c": 4.0,
+          "r": 1.0
+        },
+        {
+          "c": 4.0,
+          "r": 0.0
+        },
+        {
+          "c": 2.0,
+          "r": 2.0
+        },
+        {
+          "c": 2.0,
+          "r": 4.0
+        },
+        {
+          "c": 0.0,
+          "r": 4.0
+        },
+        {
+          "c": 2.0,
+          "r": 1.0
+        },
+        {
+          "c": 3.0,
+          "r": 3.0
+        },
+        {
+          "c": 1.0,
+          "r": 2.0
+        },
+        {
+          "c": 3.0,
+          "r": 2.0
+        }
+      ],
+      "name": "normal_06",
+      "revealed": [
+        {
+          "c": 0.0,
+          "r": 0.0
+        },
+        {
+          "c": 2.0,
+          "r": 0.0
+        },
+        {
+          "c": 1.0,
+          "r": 3.0
+        },
+        {
+          "c": 2.0,
+          "r": 3.0
+        },
+        {
+          "c": 1.0,
+          "r": 4.0
+        },
+        {
+          "c": 4.0,
+          "r": 4.0
+        }
+      ],
+      "rule_level": true,
+      "seed": 20.0,
+      "size": {
+        "cols": 5.0,
+        "rows": 5.0
+      },
+      "total_mines": 10.0
+    },
+    {
+      "clue_rule": "classic",
+      "difficulty": 0.47,
+      "difficulty_profile": {
+        "clue_count": 5.0,
+        "clue_ratio": 0.33,
+        "difficulty": 0.47,
+        "histogram": "4x1,2x1,1x1",
+        "max_active": 11.0,
+        "max_batch": 8.0,
+        "max_complexity": 4.0,
+        "profile": "8x1,7x1,5x1",
+        "rounds": 3.0,
+        "target_difficulty": 0.0
+      },
+      "global_rules": [],
+      "mines": [
+        {
+          "c": 0.0,
+          "r": 2.0
+        },
+        {
+          "c": 1.0,
+          "r": 4.0
+        },
+        {
+          "c": 0.0,
+          "r": 1.0
+        },
+        {
+          "c": 3.0,
+          "r": 3.0
+        },
+        {
+          "c": 0.0,
+          "r": 3.0
+        },
+        {
+          "c": 2.0,
+          "r": 0.0
+        },
+        {
+          "c": 4.0,
+          "r": 1.0
+        },
+        {
+          "c": 1.0,
+          "r": 2.0
+        },
+        {
+          "c": 3.0,
+          "r": 0.0
+        },
+        {
+          "c": 4.0,
+          "r": 0.0
+        }
+      ],
+      "name": "normal_20",
+      "revealed": [
+        {
+          "c": 0.0,
+          "r": 0.0
+        },
+        {
+          "c": 4.0,
+          "r": 3.0
+        },
+        {
+          "c": 0.0,
+          "r": 4.0
+        },
+        {
+          "c": 3.0,
+          "r": 4.0
+        },
+        {
+          "c": 4.0,
+          "r": 4.0
+        }
+      ],
+      "rule_level": true,
+      "seed": 75.0,
+      "size": {
+        "cols": 5.0,
+        "rows": 5.0
+      },
+      "total_mines": 10.0
+    },
+    {
+      "clue_rule": "classic",
+      "difficulty": 0.88,
+      "difficulty_profile": {
+        "clue_count": 4.0,
+        "clue_ratio": 0.27,
+        "difficulty": 0.88,
+        "histogram": "4x1,3x1,2x2",
+        "max_active": 13.0,
+        "max_batch": 8.0,
+        "max_complexity": 4.0,
+        "profile": "8x1,6x1,4x1,3x1",
+        "rounds": 4.0,
+        "target_difficulty": 0.0
+      },
+      "global_rules": [],
+      "mines": [
+        {
+          "c": 4.0,
+          "r": 0.0
+        },
+        {
+          "c": 4.0,
+          "r": 1.0
+        },
+        {
+          "c": 3.0,
+          "r": 2.0
+        },
+        {
+          "c": 3.0,
+          "r": 4.0
+        },
+        {
+          "c": 2.0,
+          "r": 4.0
+        },
+        {
+          "c": 2.0,
+          "r": 1.0
+        },
+        {
+          "c": 0.0,
+          "r": 1.0
+        },
+        {
+          "c": 0.0,
+          "r": 0.0
+        },
+        {
+          "c": 1.0,
+          "r": 2.0
+        },
+        {
+          "c": 2.0,
+          "r": 2.0
+        }
+      ],
+      "name": "normal_09",
+      "revealed": [
+        {
+          "c": 0.0,
+          "r": 4.0
+        },
+        {
+          "c": 2.0,
+          "r": 0.0
+        },
+        {
+          "c": 2.0,
+          "r": 3.0
+        },
+        {
+          "c": 4.0,
+          "r": 4.0
+        }
+      ],
+      "rule_level": true,
+      "seed": 28.0,
+      "size": {
+        "cols": 5.0,
+        "rows": 5.0
+      },
+      "total_mines": 10.0
+    },
+    {
+      "clue_rule": "classic",
+      "difficulty": 0.89,
+      "difficulty_profile": {
+        "clue_count": 4.0,
+        "clue_ratio": 0.27,
+        "difficulty": 0.89,
+        "histogram": "4x1,2x1,1x2",
+        "max_active": 14.0,
+        "max_batch": 9.0,
+        "max_complexity": 4.0,
+        "profile": "9x1,5x1,4x1,3x1",
+        "rounds": 4.0,
+        "target_difficulty": 0.0
+      },
+      "global_rules": [],
+      "mines": [
+        {
+          "c": 4.0,
+          "r": 1.0
+        },
+        {
+          "c": 2.0,
+          "r": 3.0
+        },
+        {
+          "c": 0.0,
+          "r": 4.0
+        },
+        {
+          "c": 3.0,
+          "r": 0.0
+        },
+        {
+          "c": 1.0,
+          "r": 0.0
+        },
+        {
+          "c": 1.0,
+          "r": 2.0
+        },
+        {
+          "c": 4.0,
+          "r": 2.0
+        },
+        {
+          "c": 1.0,
+          "r": 4.0
+        },
+        {
+          "c": 2.0,
+          "r": 0.0
+        },
+        {
+          "c": 0.0,
+          "r": 0.0
+        }
+      ],
+      "name": "normal_12",
+      "revealed": [
+        {
+          "c": 4.0,
+          "r": 4.0
+        },
+        {
+          "c": 0.0,
+          "r": 2.0
+        },
+        {
+          "c": 1.0,
+          "r": 3.0
+        },
+        {
+          "c": 2.0,
+          "r": 4.0
+        }
+      ],
+      "rule_level": true,
+      "seed": 48.0,
+      "size": {
+        "cols": 5.0,
+        "rows": 5.0
+      },
+      "total_mines": 10.0
+    },
+    {
+      "clue_rule": "classic",
+      "difficulty": 0.93,
+      "difficulty_profile": {
+        "clue_count": 4.0,
+        "clue_ratio": 0.27,
+        "difficulty": 0.93,
+        "histogram": "4x1,3x1,1x2",
+        "max_active": 12.0,
+        "max_batch": 8.0,
+        "max_complexity": 4.0,
+        "profile": "8x1,7x1,3x2",
+        "rounds": 4.0,
+        "target_difficulty": 0.0
+      },
+      "global_rules": [],
+      "mines": [
+        {
+          "c": 2.0,
+          "r": 1.0
+        },
+        {
+          "c": 4.0,
+          "r": 3.0
+        },
+        {
+          "c": 1.0,
+          "r": 0.0
+        },
+        {
+          "c": 1.0,
+          "r": 2.0
+        },
+        {
+          "c": 3.0,
+          "r": 4.0
+        },
+        {
+          "c": 2.0,
+          "r": 4.0
+        },
+        {
+          "c": 1.0,
+          "r": 1.0
+        },
+        {
+          "c": 0.0,
+          "r": 0.0
+        },
+        {
+          "c": 1.0,
+          "r": 4.0
+        },
+        {
+          "c": 3.0,
+          "r": 2.0
+        }
+      ],
+      "name": "normal_13",
+      "revealed": [
+        {
+          "c": 4.0,
+          "r": 0.0
+        },
+        {
+          "c": 2.0,
+          "r": 3.0
+        },
+        {
+          "c": 3.0,
+          "r": 3.0
+        },
+        {
+          "c": 0.0,
+          "r": 4.0
+        }
+      ],
+      "rule_level": true,
+      "seed": 55.0,
+      "size": {
+        "cols": 5.0,
+        "rows": 5.0
+      },
+      "total_mines": 10.0
+    },
+    {
+      "clue_rule": "classic",
+      "difficulty": 2.01,
+      "difficulty_profile": {
+        "clue_count": 4.0,
+        "clue_ratio": 0.27,
+        "difficulty": 2.01,
+        "histogram": "4x1,2x2,1x2",
+        "max_active": 13.0,
+        "max_batch": 7.0,
+        "max_complexity": 4.0,
+        "profile": "7x1,6x1,5x1,2x1,1x1",
+        "rounds": 5.0,
+        "target_difficulty": 0.0
+      },
+      "global_rules": [],
+      "mines": [
+        {
+          "c": 1.0,
+          "r": 0.0
+        },
+        {
+          "c": 2.0,
+          "r": 0.0
+        },
+        {
+          "c": 1.0,
+          "r": 2.0
+        },
+        {
+          "c": 4.0,
+          "r": 0.0
+        },
+        {
+          "c": 1.0,
+          "r": 4.0
+        },
+        {
+          "c": 2.0,
+          "r": 1.0
+        },
+        {
+          "c": 3.0,
+          "r": 3.0
+        },
+        {
+          "c": 1.0,
+          "r": 1.0
+        },
+        {
+          "c": 4.0,
+          "r": 1.0
+        },
+        {
+          "c": 0.0,
+          "r": 0.0
+        }
+      ],
+      "name": "normal_18",
+      "revealed": [
+        {
+          "c": 3.0,
+          "r": 0.0
+        },
+        {
+          "c": 3.0,
+          "r": 1.0
+        },
+        {
+          "c": 0.0,
+          "r": 4.0
+        },
+        {
+          "c": 4.0,
+          "r": 4.0
+        }
+      ],
+      "rule_level": true,
+      "seed": 70.0,
+      "size": {
+        "cols": 5.0,
+        "rows": 5.0
+      },
+      "total_mines": 10.0
+    },
+    {
+      "clue_rule": "classic",
+      "difficulty": 1.58,
+      "difficulty_profile": {
+        "clue_count": 4.0,
+        "clue_ratio": 0.27,
+        "difficulty": 1.58,
+        "histogram": "4x1,2x1,1x3",
+        "max_active": 14.0,
+        "max_batch": 8.0,
+        "max_complexity": 4.0,
+        "profile": "8x1,5x1,4x1,2x2",
+        "rounds": 5.0,
+        "target_difficulty": 0.0
+      },
+      "global_rules": [],
+      "mines": [
+        {
+          "c": 4.0,
+          "r": 1.0
+        },
+        {
+          "c": 1.0,
+          "r": 3.0
+        },
+        {
+          "c": 1.0,
+          "r": 0.0
+        },
+        {
+          "c": 4.0,
+          "r": 2.0
+        },
+        {
+          "c": 2.0,
+          "r": 1.0
+        },
+        {
+          "c": 4.0,
+          "r": 0.0
+        },
+        {
+          "c": 2.0,
+          "r": 3.0
+        },
+        {
+          "c": 0.0,
+          "r": 1.0
+        },
+        {
+          "c": 2.0,
+          "r": 4.0
+        },
+        {
+          "c": 3.0,
+          "r": 0.0
+        }
+      ],
+      "name": "normal_14",
+      "revealed": [
+        {
+          "c": 4.0,
+          "r": 4.0
+        },
+        {
+          "c": 0.0,
+          "r": 3.0
+        },
+        {
+          "c": 0.0,
+          "r": 4.0
+        },
+        {
+          "c": 1.0,
+          "r": 4.0
+        }
+      ],
+      "rule_level": true,
+      "seed": 62.0,
+      "size": {
+        "cols": 5.0,
+        "rows": 5.0
+      },
+      "total_mines": 10.0
+    },
+    {
+      "clue_rule": "classic",
+      "difficulty": 1.43,
+      "difficulty_profile": {
+        "clue_count": 2.0,
+        "clue_ratio": 0.13,
+        "difficulty": 1.43,
+        "histogram": "4x1,3x1,2x1,1x2",
+        "max_active": 14.0,
+        "max_batch": 8.0,
+        "max_complexity": 4.0,
+        "profile": "8x1,7x1,3x2,2x1",
+        "rounds": 5.0,
+        "target_difficulty": 0.0
+      },
+      "global_rules": [],
+      "mines": [
+        {
+          "c": 3.0,
+          "r": 2.0
+        },
+        {
+          "c": 0.0,
+          "r": 4.0
+        },
+        {
+          "c": 4.0,
+          "r": 3.0
+        },
+        {
+          "c": 4.0,
+          "r": 1.0
+        },
+        {
+          "c": 1.0,
+          "r": 0.0
+        },
+        {
+          "c": 3.0,
+          "r": 4.0
+        },
+        {
+          "c": 2.0,
+          "r": 4.0
+        },
+        {
+          "c": 0.0,
+          "r": 3.0
+        },
+        {
+          "c": 3.0,
+          "r": 0.0
+        },
+        {
+          "c": 4.0,
+          "r": 4.0
+        }
+      ],
+      "name": "normal_08",
+      "revealed": [
+        {
+          "c": 1.0,
+          "r": 3.0
+        },
+        {
+          "c": 1.0,
+          "r": 4.0
+        }
+      ],
+      "rule_level": true,
+      "seed": 25.0,
+      "size": {
+        "cols": 5.0,
+        "rows": 5.0
+      },
+      "total_mines": 10.0
+    },
+    {
+      "clue_rule": "classic",
+      "difficulty": 2.1,
+      "difficulty_profile": {
+        "clue_count": 4.0,
+        "clue_ratio": 0.27,
+        "difficulty": 2.1,
+        "histogram": "4x1,2x1,1x3",
+        "max_active": 13.0,
+        "max_batch": 8.0,
+        "max_complexity": 4.0,
+        "profile": "8x1,7x1,3x1,2x1,1x1",
+        "rounds": 5.0,
+        "target_difficulty": 0.0
+      },
+      "global_rules": [],
+      "mines": [
+        {
+          "c": 4.0,
+          "r": 3.0
+        },
+        {
+          "c": 3.0,
+          "r": 1.0
+        },
+        {
+          "c": 1.0,
+          "r": 4.0
+        },
+        {
+          "c": 1.0,
+          "r": 3.0
+        },
+        {
+          "c": 1.0,
+          "r": 2.0
+        },
+        {
+          "c": 0.0,
+          "r": 2.0
+        },
+        {
+          "c": 4.0,
+          "r": 1.0
+        },
+        {
+          "c": 4.0,
+          "r": 0.0
+        },
+        {
+          "c": 3.0,
+          "r": 3.0
+        },
+        {
+          "c": 2.0,
+          "r": 0.0
+        }
+      ],
+      "name": "normal_03",
+      "revealed": [
+        {
+          "c": 0.0,
+          "r": 0.0
+        },
+        {
+          "c": 4.0,
+          "r": 2.0
+        },
+        {
+          "c": 3.0,
+          "r": 4.0
+        },
+        {
+          "c": 4.0,
+          "r": 4.0
+        }
+      ],
+      "rule_level": true,
+      "seed": 8.0,
       "size": {
         "cols": 5.0,
         "rows": 5.0
@@ -185,91 +1128,6 @@
     },
     {
       "clue_rule": "classic",
-      "difficulty": 2.1,
-      "difficulty_profile": {
-        "clue_count": 4.0,
-        "clue_ratio": 0.27,
-        "difficulty": 2.1,
-        "histogram": "4x1,2x1,1x3",
-        "max_active": 13.0,
-        "max_batch": 8.0,
-        "max_complexity": 4.0,
-        "profile": "8x1,7x1,3x1,2x1,1x1",
-        "rounds": 5.0,
-        "target_difficulty": 0.0
-      },
-      "global_rules": [],
-      "mines": [
-        {
-          "c": 4.0,
-          "r": 3.0
-        },
-        {
-          "c": 3.0,
-          "r": 1.0
-        },
-        {
-          "c": 1.0,
-          "r": 4.0
-        },
-        {
-          "c": 1.0,
-          "r": 3.0
-        },
-        {
-          "c": 1.0,
-          "r": 2.0
-        },
-        {
-          "c": 0.0,
-          "r": 2.0
-        },
-        {
-          "c": 4.0,
-          "r": 1.0
-        },
-        {
-          "c": 4.0,
-          "r": 0.0
-        },
-        {
-          "c": 3.0,
-          "r": 3.0
-        },
-        {
-          "c": 2.0,
-          "r": 0.0
-        }
-      ],
-      "name": "normal_03",
-      "revealed": [
-        {
-          "c": 0.0,
-          "r": 0.0
-        },
-        {
-          "c": 4.0,
-          "r": 2.0
-        },
-        {
-          "c": 3.0,
-          "r": 4.0
-        },
-        {
-          "c": 4.0,
-          "r": 4.0
-        }
-      ],
-      "rule_level": true,
-      "seed": 8.0,
-      "size": {
-        "cols": 5.0,
-        "rows": 5.0
-      },
-      "total_mines": 10.0
-    },
-    {
-      "clue_rule": "classic",
       "difficulty": 0.6,
       "difficulty_profile": {
         "clue_count": 6.0,
@@ -326,7 +1184,7 @@
           "r": 1.0
         }
       ],
-      "name": "easy_07",
+      "name": "normal_04",
       "revealed": [
         {
           "c": 0.0,
@@ -355,6 +1213,528 @@
       ],
       "rule_level": true,
       "seed": 10.0,
+      "size": {
+        "cols": 5.0,
+        "rows": 5.0
+      },
+      "total_mines": 10.0
+    },
+    {
+      "clue_rule": "classic",
+      "difficulty": 0.5,
+      "difficulty_profile": {
+        "clue_count": 5.0,
+        "clue_ratio": 0.33,
+        "difficulty": 0.5,
+        "histogram": "5x1,3x1,1x1",
+        "max_active": 13.0,
+        "max_batch": 9.0,
+        "max_complexity": 5.0,
+        "profile": "9x1,7x1,4x1",
+        "rounds": 3.0,
+        "target_difficulty": 0.0
+      },
+      "global_rules": [],
+      "mines": [
+        {
+          "c": 3.0,
+          "r": 1.0
+        },
+        {
+          "c": 2.0,
+          "r": 3.0
+        },
+        {
+          "c": 0.0,
+          "r": 4.0
+        },
+        {
+          "c": 2.0,
+          "r": 4.0
+        },
+        {
+          "c": 0.0,
+          "r": 0.0
+        },
+        {
+          "c": 1.0,
+          "r": 3.0
+        },
+        {
+          "c": 1.0,
+          "r": 4.0
+        },
+        {
+          "c": 2.0,
+          "r": 1.0
+        },
+        {
+          "c": 3.0,
+          "r": 3.0
+        },
+        {
+          "c": 2.0,
+          "r": 0.0
+        }
+      ],
+      "name": "normal_19",
+      "revealed": [
+        {
+          "c": 1.0,
+          "r": 0.0
+        },
+        {
+          "c": 1.0,
+          "r": 2.0
+        },
+        {
+          "c": 0.0,
+          "r": 3.0
+        },
+        {
+          "c": 3.0,
+          "r": 4.0
+        },
+        {
+          "c": 4.0,
+          "r": 4.0
+        }
+      ],
+      "rule_level": true,
+      "seed": 74.0,
+      "size": {
+        "cols": 5.0,
+        "rows": 5.0
+      },
+      "total_mines": 10.0
+    },
+    {
+      "clue_rule": "classic",
+      "difficulty": 1.04,
+      "difficulty_profile": {
+        "clue_count": 5.0,
+        "clue_ratio": 0.33,
+        "difficulty": 1.04,
+        "histogram": "5x1,4x1,2x1,1x1",
+        "max_active": 14.0,
+        "max_batch": 7.0,
+        "max_complexity": 5.0,
+        "profile": "7x2,4x1,2x1",
+        "rounds": 4.0,
+        "target_difficulty": 0.0
+      },
+      "global_rules": [],
+      "mines": [
+        {
+          "c": 4.0,
+          "r": 3.0
+        },
+        {
+          "c": 1.0,
+          "r": 2.0
+        },
+        {
+          "c": 0.0,
+          "r": 0.0
+        },
+        {
+          "c": 4.0,
+          "r": 2.0
+        },
+        {
+          "c": 0.0,
+          "r": 2.0
+        },
+        {
+          "c": 2.0,
+          "r": 1.0
+        },
+        {
+          "c": 0.0,
+          "r": 4.0
+        },
+        {
+          "c": 2.0,
+          "r": 3.0
+        },
+        {
+          "c": 1.0,
+          "r": 4.0
+        },
+        {
+          "c": 4.0,
+          "r": 0.0
+        }
+      ],
+      "name": "normal_10",
+      "revealed": [
+        {
+          "c": 0.0,
+          "r": 1.0
+        },
+        {
+          "c": 3.0,
+          "r": 1.0
+        },
+        {
+          "c": 4.0,
+          "r": 1.0
+        },
+        {
+          "c": 3.0,
+          "r": 2.0
+        },
+        {
+          "c": 0.0,
+          "r": 3.0
+        }
+      ],
+      "rule_level": true,
+      "seed": 37.0,
+      "size": {
+        "cols": 5.0,
+        "rows": 5.0
+      },
+      "total_mines": 10.0
+    },
+    {
+      "clue_rule": "classic",
+      "difficulty": 0.82,
+      "difficulty_profile": {
+        "clue_count": 3.0,
+        "clue_ratio": 0.2,
+        "difficulty": 0.82,
+        "histogram": "5x1,2x1,1x2",
+        "max_active": 11.0,
+        "max_batch": 7.0,
+        "max_complexity": 5.0,
+        "profile": "7x2,5x1,3x1",
+        "rounds": 4.0,
+        "target_difficulty": 0.0
+      },
+      "global_rules": [],
+      "mines": [
+        {
+          "c": 2.0,
+          "r": 1.0
+        },
+        {
+          "c": 1.0,
+          "r": 0.0
+        },
+        {
+          "c": 0.0,
+          "r": 0.0
+        },
+        {
+          "c": 4.0,
+          "r": 1.0
+        },
+        {
+          "c": 1.0,
+          "r": 2.0
+        },
+        {
+          "c": 1.0,
+          "r": 3.0
+        },
+        {
+          "c": 0.0,
+          "r": 4.0
+        },
+        {
+          "c": 1.0,
+          "r": 4.0
+        },
+        {
+          "c": 2.0,
+          "r": 3.0
+        },
+        {
+          "c": 3.0,
+          "r": 2.0
+        }
+      ],
+      "name": "normal_11",
+      "revealed": [
+        {
+          "c": 4.0,
+          "r": 4.0
+        },
+        {
+          "c": 3.0,
+          "r": 1.0
+        },
+        {
+          "c": 0.0,
+          "r": 2.0
+        }
+      ],
+      "rule_level": true,
+      "seed": 45.0,
+      "size": {
+        "cols": 5.0,
+        "rows": 5.0
+      },
+      "total_mines": 10.0
+    },
+    {
+      "clue_rule": "classic",
+      "difficulty": 1.1,
+      "difficulty_profile": {
+        "clue_count": 5.0,
+        "clue_ratio": 0.33,
+        "difficulty": 1.1,
+        "histogram": "5x1,3x1,2x1,1x1",
+        "max_active": 14.0,
+        "max_batch": 8.0,
+        "max_complexity": 5.0,
+        "profile": "8x1,7x1,3x1,2x1",
+        "rounds": 4.0,
+        "target_difficulty": 0.0
+      },
+      "global_rules": [],
+      "mines": [
+        {
+          "c": 4.0,
+          "r": 3.0
+        },
+        {
+          "c": 2.0,
+          "r": 3.0
+        },
+        {
+          "c": 3.0,
+          "r": 4.0
+        },
+        {
+          "c": 4.0,
+          "r": 2.0
+        },
+        {
+          "c": 0.0,
+          "r": 1.0
+        },
+        {
+          "c": 4.0,
+          "r": 0.0
+        },
+        {
+          "c": 0.0,
+          "r": 2.0
+        },
+        {
+          "c": 2.0,
+          "r": 1.0
+        },
+        {
+          "c": 2.0,
+          "r": 0.0
+        },
+        {
+          "c": 1.0,
+          "r": 3.0
+        }
+      ],
+      "name": "normal_16",
+      "revealed": [
+        {
+          "c": 3.0,
+          "r": 0.0
+        },
+        {
+          "c": 1.0,
+          "r": 2.0
+        },
+        {
+          "c": 2.0,
+          "r": 2.0
+        },
+        {
+          "c": 3.0,
+          "r": 3.0
+        },
+        {
+          "c": 4.0,
+          "r": 4.0
+        }
+      ],
+      "rule_level": true,
+      "seed": 68.0,
+      "size": {
+        "cols": 5.0,
+        "rows": 5.0
+      },
+      "total_mines": 10.0
+    },
+    {
+      "clue_rule": "classic",
+      "difficulty": 2.54,
+      "difficulty_profile": {
+        "clue_count": 5.0,
+        "clue_ratio": 0.33,
+        "difficulty": 2.54,
+        "histogram": "5x1,3x1,2x1,1x2",
+        "max_active": 11.0,
+        "max_batch": 8.0,
+        "max_complexity": 5.0,
+        "profile": "8x1,6x1,4x1,1x2",
+        "rounds": 5.0,
+        "target_difficulty": 0.0
+      },
+      "global_rules": [],
+      "mines": [
+        {
+          "c": 1.0,
+          "r": 2.0
+        },
+        {
+          "c": 3.0,
+          "r": 0.0
+        },
+        {
+          "c": 0.0,
+          "r": 3.0
+        },
+        {
+          "c": 0.0,
+          "r": 4.0
+        },
+        {
+          "c": 3.0,
+          "r": 2.0
+        },
+        {
+          "c": 4.0,
+          "r": 4.0
+        },
+        {
+          "c": 4.0,
+          "r": 2.0
+        },
+        {
+          "c": 2.0,
+          "r": 4.0
+        },
+        {
+          "c": 3.0,
+          "r": 3.0
+        },
+        {
+          "c": 0.0,
+          "r": 1.0
+        }
+      ],
+      "name": "normal_07",
+      "revealed": [
+        {
+          "c": 2.0,
+          "r": 2.0
+        },
+        {
+          "c": 2.0,
+          "r": 3.0
+        },
+        {
+          "c": 4.0,
+          "r": 3.0
+        },
+        {
+          "c": 1.0,
+          "r": 4.0
+        },
+        {
+          "c": 3.0,
+          "r": 4.0
+        }
+      ],
+      "rule_level": true,
+      "seed": 23.0,
+      "size": {
+        "cols": 5.0,
+        "rows": 5.0
+      },
+      "total_mines": 10.0
+    },
+    {
+      "clue_rule": "classic",
+      "difficulty": 1.49,
+      "difficulty_profile": {
+        "clue_count": 4.0,
+        "clue_ratio": 0.27,
+        "difficulty": 1.49,
+        "histogram": "5x1,3x1,1x3",
+        "max_active": 14.0,
+        "max_batch": 8.0,
+        "max_complexity": 5.0,
+        "profile": "8x1,5x1,3x2,2x1",
+        "rounds": 5.0,
+        "target_difficulty": 0.0
+      },
+      "global_rules": [],
+      "mines": [
+        {
+          "c": 3.0,
+          "r": 1.0
+        },
+        {
+          "c": 0.0,
+          "r": 0.0
+        },
+        {
+          "c": 4.0,
+          "r": 2.0
+        },
+        {
+          "c": 1.0,
+          "r": 0.0
+        },
+        {
+          "c": 4.0,
+          "r": 0.0
+        },
+        {
+          "c": 2.0,
+          "r": 2.0
+        },
+        {
+          "c": 2.0,
+          "r": 4.0
+        },
+        {
+          "c": 0.0,
+          "r": 1.0
+        },
+        {
+          "c": 2.0,
+          "r": 0.0
+        },
+        {
+          "c": 1.0,
+          "r": 4.0
+        }
+      ],
+      "name": "normal_17",
+      "revealed": [
+        {
+          "c": 4.0,
+          "r": 4.0
+        },
+        {
+          "c": 4.0,
+          "r": 1.0
+        },
+        {
+          "c": 1.0,
+          "r": 3.0
+        },
+        {
+          "c": 0.0,
+          "r": 4.0
+        }
+      ],
+      "rule_level": true,
+      "seed": 69.0,
       "size": {
         "cols": 5.0,
         "rows": 5.0

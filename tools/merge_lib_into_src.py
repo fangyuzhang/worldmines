@@ -21,9 +21,14 @@ TIERS = ["easy", "normal", "hard"]
 
 
 def sig_of(lv: dict):
+    # rows + shape_kind 必须参与：shape_* 席（hex/holed/iso/tri/trihex）的 clue_rule/global_rules
+    # 与 classic 完全相同，差异只在几何——只看 cols 会把 lib 里仅有的 shape 关误并进 classic 组
+    # （09-27 实锤：shape_iso@9/normal 被并进 classic/9x9 并以 classic 名义入库）。
     return (str(lv.get("clue_rule", "")),
             tuple(sorted(str(g) for g in (lv.get("global_rules", []) or []))),
-            int((lv.get("size", {}) or {}).get("cols", 0)))
+            int((lv.get("size", {}) or {}).get("cols", 0)),
+            int((lv.get("size", {}) or {}).get("rows", 0)),
+            str(lv.get("shape_kind", "")))
 
 
 def tier_of(peak: int) -> str:
