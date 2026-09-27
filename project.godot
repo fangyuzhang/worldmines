@@ -20,7 +20,6 @@ config/icon="res://icon.svg"
 
 RNGService="*res://core/rng_service.gd"
 ModAPI="*res://core/mod_api.gd"
-;（2026-09-26 从 uid://cggqb75a8w8r 改为 res:// 直路径：与其余 8 个 autoload 一致，可读且不依赖 uid 解析）
 DebugMenu="*res://addons/debug_menu/debug_menu.tscn"
 SettingsManager="*res://ui/settings_manager.gd"
 ThemeManager="*res://ui/theme_manager.gd"
