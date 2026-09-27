@@ -12,6 +12,7 @@
 .codebuddy/
 .gdmcp/
 .logs/
+.vscode/
 addons/.godot_ai_update/
 # GodotSteam GDExtension（含全平台 .so/.dll 二进制，体积大）不入库；
 # 获取方式与版本注意见《开放平台实施框架.md》§2。GDExtension 不依赖 plugin.cfg 启用，

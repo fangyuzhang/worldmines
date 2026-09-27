@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Godot;
 using Google.OrTools.Sat;
@@ -444,7 +444,7 @@ namespace MinesweeperSolver
             if (totalMines >= 0 && _freeVars.Count > 0)
             {
                 if (_remainingMines < 0 || _remainingMines > _freeVars.Count)
-                    throw new Exception($"总雷数约束矛盾: remaining={_remainingMines}");
+                    throw new InvalidOperationException($"总雷数约束矛盾: remaining={_remainingMines}");
                 _model.Add(LinearExpr.Sum(_freeVars) == _remainingMines);
             }
 
@@ -553,7 +553,7 @@ namespace MinesweeperSolver
                         return acc;
                     }
             }
-            throw new Exception($"未知表达式节点: {e["t"].AsString()}");
+            throw new ArgumentException($"未知表达式节点: {e["t"].AsString()}");
         }
 
         private IntVar ToVar(Godot.Collections.Dictionary v)
@@ -575,7 +575,7 @@ namespace MinesweeperSolver
                         return iv;
                     return _auxBoolVars[v["i"].AsInt32()];
             }
-            throw new Exception($"wsum 项必须是变量引用: {v["t"].AsString()}");
+            throw new ArgumentException($"wsum 项必须是变量引用: {v["t"].AsString()}");
         }
 
         private ILiteral ToLit(Godot.Collections.Dictionary l)
@@ -597,14 +597,14 @@ namespace MinesweeperSolver
                 case "aux":
                     if (_auxBoolVars.TryGetValue(l["i"].AsInt32(), out var bv))
                         return bv;
-                    throw new Exception("int aux 变量不能作布尔字面量");
+                    throw new InvalidOperationException("int aux 变量不能作布尔字面量");
                 case "const":
                     // const 字面量（0=false / 非 0=true）：RuleBuilder.cell_var 越界返回
                     // const 0 并承诺「方便写开窗口规则」——支持它才能让越界格直接入
                     // 或门/蕴含（此前抛「未知字面量节点: const」炸整个 spec，mod 试验抓出）。
                     return l["v"].AsInt64() != 0 ? _constTrue : _constTrue.Not();
             }
-            throw new Exception($"未知字面量节点: {l["t"].AsString()}");
+            throw new ArgumentException($"未知字面量节点: {l["t"].AsString()}");
         }
 
         private void AddConstraint(Godot.Collections.Dictionary c, ILiteral[] enforce)
@@ -642,7 +642,9 @@ namespace MinesweeperSolver
                         var a = ToLit(c["a"].AsGodotDictionary());
                         var b = ToLit(c["b"].AsGodotDictionary());
                         Apply(_model.AddImplication(a, b), enforce);
+            #pragma warning disable S2234 // 故意的双向蕴含：等价约束 = a→b + b→a 两个方向（不是传反了）
                         Apply(_model.AddImplication(b, a), enforce);
+            #pragma warning restore S2234
                         break;
                     }
                 case "all_diff":
@@ -664,11 +666,11 @@ namespace MinesweeperSolver
                         break;
                     }
                 default:
-                    throw new Exception($"未知约束节点: {c["t"].AsString()}");
+                    throw new ArgumentException($"未知约束节点: {c["t"].AsString()}");
             }
         }
 
-        private void Apply(Constraint ct, ILiteral[] enforce)
+        private static void Apply(Constraint ct, ILiteral[] enforce)
         {
             if (enforce != null && enforce.Length > 0)
                 ct.OnlyEnforceIf(enforce);
