@@ -19,7 +19,7 @@ const LEVELS_DIR := "res://levels/"
 const SPEC_PATH := "res://tools/gen_shape_levels.gd"
 const GEN_CMD := "godot --headless --path . -s res://tools/gen_shape_levels.gd -- <file>"
 
-## 动物棋盘 9 关的实际产物（2026-09-23 收尾：8 关高分辨率 + octopus 保留升级前 60 格版）。
+## 动物棋盘 9 关的实际产物（2026-09-28：**9 关全部高分辨率**——章鱼形状重设计补齐最后一关）。
 ## row_lens = mask 逐行有格数（图案指纹：形状被改必红灯）；edges = 无向边数（度数/2）。
 ## seed 是 SPECS 的 base_seed（换 seed 重试成功时产物 seed 会不同，此处记录实跑值）。
 const ANI_CASES: Array = [
@@ -44,9 +44,12 @@ const ANI_CASES: Array = [
 		"row_lens": [1, 5, 7, 5, 11, 7, 11, 7, 9, 19, 9, 7, 11, 7, 11, 5, 7, 5],
 	},
 	{
-		"file": "ani_octopus.json", "cells": 60, "mines": 8, "seed": 9304, "bbox": Vector2i(11, 10),
-		"globals": "s5", "edges": 147,
-		"row_lens": [3, 7, 7, 7, 7, 7, 5, 5, 7, 5],
+		# 2026-09-28 形状重设计：11×10 / 60 格（5 条 1 格宽细腿）→ 17×18 / 161 格（圆头 + 4 条
+		# 2 格宽触手），约束 s5 → s4（mushroom 166 格同量级的成功先例）。旧版五轮换约束全败
+		# （s2 有解但 peak=1 一眼盘），详见 tools/gen_shape_levels.gd 的 SPEC 注释。
+		"file": "ani_octopus.json", "cells": 161, "mines": 45, "seed": 9304, "bbox": Vector2i(17, 18),
+		"globals": "s4", "edges": 482,
+		"row_lens": [7, 9, 9, 11, 11, 11, 9, 11, 11, 9, 7, 8, 8, 8, 8, 8, 8, 8],
 	},
 	{
 		"file": "ani_mushroom.json", "cells": 166, "mines": 46, "seed": 9306, "bbox": Vector2i(15, 17),
