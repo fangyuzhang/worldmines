@@ -157,7 +157,7 @@ func _build_ui() -> void:
     back.offset_top = 12
     back.offset_right = -24
     back.offset_bottom = 52
-    back.pressed.connect(func(): get_tree().change_scene_to_file("res://ui/main_menu.tscn"))
+    back.pressed.connect(func(): get_tree().change_scene_to_file("res://ui/level_select.tscn"))
     add_child(back)
 
 

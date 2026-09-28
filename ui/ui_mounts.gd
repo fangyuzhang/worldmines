@@ -12,9 +12,11 @@
 class_name UiMounts
 extends RefCounted
 
-## 挂载点：主菜单按钮列末尾。
+## 挂载点：主菜单按钮列末尾。**已废弃（2026-09-28：主菜单场景删除）**——
+## 保留常量只为兼容旧 manifest 里已声明的 slot（那些挂载项现在没有宿主，静默不渲染）。
 const SLOT_MAIN_MENU := "main_menu.footer"
-## 挂载点：选关页 Mod 页（待接——先只做主菜单，接入时用同一个 append 调用）。
+## 挂载点：选关页底部（2026-09-28 起为**唯一**生产宿主——启动直接进选关页，
+## 主菜单不再存在；旧 manifest 若只声明了 main_menu.footer，建议改成本 slot）。
 const SLOT_LEVEL_SELECT := "level_select.footer"
 
 

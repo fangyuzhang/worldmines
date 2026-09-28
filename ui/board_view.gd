@@ -2465,9 +2465,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	# 玩家可在设置页「按键」分区重绑定。**方向键/回车/翻页键仍是硬编码附加键**
 	# （不参与重绑定，见 SettingsManager.RESERVED_KEYS），保证改键后导航能力永不丢失。
 	var kc: int = (event as InputEventKey).keycode
-	if kc == SettingsManager.key_for("restart"):
-		_confirm_restart()
-	elif kc == SettingsManager.key_for("undo"):
+	# 2026-09-28（用户决策）：**进行中**的 R 键重开已删除（HUD 按钮与暂停菜单同步删）。
+	# 终局（ENDED）的键盘重开仍可用——见本函数上方的终局例外分支与结算层按钮。
+	if kc == SettingsManager.key_for("undo"):
 		# 游戏操作撤销（与绘画模式的 Ctrl+Z 撤销笔迹独立：绘画模式此处分流不到这）
 		if event.ctrl_pressed and not event.shift_pressed:
 			GameSession.undo_move()
@@ -2606,8 +2606,10 @@ func toggle_pause() -> void:
 	_toggle_pause()
 
 
-## 重开是不可撤销的破坏性操作：R 键与 WASD 光标键同处主键盘区，误触代价是丢整局。
-## 判定口径统一放在 UiConfirm（HUD「重开」按钮与此处共用）。
+## 2026-09-28（用户决策）：**进行中**的重开入口已全部移除（HUD 按钮 / R 键 / 暂停菜单），
+## 本函数当前**无 UI 调用者**。保留原因：UiConfirm.confirm_restart 的「有进度才确认」口径
+## 仍被 test_ui_confirm 覆盖，且终局重开若将来需要二次确认可直接复用。
+## 历史理由（保留）：重开是不可撤销的破坏性操作：R 键与 WASD 光标键同处主键盘区，误触代价是丢整局。
 func _confirm_restart() -> void:
 	UiConfirm.confirm_restart(self, func(): GameSession.restart())
 

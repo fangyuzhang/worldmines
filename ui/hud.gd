@@ -17,6 +17,13 @@ var _hint_btn: Button
 var _settings_popup: PopupPanel
 
 var _box: HFlowContainer
+## 左右两列（2026-09-28）：左 = 关卡列表；右 = 暂停 / 撤销 / 设置。
+var _left_col: VBoxContainer
+var _right_col: VBoxContainer
+## 侧列全部按钮（主题样式统一入口；容器本身 IGNORE 不吃事件，故样式按按钮收集）。
+var _side_buttons: Array[Button] = []
+## 侧列空闲透明度：竖列压在棋盘两侧，全不透明会挡视线；鼠标进入任一侧列按钮 → 整列 1.0。
+const SIDE_COL_IDLE_ALPHA := 0.55
 var _last_shown_sec: int = -1
 var _flag_cache: int = -1
 # 「可断定格数」0.5s 节流缓存：推导含 CP-SAT 全盘哈希，终极模式常开时每帧全算白付性能
@@ -27,17 +34,24 @@ var _deducible_at_ms: int = -100000
 func _ready() -> void:
     add_to_group("themed")
     ThemeManager.theme_changed.connect(_on_theme_changed)
-    set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-    offset_bottom = 64  # 明确顶栏高度，避免 28px 字体溢出顶部被裁剪
-    custom_minimum_size = Vector2(0, 64)
+    # 2026-09-28（用户决策）：HUD 改「顶栏 + 左右两列」——
+    #   顶栏：雷数 · 教程 · 时间 · 提示；左列：关卡列表；右列：暂停 · 撤销 · 设置。
+    # 根节点铺满全屏以承载两列，但 **mouse_filter = IGNORE**：空白处不吃点击，棋盘（下层）
+    # 照常可点；侧列容器同理（IGNORE），只有按钮自己消费点击（棋盘走 _gui_input，
+    # 上层按钮会先消费 —— 不会出现「点按钮同时翻了一格」）。
+    set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    mouse_filter = Control.MOUSE_FILTER_IGNORE
 
+    # ---------- 顶栏 ----------
     # HFlowContainer（2026-09-25 审计）：窄窗口下按钮排自动换行 —— 此前 HBoxContainer
     # 会把右端按钮推出屏外（无 clip，直接不可见、不可点）。窗口最小尺寸（1024×576）已挡
     # 住主要场景，这里再兜一层。
     _box = HFlowContainer.new()
-    _box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    _box.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+    _box.offset_bottom = 64   # 明确顶栏高度，避免 28px 字体溢出顶部被裁剪
     _box.offset_left = 24
     _box.offset_right = -24
+    _box.mouse_filter = Control.MOUSE_FILTER_IGNORE
     _box.add_theme_constant_override("separation", 24)
     add_child(_box)
 
@@ -57,28 +71,69 @@ func _ready() -> void:
     _time_label.size_flags_horizontal = Control.SIZE_EXPAND
     _box.add_child(_time_label)
 
-    _add_button("暂停", "暂停 / 继续（Esc）", func(): _toggle_pause())
     _hint_btn = _add_button("提示", "一步直推（H）", func(): GameSession.request_hint())
-    _add_button("撤销", "撤销上一步翻开/插旗（Ctrl+Z），可一路退到开局", func(): GameSession.undo_move())
-    _add_button("设置", "对局内设置", func(): _open_settings())
-    _add_button("重开", "重新开始本关（R）", func():
-        UiConfirm.confirm_restart(self, func(): GameSession.restart()))
-    # 返回类按钮：**自动保存 + 直接离开**（2026-09-22 用户决策）。
-    # 原行为：弹窗确认 → 放弃进度清档——每次离开都打断玩家，且进度白打；
-    # 暂停菜单早在 v3.2 就改成了「保存并离开」（save_now），HUD 这两个直点按钮
-    # 一直没跟上（同一件事两套口径）。现统一为：save_now() 落盘当前对局
-    #（非 PLAYING 时其内部自会跳过，如终局后离开），下次进本关 / 下次启动可恢复。
-    # 文案同步去掉「放弃本局」——离开不再意味着丢进度。
-    _add_button("关卡列表", "保存进度并返回关卡选择", func():
+
+    # ---------- 左列：关卡列表 ----------
+    _left_col = _make_side_column(true)
+    _add_col_button(_left_col, "关卡列表", "保存进度并返回关卡选择", func():
         GameSession.save_now()
         get_tree().change_scene_to_file("res://ui/level_select.tscn"))
-    _add_button("主菜单", "保存进度并返回主菜单", func():
-        GameSession.save_now()
-        get_tree().change_scene_to_file("res://ui/main_menu.tscn"))
+
+    # ---------- 右列：暂停 · 撤销 · 设置 ----------
+    _right_col = _make_side_column(false)
+    _add_col_button(_right_col, "暂停", "暂停 / 继续（Esc）", func(): _toggle_pause())
+    _add_col_button(_right_col, "撤销", "撤销上一步翻开/插旗（Ctrl+Z），可一路退到开局",
+        func(): GameSession.undo_move())
+    _add_col_button(_right_col, "设置", "打开设置（完整设置页在弹窗内「完整设置…」）",
+        func(): _open_settings())
+    # 2026-09-28 删除「重开」与「主菜单」两个按钮（用户决策）：进行中不再提供重开
+    #（终局重开在结算层 game_over）；主菜单场景已删，「关卡列表」是唯一的离开出口。
 
     GameSession.session_started.connect(_on_session_started)
     GameSession.session_restored.connect(_on_session_started)
     _apply_theme()
+
+
+## 侧列容器（2026-09-28）：竖排、半透明（悬停显形）、**不吃空白点击**。
+## 定位用 anchors + grow 方向（让容器按内容最小尺寸从锚点生长，不写死尺寸）：
+##   左列 = 左边缘垂直居中向右生长；右列 = 右边缘垂直居中向左生长。
+func _make_side_column(is_left: bool) -> VBoxContainer:
+    var col := VBoxContainer.new()
+    col.add_theme_constant_override("separation", 8)
+    col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    col.anchor_top = 0.5
+    col.anchor_bottom = 0.5
+    if is_left:
+        col.anchor_left = 0.0
+        col.anchor_right = 0.0
+        col.grow_horizontal = Control.GROW_DIRECTION_END
+        col.offset_left = 12.0
+    else:
+        col.anchor_left = 1.0
+        col.anchor_right = 1.0
+        col.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+        col.offset_right = -12.0
+    col.grow_vertical = Control.GROW_DIRECTION_BOTH
+    # 半透明：竖列压在棋盘两侧，全不透明会挡视线。悬停 → 整列 1.0 显形；
+    # 容器自身 IGNORE 收不到鼠标事件 ⇒ 显形挂在**按钮级** enter/exit（见 _add_col_button）。
+    col.modulate = Color(1, 1, 1, SIDE_COL_IDLE_ALPHA)
+    add_child(col)
+    return col
+
+
+## 侧列按钮：竖排、悬停让整列显形、键盘可聚焦（无障碍基线不降）。
+func _add_col_button(col: VBoxContainer, text: String, tip: String, on_pressed: Callable) -> Button:
+    var b := Button.new()
+    b.text = text
+    b.tooltip_text = tip
+    b.focus_mode = Control.FOCUS_ALL
+    b.custom_minimum_size = Vector2(84, 38)
+    b.pressed.connect(on_pressed)
+    b.mouse_entered.connect(func(): col.modulate.a = 1.0)
+    b.mouse_exited.connect(func(): col.modulate.a = SIDE_COL_IDLE_ALPHA)
+    col.add_child(b)
+    _side_buttons.append(b)
+    return b
 
 
 func _add_button(text: String, tip: String, on_pressed: Callable) -> Button:
@@ -142,7 +197,10 @@ func _toggle_pause() -> void:
 func _open_settings() -> void:
     if _settings_popup == null or not is_instance_valid(_settings_popup):
         _settings_popup = load("res://ui/settings_popup.tscn").instantiate()
-        get_tree().current_scene.add_child(_settings_popup)
+        # 【09-28 审计修复 R9】原为 `get_tree().current_scene.add_child(...)` —— 无判空、无兜底；
+        # 非标准宿主（单测里实例化 HUD、或场景尚未挂接到 current_scene）会 null 报错，
+        # 表现为"点设置没反应"。复用同文件既有的 `_overlay_host()`（current_scene → 父节点 → self）。
+        _overlay_host().add_child(_settings_popup)
         _settings_popup.hide()  # Window 默认 visible=true，不显式隐藏会立刻弹出
     _settings_popup.popup_centered()
 
@@ -184,7 +242,9 @@ func _process(_delta: float) -> void:
             _deducible_cache = GameSession.deducible_safe_count()
             _deducible_at_ms = now_ms
         _mines_label.text += "　可断定 %d" % _deducible_cache
-    _time_label.text = "时间 %02d:%02d" % [total / 60, total % 60]
+    # 【09-28 审计修复 A8】原为 `total / 60`（int/int ⇒ 截断）——已开启 `integer_division` 警告，
+    # 这里改成显式浮点除法 + floor，语义与旧行为**逐值相同**（total 为非负秒数），但不再掩盖意图。
+    _time_label.text = "时间 %02d:%02d" % [floori(total / 60.0), total % 60]
 
 
 ## 提示按钮：反映提示模式与充能进度。
@@ -252,6 +312,11 @@ func _apply_theme() -> void:
         for c in _box.get_children():
             if c is Button:
                 UiTheme.style_button(c)
+        # 侧列按钮（2026-09-28）：容器是 IGNORE 的半透明层，样式逐个应用——
+        # 维护显式数组比按容器类型猜稳（同上一段的教训：类型判定会随改造过期）。
+        for b in _side_buttons:
+            if is_instance_valid(b):
+                UiTheme.style_button(b)
     queue_redraw()
 
 

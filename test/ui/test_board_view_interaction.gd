@@ -51,12 +51,15 @@ func test_b2_guess_rejected_has_feedback() -> void:
 
 
 # B3：有可见弹窗时，键盘不得穿透到棋盘（历史 bug：设置弹窗开着按 R 会重开对局）
+# 2026-09-28（用户决策）：**进行中**的 R 键重开已删，终局通道保留 —— 探针改用
+# ENDED 状态（终局键盘重开仍生效），用例语义与按键不变。
 func test_b3_open_popup_blocks_keys() -> void:
 	var dlg := PopupPanel.new()
 	add_child_autofree(dlg)
 	dlg.popup_centered()
 	assert_true(_view._has_open_popup(), "应能识别到可见弹窗")
 
+	GameSession.state = GameSession.State.ENDED
 	var before := GameSession.board
 	_view._unhandled_key_input(_key(KEY_R))
 	assert_same(GameSession.board, before, "弹窗打开时按 R 不得重开对局")
@@ -70,11 +73,12 @@ func test_b4_keys_work_after_popup_closed() -> void:
 	dlg.hide()
 	assert_false(_view._has_open_popup(), "弹窗隐藏后不应再拦截按键")
 
-	# elapsed < UiConfirm.TRIVIAL_SEC 时不弹确认，直接重开
-	GameSession.elapsed = 0.0
+	# 终局的键盘重开（2026-09-28：进行中的 R 已删，终局仍保留）——
+	# 同一按键、同一守卫路径，继续验证「弹窗关闭后按键恢复生效」。
+	GameSession.state = GameSession.State.ENDED
 	var before := GameSession.board
 	_view._unhandled_key_input(_key(KEY_R))
-	assert_true(GameSession.board != before, "弹窗关闭后按 R 应正常重开")
+	assert_true(GameSession.board != before, "弹窗关闭后按 R 应正常重开（终局例外通道）")
 
 
 # B6：右键拖动 = 连续插旗（只插不取消，避免把已插好的旗拖没了）

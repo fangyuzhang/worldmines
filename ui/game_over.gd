@@ -78,7 +78,7 @@ func _ready() -> void:
     _back_btn.custom_minimum_size = Vector2(240, 44)
     _back_btn.pressed.connect(func():
         SaveCoordinator.clear()
-        get_tree().change_scene_to_file("res://ui/main_menu.tscn"))
+        get_tree().change_scene_to_file("res://ui/level_select.tscn"))
     vbox.add_child(_back_btn)
 
     GameSession.game_ended.connect(_on_game_ended)
@@ -127,7 +127,7 @@ func _on_game_ended(won: bool) -> void:
     var board: Board = GameSession.board
     var revealed_n: int = board.get_stats()["revealed"] if board != null else 0
     var total: int = int(GameSession.elapsed)
-    var m: int = total / 60
+    var m: int = floori(total / 60.0)   # 【09-28 审计修复 A8】int/int 显式化
     var s: int = total % 60
     _sub_label.text = "用时 %02d:%02d · 翻开 %d 格" % [m, s, revealed_n]
     _apply_theme()

@@ -7,9 +7,8 @@
 # 与 settings_popup 同构：PopupPanel + PanelContainer 承载主题样式。
 extends PopupPanel
 
-## 对外信号：请求重开本关（面板自身不处理导航，交给宿主接线；暂无接线者）
-@warning_ignore("unused_signal")
-signal restart_requested
+# 2026-09-28：`restart_requested` 信号随「重新开始」按钮一并删除（它本就无人接线；
+# 进行中重开已按用户决策整体移除）。
 
 var _panel: PanelContainer
 var _sub_label: Label
@@ -54,11 +53,9 @@ func _build_ui() -> void:
     vbox.add_child(HSeparator.new())
 
     _add_button(vbox, "继续游戏", func(): hide())
-    _add_button(vbox, "重新开始", func():
-        UiConfirm.confirm_restart(get_tree().current_scene, func():
-            hide()
-            _resume()
-            GameSession.restart()))
+    # 2026-09-28（用户决策）：删除「重新开始」与「主菜单」两个按钮——
+    # 进行中重开已整体移除（HUD 按钮 / R 键同步删）；主菜单场景已删除，
+    # 「关卡列表」是唯一的离开出口（保存进度 + 回选关页）。
     # 离开不再弹确认（2026-09-22 用户决策）：直接落盘 + 离开。
     # v3.2 起这里就是「保存而非放弃」，确认框对玩家只剩打断作用（实测反馈：很烦）；
     # HUD 直点按钮同步改掉后，整个离开路径统一为 save_now + 切场景。
@@ -69,11 +66,6 @@ func _build_ui() -> void:
         # 下次进入本关/下次启动时自动恢复（存档内容自动保存）。
         GameSession.save_now()
         get_tree().change_scene_to_file("res://ui/level_select.tscn"))
-    _add_button(vbox, "主菜单", func():
-        hide()
-        _resume()
-        GameSession.save_now()
-        get_tree().change_scene_to_file("res://ui/main_menu.tscn"))
 
     _apply_theme()
 
@@ -82,7 +74,8 @@ func _build_ui() -> void:
 func popup_center_refreshed() -> void:
     if _sub_label != null and GameSession != null:
         var total := int(GameSession.elapsed)
-        _sub_label.text = "已用时 %02d:%02d · 计时已停止" % [total / 60, total % 60]
+        # 【09-28 审计修复 A8】int/int 显式化（与 hud.gd 同口径）
+        _sub_label.text = "已用时 %02d:%02d · 计时已停止" % [floori(total / 60.0), total % 60]
     popup_centered()
 
 

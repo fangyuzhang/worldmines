@@ -177,7 +177,7 @@ func _build_ui() -> void:
 	back.offset_top = 12
 	back.offset_right = -24
 	back.offset_bottom = 52
-	back.pressed.connect(func(): get_tree().change_scene_to_file("res://ui/main_menu.tscn"))
+	back.pressed.connect(func(): get_tree().change_scene_to_file("res://ui/level_select.tscn"))
 	add_child(back)
 
 	var scroll := ScrollContainer.new()
@@ -498,7 +498,8 @@ func _generate_wasm_levels(mod_name: String, kind: String) -> void:
 	var produced := 0
 	for t in 40:
 		await get_tree().process_frame
-		if _gen_cancel or produced >= 5:
+		# 【09-28 审计修复 R5】await 恢复时节点可能已不在树（生成中点"返回"）⇒ 访问 self 报错且静默中断
+		if not is_inside_tree() or _gen_cancel or produced >= 5:
 			break
 		var level: Dictionary
 		if kind == "global":
@@ -549,7 +550,8 @@ func _generate_levels(mod_name: String, def_name: String) -> void:
 	var produced := 0
 	for t in 40:
 		await get_tree().process_frame
-		if _gen_cancel or produced >= 5:
+		# 【09-28 审计修复 R5】同上：恢复即判活（生成中点"返回"不再报错）
+		if not is_inside_tree() or _gen_cancel or produced >= 5:
 			break
 		var level := gen.generate_with_engine(ModAPI.defs, def_name, "", size, mine_count, t + 1, topo)
 		if level.is_empty():
@@ -701,7 +703,8 @@ func _generate_rule_levels(rule_id: String, tier_id: String = "") -> void:
 	var t0 := Time.get_ticks_msec()
 	for t in GEN_ATTEMPT_MAX:
 		await get_tree().process_frame
-		if _gen_cancel or produced >= 5:
+		# 【09-28 审计修复 R5】同上：恢复即判活
+		if not is_inside_tree() or _gen_cancel or produced >= 5:
 			break
 		var level := gen.generate_with_rules(rule_id, [], size, mine_count, t + 1, 0, 50, topo)
 		tried += 1
@@ -792,7 +795,8 @@ func _probe_rule_capability(rule_id: String) -> void:
 		var acc := VariantCapability.probe_new(mines)
 		for i in PROBE_N:
 			await get_tree().process_frame
-			if _gen_cancel:
+			# 【09-28 审计修复 R5】同上：恢复即判活
+			if not is_inside_tree() or _gen_cancel:
 				break
 			if Time.get_ticks_msec() - t0 >= PROBE_BUDGET_MS:
 				over_budget = true
@@ -819,7 +823,7 @@ func _probe_rule_capability(rule_id: String) -> void:
 		_toast("已取消能力探测（已采样的 %d 个尺寸已落盘）" % done_sides, done_sides == 0)
 	elif over_budget:
 		_toast("探测达 %d 秒预算提前收工（%d 尺寸 / %d 候选已落盘）——完整档案请用 CLI tools/capability_probe.gd" % [
-			PROBE_BUDGET_MS / 1000, done_sides, tried], true)
+			int(PROBE_BUDGET_MS / 1000.0), done_sides, tried], true)   # A8：int/int 显式化
 	else:
 		_toast("能力探测完成：%d 尺寸 / %d 候选｜%s" % [done_sides, tried,
 			_capability_summary(rule_id)], false)

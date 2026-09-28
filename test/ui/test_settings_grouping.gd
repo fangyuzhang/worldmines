@@ -19,7 +19,8 @@ const CFG := "user://settings.cfg"
 const EXPECTED_TABS := ["画面", "玩法", "按键", "音效", "皮肤", "数据"]
 
 ## 「应有入口」清单：页签 → 行文案 → 期望控件类型。
-## 含任务二要求补入口的全部字段（no_guess/hint_mode/hint_charge/drawing_opacity/ult×3/restart_confirm）。
+## 含任务二要求补入口的全部字段（no_guess/hint_mode/hint_charge/drawing_opacity/ult×3）。
+## 2026-09-28：`restart_confirm` 一项随「重开前确认」行移除（进行中重开已删，开关失去场景）。
 const EXPECTED_ENTRIES := [
     {"page": "画面", "label": "主题模式", "kind": "OptionButton"},
     {"page": "画面", "label": "全屏模式", "kind": "CheckButton"},
@@ -30,7 +31,6 @@ const EXPECTED_ENTRIES := [
     {"page": "玩法", "label": "连携操作（一键展开 / 拖动插旗）", "kind": "CheckButton"},
     {"page": "玩法", "label": "自动存档", "kind": "CheckButton"},
     {"page": "玩法", "label": "键盘操作", "kind": "CheckButton"},
-    {"page": "玩法", "label": "重开前确认", "kind": "CheckButton"},
     {"page": "玩法", "label": "无猜模式", "kind": "OptionButton"},
     {"page": "玩法", "label": "提示模式", "kind": "OptionButton"},
     {"page": "玩法", "label": "提示充能（120 秒）", "kind": "CheckButton"},
@@ -178,7 +178,6 @@ func test_initial_values_match_manager() -> void:
     # 人为设一组非默认值（直接赋内存值，不写盘），验证面板读取的是当前值
     SettingsManager.no_guess_mode = 1
     SettingsManager.hint_mode = 2
-    SettingsManager.restart_confirm = false
     SettingsManager.ui_scale = 1.25
     SettingsManager.drawing_opacity = 0.7
     SettingsManager.ripple_enabled = false
@@ -186,7 +185,6 @@ func test_initial_values_match_manager() -> void:
     var panel := _make_panel()
     assert_eq(panel._no_guess_opt.selected, 1, "无猜模式初值应 = 当前值")
     assert_eq(panel._hint_mode_opt.selected, 2, "提示模式初值应 = 当前值")
-    assert_eq(panel._restart_confirm_chk.button_pressed, false, "重开前确认初值应 = 当前值")
     assert_eq(panel._ui_scale_opt.selected, 1, "界面缩放初值应落在 125% 档")
     assert_almost_eq(panel._opacity_slider.value, 0.7, 0.001, "绘画层透明度初值应 = 当前值")
     assert_eq(panel._ripple_chk.button_pressed, false, "翻开动效初值应 = 当前值")
@@ -210,11 +208,8 @@ func test_toggle_hint_mode_updates_manager() -> void:
     assert_eq(SettingsManager.hint_mode, 2, "切换提示模式应立即生效")
 
 
-func test_toggle_restart_confirm_updates_manager() -> void:
-    var panel := _make_panel()
-    var before: bool = SettingsManager.restart_confirm
-    panel._restart_confirm_chk.button_pressed = not before
-    assert_eq(SettingsManager.restart_confirm, not before, "切换重开前确认应立即生效")
+# 2026-09-28：`test_toggle_restart_confirm_updates_manager` 随「重开前确认」设置项移除
+# （进行中重开已按用户决策删除；属性 SettingsManager.restart_confirm 仍在，只是没有 UI 面）。
 
 
 func test_toggle_ui_scale_updates_manager() -> void:

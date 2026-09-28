@@ -32,7 +32,7 @@ var _quick_chk: CheckButton
 var _question_chk: CheckButton
 var _autosave_chk: CheckButton
 var _keyboard_chk: CheckButton
-var _restart_confirm_chk: CheckButton
+# 2026-09-28：`_restart_confirm_chk` 随「重开前确认」行一并移除（进行中重开已删）。
 var _no_guess_opt: OptionButton
 var _hint_mode_opt: OptionButton
 var _hint_charge_chk: CheckButton
@@ -86,7 +86,7 @@ func _build_ui() -> void:
     back.offset_top = 12
     back.offset_right = -24
     back.offset_bottom = 52
-    back.pressed.connect(func(): get_tree().change_scene_to_file("res://ui/main_menu.tscn"))
+    back.pressed.connect(func(): get_tree().change_scene_to_file("res://ui/level_select.tscn"))
     add_child(back)
 
     var center := CenterContainer.new()
@@ -225,8 +225,8 @@ func _build_play_page(page: VBoxContainer) -> void:
     _keyboard_chk = _add_check_row(page, "键盘操作",
         func(v: bool): SettingsManager.set_keyboard_enabled(v), SettingsManager.keyboard_enabled)
     # 重开前确认：玩家在重开弹窗勾「不再提示」后会被置 false —— 本项是唯一的改回入口
-    _restart_confirm_chk = _add_check_row(page, "重开前确认",
-        func(v: bool): SettingsManager.set_restart_confirm(v), SettingsManager.restart_confirm)
+    # 2026-09-28 移除「重开前确认」行：进行中重开已删（用户决策），该确认框与开关失去对应场景。
+    # SettingsManager.restart_confirm 属性保留不删——存档兼容，且终局重开若将来要加确认可直接复用。
     # 语音播报（2026-09-25 无障碍）：棋盘内容纯 _draw 绘制、屏幕阅读器读不到 ——
     # 开启后键盘操作会播报光标格的位置与状态（键盘用户正是本项的目标人群）。
     _add_check_row(page, "语音播报（屏幕阅读器）",

@@ -69,7 +69,30 @@ func set_drawing_provider(p: Callable) -> void:
 
 func _ready() -> void:
     # 预留：无事可做（autoload 顺序 Settings→Theme→GameSession 已保证）
-    pass
+    # 2026-09-28：接管窗口关闭（叉号 / Alt+F4）——关闭游戏内「退出」按钮与主菜单后，
+    # 窗口叉号是**唯一退出方式**，而 Godot 默认关闭不做任何存档（见 _on_close_requested）。
+    var tree := get_tree()
+    if tree != null:
+        tree.auto_accept_quit = false
+
+
+func _notification(what: int) -> void:
+    if what == NOTIFICATION_WM_CLOSE_REQUEST:
+        _on_close_requested()
+
+
+## 窗口关闭（叉号 / Alt+F4）：保存进行中的对局 + 清理存活标志，然后退出。
+##
+## 为什么必须有（2026-09-28 UI 重构）：主菜单与「退出」按钮已删除，关闭窗口成为**唯一**
+## 退出方式；Godot 默认的关闭直接终止进程——「1s 防抖窗口内」的操作会丢，且存活标志
+## 不会清理（下次启动会把上一局的自动档误判成「未完成对局/崩溃」）。
+## 与「关卡列表」离开同口径：save_now() 在非 PLAYING / 无棋盘 / 无关卡路径时内部自跳过。
+func _on_close_requested() -> void:
+    save_now()
+    SaveCoordinator.clear_temp()
+    var tree := get_tree()
+    if tree != null:
+        tree.quit()
 
 
 func _process(delta: float) -> void:
@@ -215,6 +238,11 @@ func _record_move(before: Dictionary) -> void:
             changes[p] = prev
     if not changes.is_empty():
         _move_history.append(changes)
+        # 【09-28 审计修复 R7】原先**无上限** ⇒ 长局内存单调增长（每步一个 Dictionary）。
+        # 与 `ui/drawing_layer.gd:26` 的 `UNDO_LIMIT := 50` 取同口径；超出丢最早一步。
+        # 取舍：超长局不能再一路退到开局（栈变浅），换取内存/GC 有界——无上限的成长只会在长局里变成抖动。
+        while _move_history.size() > 50:
+            _move_history.pop_front()
 
 
 ## 撤销上一步玩家操作（翻开 / 插旗 / ? 标记）。连按可一路退到关卡开始的状态。

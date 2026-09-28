@@ -133,13 +133,24 @@ func _build_ui() -> void:
     # 绘画草稿是否写入存档（与设置页同项）：关闭后存档不含草稿，恢复不还原
     _add_check_row(vbox, "绘画草稿存入存档",
         func(v: bool): SettingsManager.set_drawing_in_save(v), SettingsManager.drawing_in_save)
-    # 重开前确认（2026-09-25 审计补）：对局内正是 R 键误触的**发生地**，玩家想关/开它时
-    # 必须能就地改 —— 此前只能退回主菜单的设置页（两套设置 UI 的唯一实质缺口）。
-    _add_check_row(vbox, "重开前确认", func(v: bool): SettingsManager.set_restart_confirm(v),
-        SettingsManager.restart_confirm)
-    # 语音播报（2026-09-25 无障碍）：与主菜单设置页同一开关（键盘用户常在局内才想起开）
+    # 2026-09-28 移除「重开前确认」：进行中重开已删（用户决策），该开关失去对应场景。
+    # 语音播报（2026-09-25 无障碍）：与设置整页同一开关（键盘用户常在局内才想起开）
     _add_check_row(vbox, "语音播报（屏幕阅读器）", func(v: bool): SettingsManager.set_tts_enabled(v),
         SettingsManager.tts_enabled)
+
+    # 完整设置入口（2026-09-28）：本弹窗只覆盖「外观 / 操作 / 对局提示」子集——
+    # 按键重绑、音效细项、皮肤、数据管理都在整页 settings_panel。原先整页的唯一入口是主菜单；
+    # 主菜单删除后，这里是通向那些功能的唯一通道，缺了它它们将彻底无入口。
+    var more := Button.new()
+    more.text = "完整设置…"
+    more.focus_mode = Control.FOCUS_ALL
+    more.custom_minimum_size = Vector2(0, 40)
+    more.tooltip_text = "打开完整设置：按键重绑 / 音效 / 皮肤 / 数据管理"
+    more.set_meta("full_settings_btn", true)   # 测试 / 调试可据此定位
+    more.pressed.connect(func():
+        hide()
+        get_tree().change_scene_to_file("res://ui/settings_panel.tscn"))
+    vbox.add_child(more)
 
     var close := Button.new()
     close.text = "关闭"

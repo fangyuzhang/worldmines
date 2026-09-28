@@ -134,6 +134,9 @@ var _popup_closing := false
 ## Mod 加载 / 卸载后注册表已变，但弹窗开着时不便重建节点 → 记脏标记，关闭时补建。
 var _modes_dirty := false
 
+## 设置弹窗（右上角齿轮，2026-09-28）：缓存单实例复用，与对局内 HUD 同款。
+var _settings_popup: PopupPanel
+
 ## 演示用「已通关」记录。**只在本次进程内有效、不落盘**。
 ## 历史 bug：这些记录原先直接写进真实的 ProgressStore（user://progress.json），
 ## 于是首次进入任何变体×尺寸都会永久留下一条「20.00 秒通关」的假数据，
@@ -144,6 +147,8 @@ static var _mock_cleared: Dictionary = {}
 func _ready() -> void:
 	add_to_group("themed")
 	ThemeManager.theme_changed.connect(_on_theme_changed)
+	# R4：昂贵重建只跟「末步收口」信号（一次切换只跑一次，取代原先自己实现的 300ms 去抖）
+	ThemeManager.theme_settled.connect(_on_theme_settled)
 	_tab = _tab_memory
 	_refresh_modes()      # 变体表必须在建页之前生成：页内容 = MODES 的派生
 	_build_ui()
@@ -151,6 +156,9 @@ func _ready() -> void:
 	# Mod 加载 / 卸载 → 注册表变化 → 选关页内容实时增减（卸载时 mod_api 会注销其规则）
 	ModAPI.events.on(EventBus.MOD_LOADED, _on_mods_changed)
 	_prewarm_board_view()
+	# 未完成对局提示（2026-09-28 从主菜单搬迁）：选关页现在是**启动页**，
+	# 「有一局未完成，从同一关进入可继续」这条提示的归属地随之转移（见 _check_crash_restore）。
+	_check_crash_restore()
 
 
 ## 预热对局场景：首次进入关卡的同步重活发生在玩家点「开始」之后，观感是「点了没反应、画面静止」。
@@ -260,20 +268,25 @@ func _build_ui() -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	add_child(title)
 
-	# 返回按钮（左上）：**层级返回**——异形棋盘页第二级先回变体列表，其余情况退回主菜单。
-	# 为什么收编页内的「← 返回变体列表」卡片（2026-09-25 用户口径）：一个页面两个返回入口
-	# （左上角 + 页内卡片）会让人犹豫点哪个；统一由左上角承担后退语义后，页内不再放返回卡。
-	var back := Button.new()
-	back.text = "返回"
-	back.focus_mode = Control.FOCUS_ALL
-	back.custom_minimum_size = Vector2(96, 42)
-	back.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
-	back.offset_left = 24
-	back.offset_top = 14
-	back.set_meta("std_btn", true)
-	back.set_meta("back_btn", true)   # 测试 / 调试可据此定位
-	back.pressed.connect(_on_back_pressed)
-	add_child(back)
+	# 右上角：图鉴 + 设置（2026-09-28 用户决策）。原「返回」按钮随主菜单一并移除——
+	# 选关页现在是**启动页**，没有"上一级"可返回；图鉴/设置的入口从主菜单搬到这里。
+	# 两个按钮用内联 SVG 图标（先例：ui/drawing_toolbar.gd 的 load_svg_from_string；
+	# 不引入外部资源，解析失败只是图标缺失、按钮仍可点）。
+	var corner := HBoxContainer.new()
+	corner.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	corner.offset_left = -104
+	corner.offset_top = 14
+	corner.offset_right = -24
+	corner.add_theme_constant_override("separation", 8)
+	add_child(corner)
+	var codex_btn := _make_icon_button(_svg_book(), "规则图鉴（各算子与变体说明）")
+	codex_btn.set_meta("codex_btn", true)   # 测试 / 调试可据此定位
+	codex_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://ui/codex.tscn"))
+	corner.add_child(codex_btn)
+	var gear_btn := _make_icon_button(_svg_gear(), "设置")
+	gear_btn.set_meta("settings_btn", true)   # 测试 / 调试可据此定位
+	gear_btn.pressed.connect(_open_settings_popup)
+	corner.add_child(gear_btn)
 
 	# 页签栏（三个页面各一个标签）
 	var bar := HBoxContainer.new()
@@ -305,6 +318,16 @@ func _build_ui() -> void:
 	_page_host.offset_top = 110
 	_page_host.offset_bottom = -8
 	add_child(_page_host)
+
+	# Mod 纯数据挂载点（P4）：主菜单删除后从 SLOT_MAIN_MENU 迁到本页
+	#（SLOT_LEVEL_SELECT 早已预留，此前"待接"）。无挂载时不产生任何节点。
+	var mounts := VBoxContainer.new()
+	mounts.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+	mounts.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	mounts.offset_bottom = -8
+	mounts.alignment = BoxContainer.ALIGNMENT_CENTER
+	add_child(mounts)
+	UiMounts.append(mounts, UiMounts.SLOT_LEVEL_SELECT, self)
 
 	_rebuild_pages()
 	_apply_theme()
@@ -647,6 +670,8 @@ func _ss_table() -> Control:
 				# 对角线（同一约束不可重复）与左下（与右上同一对）都不产生组合
 				table.add_child(_matrix_blank())
 
+	# 【09-28 审计修复 A8】连乘必为偶数 ⇒ 整除无损耗；显式标注以免与"误用截断"混为一谈
+	@warning_ignore("integer_division")
 	var pairs := structs.size() * (structs.size() - 1) / 2
 	var alive := VariantCatalog.gg_all(_cur_size(), LevelSequence.mine_count(SIZES[_size_idx])).size()
 	wrap.add_child(_matrix_note("共 %d 对（C(%d,2)，GDD §10.1 T3 F 类）　·　%d 组当前可用　·　同轴配对多为 J2 警告（可行域收窄但可生产）" % [
@@ -808,6 +833,22 @@ func _build_mod_page() -> Control:
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 16)
 	(shell[1] as MarginContainer).add_child(vb)
+
+	# 「模组管理」入口（2026-09-28 用户决策）：主菜单删除后，mod_select（安装/加载/卸载、
+	# 导入文件夹、生成关卡）的入口搬进 Mod 页顶部——**空状态也保留**（一个 mod 都没装时
+	# 才更需要进管理页去装）。
+	var manage_row := HBoxContainer.new()
+	manage_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	var manage_btn := Button.new()
+	manage_btn.text = "模组管理"
+	manage_btn.tooltip_text = "安装 / 加载 / 卸载 Mod，导入文件夹，生成关卡"
+	manage_btn.focus_mode = Control.FOCUS_ALL
+	manage_btn.custom_minimum_size = Vector2(160, 40)
+	manage_btn.set_meta("mod_manage_btn", true)   # 测试 / 调试可据此定位
+	manage_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://ui/mod_select.tscn"))
+	UiTheme.bind_hover(manage_btn, HOVER_SCALE)
+	manage_row.add_child(manage_btn)
+	vb.add_child(manage_row)
 
 	var ids := _player_mod_ids()
 	if ids.is_empty():
@@ -1282,14 +1323,99 @@ func _make_variant_card(v: Dictionary) -> Button:
 	return btn
 
 
-## 左上角「返回」：退出选关页回主菜单。
-##
-## 弹窗开着时本键**被遮罩挡住**（不可达）—— 这与其它三页完全一致：
-## 关弹窗走弹窗自己的出口（✕ / 点外部 / ESC，见 _close_popup 与 _unhandled_input）。
-## 2026-09-25：异形页第二级改成弹窗后，这里不再需要「层级返回」特例（原先页内两级
-## 导航才有"先回上一级"的需求）。
-func _on_back_pressed() -> void:
-	get_tree().change_scene_to_file("res://ui/main_menu.tscn")
+# ============ 右上角工具区（图鉴 / 设置）与启动期逻辑（2026-09-28） ============
+
+## 设置弹窗（右上角齿轮）：复用对局内 settings_popup（弹窗、不切场景、实时生效）。
+## 注意：弹窗只覆盖「外观 / 操作 / 对局提示」子集，内部另有「完整设置…」入口打开整页
+##（按键重绑 / 音效 / 皮肤 / 数据管理在那）——主菜单删除后这是通向它们的唯一通道。
+func _open_settings_popup() -> void:
+	if _settings_popup == null or not is_instance_valid(_settings_popup):
+		_settings_popup = load("res://ui/settings_popup.tscn").instantiate()
+		add_child(_settings_popup)
+		_settings_popup.hide()   # Window 默认 visible=true，不显式隐藏会一开页就弹出来
+	_settings_popup.popup_centered()
+
+
+## 图标按钮（右上角工具区）：40×40 方形，图标走内联 SVG（见 _svg_texture）。
+func _make_icon_button(tex: Texture2D, tip: String) -> Button:
+	var b := Button.new()
+	b.tooltip_text = tip
+	b.focus_mode = Control.FOCUS_ALL
+	b.custom_minimum_size = Vector2(40, 40)
+	b.set_meta("std_btn", true)
+	if tex != null:
+		b.icon = tex
+		b.expand_icon = true   # 图标按控件尺寸缩放（默认按原始像素居中，小图标会显得糊成一坨）
+	UiTheme.bind_hover(b, HOVER_SCALE)
+	return b
+
+
+## 内联 SVG 字符串 → 纹理。失败返回 null（图标缺失不影响按钮可点性，只少个图案）。
+## 为什么内联：项目不引入外部图标资源（同 ui/drawing_toolbar.gd 的先例）。
+func _svg_texture(svg: String) -> Texture2D:
+	var img := Image.new()
+	if img.load_svg_from_string(svg, 1.0) != OK or img.is_empty():
+		return null
+	return ImageTexture.create_from_image(img)
+
+
+## 齿轮（设置）：evenodd 圆环 + 4 直齿 + 4 斜齿，32×32 视图框。
+func _svg_gear() -> Texture2D:
+	return _svg_texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><g fill=\"#FFFFFF\"><path fill-rule=\"evenodd\" d=\"M16 7a9 9 0 1 1 0 18 9 9 0 0 1 0-18zm0 5a4 4 0 1 0 0 8 4 4 0 0 0 0-8z\"/><rect x=\"14\" y=\"1\" width=\"4\" height=\"6\" rx=\"1\"/><rect x=\"14\" y=\"25\" width=\"4\" height=\"6\" rx=\"1\"/><rect x=\"1\" y=\"14\" width=\"6\" height=\"4\" rx=\"1\"/><rect x=\"25\" y=\"14\" width=\"6\" height=\"4\" rx=\"1\"/><rect x=\"4\" y=\"4\" width=\"4\" height=\"6\" rx=\"1\" transform=\"rotate(-45 6 7)\"/><rect x=\"24\" y=\"4\" width=\"4\" height=\"6\" rx=\"1\" transform=\"rotate(45 26 7)\"/><rect x=\"4\" y=\"22\" width=\"4\" height=\"6\" rx=\"1\" transform=\"rotate(45 6 25)\"/><rect x=\"24\" y=\"22\" width=\"4\" height=\"6\" rx=\"1\" transform=\"rotate(-45 26 25)\"/></g></svg>")
+
+
+## 书本（规则图鉴）：左右两页 + 中缝。
+func _svg_book() -> Texture2D:
+	return _svg_texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><g fill=\"#FFFFFF\"><path d=\"M5 5h9a2 2 0 0 1 2 2v19a2 2 0 0 0-2-2H5z\"/><path d=\"M27 5h-9a2 2 0 0 0-2 2v19a2 2 0 0 1 2-2h9z\"/></g></svg>")
+
+
+# ============ 未完成对局提示（2026-09-28 从 main_menu 搬迁） ============
+
+## 进程级门控：每次启动只检测一次（场景节点会随切页重建，实例字段保不住）。
+static var _crash_check_done := false
+
+
+## 启动时的存档处理（口径与原 main_menu._check_crash_restore 一致，只换宿主）：
+## 有未完成对局 → 只提示不跳转（玩家从本页点进同一关时自动续档，见 _try_resume_saved）；
+## 坏档 → 隔离备份并提示；终局盘 → 不提示（失败局 SL 复活禁令，见 restore_from_save）。
+func _check_crash_restore() -> void:
+	if _crash_check_done:
+		return
+	_crash_check_done = true
+	# headless（GUT / CI）下不弹：测试会实例化本场景并触发本函数，若照常弹 toast
+	# 会成为测试输出里的噪音（与 board_view 的 seen_play_hint 同款防护）。
+	if DisplayServer.get_name() == "headless":
+		return
+	var d := SaveCoordinator.load_save()
+	if d.is_empty():
+		# TEMP 残留但读不出 → 真坏档，隔离（保留原崩溃检测口径）
+		if SaveCoordinator.has_crash_leftover():
+			SaveCoordinator.quarantine()
+			UiToast.popup(self, "存档无法恢复，已隔离备份", true)
+		return
+	var meta_v: Variant = d.get("metadata", {})
+	var meta: Dictionary = meta_v if meta_v is Dictionary else {}
+	if bool(meta.get("ended", false)):
+		return   # 终局盘不可恢复也不提示（失败局 SL 复活禁令，见 restore_from_save 同口径）
+	UiToast.popup(self, _saved_level_hint(str(meta.get("level_path", ""))), false)
+
+
+## 把存档里的关卡路径转成一句可读提示。库关卡路径形如
+## `<PLAY_DIR>/<mode>_<size>_<tier>_<idx>.json`，可解析出「变体 · 尺寸 · 档」；
+## 其他命名（生成关 / 手工异形关等）一律走兜底文案 —— 不猜，乱猜的提示比笼统更糟。
+func _saved_level_hint(level_path: String) -> String:
+	var fallback := "有一局未完成的对局，从选关页进入同一关可继续。"
+	var parts := level_path.get_file().get_basename().split("_")
+	if parts.size() < 4:
+		return fallback
+	var mode := str(parts[0])
+	var side := str(parts[1])
+	var tier := str(parts[2])
+	if not side.is_valid_int() or not Difficulty.TIERS.has(tier):
+		return fallback
+	return "有一局未完成的对局：%s · %s×%s · %s。从选关页进入同一关可继续。" % [
+		VariantCatalog.display_name(mode), side, side,
+		Difficulty.tier_text(tier)]
 
 
 ## 点异形页的变体卡 → **浮动弹窗**展示该变体的全部棋盘卡（与其它三页一致的交互）。
@@ -2268,8 +2394,9 @@ func _ensure_level_file_async(idx: int) -> String:
 		await get_tree().process_frame
 		if _gen_cancel:
 			break
-		var used_sec: int = (Time.get_ticks_msec() - started_ms) / 1000
-		dlg.get_meta("sub").text = "已用时 %d 秒（上限 %d 秒）" % [used_sec, _gen_timeout(s) / 1000]
+		# 【09-28 审计修复 A8】int/int 显式化（毫秒差恒 ≥0）
+		var used_sec: int = floori((Time.get_ticks_msec() - started_ms) / 1000.0)
+		dlg.get_meta("sub").text = "已用时 %d 秒（上限 %d 秒）" % [used_sec, floori(_gen_timeout(s) / 1000.0)]
 		var remain: int = deadline - Time.get_ticks_msec()
 		if remain <= 0:
 			break
@@ -2532,20 +2659,19 @@ func _apply_popup_theme(root: Node) -> void:
 			_apply_popup_theme(c)
 
 
-## 主题切换去抖（v3.1）：ThemeManager 一次切换广播 ~10 次 theme_changed，而
-## _refresh_popup 会重跑 4 次 RuleFeasibility 查询（弹窗开着时 = 40 次 CP-SAT 调用
-## + 网格整体重建闪烁）；再加上重建三页（16 卡片 + 56 交叉格）同样不便宜。
-## 300ms 去抖把多次广播合并为 1 次刷新，最终状态一致——文字色仍立即生效，
-## 避免切换瞬间闪回旧色。
-var _theme_refresh_pending := false
-
+## 主题切换：**分两档处理**（R4 收口，取代原先自己实现的 300ms 去抖）。
+## - 便宜档：跟 `theme_changed`（每步都发）立即 `_apply_theme()` ⇒ 文字色即时生效、不闪回旧色；
+## - 昂贵档：`_refresh_popup` 会重跑 4 次 RuleFeasibility 查询（弹窗开着时 = 40 次 CP-SAT 调用）、
+##   重建三页（16 卡片 + 56 交叉格）同样不便宜 ⇒ 跟 `theme_settled`（末步只发一次）。
+## 原先自己塞 300ms 去抖的问题：连点/连切时会**漏发**（末次被 `_theme_refresh_pending` 吃掉），
+## 且多一个需要 `await` 判活的异步分支；改由 ThemeManager 的 tween 生命周期收口后，两个毛病一并消失。
 func _on_theme_changed() -> void:
 	_apply_theme()
-	if _theme_refresh_pending:
+
+
+func _on_theme_settled() -> void:
+	if not is_inside_tree():
 		return
-	_theme_refresh_pending = true
-	await get_tree().create_timer(0.3).timeout
-	_theme_refresh_pending = false
 	_rebuild_pages()
 	if _mode_idx >= 0:
 		_refresh_popup()
