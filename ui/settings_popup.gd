@@ -126,8 +126,7 @@ func _build_ui() -> void:
     hint_row.add_child(hint_opt)
     vbox.add_child(hint_row)
 
-    # 免费提示充能：开启后提示按钮按 120 秒周期充能
-    _add_check_row(vbox, "提示充能（120 秒）", func(v: bool): SettingsManager.set_hint_charge(v), SettingsManager.hint_charge)
+    # 2026-09-28 移除「提示充能（120 秒）」：提示改为每次只给 ≤2 格且**不消耗**，充能机制整体退役。
 
     # 终极模式附加开关（对标 doc10 §2.3；仅在「无猜模式 = 终极」下生效）
     _add_group(vbox, "终极模式（仅「无猜模式 = 终极」生效）")

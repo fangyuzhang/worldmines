@@ -21,9 +21,6 @@ enum State { IDLE, PLAYING, PAUSED, ENDED }
 const HINT_NORMAL := HintCoordinator.HINT_NORMAL
 const HINT_WEAK := HintCoordinator.HINT_WEAK
 const HINT_DISABLED := HintCoordinator.HINT_DISABLED
-## 免费提示充能周期（秒；对标 FREE_HINT_TIME = 120f）
-const HINT_CHARGE_SEC := HintCoordinator.HINT_CHARGE_SEC
-
 ## 无猜模式三档（对标 doc10 §2）—— 转发常量：外部/UI/测试引用方零改动
 const NO_GUESS_OFF := NoGuessGuard.NO_GUESS_OFF
 const NO_GUESS_EXPERT := NoGuessGuard.NO_GUESS_EXPERT
@@ -40,14 +37,9 @@ var state: int = State.IDLE
 ## 内就 _finish，而 game_over 覆盖层要等 board_view._ready 才创建——那时 game_ended 早已
 ## emit 过，覆盖层只能靠本字段补显结算，见 game_over.gd 的 _ready 自同步）。
 var last_result_won := false
-## 提示充能累计（秒）。委托给 HintCoordinator 持有（hud.gd 等外部读取入口不变）。
-var hint_charge_left: float:
-    get: return _hints.charge_left
-    set(v): _hints.charge_left = v
-## 未充满就用了提示 → true（委托给 HintCoordinator 持有）。
-var hint_uncharged_used: bool:
-    get: return _hints.uncharged_used
-    set(v): _hints.uncharged_used = v
+# 2026-09-28（用户决策）：提示充能机制整体移除——每次提示只给 ≤2 格后，再按 120 秒卡一次
+# 会让提示基本用不动。随之删除 hint_charge_left / hint_uncharged_used / hint_charge_ratio /
+# HINT_CHARGE_SEC；「非完美通关」标记当前无消费者，将来要做时按新口径重新引入。
 
 ## 拆分后的协作组件（§拆分 2026-09：无猜守卫 / 提示编排从本类抽出）
 var _guard := NoGuessGuard.new()
@@ -99,11 +91,10 @@ func _process(delta: float) -> void:
     _tick(delta)
 
 
-## 计时门控（§10.7.8）：state == PLAYING 且 timer_started 才累计；充能累计委托给 _hints。
+## 计时门控（§10.7.8）：state == PLAYING 且 timer_started 才累计。
 func _tick(delta: float) -> void:
     if state == State.PLAYING and timer_started:
         elapsed += delta
-        _hints.tick(delta)
 
 
 # ============ 对局生命周期 ============
@@ -153,7 +144,6 @@ func start_level(path: String) -> bool:
     _last_reveal_pos = Vector2i(-1, -1)
     # 终极模式：本次对局的「玩家新翻开线索格一律打星号」开关
     board.hide_new_clues = SettingsManager.no_guess_mode == NO_GUESS_ULTIMATE
-    _hints.reset()
     _guard.reset()
     _last_save_ms = -100000  # 新对局首次翻格立即存
     _move_history.clear()  # 新对局：操作撤销栈清空
@@ -365,20 +355,14 @@ func toggle_flag(pos: Vector2i) -> void:
 
 ## 请求一步提示。返回 ReasoningStep 数组（可能为空），并广播 hint_ready 供 UI 高亮。
 ## 非 PLAYING / 无棋盘 / 提示被禁用 → 空数组（不报错）。
-## 推理步骤组装/充能消耗/降级/上限/揭星全部委托 HintCoordinator（见 hint_coordinator.gd）。
+## 组装/降级/结论上限/揭星全部委托 HintCoordinator（见 hint_coordinator.gd）；
+## 2026-09-28 起每次至多给 2 格结论，且**不消耗**任何次数/充能（可连续点）。
 func request_hint() -> Array[ReasoningStep]:
     var steps: Array[ReasoningStep] = []
     if state == State.PLAYING:
         steps = _hints.compute_hint(board)
     hint_ready.emit(steps)
     return steps
-
-
-## 提示充能进度 0.0~1.0（未开启充能时恒为 1.0）。
-## 全项目唯一的充能口径入口：HUD 用它显示百分比、%>=100 判定「已充满」。
-## （原先并存的 hint_charged() 是无调用者的死代码，已删除——两个同义 API 只会各自漂移。）
-func hint_charge_ratio() -> float:
-    return _hints.charge_ratio()
 
 
 # ============ 无猜模式（对标游戏 doc10 §2） ============

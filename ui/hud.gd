@@ -4,7 +4,7 @@
 # 交互修正（原实现的三个真实问题）：
 #   ① 「返回 / 返回菜单」两个按钮挨在一起且只差两个字，误点即 SaveCoordinator.clear()
 #      ——现改为语义明确的「关卡列表 / 主菜单」，并对局进行中二次确认；
-#   ② 「提示」按钮从不反映充能状态（开了 hint_charge 玩家也看不出来）——现显示百分比；
+#   ② 「提示」按钮曾显示充能百分比（2026-09-28 充能机制退役：每次只给 ≤2 格、不消耗）；
 #   ③ 旗数每帧全盘遍历（O(格子数)/帧）——改为按 cell_state_changed 失效的缓存。
 extends Control
 
@@ -259,26 +259,19 @@ func _process(_delta: float) -> void:
     _time_label.text = "时间 %02d:%02d" % [floori(total / 60.0), total % 60]
 
 
-## 提示按钮：反映提示模式与充能进度。
-## 原实现永远只写「提示」，开了 120 秒充能也毫无迹象，玩家无从判断能不能用。
+## 提示按钮：反映提示模式（禁用态置灰）。
+## 2026-09-28（用户决策）：充能机制退役（每次只给 ≤2 格、且不消耗）——原先的百分比显示
+## 分支随之删除；文案回到静态「提示」，tooltip 说明「每次 1~2 格、可连续点」的新口径。
 func _refresh_hint_button() -> void:
     if _hint_btn == null:
         return
     var txt := "提示"
-    var tip := "一步直推（100% 必然结论）"
+    var tip := "一步直推（100% 必然结论）· 每次给出 1~2 格，可连续点"
     if SettingsManager.hint_mode == GameSession.HINT_DISABLED:
         txt = "提示（已禁用）"
         tip = "当前设置已禁用提示，可在设置页开启"
     elif SettingsManager.no_guess_mode == GameSession.NO_GUESS_ULTIMATE:
-        tip = "一步直推；若推不出安全格会揭开全部星号继续对局"
-    elif SettingsManager.hint_charge:
-        var ratio := GameSession.hint_charge_ratio()
-        if ratio >= 1.0:
-            txt = "提示（已充满）"
-        else:
-            txt = "提示 %d%%" % int(floorf(ratio * 100.0))
-            tip = "充能中（%d / 120 秒）；未充满也能用，只标记为非完美通关" % \
-                    int(GameSession.hint_charge_left)
+        tip = "一步直推（每次 1~2 格）；若推不出安全格会揭开全部星号继续对局"
     if _hint_btn.text != txt:
         _hint_btn.text = txt
     if _hint_btn.tooltip_text != tip:

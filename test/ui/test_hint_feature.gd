@@ -38,18 +38,33 @@ func test_h1_hint_without_game_is_empty() -> void:
 	assert_eq(steps.size(), 0, "无对局时提示应为空数组")
 
 
-# H2：PLAYING 且有可推线索（中心值 1 + 雷已标旗）→ 推出 7 个安全格
+# H2：PLAYING 且有可推线索（中心值 1 + 雷已标旗）→ 一次提示给 ≤2 格安全结论
+# 2026-09-28（用户决策）：结论上限改为**统一 2 格**——本用例原先断言"一次推出 7 格"，
+# 那正是「一次性给出过多内容」的旧行为。现在拆成两半，各自守住：
+#   ① 展示层（request_hint）必须 ≤ 上限；
+#   ② 推理能力本身不变（7 格都推得出来）——用 HintSolver 直接调、绕过上限来验证（见 H2b）。
 func test_h2_hint_returns_reasoning_steps() -> void:
 	GameSession.board = _mk3([Vector2i(0, 0)])
 	GameSession.board.grid.get_cell(Vector2i(0, 0)).state = Cell.State.FLAGGED
 	GameSession.state = GameSession.State.PLAYING
 	var steps := GameSession.request_hint()
-	assert_gte(steps.size(), 7, "雷已标旗后应推出剩余 7 格安全")
+	assert_gte(steps.size(), 1, "该局面应至少推出 1 格安全")
+	assert_lte(steps.size(), HintCoordinator.HINT_MAX_CONCLUSIONS,
+		"一次提示的结论数不得超过上限（实得 %d）" % steps.size())
 	for s in steps:
 		var step := s as ReasoningStep
 		assert_not_null(step, "元素应为 ReasoningStep")
 		assert_eq(step.state, "safe", "此局面结论应全为安全格")
 		assert_true(step.proof.length() > 0, "推理步骤应带说明文字")
+
+
+# H2b：推理能力本身不变——求解器仍能推出全部 7 个安全格（上限只作用于展示层，不砍推理）
+func test_h2b_solver_still_finds_all_safe_cells() -> void:
+	var board := _mk3([Vector2i(0, 0)])
+	board.grid.get_cell(Vector2i(0, 0)).state = Cell.State.FLAGGED
+	var solver := HintSolver.new()
+	var all := solver.hint(board)
+	assert_gte(all.size(), 7, "求解器应仍能推出剩余 7 格安全（上限不得砍到推理层）")
 
 
 # H3：hint_ready 信号随请求广播（UI 高亮的数据来源）

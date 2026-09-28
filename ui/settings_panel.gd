@@ -35,7 +35,7 @@ var _keyboard_chk: CheckButton
 # 2026-09-28：`_restart_confirm_chk` 随「重开前确认」行一并移除（进行中重开已删）。
 var _no_guess_opt: OptionButton
 var _hint_mode_opt: OptionButton
-var _hint_charge_chk: CheckButton
+# 2026-09-28：`_hint_charge_chk` 随「提示充能」行移除（提示改为不消耗）。
 var _ult_hide_mines_chk: CheckButton
 var _ult_hide_deducible_chk: CheckButton
 var _ult_auto_reveal_chk: CheckButton
@@ -248,8 +248,8 @@ func _build_play_page(page: VBoxContainer) -> void:
     _hint_mode_opt.item_selected.connect(func(idx: int): SettingsManager.set_hint_mode(idx))
     _hint_mode_opt.selected = clampi(SettingsManager.hint_mode, 0, 2)
 
-    _hint_charge_chk = _add_check_row(page, "提示充能（120 秒）",
-        func(v: bool): SettingsManager.set_hint_charge(v), SettingsManager.hint_charge)
+    # 2026-09-28 移除「提示充能（120 秒）」：提示改为每次只给 ≤2 格且**不消耗**（用户决策），
+    # 充能机制整体退役（SettingsManager.hint_charge 属性保留仅为存档兼容，无 UI 面）。
 
     # 终极模式三项：只在「无猜模式 = 终极」的关卡里起作用 —— 必须标注，否则玩家会困惑
     _add_section_label(page, "终极模式附加开关（仅「无猜模式 = 终极」时生效）")

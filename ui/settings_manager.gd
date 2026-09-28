@@ -74,8 +74,9 @@ var hint_window_size: Vector2 = Vector2(320, 200)
 #   1 = 弱提示（只高亮「要用到的线索」，不显示可推格，玩家自己推）
 #   2 = 禁用（完全关闭提示）
 var hint_mode: int = 0
-# 免费提示充能：开启后提示按钮按 120 秒周期充能；
-# 充满时用提示不影响「完美通关」，未充满即用则标记本局为非完美（对标 doc10 §3.2）。
+# 【已废弃】免费提示充能开关（2026-09-28 退役）：提示改为每次只给 ≤2 格**且不消耗**，
+# 充能机制整体移除（见 ui/hint_coordinator.gd 头注释）。属性与读写保留**仅为存档兼容**
+# ——旧配置里的值照读照写，但没有 UI 面、也没有任何消费方。
 var hint_charge: bool = true
 # 无猜模式（对标 doc10 §2），**三档**：
 #   0 = 关闭
@@ -379,9 +380,8 @@ func set_hint_mode(v: int) -> void:
     save()
 
 
-func set_hint_charge(v: bool) -> void:
-    hint_charge = v
-    save()
+# 2026-09-28：`set_hint_charge()` 随充能机制退役删除（提示改为不消耗，无 UI 面调用它）。
+# 属性本身保留（存档兼容，见其声明处注释）。
 
 
 func set_no_guess_mode(v: int) -> void:

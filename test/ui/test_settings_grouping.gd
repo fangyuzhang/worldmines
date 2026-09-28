@@ -19,8 +19,9 @@ const CFG := "user://settings.cfg"
 const EXPECTED_TABS := ["画面", "玩法", "按键", "音效", "皮肤", "数据"]
 
 ## 「应有入口」清单：页签 → 行文案 → 期望控件类型。
-## 含任务二要求补入口的全部字段（no_guess/hint_mode/hint_charge/drawing_opacity/ult×3）。
-## 2026-09-28：`restart_confirm` 一项随「重开前确认」行移除（进行中重开已删，开关失去场景）。
+## 含任务二要求补入口的全部字段（no_guess/hint_mode/drawing_opacity/ult×3）。
+## 2026-09-28：`restart_confirm` 随「重开前确认」行移除（进行中重开已删）；
+## `hint_charge` 随「提示充能（120 秒）」行移除（充能机制退役：提示改为每次 ≤2 格且不消耗）。
 const EXPECTED_ENTRIES := [
     {"page": "画面", "label": "主题模式", "kind": "OptionButton"},
     {"page": "画面", "label": "全屏模式", "kind": "CheckButton"},
@@ -33,7 +34,6 @@ const EXPECTED_ENTRIES := [
     {"page": "玩法", "label": "键盘操作", "kind": "CheckButton"},
     {"page": "玩法", "label": "无猜模式", "kind": "OptionButton"},
     {"page": "玩法", "label": "提示模式", "kind": "OptionButton"},
-    {"page": "玩法", "label": "提示充能（120 秒）", "kind": "CheckButton"},
     {"page": "玩法", "label": "终极：隐藏剩余雷数", "kind": "CheckButton"},
     {"page": "玩法", "label": "终极：隐藏可断定格数", "kind": "CheckButton"},
     {"page": "玩法", "label": "终极：卡住时自动揭星", "kind": "CheckButton"},
