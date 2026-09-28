@@ -32,6 +32,9 @@ const HEX_LEVELS: Array = ["res://levels/hex_01.json", "res://levels/hex_02.json
 const HEX_SIZE_OF := {"hex_01.json": 5, "hex_02.json": 7, "hex_03.json": 9}
 const HOLED_LEVELS: Array = ["res://levels/holed_01.json", "res://levels/holed_02.json", "res://levels/holed_03.json"]
 ## 默认视口的可用区（1280×720；左右各 24、上 HUD 64 + 24、下 24 + 底栏 64）。
+## 注：2026-09-28 起 board_view._layout 还会再扣除 HUD 左右侧列（2×HUD_SIDE_RESERVE），
+## 实际可用宽 < 1232 —— 本文件测的是**纯函数**（avail 由调用方给定），故用旧口径常量即可；
+## 端到端布局的守卫在 test/ui/test_ui_rework_contract.gd。
 const AVAIL_W := 1232.0
 const AVAIL_H := 544.0
 const AVAIL_CENTER := Vector2(640.0, 64.0 + 272.0)

@@ -14,6 +14,15 @@ var _autosave_chk: CheckButton
 var _keyboard_chk: CheckButton
 var _sfx_chk: CheckButton
 var _panel: PanelContainer
+## 「完整设置…」按钮（选关页显示 / 对局内隐藏，见 set_full_settings_entry）。
+var _more_btn: Button
+
+
+## 是否显示「完整设置…」入口（宿主调用；默认显示 = 选关页口径）。
+## 对局内应传 false：整页设置的返回是选关页，从对局进去返回时会离开对局。
+func set_full_settings_entry(v: bool) -> void:
+    if _more_btn != null:
+        _more_btn.visible = v
 
 const THEME_MODES := ["system", "dark", "light"]
 
@@ -141,16 +150,18 @@ func _build_ui() -> void:
     # 完整设置入口（2026-09-28）：本弹窗只覆盖「外观 / 操作 / 对局提示」子集——
     # 按键重绑、音效细项、皮肤、数据管理都在整页 settings_panel。原先整页的唯一入口是主菜单；
     # 主菜单删除后，这里是通向那些功能的唯一通道，缺了它它们将彻底无入口。
-    var more := Button.new()
-    more.text = "完整设置…"
-    more.focus_mode = Control.FOCUS_ALL
-    more.custom_minimum_size = Vector2(0, 40)
-    more.tooltip_text = "打开完整设置：按键重绑 / 音效 / 皮肤 / 数据管理"
-    more.set_meta("full_settings_btn", true)   # 测试 / 调试可据此定位
-    more.pressed.connect(func():
+    # **可见性由宿主决定**（见 set_full_settings_entry）：选关页显示；**对局内隐藏**——
+    # 整页设置的「返回」是选关页，从对局进去会在返回时离开对局（原行为也是对局内只有子集弹窗）。
+    _more_btn = Button.new()
+    _more_btn.text = "完整设置…"
+    _more_btn.focus_mode = Control.FOCUS_ALL
+    _more_btn.custom_minimum_size = Vector2(0, 40)
+    _more_btn.tooltip_text = "打开完整设置：按键重绑 / 音效 / 皮肤 / 数据管理"
+    _more_btn.set_meta("full_settings_btn", true)   # 测试 / 调试可据此定位
+    _more_btn.pressed.connect(func():
         hide()
         get_tree().change_scene_to_file("res://ui/settings_panel.tscn"))
-    vbox.add_child(more)
+    vbox.add_child(_more_btn)
 
     var close := Button.new()
     close.text = "关闭"

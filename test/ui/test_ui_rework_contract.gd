@@ -59,6 +59,12 @@ func test_corner_has_codex_and_gear_buttons() -> void:
 	if gear != null:
 		assert_not_null(gear.icon, "齿轮图标必须解析成功（SVG 解析失败会静默降级为空图标）")
 		assert_ne(str(gear.tooltip_text), "", "齿轮按钮应有 tooltip")
+	# 容器宽度必须容得下两个按钮（原先 80 < 88 ⇒ 齿轮被推出右缘；实测踩过）
+	var bar: Control = gear.get_parent() as Control
+	if bar != null:
+		assert_gte(bar.size.x + 0.5, bar.get_combined_minimum_size().x,
+			"右上角工具区宽度必须容得下两个图标按钮（实得 %.0f < 需要 %.0f）" % [
+				bar.size.x, bar.get_combined_minimum_size().x])
 
 
 # ---- ② 齿轮 → 设置弹窗（含整页设置入口）----
@@ -124,3 +130,84 @@ func test_hud_two_columns_and_removed_buttons() -> void:
 		if t.begins_with("提示"):
 			has_hint = true
 	assert_true(has_hint, "顶栏「提示」不得丢")
+
+
+# ---- ⑤ 侧列与棋盘不重叠（2026-09-28 自查修复，防复发）----
+
+func test_board_reserves_hud_side_columns() -> void:
+	## 棋盘可用区必须扣除侧列宽度，否则左右边缘格子被按钮盖住（点不到、看不清）。
+	## 这里锁住两处**独立声明**的常量同值——改一处忘另一处就是这个 bug 复发。
+	var hud_res: float = float(load("res://ui/hud.gd").get_script_constant_map()["SIDE_COL_RESERVE"])
+	var bv_res: float = float(load("res://ui/board_view.gd").get_script_constant_map()["HUD_SIDE_RESERVE"])
+	assert_almost_eq(bv_res, hud_res, 0.001,
+		"board_view.HUD_SIDE_RESERVE 必须 = hud.SIDE_COL_RESERVE")
+	# 几何：棋盘左边界必须落在左列右边缘之外（侧列 = offset_left 12 + 按钮宽 84）
+	var col_right: float = 12.0 + 84.0
+	var board_left: float = 24.0 + bv_res
+	assert_gte(board_left, col_right,
+		"棋盘左边界（%.0f）必须在左列右边缘（%.0f）之外——否则边缘格子被按钮盖住" % [board_left, col_right])
+
+
+func test_board_actual_layout_leaves_room_for_side_columns() -> void:
+	## 端到端：真实 board_view 布局后的棋盘矩形必须落在两侧列之间。
+	## 上一条用例只锁常量同值——如果 board_view 改用回了满宽公式（vp.x−48），常量断言仍会
+	## 通过而棋盘照样被盖住；这条直接量**实际** board_origin / cell_px，堵住那个漏检。
+	assert_true(GameSession.start_level("res://levels/classic_01.json"), "需要一个真实关卡")
+	var bv: Control = load("res://ui/board_view.tscn").instantiate()
+	add_child_autofree(bv)
+	await get_tree().process_frame
+	var cols: int = GameSession.board.grid.size().x
+	var left: float = bv.board_origin.x
+	var right: float = left + float(cols) * float(bv.cell_px)
+	var col_edge: float = 12.0 + 84.0   # 侧列占用：offset_left 12 + 按钮宽 84
+	assert_gte(left, col_edge, "棋盘左边界（%.0f）必须让开左侧列（%.0f）" % [left, col_edge])
+	assert_lte(right, 1280.0 - col_edge, "棋盘右边界（%.0f）必须让开右侧列（%.0f）" % [
+		right, 1280.0 - col_edge])
+
+
+# ---- ⑥ 图标随主题着色（浅色主题下白图标不可见的修复守卫）----
+
+func test_icon_buttons_are_themed() -> void:
+	for key in ["codex_btn", "settings_btn"]:
+		var b := _find_by_meta(_view, key)
+		assert_not_null(b, "前置：%s 存在" % key)
+		if b == null:
+			continue
+		assert_true(b.has_theme_color_override("icon_normal_color"),
+			"%s 必须显式覆盖 icon_normal_color（否则浅色主题下白图标不可见）" % key)
+		assert_eq(b.get_theme_color("icon_normal_color"), ThemeManager.text(),
+			"%s 的图标色应 = 当前主题文字色（随主题刷新）" % key)
+
+
+# ---- ⑧ 对局内不提供整页设置入口（返回会离开对局）----
+
+func test_hud_settings_popup_hides_full_settings_entry() -> void:
+	## 对局内隐藏「完整设置…」：整页设置的「返回」是选关页，从对局进入会在返回时离开对局
+	##（原行为：对局内只有子集弹窗、整页只在主菜单可达）。选关页侧则必须显示——那是整页
+	## 设置唯一的通道（见用例 ②）。
+	assert_true(GameSession.start_level("res://levels/classic_01.json"), "需要一个真实关卡")
+	var hud: Control = load("res://ui/hud.tscn").instantiate()
+	add_child_autofree(hud)
+	await get_tree().process_frame
+	hud._open_settings()
+	var popup: PopupPanel = hud._settings_popup
+	assert_not_null(popup, "HUD 应能打开设置弹窗")
+	if popup == null:
+		return
+	var more := _find_by_meta(popup, "full_settings_btn")
+	if more != null:
+		assert_false(more.visible, "对局内的设置弹窗不得显示「完整设置…」（返回会离开对局）")
+
+
+# ---- ⑦ 侧列键盘焦点显形（无障碍）----
+
+func test_side_column_reveals_on_keyboard_focus() -> void:
+	assert_true(GameSession.start_level("res://levels/classic_01.json"), "需要一个真实关卡")
+	var hud: Control = load("res://ui/hud.tscn").instantiate()
+	add_child_autofree(hud)
+	await get_tree().process_frame
+	var btn: Button = hud._right_col.get_child(0)
+	btn.focus_entered.emit()
+	assert_almost_eq(hud._right_col.modulate.a, 1.0, 0.01, "键盘焦点落在侧列按钮上应整列显形")
+	btn.focus_exited.emit()
+	assert_almost_eq(hud._right_col.modulate.a, hud.SIDE_COL_IDLE_ALPHA, 0.01, "失焦应回到半透明")

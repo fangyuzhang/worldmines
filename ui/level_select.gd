@@ -274,10 +274,13 @@ func _build_ui() -> void:
 	# 不引入外部资源，解析失败只是图标缺失、按钮仍可点）。
 	var corner := HBoxContainer.new()
 	corner.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	corner.offset_left = -104
+	# 宽度 = 两个 40px 按钮 + 间距 8 = 88，留 8 余量（原先 -104 只有 80 宽 ⇒ 溢出 8px，
+	# 齿轮被推出容器右缘；见 test_ui_rework_contract 的"不溢出"断言）
+	corner.offset_left = -120
 	corner.offset_top = 14
 	corner.offset_right = -24
 	corner.add_theme_constant_override("separation", 8)
+	corner.set_meta("icon_bar", true)   # _apply_theme 据此整批刷图标按钮（见该函数）
 	add_child(corner)
 	var codex_btn := _make_icon_button(_svg_book(), "规则图鉴（各算子与变体说明）")
 	codex_btn.set_meta("codex_btn", true)   # 测试 / 调试可据此定位
@@ -1333,21 +1336,37 @@ func _open_settings_popup() -> void:
 		_settings_popup = load("res://ui/settings_popup.tscn").instantiate()
 		add_child(_settings_popup)
 		_settings_popup.hide()   # Window 默认 visible=true，不显式隐藏会一开页就弹出来
+	# 选关页：显示「完整设置…」——主菜单删除后它是整页设置（按键/音效/皮肤/数据）的唯一通道，
+	# 且本页就是整页设置的返回落点（闭环）。显式置 true 防弹窗实例复用时残留对局侧状态。
+	_settings_popup.set_full_settings_entry(true)
 	_settings_popup.popup_centered()
 
 
 ## 图标按钮（右上角工具区）：40×40 方形，图标走内联 SVG（见 _svg_texture）。
+## 样式统一交给 _style_icon_button（_apply_theme 也调它，保证主题切换时图标着色一起刷新）。
 func _make_icon_button(tex: Texture2D, tip: String) -> Button:
 	var b := Button.new()
 	b.tooltip_text = tip
 	b.focus_mode = Control.FOCUS_ALL
 	b.custom_minimum_size = Vector2(40, 40)
 	b.set_meta("std_btn", true)
+	_style_icon_button(b, tex)
+	return b
+
+
+## 图标按钮的样式 + **图标着色**（唯一入口）。
+## 为什么必须着色：图标是内联 SVG 的白色描画（不引入外部资源），而项目支持浅色主题——
+## 白图标在浅底上直接看不见（2026-09-28 自查发现）。用 Button 的 icon_*_color 主题项
+## 覆盖为当前主题文字色，各状态一起给（normal / hover / pressed / focus / disabled）。
+func _style_icon_button(b: Button, tex: Texture2D = null) -> void:
 	if tex != null:
 		b.icon = tex
 		b.expand_icon = true   # 图标按控件尺寸缩放（默认按原始像素居中，小图标会显得糊成一坨）
-	UiTheme.bind_hover(b, HOVER_SCALE)
-	return b
+	UiTheme.style_button(b)
+	var col := ThemeManager.text()
+	for state in ["icon_normal_color", "icon_hover_color", "icon_pressed_color",
+			"icon_focus_color", "icon_disabled_color"]:
+		b.add_theme_color_override(state, col)
 
 
 ## 内联 SVG 字符串 → 纹理。失败返回 null（图标缺失不影响按钮可点性，只少个图案）。
@@ -2641,6 +2660,13 @@ func _apply_theme() -> void:
 			n.add_theme_color_override("font_color", col)
 		elif n is Button and n.has_meta("std_btn"):
 			UiTheme.style_button(n)
+		elif n is Control and n.has_meta("icon_bar"):
+			# 右上角工具区（2026-09-28）：容器里的图标按钮要整批刷 —— 本函数只扫
+			# get_children() 第一层，容器内的按钮原先整批漏掉（既没有 hover/focus 样式，
+			# 图标也不会随主题重新着色，浅色主题下白图标不可见）。
+			for c in n.get_children():
+				if c is Button:
+					_style_icon_button(c)
 	if _overlay != null:
 		_apply_popup_theme(_overlay)
 	queue_redraw()

@@ -36,6 +36,13 @@ const HEX_SQ_HALF := HEX_R / (1.0 + 1.0 / HEX_SQ3)  # 内接正方形半边长 =
 ## 内接正方形仍以格心为中心，故数字/旗子/问号与各类覆盖层的**居中口径**与矩形路径完全一致。
 const MIN_CELL_PX := 24                   # cell_px 下限（与矩形路径原公式的 24 同值同义）
 
+## HUD 侧列保留宽度（2026-09-28 HUD 两列改造）：**必须与 ui/hud.gd:SIDE_COL_RESERVE 同值**，
+## 由 test_ui_rework_contract.gd 的一致性断言守住——两处独立声明，改一处忘另一处就是
+## 「棋盘被按钮盖住」或「无谓留白」两个 bug 之一。
+## 为什么不用 preload 引用 hud 的常量：board_view 会被 headless 工具链间接加载，
+## 不给编译期依赖再添一环（纯值复制 + 测试守卫在这里更稳）。
+const HUD_SIDE_RESERVE := 104.0
+
 # ============ 自定义多边形（数据驱动，T-D2）几何常量与口径 ============
 # 数据来源：关卡 JSON 的 custom_shapes（level_loader 在 load_level 后挂到 board 的 meta 上；
 # core/Board/GridInterface 一行不改）：bbox = [minX,minY,maxX,maxY]（**原版世界坐标**，只用于
@@ -393,7 +400,10 @@ func _layout() -> void:
 	var rows: int = size.y
 	var vp := get_viewport_rect().size
 	# 边距：左右 24、上 HUD 64 + 上边距 24、下边距 24 + 底栏 64（随窗口自适应，无 48px 上限）
-	var avail_w: float = vp.x - 48.0
+	# 侧列保留（2026-09-28 HUD 两列改造）：左右两列浮在棋盘两侧，棋盘必须让出这段宽度——
+	# 否则左右边缘约半格被按钮盖住（点不到、也看不清）。原先 avail_w 占满 vp.x−48，
+	# 侧列各占约 96px，重叠不可避免。
+	var avail_w: float = vp.x - 48.0 - 2.0 * HUD_SIDE_RESERVE
 	var avail_h: float = vp.y - 64.0 - 64.0 - 48.0
 	# 可用区域的中心：矩形路径的 board_origin 公式隐含就是这个中心，蜂窝路径直接用它对齐。
 	var avail_center := Vector2(vp.x * 0.5, 64.0 + avail_h * 0.5)

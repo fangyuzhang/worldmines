@@ -24,6 +24,11 @@ var _right_col: VBoxContainer
 var _side_buttons: Array[Button] = []
 ## 侧列空闲透明度：竖列压在棋盘两侧，全不透明会挡视线；鼠标进入任一侧列按钮 → 整列 1.0。
 const SIDE_COL_IDLE_ALPHA := 0.55
+## 侧列保留宽度（**对局棋盘布局必须扣除它**，见 board_view._layout 的 avail_w）：
+## 侧列浮在棋盘两侧，不给棋盘让位的话边缘格子会被按钮盖住 —— 棋盘原占满 vp.x−48，
+## 侧列各占约 96px ⇒ 左右各约半格落在按钮下（点不到、也看不清）。值 = 按钮宽 84 +
+## 外边距 12 + 与棋盘的间隙 8。**改侧列尺寸必须同步改它**（board_view 直接引用本常量）。
+const SIDE_COL_RESERVE := 104.0
 var _last_shown_sec: int = -1
 var _flag_cache: int = -1
 # 「可断定格数」0.5s 节流缓存：推导含 CP-SAT 全盘哈希，终极模式常开时每帧全算白付性能
@@ -131,6 +136,10 @@ func _add_col_button(col: VBoxContainer, text: String, tip: String, on_pressed: 
     b.pressed.connect(on_pressed)
     b.mouse_entered.connect(func(): col.modulate.a = 1.0)
     b.mouse_exited.connect(func(): col.modulate.a = SIDE_COL_IDLE_ALPHA)
+    # 键盘焦点同样让整列显形（无障碍）：键盘用户没有"鼠标悬停"这个信号，
+    # Tab 落到半透明按钮上时必须也能看清。
+    b.focus_entered.connect(func(): col.modulate.a = 1.0)
+    b.focus_exited.connect(func(): col.modulate.a = SIDE_COL_IDLE_ALPHA)
     col.add_child(b)
     _side_buttons.append(b)
     return b
@@ -202,6 +211,9 @@ func _open_settings() -> void:
         # 表现为"点设置没反应"。复用同文件既有的 `_overlay_host()`（current_scene → 父节点 → self）。
         _overlay_host().add_child(_settings_popup)
         _settings_popup.hide()  # Window 默认 visible=true，不显式隐藏会立刻弹出
+    # 对局内不提供「完整设置…」入口（2026-09-28）：整页设置的返回是选关页，
+    # 从这里进去返回时会**离开对局**（原行为也是对局内只有子集弹窗）。
+    _settings_popup.set_full_settings_entry(false)
     _settings_popup.popup_centered()
 
 

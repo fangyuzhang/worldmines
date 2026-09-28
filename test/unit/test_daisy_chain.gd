@@ -19,7 +19,9 @@ const LEVEL := "res://levels/daisy_chain.json"
 const CLASSIC := "res://levels/classic_01.json"
 const WORLD_EPS := 1e-2
 const RATIO_EPS := 1e-5
-## 默认视口的可用区（1280×720；左右各 24、上 HUD64+24、下 24+底栏 64，与 _layout() 同式）。
+## 默认视口的可用区（1280×720；左右各 24、上 HUD64+24、下 24+底栏 64）。
+## 注：2026-09-28 起 board_view._layout 还会扣除 HUD 左右侧列（2×HUD_SIDE_RESERVE）——
+## 本文件测纯函数（avail 由调用方给定），用旧口径常量不受影响。
 const AVAIL_W := 1232.0
 const AVAIL_H := 544.0
 const AVAIL_CENTER := Vector2(640.0, 64.0 + 272.0)
