@@ -1,4 +1,4 @@
-# test_board_tile_contract.gd —— CozyStyle 圆角瓦片的**门控契约**（2026-09-29）
+# test_board_tile_contract.gd —— CozyStyle 圆角瓦片的**门控契约**（2026-09-29；缓存刷新戳 2026-09-29 21:2x）
 #
 # 背景：棋盘从「方格 + 网格线」改成「圆角瓦片留缝拼在垫子上」（见 board_view.gd 的
 # TILE_GAP_FRAC / TILE_RADIUS_FRAC）。改动集中在三个绘制入口：
@@ -26,9 +26,16 @@ const SRC := "res://ui/board_view.gd"
 ## 两者不可能碰巧相等，所以「相等」本身就是有约束力的断言。
 const PROBE := Rect2(374.5, 70.25, 107.0, 107.0)
 
-## CozyStyle 家族应为 5 套（dusk / haze / sage / salt / terracotta）。
+## CozyStyle 家族 5 套（dusk / haze / sage / salt / terracotta）+ 棱镜玻璃 1 套 = 6 套带 board_mat。
 ## 写成常量是为了「新接主题忘了配 board_mat」也能被抓住。
-const COZY_WITH_MAT := 5
+## 棱镜玻璃的 board_mat 是半透明白玻璃垫（a=0.05，2026-09-30 对齐网页 token），
+## 同样走圆角瓦片路径（_cozy_tiles()=board_mat().a>0），故计入；
+## 它的三层构造契约在本文件第 6 节 + test_theme_manager.gd 的棱镜玻璃段守。
+## 2026-09-29：CozyStyle 十套 + 棱镜 = 11。
+## ⚠️ 本计数只对**干净的 user://skins** 成立：装了带 theme 字段的皮肤包时，
+## SkinService 启动重放注册会把自定义主题也计入（每个都带 board_mat）⇒ 本用例会红。
+## 跑测试前请先把 user://skins 下的皮肤包移走（演示包生成脚本见 workspace gen_skin_pkg.py）。
+const COZY_WITH_MAT := 11
 
 var _saved: Dictionary = {}
 
@@ -184,7 +191,10 @@ func test_cozy_themes_shrink_the_tile_by_the_declared_gap() -> void:
 		if not view._cozy_tiles():
 			continue
 		checked += 1
-		var inset := maxf(0.5, PROBE.size.x * gap_frac * 0.5)
+		# 缝宽系数按**当前主题**取生效值：棱镜玻璃把 tile_gap_frac 覆盖为 0.07，
+		# board_view._tile_rect 读的就是 ThemeManager.tile_gap_frac()（上面的 const 只是缺省值）。
+		var frac_m: float = ThemeManager.tile_gap_frac()
+		var inset := maxf(0.5, PROBE.size.x * frac_m * 0.5)
 		var want := PROBE.grow(-inset)
 		var got: Rect2 = view._tile_rect(PROBE)
 		assert_almost_eq(got.position.x, want.position.x, 1e-4, "%s：瓦片左边界" % m)
@@ -199,9 +209,9 @@ func test_cozy_themes_shrink_the_tile_by_the_declared_gap() -> void:
 		# ★ 核心：右邻格（中心相距一个格宽）与本格之间的可见空隙
 		var nb := Rect2(PROBE.position + Vector2(PROBE.size.x, 0.0), PROBE.size)
 		var visible_gap: float = view._tile_rect(nb).position.x - got.end.x
-		assert_almost_eq(visible_gap, PROBE.size.x * gap_frac, 0.5,
+		assert_almost_eq(visible_gap, PROBE.size.x * frac_m, 0.5,
 			"%s：相邻两格之间的空隙应 ≈ 格宽 × %.3f = %.2fpx（实得 %.2fpx）"
-			% [m, gap_frac, PROBE.size.x * gap_frac, visible_gap])
+			% [m, frac_m, PROBE.size.x * frac_m, visible_gap])
 		# 下邻格同理：缝必须四边一致，否则看起来是"只有横向留了缝"
 		var nb2 := Rect2(PROBE.position + Vector2(0.0, PROBE.size.y), PROBE.size)
 		var gap_v: float = view._tile_rect(nb2).position.y - got.end.y
@@ -255,7 +265,44 @@ func test_all_three_entry_points_carry_the_guard_in_source() -> void:
 			"%s 缺少 `not _cozy_tiles()` 门控 ⇒ 旧主题会被卷进圆角瓦片路径" % fn)
 
 
-# ============================ 5. 那两处「全局」改动（同样作用在旧主题上）============================
+# ============================ 5. 棱镜玻璃的三层构造（2026-09-30）============================
+
+func test_prism_glass_mat_is_a_three_layer_panel() -> void:
+	## 网页版（chain-lab.html）的棋盘是**三层**：内层玻璃瓦片 → 中层垫板（半透明白
+	## 面板 + 1px 白边 + 大柔影显高度）→ 外层页面（垫板区 backdrop blur = 透镜）。
+	## 2026-09-30 之前项目里只有两层（垫板是深蓝压暗层、无白边、小阴影），本用例把
+	## 中层垫板的网页 token 钉在 stylebox 上，防止再塌回去：
+	##   --mat:rgba(255,255,255,.05) / --mat-bd:1px solid rgba(255,255,255,.14)
+	##   box-shadow:0 30px 70px -30px rgba(0,0,0,.6) / border-radius:26px
+	var view = _mount()
+	await wait_process_frames(1)
+	_use("cozy_prism")
+	var sb: StyleBoxFlat = view._mat_stylebox()
+	assert_not_null(sb, "prism：垫板 stylebox 不应为 null")
+	# 影体：只出影不出面板（CSS box-shadow 不画在半透背景之下 —— 画在底下会把
+	# 白 .05 面板衬成深色板，2026-09-30 真机采样实锤后拆成影体+面板体两笔）
+	assert_eq(sb.bg_color.a, 0.0, "prism：影体 fill 必须全透明（影不得衬在面板下）")
+	assert_gt(sb.shadow_size, 10.0, "prism：垫板影应是大柔影（网页 70px blur 档）")
+	assert_gt(sb.shadow_offset.y, 0.0, "prism：投影应向下（悬浮高度）")
+	assert_gt(sb.shadow_color.a, 0.3, "prism：投影 α 要够深才读得出高度")
+	# 面板体：半透明白 + 1px 白边 + 圆角 26（网页 --mat / --mat-bd / --mat-r）
+	var fill: StyleBoxFlat = view._glass_mat_fill_stylebox()
+	assert_not_null(fill, "prism：面板体 stylebox 不应为 null")
+	assert_almost_eq(fill.bg_color.a, 0.05, 0.005, "prism：垫板 fill α 应 = 0.05（网页 --mat）")
+	assert_gte(fill.bg_color.r, 0.9, "prism：垫板 fill 应是白色系（淡灰层），不是深色板")
+	assert_eq(int(fill.border_width_left), 1, "prism：垫板描边宽应 = 1px")
+	assert_almost_eq(fill.border_color.a, 0.14, 0.01, "prism：垫板描边 α 应 = 0.14")
+	assert_gte(fill.border_color.r, 0.9, "prism：垫板描边应是白边")
+	assert_eq(fill.corner_radius_top_left, 26, "prism：垫板圆角应 = 26（网页 --mat-r）")
+	# 反向：cozy 不透明垫板不得被玻璃分支卷走（旧样逐像素不变）
+	_use("cozy_salt")
+	var sb2: StyleBoxFlat = view._mat_stylebox()
+	assert_not_null(sb2, "cozy_salt：垫板 stylebox 不应为 null")
+	assert_eq(int(sb2.border_width_left), 0, "cozy_salt：不透明垫板无描边（旧样不变）")
+	assert_almost_eq(sb2.shadow_size, 10.0, 0.01, "cozy_salt：垫板仍是小阴影档")
+
+
+# ============================ 6. 那两处「全局」改动（同样作用在旧主题上）============================
 
 func test_board_font_is_the_equal_width_digit_face() -> void:
 	## 棋盘数字是 draw_string 画的，**不继承**主题样式 —— 必须显式取字体。

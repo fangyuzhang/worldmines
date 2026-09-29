@@ -6,6 +6,8 @@
 extends Node
 
 signal skins_changed
+## 皮肤激活/回退后发一次：伙伴猫等需要**重载资源**（如 pet/ 贴图覆盖）的消费方订阅。
+signal skin_activated
 
 const SKINS_DIR := "user://skins"
 
@@ -36,6 +38,10 @@ func _ready() -> void:
 	# 恢复上次激活的皮肤（若仍存在，否则保持内置深色）
 	if active_skin_id != "":
 		activate(active_skin_id)
+	# 【2026-09-30 开放性】存档 theme_mode 可能是上次会话注册的自定义主题 id——
+	# 注册在扫描时已重放，这里重评一次设置（want==mode 时 ThemeManager 早退，无副作用）。
+	if SettingsManager != null:
+		SettingsManager.settings_changed.emit()
 
 
 ## 重新扫描皮肤目录，重建 skins 列表（内置两项恒在首位）。
@@ -69,17 +75,47 @@ func _read_meta(skin_dir: String) -> Dictionary:
 	var data: Variant = JSON.parse_string(txt)
 	if not (data is Dictionary):
 		return {}
+	# 【2026-09-30 开放性】skin.json 可带 "theme": {"id","label"} 把本包 palette 注册为
+	# **全新主题 id**（不只覆盖某底版）。注册幂等：重复扫描时 ThemeManager 拒绝重名，
+	# 这里按失败回退到声明 base 处理。注册表运行期有效，每次启动由本扫描重放。
+	var base := str(data.get("base", "dark"))
+	var th: Variant = data.get("theme", {})
+	if th is Dictionary and not (th as Dictionary).is_empty():
+		var tid := _register_theme_from_json(th as Dictionary, data.get("palette", {}))
+		if tid != "":
+			base = tid
 	return {
 		"id": skin_dir.get_file(),
 		"name": str(data.get("name", skin_dir.get_file())),
 		"author": str(data.get("author", "未知")),
 		"version": str(data.get("version", "1.0.0")),
 		"builtin": false,
-		"base": str(data.get("base", "dark")),
+		"base": base,
 		"path": skin_dir,
 		"preview": skin_dir.path_join("preview.png"),
 		"json_path": json_path,
 	}
+
+
+## skin.json 的 theme 字段 → ThemeManager.register_theme。成功返回 id，失败返回 ""。
+func _register_theme_from_json(th: Dictionary, pal: Variant) -> String:
+	var id := str(th.get("id", "")).strip_edges()
+	if id == "":
+		return ""
+	var colors := {}
+	if pal is Dictionary:
+		for k in pal:
+			var v: Variant = pal[k]
+			if v is String and k != "numbers":
+				colors[str(k)] = v      # register_theme 自做 hex→Color
+	var nums: Array = []
+	var nv: Variant = pal.get("numbers", []) if pal is Dictionary else []
+	if nv is Array:
+		for s in nv:
+			if s is String:
+				nums.append(s)
+	var r := ThemeManager.register_theme(id, colors, nums, str(th.get("label", id)))
+	return id if bool(r.get("ok", false)) else ""
 
 
 ## 激活皮肤。内置 → 清皮肤 + 切主题；mod 皮肤 → 读色板交给 ThemeManager。
@@ -98,6 +134,7 @@ func activate(skin_id: String) -> Dictionary:
 			SettingsManager.set_theme_mode(base)
 			SettingsManager.set_active_skin(skin_id)
 		active_skin_id = skin_id
+		skin_activated.emit()
 		return {"ok": true}
 	var entry := _find(skin_id)
 	if entry.is_empty():
@@ -112,7 +149,26 @@ func activate(skin_id: String) -> Dictionary:
 		SettingsManager.set_theme_mode(entry["base"])
 		SettingsManager.set_active_skin(skin_id)
 	active_skin_id = skin_id
+	skin_activated.emit()
 	return {"ok": true}
+
+
+## 当前激活皮肤目录下的伙伴猫贴图覆盖（skin/pet/<文件名>，文件名与内置
+## pet_tail/pet_body/pet_head/pet_lid_l/pet_lid_r/pet_muzzle 相同）。无皮肤或无该文件
+## 返回 null（消费方回退内置贴图 / 图元模式）。运行时直读文件，绕开 .import 依赖。
+func pet_tex(file: String) -> Texture2D:
+	if active_skin_id == "" or active_skin_id.begins_with("__builtin"):
+		return null
+	var entry := _find(active_skin_id)
+	if entry.is_empty():
+		return null
+	var p := str(entry["path"]).path_join("pet").path_join(file)
+	if not FileAccess.file_exists(p):
+		return null
+	var img := Image.load_from_file(ProjectSettings.globalize_path(p))
+	if img == null:
+		return null
+	return ImageTexture.create_from_image(img)
 
 
 ## 解析 skin.json 的 palette → { colors: {key: Color}, numbers: [Color] }。

@@ -309,9 +309,11 @@ const DROP_RATIO_MAX := 2.0
 
 
 func test_hover_shadow_depth_is_adapted_per_theme() -> void:
+	# ⚠️ 只测**内置**主题：Mod/皮肤注册的自定义主题色板自由，压暗量带宽不归本契约管。
+	var _band_ids: Array = ["dark", "light"] + (ThemeManager.COZY_IDS as Array) + ["cozy_prism"]
 	var rows: Array[String] = []
-	for m: String in _theme_ids():
-		_use(m)
+	for m: String in _band_ids:
+		_use(str(m))
 		var base: Color = ThemeManager.bg()
 		var dn: float = ThemeManager.shadow_drop(base)
 		var dh: float = ThemeManager.shadow_drop(base, ThemeManager.SHADOW_DROP_HOVER)
@@ -328,10 +330,20 @@ func test_hover_shadow_depth_is_adapted_per_theme() -> void:
 	print("[diag] 阴影压暗量（0..255）：" + " | ".join(rows))
 
 	# 影色必须随主题走：CozyStyle 用该主题自己的深色调（带色相），不再是脱色的纯黑。
-	for m: String in _theme_ids():
-		_use(m)
+	# 【2026-09-30】玻璃主题（棱镜）的垫板是半透明白（三层构造），影色不能取它的
+	# 色相——白影在深底上是光不是影 ⇒ 玻璃固定用一套深蓝调（见 shadow_tint 玻璃分支）。
+	# ⚠️ 只断言**内置**主题（dark/light/COZY_IDS/棱镜）：Mod/皮肤注册的自定义主题
+	# 影色自由，不该被本契约锁死（user://skins 装了皮肤包时会多出 id）。
+	var _shadow_ids: Array = ["dark", "light"] + (ThemeManager.COZY_IDS as Array) + ["cozy_prism"]
+	for m: String in _shadow_ids:
+		_use(str(m))
 		var tint: Color = ThemeManager.shadow_tint()
-		if str(m).begins_with("cozy_"):
+		if ThemeManager.is_glass():
+			assert_ne(tint, Color(0, 0, 0),
+				"%s：玻璃主题影色应是非纯黑的深调（近黑底收敛分支需要 tint 亮度>0）" % m)
+			assert_lt(tint.r + tint.g + tint.b, 0.5,
+				"%s：玻璃主题影色应是深色调（白影=光）" % m)
+		elif str(m).begins_with("cozy_"):
 			assert_ne(tint, Color(0, 0, 0),
 				"%s：CozyStyle 的影色应是该主题自己的深色调（board_mat 的色相），不是纯黑" % m)
 			assert_eq(tint, Color(ThemeManager.board_mat().r, ThemeManager.board_mat().g,

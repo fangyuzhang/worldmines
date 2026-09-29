@@ -100,6 +100,12 @@ var _tab_btns: Array[Button] = []
 var _tab_btn_page: Array[int] = []
 var _page_host: Control = null
 var _pages: Array[Control] = []
+## 主题收口时的**按页 stale 标记**（与 _pages 同下标 = 页面 id）：
+## 主题切换只重做可见页（见 _on_theme_settled），隐藏页标 stale、切到时再建（_show_tab）。
+var _page_stale: Array[bool] = []
+## _cleared_total 的版本号缓存（仅库模式入缓存；键构造见 _cleared_total 注释）。
+var _cleared_cache: Dictionary = {}
+var _cleared_cache_key := -1
 ## 变体 id -> MODES 下标（交叉表按 id 找条目，不依赖列表顺序）。
 var _mode_index: Dictionary = {}
 var _overlay: Control = null
@@ -362,6 +368,12 @@ func _show_tab(t: int) -> void:
 	# 异形棋盘页在「一个异形关都没有」时不可达（页签已隐藏，同上防程序调用 / 键盘触发）
 	if t == PAGE_SHAPE and _shape_levels().is_empty():
 		t = PAGE_SINGLE
+	# 主题收口时标 stale 的隐藏页：切到时才补重建（见 _theme_refresh_pages）。
+	# 必须放在异形页同步兜底**之前**：重建会把 _shape_filled 复位并改挂新 body，
+	# 随后的兜底立刻同步填充，页面首帧即完整（否则空一帧闪烁）。
+	if t < _page_stale.size() and _page_stale[t]:
+		_page_stale[t] = false
+		_rebuild_one_page(t)
 	if t == PAGE_SHAPE and not _shape_filled:
 		# 延迟填充的兜底：玩家已切到本页，内容必须立刻就绪（只在首切时付一次构建成本）
 		_shape_filled = true
@@ -418,6 +430,9 @@ func _mixed_tab_of(m: Dictionary) -> int:
 
 ## 重建三页内容（Mod 加载 / 卸载、主题切换、首次进入时调用）。
 func _rebuild_pages() -> void:
+	_page_stale.clear()
+	for i in 4:
+		_page_stale.append(false)
 	for p in _pages:
 		if is_instance_valid(p):
 			p.queue_free()
@@ -532,6 +547,7 @@ func _make_card(mode_idx: int, m: Dictionary) -> Button:
 	title.text = "%s  %s" % [str(m["name"]), str(m["tip"])]
 	title.add_theme_font_size_override("font_size", 15)
 	title.add_theme_color_override("font_color", ThemeManager.text())
+	title.set_meta("theme_role", "primary")   # 主题收口原地重着色用（见 _restyle_card_labels）
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(title)
@@ -540,6 +556,7 @@ func _make_card(mode_idx: int, m: Dictionary) -> Button:
 	desc.text = VariantCatalog.rule_text(str(m["id"]))
 	desc.add_theme_font_size_override("font_size", 13)
 	desc.add_theme_color_override("font_color", ThemeManager.text_secondary())
+	desc.set_meta("theme_role", "secondary")
 	desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART   # 中文断行按字，标点不落行首
 	desc.max_lines_visible = DESC_LINES
@@ -1671,7 +1688,30 @@ func _attach_progress(btn: Button, mode_id: String) -> void:
 
 
 ## 该变体在各尺寸（含正式关卡库的全部档）下的已通关总数。
+##
+## 【2026-09-29 主题切换卡顿修复】加**版本号缓存**。动机：库模式的一次计算要对关卡库
+## 逐键循环（库量产上千关 ⇒ GDScript 里 3-4ms），而一张卡片要算**两遍**
+## （_card_tooltip 一遍 + _attach_progress 一遍），整页 16 张卡 ⇒ ~100ms——
+## 这正是「主题切换收口时卡一下」的大头（theme_settled → _rebuild_pages 实测 137ms）。
+## 缓存失效键 = ProgressStore.rev()（进度写入即 +1）⊕ _mock_cleared 哈希（测试/演示直写
+## 内存字典不走 rev，用内容哈希兜底）。
+## **只缓存库模式**：gen 模式无库循环（<0.1ms），且 _ensure_mock 会随时往 _mock_cleared
+## 写演示通关键（RM4 保证库模式不写 mock）——不缓存就天然没有失效问题。
 func _cleared_total(mode_id: String) -> int:
+	if not _mode_has_lib(mode_id):
+		return _cleared_total_uncached(mode_id)
+	var key := ProgressStore.rev() * 1000003 + hash(_mock_cleared)
+	if key != _cleared_cache_key:
+		_cleared_cache.clear()
+		_cleared_cache_key = key
+	if _cleared_cache.has(mode_id):
+		return int(_cleared_cache[mode_id])
+	var n := _cleared_total_uncached(mode_id)
+	_cleared_cache[mode_id] = n
+	return n
+
+
+func _cleared_total_uncached(mode_id: String) -> int:
 	var n := 0
 	for s in SIZES:
 		for i in LEVELS_PER_SET:
@@ -2858,9 +2898,83 @@ func _on_theme_changed() -> void:
 func _on_theme_settled() -> void:
 	if not is_inside_tree():
 		return
-	_rebuild_pages()
+	_theme_refresh_pages()
 	if _mode_idx >= 0:
 		_refresh_popup()
+
+
+## 主题收口的**页面刷新**（2026-09-29 卡顿修复，取代原先无条件 _rebuild_pages）。
+## 实测根因：_rebuild_pages 全量重建 4 页 = 137ms，其中 ~100ms 是 16 张卡各算两遍
+## _cleared_total（库模式 O(库容) 逐键循环）——已由 _cleared_total 版本号缓存消掉；
+## 剩下的纯节点构建（~35ms）对「无缝切换」仍太重，于是分两档：
+##   · 单项页（16 卡）：**原地重着色**（重跑 _style_card + 按角色刷 Label + queue_redraw
+##     进度条）≈ 3ms，不重建节点 → hover/焦点/滚动位置全保留；
+##   · 混合 / Mod / 异形页：构建器色彩路径分散，原地重着色侵入大 → **只重建当前可见页**
+##     （实测 13/1/0ms），隐藏页标 stale、切到时再建（_show_tab）。
+## 收口瞬间用户看到的是：卡片与弹窗原地换色，其余页签切过去时已是新主题——全程无掉帧。
+func _theme_refresh_pages() -> void:
+	_restyle_single_page()
+	for i in _pages.size():
+		if i == PAGE_SINGLE:
+			_page_stale[i] = false       # 已原地重着色，无需重建
+		elif i == _tab and is_instance_valid(_pages[i]):
+			_rebuild_one_page(i)         # 可见的非卡片页：立即重建（毫秒级）
+			_page_stale[i] = false
+		else:
+			_page_stale[i] = true        # 隐藏页：切到时再建
+
+
+## 单项页卡片**原地重着色**：递归找卡片按钮（meta "card_btn"），重跑 _style_card
+## （4 个状态 StyleBoxFlat 全新着色）+ 按 theme_role 刷子 Label 字色 + queue_redraw
+## （进度条 draw 回调读的是 ThemeManager 实时色，重绘即新色）。
+func _restyle_single_page() -> void:
+	if _pages.size() <= PAGE_SINGLE or not is_instance_valid(_pages[PAGE_SINGLE]):
+		return
+	_restyle_card_subtree(_pages[PAGE_SINGLE])
+
+
+func _restyle_card_subtree(n: Node) -> void:
+	if n is Button and (n as Button).has_meta("card_btn"):
+		var btn := n as Button
+		_style_card(btn)
+		for c in btn.get_children():
+			_restyle_card_labels(c)
+		btn.queue_redraw()
+	for c in n.get_children():
+		_restyle_card_subtree(c)
+
+
+func _restyle_card_labels(n: Node) -> void:
+	if n is Label and (n as Label).has_meta("theme_role"):
+		var lb := n as Label
+		if str(lb.get_meta("theme_role")) == "primary":
+			lb.add_theme_color_override("font_color", ThemeManager.text())
+		else:
+			lb.add_theme_color_override("font_color", ThemeManager.text_secondary())
+
+
+## 只重建**一个**页（页面 id 下标），其余页不动。供主题收口（可见非卡片页）与
+## _show_tab（stale 页）共用。可见性按当前 _tab 对齐。
+func _rebuild_one_page(i: int) -> void:
+	if i < 0 or i >= _pages.size():
+		return
+	if is_instance_valid(_pages[i]):
+		_pages[i].queue_free()
+	var p: Control
+	match i:
+		PAGE_SINGLE:
+			p = _build_single_page()
+		PAGE_MIXED:
+			p = _build_mixed_page()
+		PAGE_MOD:
+			p = _build_mod_page()
+		PAGE_SHAPE:
+			p = _build_shape_page()
+		_:
+			return
+	_pages[i] = p
+	_page_host.add_child(p)
+	p.visible = (i == _tab)
 
 
 # ==================== 杂项 ====================

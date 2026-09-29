@@ -33,11 +33,21 @@ const POP_SCALE_MIN := 0.86      # 起始收缩比
 
 var _view
 var _prev_ripple := true
+var _prev_theme := ""
 
 
 func before_each() -> void:
 	_prev_ripple = SettingsManager.ripple_enabled
 	SettingsManager.ripple_enabled = true  # 测试确定性与用户设置解耦
+	# 主题同样要与用户持久化设置解耦：pop 时长读 ThemeManager.pop_duration()
+	# （棱镜玻璃主题刻意放宽到 0.42s），settings.cfg 里若存着棱镜，硬编码的
+	# POP_DUR_MS=200 全线失准。锁回规范底版 cozy_salt（POP_WD=0.20 的出处）。
+	_prev_theme = SettingsManager.theme_mode
+	if SettingsManager.theme_mode != "cozy_salt":
+		SettingsManager.set_theme_mode("cozy_salt")
+		# 300ms 逐色过渡里非 Color 键在首步（≈33ms）吸附目标值；等过渡走完，
+		# 保证 pop_duration() 读到的是确定值而非插值中间态。
+		await wait_process_frames(12)
 	assert_true(GameSession.start_level("res://levels/classic_01.json"), "需要一个真实关卡")
 	_view = load("res://ui/board_view.tscn").instantiate()
 	add_child_autofree(_view)
@@ -45,6 +55,8 @@ func before_each() -> void:
 
 func after_each() -> void:
 	SettingsManager.ripple_enabled = _prev_ripple
+	if _prev_theme != "" and SettingsManager.theme_mode != _prev_theme:
+		SettingsManager.set_theme_mode(_prev_theme)
 	GameSession.start_level("res://levels/classic_01.json")  # 复位全局盘面，避免污染其它测试文件
 
 

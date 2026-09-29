@@ -200,6 +200,23 @@ var _pop_cache_ms: int = -1
 var _mat_sb: StyleBoxFlat = null
 var _mat_sb_color := Color(0, 0, 0, 0)
 var _mat_sb_shadow := Color(0, 0, 0, 0)
+## 玻璃垫板缓存（2026-09-30 三层构造）：棱镜的 mat_* 六个形态键拼成一个字符串键，
+## 任一变化（含皮肤/Mod 覆盖、主题过渡 lerp 吸附）都触发重建。
+## _gmat_shadow_sb 只出影不出面板（bg 全透明）；_gmat_fill_sb 只出面不出影——
+## 分开的原因见 _draw_board_mat：CSS 的 box-shadow 不画在元素半透背景之下，
+## StyleBoxFlat 的影却画在整块 rect 后面，半透白面板会被自己的黑影衬成深色板。
+var _gmat_sb: StyleBoxFlat = null
+var _gmat_key := ""
+var _gmat_shadow_sb: StyleBoxFlat = null
+var _gmat_fill_sb: StyleBoxFlat = null
+var _prism_bg_tex: Texture2D = null   # 棱镜玻璃烘焙渐变背景（懒加载）
+
+## 背景交叉淡化（2026-09-30 分层过渡的配套）：网页 body{transition:background .4s}
+## 的等价物。use_bg_gradient 翻转（棱镜 ↔ 其余主题）时，烘焙贴图在新底色上 α 淡入/淡出
+##（清屏色由 ThemeManager 同步渐变），避免背景整层硬切跳变。-1 = 无淡化在途。
+var _bg_grad_last: int = -1
+var _bg_fade_t0: int = -1
+const BG_FADE_MS := 480.0
 
 ## 提示高亮（一步直推）：结论格描边 + 依据格描边（推理文字见 HintPanel 浮动窗口）
 var _hint_steps: Array = []
@@ -213,6 +230,11 @@ var _reject_until_ms: int = -1
 var _reject_toast_ms: int = -100000
 const REJECT_FLASH_MS := 550
 const REJECT_TOAST_THROTTLE_MS := 3000
+
+## 【2026-09-30】旧「换肤圆形波浪」系统（圆形扩散逐格换色）已按用户要求整体移除：
+## 主题切换改由 ThemeManager 的**分层过渡**承担（几何→材质→配色三段重叠窗口，
+## 见 theme_manager.gd 的 STAGE_* 注释），棋盘只响应 theme_changed 逐帧重绘。
+## 翻开动效的 _ripples/_pops（开格涟漪）与本节无关，保持不动。
 
 
 func _ready() -> void:
@@ -228,7 +250,8 @@ func _ready() -> void:
 	_touch_timer.wait_time = float(TOUCH_LONG_PRESS_MS) / 1000.0
 	_touch_timer.timeout.connect(_on_touch_long_press)
 	add_child(_touch_timer)
-	ThemeManager.theme_changed.connect(queue_redraw)
+	if not ThemeManager.theme_changed.is_connected(queue_redraw):
+		ThemeManager.theme_changed.connect(queue_redraw)
 	GameSession.session_started.connect(_on_session_started)
 	if not GameSession.hint_ready.is_connected(_on_hint_ready):
 		GameSession.hint_ready.connect(_on_hint_ready)
@@ -1637,10 +1660,13 @@ func _process(_delta: float) -> void:
 		_cull_pops(now_ms)
 		_pop_cache_ms = -1
 		dirty = true
+	# 【2026-09-30】主题波浪的逐帧驱动已删——换肤由 ThemeManager 分层过渡的
+	# tween_method 驱动，每步 emit theme_changed → queue_redraw，不需要 _process 参与。
 	if dirty:
 		queue_redraw()
 	# 无动画时彻底关掉逐帧回调：静态棋盘不需要每帧醒来
-	if _ripples.is_empty() and _pops.is_empty() and _hint_until_ms < 0 and _reject_until_ms < 0:
+	if _ripples.is_empty() and _pops.is_empty() and _hint_until_ms < 0 \
+			and _reject_until_ms < 0:
 		set_process(false)
 
 
@@ -1672,7 +1698,7 @@ func _cull_pops(now_ms: int) -> bool:
 	if _pops.is_empty():
 		return false
 	var before := _pops.size()
-	var dur_ms: float = POP_WD * 1000.0
+	var dur_ms: float = ThemeManager.pop_duration() * 1000.0
 	# 不用 Dictionary.filter（本引擎版本无此方法）：手工保留未结束项。
 	var kept := {}
 	for pos in _pops:
@@ -1691,6 +1717,9 @@ func _cull_pops(now_ms: int) -> bool:
 ## 棋盘垫子向每边外扩的像素。太小（<6）垫子看起来像描边而不是"板子"，
 ## 太大（>16）在 5×5 小盘上垫子比棋盘本身还显眼。
 const MAT_GROW := 10.0
+## 玻璃垫板的外扩（网页 --mat-pad:14px，按本项目格子比例 ≈12px）。
+## 玻璃面板要有「罩住棋盘」的存在感，外扩必须比 cozy 不透明垫板大一档。
+const MAT_GROW_GLASS := 12.0
 
 ## ── CozyStyle 圆角瓦片（2026-09-29）────────────────────────────────────────────
 ## CozySudoku 的棋盘不是「方格 + 网格线」，而是**一块块圆角瓦片留缝拼在板子上**：
@@ -1733,6 +1762,7 @@ const TILE_RADIUS_FRAC := 0.106
 
 var _tile_sb: StyleBoxFlat = null
 var _tile_sb_radius := -1.0
+var _tile_sb_bw := -1          # 缓存的描边宽（棱镜玻璃用，其余主题恒 0）
 var _tile_line_sb: StyleBoxFlat = null
 var _tile_line_radius := -1.0
 
@@ -1750,12 +1780,22 @@ func _tile_stylebox(radius: float) -> StyleBoxFlat:
 	if _tile_sb == null:
 		_tile_sb = StyleBoxFlat.new()
 		_tile_sb.anti_aliasing = true
+	# 描边（玻璃边缘）：仅棱镜等玻璃主题 width>0；其余主题恒 0 ⇒ 与旧版一致（无描边）。
+	var bw := ThemeManager.tile_border_width()
+	var bcol := ThemeManager.tile_border()
+	# 半径与描边宽变化才重建几何；**颜色独立更新** —— 旧版把 border_color 塞在半径分支里，
+	# 主题过渡期间（半径/宽度不变、颜色在 lerp）边色会卡在旧值不动。
 	if not is_equal_approx(_tile_sb_radius, radius):
 		_tile_sb_radius = radius
 		var r := clampi(int(roundf(radius)), 2, 40)
 		_tile_sb.set_corner_radius_all(r)
 		# 半径变大后 6 边细分的多边形会被看成一圈多边形而不是圆（同 UiTheme._round 口径）
 		_tile_sb.corner_detail = clampi(r + 4, 8, 24)
+	if _tile_sb_bw != bw:
+		_tile_sb_bw = bw
+		_tile_sb.set_border_width_all(bw)
+	if bw > 0 and _tile_sb.border_color != bcol:
+		_tile_sb.border_color = bcol
 	return _tile_sb
 
 
@@ -1770,24 +1810,62 @@ func _tile_stylebox(radius: float) -> StyleBoxFlat:
 func _tile_rect(rect: Rect2) -> Rect2:
 	if not _cozy_tiles():
 		return rect
-	return rect.grow(-maxf(0.5, rect.size.x * TILE_GAP_FRAC * 0.5))
+	return rect.grow(-maxf(0.5, rect.size.x * ThemeManager.tile_gap_frac() * 0.5))
 
 
 ## 填充一格：Cozy = 圆角瓦片（间隙即分格线）；其余主题 = 原 `draw_rect`（逐像素不变）。
-func _draw_tile(rect: Rect2, col: Color) -> void:
+## revealed=true 时取「翻开格」的内顶高光与玻璃边色（棱镜玻璃用；其余主题这些色透明，无效果）。
+func _draw_tile(rect: Rect2, col: Color, revealed: bool = false) -> void:
 	if not _cozy_tiles():
 		draw_rect(rect, col)
 		return
 	var r := _tile_rect(rect)
 	# 半径按**格边长**取，不按内缩后的瓦片边长 ——
 	# TILE_RADIUS_FRAC 的定义就是「半径 / 格边长」（对齐实测口径）。
-	var sb := _tile_stylebox(maxf(2.0, rect.size.x * TILE_RADIUS_FRAC))
+	var sb := _tile_stylebox(maxf(2.0, rect.size.x * ThemeManager.tile_radius_frac()))
 	sb.bg_color = col
 	draw_style_box(sb, r)
+	# 玻璃内顶高光（近似 CSS inset 0 1px 0）：原生无 inset 阴影，故只画顶边。
+	# 【2026-09-29 二次修正】CSS 的这条高光带会**沿圆角弧线包住上两角**、在弧线切线
+	# 变竖直处自然消失（可视带 = 圆角矩形与其下移 1px 拷贝之间的区域），且画在 border
+	# 内侧。此前先是无脑全宽直线（大圆角下两端越出圆角 ~20px），后改为按 y=1.5 切割量
+	# 截短——但那只是把越界换成了「距边 21px 处悬空起笔/收笔」的两条硬端点，用户复查
+	# 仍觉突兀。现在直接沿圆角路径铺 1px 折线：左边缘 y=hrad 处 → 左上弧 → 顶边 →
+	# 右上弧 → 右边缘，端点落在弧线竖直切点（与 CSS 可视带的消失位置一致），
+	# 并整体内缩 border 宽（inset 阴影画在 padding box 内的语义）。
+	var ins := ThemeManager.tile_inset_open() if revealed else ThemeManager.tile_inset()
+	if ins.a > 0.0 and r.size.y > 4.0:
+		var rad: float = maxf(2.0, rect.size.x * ThemeManager.tile_radius_frac())
+		var bw_px := float(ThemeManager.tile_border_width())
+		var hr: Rect2 = r.grow(-bw_px)
+		var hrad: float = minf(maxf(1.0, rad - bw_px), minf(hr.size.x, hr.size.y) * 0.5)
+		if hrad < 2.0:
+			# 圆角小到可以忽略：退化为顶边直线（与旧行为等价）
+			draw_line(Vector2(hr.position.x, hr.position.y + 0.5),
+				Vector2(hr.position.x + hr.size.x, hr.position.y + 0.5), ins, 1.0)
+		else:
+			draw_polyline(_tile_top_highlight_points(hr, hrad), ins, 1.0, true)
 
 
-## 瓦片**描边**样式（缓存单例，与填充样式分开 —— 同一个实例既填又描会让边框宽度
-## 残留到下一次填充上）。`draw_center = false` ⇒ 只画边框，不铺底。
+## 内顶高光的**圆角路径点**：左边缘 → 左上 90° 弧 → 顶边 → 右上 90° 弧 → 右边缘。
+## 端点 = 弧线竖直切点（圆心的正左/正右），与 CSS `inset 0 1px 0` 可视带的
+## 消失位置一致——高光在那里贴合侧边框，不会出现悬空的硬端点。
+func _tile_top_highlight_points(hr: Rect2, hrad: float) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	var steps := 10
+	var cl := Vector2(hr.position.x + hrad, hr.position.y + hrad)    # 左上弧圆心
+	for i in steps + 1:
+		var a := PI + PI * 0.5 * float(i) / float(steps)             # 180° → 270°
+		pts.append(cl + Vector2(cos(a), sin(a)) * hrad)
+	pts.append(Vector2(hr.position.x + hr.size.x - hrad, hr.position.y))  # 顶边右端
+	var cr := Vector2(hr.position.x + hr.size.x - hrad, hr.position.y + hrad)  # 右上弧圆心
+	for i in steps + 1:
+		var a := PI * 1.5 + PI * 0.5 * float(i) / float(steps)       # 270° → 360°
+		pts.append(cr + Vector2(cos(a), sin(a)) * hrad)
+	return pts
+
+
+## 瓦片**描边**样式（缓存单例，与填充样式分开 —— 同一个实例既填又描会让边框宽度## 残留到下一次填充上）。`draw_center = false` ⇒ 只画边框，不铺底。
 func _tile_line_stylebox(radius: float, width: int) -> StyleBoxFlat:
 	if _tile_line_sb == null:
 		_tile_line_sb = StyleBoxFlat.new()
@@ -1818,7 +1896,7 @@ func _draw_tile_outline(rect: Rect2, col: Color, width: float, inset: float) -> 
 	var r := _tile_rect(rect).grow(-inset)
 	if r.size.x <= 2.0 or r.size.y <= 2.0:
 		return
-	var sb := _tile_line_stylebox(maxf(2.0, rect.size.x * TILE_RADIUS_FRAC), int(roundf(width)))
+	var sb := _tile_line_stylebox(maxf(2.0, rect.size.x * ThemeManager.tile_radius_frac()), int(roundf(width)))
 	sb.border_color = col
 	draw_style_box(sb, r)
 
@@ -1837,8 +1915,48 @@ func _draw_board_mat(size: Vector2i) -> void:
 	var sb := _mat_stylebox()
 	if sb == null:
 		return
-	var rect := Rect2(board_origin, Vector2(size) * cell_px).grow(MAT_GROW)
-	draw_style_box(sb, rect)
+	var grow := MAT_GROW_GLASS if ThemeManager.is_glass() else MAT_GROW
+	var rect := Rect2(board_origin, Vector2(size) * cell_px).grow(grow)
+	if ThemeManager.is_glass():
+		# 【2026-09-30 三层构造】CSS 语义对齐：.mat 的 box-shadow **只画在元素外**
+		#（半透背景底下没有影）。StyleBoxFlat 的影画在整块 rect 后面 ⇒ 直接一笔画
+		# 会让白 .05 面板被自己的黑影衬成深色板（真机采样：缝色 B 通道暗 ~30/255）。
+		# 三步还原：① 画带影 stylebox ② 背景贴图同区域重绘（等效 CSS 影裁剪）
+		# ③ 画无影面板本体（半透明白 fill + 1px 白边）。
+		draw_style_box(sb, rect)
+		_redraw_bg_over(rect)
+		var fill := _glass_mat_fill_stylebox()
+		if fill != null:
+			draw_style_box(fill, rect)
+	else:
+		draw_style_box(sb, rect)
+
+
+## 用烘焙背景贴图把 rect 区域重画一遍（玻璃垫板下方的「影擦除」）。
+## 贴图整铺视口（_draw_prism_background 同口径），局部坐标 = 视口坐标，按比例取源区域。
+## 贴图缺失（兜底单色分支）时退化为铺一块主题底色。
+func _redraw_bg_over(rect: Rect2) -> void:
+	if _prism_bg_tex == null:
+		_prism_bg_tex = load("res://assets/bg_prism.png") as Texture2D
+	if _prism_bg_tex != null:
+		var vp := get_viewport_rect()
+		var ts := Vector2(_prism_bg_tex.get_size())
+		var src := Rect2((rect.position - vp.position) * ts / vp.size, rect.size * ts / vp.size)
+		draw_texture_rect_region(_prism_bg_tex, rect, src)
+	else:
+		draw_rect(rect, ThemeManager.bg())
+
+
+## 棱镜玻璃的烘焙渐变背景（含毛玻璃模糊，见 gen_prism_bg.py）。
+## 仅玻璃主题调用；其余主题走旧 flat 背景分支。贴图加载失败则退化为主题底色。
+func _draw_prism_background() -> void:
+	if _prism_bg_tex == null:
+		_prism_bg_tex = load("res://assets/bg_prism.png") as Texture2D
+	if _prism_bg_tex != null:
+		draw_texture_rect(_prism_bg_tex, get_viewport_rect(), false)
+	else:
+		# 贴图缺失兜底：棱镜主题自己的 bg（单源，不再写死 #141834）
+		draw_rect(get_viewport_rect(), ThemeManager.bg())
 
 
 ## 垫子样式（缓存）。颜色变了才重建 —— `_draw()` 每帧都跑，逐帧 new StyleBoxFlat
@@ -1853,6 +1971,11 @@ func _mat_stylebox() -> StyleBoxFlat:
 	var c := ThemeManager.board_mat()
 	if c.a <= 0.0:
 		return null
+	# 【2026-09-30 三层构造】玻璃主题走专属路径：半透明白面板 + 1px 白边 + 大柔影，
+	# 全部来自 ThemeManager 的 mat_* 键（网页 [data-theme=prism] 的 .mat token 原值）。
+	# 旧路径（cozy 不透明垫板 + shadow() 反解影色）保持逐像素不变。
+	if ThemeManager.is_glass():
+		return _glass_mat_stylebox(c)
 	var sh := ThemeManager.shadow(ThemeManager.bg(), ThemeManager.SHADOW_DROP_MAT)
 	if _mat_sb != null and _mat_sb_color == c and _mat_sb_shadow == sh:
 		return _mat_sb
@@ -1867,6 +1990,50 @@ func _mat_stylebox() -> StyleBoxFlat:
 	_mat_sb_color = c
 	_mat_sb_shadow = sh
 	return _mat_sb
+
+
+## 玻璃垫板（棱镜三层的**中层**）—— 对齐网页 chain-lab.html：
+##   .mat{ background:rgba(255,255,255,.05);            ← 半透明白，缝里读出「淡灰」
+##         border:1px solid rgba(255,255,255,.14);      ← 玻璃面板的白边
+##         border-radius:26px;
+##         box-shadow:0 30px 70px -30px rgba(0,0,0,.6); ← 大柔影 = 悬浮高度
+##         backdrop-filter:blur(14px) }                 ← 透镜（烘焙背景已含等效柔化）
+func _glass_mat_stylebox(fill: Color) -> StyleBoxFlat:
+	var bc := ThemeManager.mat_border()
+	var bw := ThemeManager.mat_border_w()
+	var rad := ThemeManager.mat_radius()
+	var sc := ThemeManager.mat_shadow_color()
+	var ssz := ThemeManager.mat_shadow_size()
+	var soff := ThemeManager.mat_shadow_offset()
+	var key := "%s|%s|%d|%.1f|%s|%.1f|%s" % [fill, bc, bw, rad, sc, ssz, soff]
+	if _gmat_sb != null and _gmat_key == key:
+		return _gmat_sb
+	# 影体：bg 全透明 + 影参数（先画，rect 内的部分随后被背景重绘抹掉）
+	if _gmat_shadow_sb == null:
+		_gmat_shadow_sb = StyleBoxFlat.new()
+		_gmat_shadow_sb.corner_detail = 20
+	_gmat_shadow_sb.bg_color = Color(0, 0, 0, 0)
+	_gmat_shadow_sb.set_corner_radius_all(clampi(int(roundf(rad)), 2, 60))
+	_gmat_shadow_sb.shadow_size = ssz
+	_gmat_shadow_sb.shadow_offset = soff
+	_gmat_shadow_sb.shadow_color = sc
+	# 面板体：fill + 白边，无影（影由上面的影体承担，避免衬底）
+	if _gmat_fill_sb == null:
+		_gmat_fill_sb = StyleBoxFlat.new()
+		_gmat_fill_sb.corner_detail = 20
+	_gmat_fill_sb.bg_color = fill
+	_gmat_fill_sb.set_corner_radius_all(clampi(int(roundf(rad)), 2, 60))
+	_gmat_fill_sb.set_border_width_all(bw)
+	_gmat_fill_sb.border_color = bc
+	_gmat_sb = _gmat_shadow_sb   # 兼容旧引用：_mat_stylebox 的返回值仍是「带影体」
+	_gmat_key = key
+	return _gmat_shadow_sb
+
+
+## 玻璃垫板的**面板体**（无影）：_glass_mat_stylebox() 已按同一缓存键建好，
+## 这里只取。调用顺序契约：必须先调过 _glass_mat_stylebox（_mat_stylebox 已保证）。
+func _glass_mat_fill_stylebox() -> StyleBoxFlat:
+	return _gmat_fill_sb
 
 
 ## 棋盘文字（数字 / ? / ∞ / *）的字体。
@@ -1913,9 +2080,34 @@ func _draw() -> void:
 	# 无 palette.background → 不画（保持原样，矩形关卡零变化）。
 	# ⚠️ 2026-09-22：此处原先还要求 `custom`（自定义几何盘），与 _custom_palette 的耦合同源，
 	# 于是声明了 background 的蜂窝关也画不出底色。现只以「取到了不透明色」为条件。
-	var bg := _pal_color("background", Color(0.0, 0.0, 0.0, 0.0))
-	if bg.a > 0.0:
-		draw_rect(get_viewport_rect(), bg)
+	# 背景（palette.background / 棱镜烘焙贴图）：board_view 本身是全屏 Control，直接在
+	# 自己的绘制遍里铺视口大小的底 —— 子节点（绘画层/HUD/底栏）随后绘制，天然覆盖其上。
+	# use_bg_gradient 翻转时贴图 α 在过渡窗口内淡入/淡出（网页 background .4s 的等价物）。
+	var grad := ThemeManager.use_bg_gradient()
+	if int(grad) != _bg_grad_last:
+		_bg_grad_last = int(grad)
+		_bg_fade_t0 = Time.get_ticks_msec()
+	var fade_p := 1.0
+	if _bg_fade_t0 >= 0:
+		fade_p = clampf(float(Time.get_ticks_msec() - _bg_fade_t0) / BG_FADE_MS, 0.0, 1.0)
+		if fade_p >= 1.0:
+			_bg_fade_t0 = -1
+	if grad:
+		if _prism_bg_tex == null:
+			_prism_bg_tex = load("res://assets/bg_prism.png") as Texture2D
+		if _prism_bg_tex != null:
+			# 淡入期其下透出全局清屏色（ThemeManager 正在把它渐变为新主题底）→ 衔接自然
+			draw_texture_rect(_prism_bg_tex, get_viewport_rect(), false, Color(1.0, 1.0, 1.0, fade_p))
+		else:
+			# 贴图缺失兜底：棱镜主题自己的 bg（单源，不再写死 #141834）
+			draw_rect(get_viewport_rect(), ThemeManager.bg())
+	else:
+		var bg := _pal_color("background", Color(0.0, 0.0, 0.0, 0.0))
+		if bg.a > 0.0:
+			draw_rect(get_viewport_rect(), bg)
+		# 离开棱镜：旧渐变贴图在新底色上淡出
+		if fade_p < 1.0 and _prism_bg_tex != null:
+			draw_texture_rect(_prism_bg_tex, get_viewport_rect(), false, Color(1.0, 1.0, 1.0, 1.0 - fade_p))
 	@warning_ignore("shadowed_variable_base_class")
 	var size := board.grid.size()
 	@warning_ignore("shadowed_variable_base_class")
@@ -2065,7 +2257,7 @@ func _draw_cell(pos: Vector2i, cell: Cell, rect: Rect2, scale: float, font: Font
 			# 单格 pop 的颜色通道：由「瞬变」改为 0.20s 内 未翻开色 → 已翻开色 插值。
 			# pop_e = sin(PI*p/2) ∈ [0,1]；无 pop（静止/未登记）时传 1.0 → 精确取状态色。
 			if not poly_filled:
-				_draw_tile(rect, _cell_base_color(pos, cell, pop_e))
+				_draw_tile(rect, _cell_base_color(pos, cell, pop_e), true)
 			_draw_clue_value(cell, rect, scale, font)
 
 
@@ -2102,6 +2294,7 @@ func _draw_single_clue(v: Variant, rect: Rect2, scale: float, font: Font) -> voi
 	var text := ""
 	# 文字色：自定义盘走 palette.revealed_text（palette 只有这一个文字色 ⇒ 数字/双值/∞ 共用它；
 	# 否则数字色来自主题，压在 palette.revealed 的深底上可能糊掉）。无 palette → 主题色不变。
+	# 数字色的过渡插值在 ThemeManager.number() 内部（分层过渡的配色段）。
 	var col := _pal_color("revealed_text", ThemeManager.text())
 	if v is Array:
 		# HV 纵横分计 [正交, 对角]。防御：长度不足 2 时退化为单值，避免越界（mod 规则可能返回畸形）。
@@ -2124,6 +2317,12 @@ func _draw_single_clue(v: Variant, rect: Rect2, scale: float, font: Font) -> voi
 	elif text.length() > 1:
 		fs2 = int(round(20.0 * scale))           # 多字符（双值/∞/大数）缩小字号
 	var baseline: float = rect.size.y * 0.5 + fs2 * 0.35
+	# 数字辉光（近似 CSS text-shadow）：仅棱镜等主题 num_glow 不透明时生效，6 向偏移叠加伪造 bloom。
+	var glow := ThemeManager.num_glow()
+	if glow.a > 0.0:
+		var gcol := Color(glow.r, glow.g, glow.b, glow.a * 0.5)
+		for o in [Vector2(-1, 0), Vector2(1, 0), Vector2(0, -1), Vector2(0, 1), Vector2(-1, -1), Vector2(1, 1)]:
+			draw_string(font, rect.position + Vector2(0, baseline) + o, text, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, fs2, gcol)
 	draw_string(font, rect.position + Vector2(0, baseline), text, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, fs2, col)
 
 
@@ -2141,8 +2340,14 @@ func _draw_question(rect: Rect2, scale: float, font: Font) -> void:
 ## §8.4.8 FLAGGED：HIDDEN 底 + 旗杆 draw_rect + 三角 draw_polygon（48px 基准坐标×scale）
 @warning_ignore("shadowed_variable_base_class")
 func _draw_flag(rect: Rect2, scale: float, with_bg: bool = true) -> void:
+	if ThemeManager.flag_style() == "prism":
+		_draw_flag_prism(rect, scale, with_bg)
+		return
 	if with_bg:
-		draw_rect(rect, _cell_hidden_color())
+		# 走 _draw_tile 而非裸 draw_rect：CozyStyle/棱镜的格子是**圆角瓦片**，
+		# 方形旗底的四角会伸出圆角外（在缝隙里露出四个小方块角）；
+		# 非 Cozy 主题 _draw_tile 内部就是 draw_rect，逐像素不变。
+		_draw_tile(rect, _cell_hidden_color())
 	# 旗杆色：自定义盘用 palette.revealed（原版深灰）——palette.flagged_tile 是浅色，
 	# 主题的 text_secondary 在深色主题下是浅色，压在浅底上会看不见；palette 无旗子专用色。
 	# 无 palette 时 _custom_palette() 为空 ⇒ 恒为主题色（逐像素不变）。
@@ -2161,6 +2366,25 @@ func _draw_flag(rect: Rect2, scale: float, with_bg: bool = true) -> void:
 		Vector2(x + 37.0 * scale, y + 16.0 * scale),
 	])
 	draw_polygon(tri, PackedColorArray([ThemeManager.danger()]))
+
+
+## 棱镜旗：小棱镜（三角面劈成 3 块糖果色），落在 48px 基准坐标 × scale。无旗杆（网页原版即纯棱镜图形）。
+func _draw_flag_prism(rect: Rect2, scale: float, with_bg: bool) -> void:
+	if with_bg:
+		# 同 _draw_flag：底必须随瓦片圆角（方底四角会越出玻璃圆角）
+		_draw_tile(rect, _cell_hidden_color())
+	var x: float = rect.position.x
+	var y: float = rect.position.y
+	var apex := Vector2(x + 30.0 * scale, y + 9.0 * scale)
+	var bl := Vector2(x + 16.0 * scale, y + 34.0 * scale)
+	var br := Vector2(x + 40.0 * scale, y + 34.0 * scale)
+	var ctr := (apex + bl + br) / 3.0
+	# 糖果三色唯一事实源 = ThemeManager.flag_prism_colors()（prism 数字表前 3 色）。
+	# 原先此处写死 hex，与 _COZY_NUM["cozy_prism"] 双写 ⇒ 改数字色必漂移（2026-09-30 审计）。
+	var candy: Array = ThemeManager.flag_prism_colors()
+	draw_polygon(PackedVector2Array([apex, bl, ctr]), PackedColorArray([candy[0]]))
+	draw_polygon(PackedVector2Array([apex, br, ctr]), PackedColorArray([candy[1]]))
+	draw_polygon(PackedVector2Array([bl, br, ctr]), PackedColorArray([candy[2]]))
 
 
 ## 终局揭晓：全部雷位画雷体（圆 + 4 刺线）；引爆格先画 danger 底。
@@ -2291,7 +2515,7 @@ func _rebuild_pop_cache(at_ms: int = -1) -> void:
 	_pop_cache.clear()
 	_pop_cache_ms = at_ms if at_ms > 0 else Time.get_ticks_msec()
 	var now_ms := _pop_cache_ms
-	var dur_ms: float = POP_WD * 1000.0
+	var dur_ms: float = ThemeManager.pop_duration() * 1000.0
 	for pos in _pops:
 		var p: float = clampf(float(now_ms - float(_pops[pos])) / dur_ms, 0.0, 1.0)
 		var e: float = sin(PI * p * 0.5)
@@ -2514,7 +2738,7 @@ func _draw_grid_lines() -> void:
 			if board.grid.get_cell(pos) == null:
 				continue  # 异形拓扑洞格（与填充遍同口径）
 			var rect := Rect2(board_origin + Vector2(c, r) * cell_px, Vector2(cell_px, cell_px))
-			var col := line
+			var col := _outline_color()
 			var lw := 1.0
 			if has_wave:
 				var e: Dictionary = _ripple_cache.get(pos, {})
@@ -2524,18 +2748,22 @@ func _draw_grid_lines() -> void:
 					lw = _grid_line_width(g)
 			# CozyStyle：分格完全由瓦片**间隙**承担，静态帧一律不画 rect 描边 ——
 			# 描边是沿原格矩形画的，会横切圆角、在四个角上露出方角小块。
-			# 波浪帧仍走原 rect 描边：它是翻开动效的**主通道**（线色/线宽逐格随波变化），
-			# 只在这个 0.2s 瞬态里出现，且此时格子本身正在收缩，读作"高亮框"而非格线。
-			if _cozy_tiles() and lw <= 1.0:
-				continue
-			# 只有被波浪波及（lw>1）时才开抗锯齿：静态帧保持原绘制路径不变。
-			draw_rect(rect, col, false, lw, lw > 1.0)
+			# 波浪帧仍画「高亮框」（翻开动效的主通道），但改走 **圆角同形** 描边
+			# （_draw_tile_outline）—— 方角高亮框在棱镜大圆角下四角越出瓦片，
+			# 是「格子边界超出圆角」的另一处来源；非 Cozy 主题保持方角逐像素不变。
+			if _cozy_tiles():
+				if lw <= 1.0:
+					continue
+				_draw_tile_outline(rect, col, lw, 0.0)
+			else:
+				# 只有被波浪波及（lw>1）时才开抗锯齿：静态帧保持原绘制路径不变。
+				draw_rect(rect, col, false, lw, lw > 1.0)
 
 
 ## 波浪路径：逐格闭合折线（旧行为原样保留 —— 被波及格的线色/线宽逐格独立变化）。
 func _draw_grid_lines_per_cell(board: Board, line: Color, glow: Color) -> void:
 	for p: Vector2i in board.grid.all_positions():
-		var col := line
+		var col := _outline_color()
 		var lw := 1.0
 		var e: Dictionary = _ripple_cache.get(p, {})
 		if not e.is_empty():

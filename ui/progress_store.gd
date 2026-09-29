@@ -8,6 +8,14 @@ const PATH := "user://progress.json"
 
 static var _cache: Dictionary = {}
 static var _loaded: bool = false
+## 进度数据版本号：任何写操作 +1。供读方（选关页通关计数缓存等）做失效判断——
+## 比起「写后手动通知」，版本号让缓存方自己轮询一个整数即可，不需要接线。
+static var _rev: int = 0
+
+
+## 当前进度数据版本（每次 record_* / clear_all / reset_cache 后 +1）。
+static func rev() -> int:
+    return _rev
 
 
 ## 读取（首次调用时载入；文件缺失/损坏 → 空进度，不抛错）。
@@ -62,6 +70,7 @@ static func _migrate_legacy_keys() -> void:
         levels.erase(key)
         moved += 1
     if moved > 0:
+        _rev += 1   # 迁移改了键集：通关计数缓存等读方必须失效（2026-09-30 审计补）
         _flush()
 
 
@@ -89,6 +98,7 @@ static func record_clear(level_path: String, seconds: float) -> void:
     if best < 0.0 or seconds < best:
         rec["best"] = seconds
     levels[level_path] = rec
+    _rev += 1
     _flush()
 
 
@@ -102,6 +112,7 @@ static func record_skip(level_path: String) -> void:
     var rec: Dictionary = levels.get(level_path, {"cleared": false, "best": -1.0, "plays": 0})
     rec["skipped"] = true
     levels[level_path] = rec
+    _rev += 1
     _flush()
 
 
@@ -113,6 +124,7 @@ static func record_attempt(level_path: String) -> void:
     var rec: Dictionary = levels.get(level_path, {"cleared": false, "best": -1.0, "plays": 0})
     rec["plays"] = int(rec.get("plays", 0)) + 1
     levels[level_path] = rec
+    _rev += 1
     _flush()
 
 
@@ -152,6 +164,7 @@ static func cleared_count() -> int:
 static func clear_all() -> void:
     _cache = {"levels": {}}
     _loaded = true
+    _rev += 1
     _flush()
 
 
@@ -159,3 +172,4 @@ static func clear_all() -> void:
 static func reset_cache() -> void:
     _cache = {}
     _loaded = false
+    _rev += 1

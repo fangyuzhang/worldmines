@@ -1,4 +1,5 @@
 # tutorial_overlay.gd —— 教程覆盖层（对标游戏 doc10 §1.4）
+# [2026-09-29 复检] 实时诊断探针：本行仅为触发重编译验证，无行为影响。
 #
 # 对标实现是一个 Autoload 单例 `TutorialOverlay`（含 DemoGrid + RichTextLabel + 按钮数组），
 # 本实现改为「可实例化的 Control」：由调用方 add_child + open(pages)，避免污染 autoload 列表。

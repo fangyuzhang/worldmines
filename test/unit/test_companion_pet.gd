@@ -1,4 +1,4 @@
-# test_companion_pet.gd —— 动物伙伴「占位猫」的结构镜像 / 状态机 / 布局代价 / 色板护栏
+# test_companion_pet.gd —— 动物伙伴「占位猫」的结构镜像 / 状态机 / 布局代价 / 色板护栏（缓存刷新 2026-09-29）
 #
 # 这个占位件的**全部价值**在于「后期换成真动画时不用改代码，只换数据」。所以本文件
 # 守的不是"画得好不好看"（那只能靠截图），而是那三条**换资源时会静默失效**的契约：
@@ -629,7 +629,7 @@ func _pal_color(pal: Dictionary, t, k: String) -> Color:
 
 
 func test_pet_palette_contrast_gates() -> void:
-	## 8 条配对护栏，**7 套具体主题共用一个门槛表**：CozyStyle 五套直接读 pet_* 族，
+	## 8 条配对护栏，**12 套具体主题共用一个门槛表**：CozyStyle 十套直接读 pet_* 族，
 	## dark / light 没有这一族、走 pet_c 的派生分支（_pet_solve 按同一批目标解明度）。
 	## 先做一次标准值交叉验证，证明两份实现给出同一个数。
 	assert_almost_eq(TM.contrast_ratio(Color("#777777"), Color("#FFFFFF")),
@@ -651,9 +651,11 @@ func test_pet_palette_contrast_gates() -> void:
 	var worst_where := ""
 	var n_themes := 0
 	for m in TM.THEME_IDS:
-		if m == "system":
-			continue      # "system" 不是色板（按系统明暗落到 dark / light）
-		var pal: Dictionary = TM._COZY[m] if TM.COZY_IDS.has(m) else (TM._DARK if m == "dark" else TM._LIGHT)
+		if m == "system" or m == "cozy_prism":
+			# "system" 不是色板；cozy_prism 是半透明玻璃体系，伙伴色不进本用例的「不透明 WCAG」
+			# 门禁（其 pet 配对在 test_theme_manager.gd 的棱镜玻璃段单独守），否则会被误读成 LIGHT 色板。
+			continue
+		var pal: Dictionary = TM._COZY.get(m, TM._DARK if m == "dark" else TM._LIGHT)
 		t._active = pal
 		n_themes += 1
 		for gi in gates.size():
@@ -666,7 +668,7 @@ func test_pet_palette_contrast_gates() -> void:
 			assert_gt(r, float(g[2]),
 				"%s：P%d pet_%s⊥%s = %.3f:1（需 >%.1f，%s）"
 					% [m, gi + 1, g[0], g[1], r, float(g[2]), g[3]])
-	assert_eq(n_themes, 7, "必须覆盖 dark / light + CozyStyle 五套，共 7 套具体主题")
+	assert_eq(n_themes, 12, "必须覆盖 dark / light + CozyStyle 十套，共 12 套具体主题")
 	# CozyStyle 的 P2/P5/P6 和派生分支的目标值都是"解到刚好过线"，余量天然很薄
 	#（实测最紧 ≈1.01x）。把最紧的一条印出来，下次改色板就不必从"测试红了"倒推是哪条。
 	gut.p("  最紧护栏：%s，余量 %.3fx" % [worst_where, worst])

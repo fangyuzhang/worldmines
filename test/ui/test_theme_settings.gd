@@ -83,6 +83,7 @@ func test_theme_palette_dark() -> void:
     ThemeManager.mode = "dark"
     ThemeManager._target = ThemeManager._palette_for("dark")
     ThemeManager._active = ThemeManager._target.duplicate()
+    ThemeManager._phase_t = 1.0   # 【2026-09-30 分层过渡】同步收口，数字色不再读插值中间态
     assert_eq(ThemeManager.bg(), Color("#1E1E24"))
     assert_eq(ThemeManager.cell_hidden(), Color("#3A3A42"))
     assert_eq(ThemeManager.danger(), Color("#C0504D"))
@@ -94,6 +95,7 @@ func test_theme_palette_light() -> void:
     ThemeManager.mode = "light"
     ThemeManager._target = ThemeManager._palette_for("light")
     ThemeManager._active = ThemeManager._target.duplicate()
+    ThemeManager._phase_t = 1.0
     assert_eq(ThemeManager.bg(), Color("#F4F4F0"))
     assert_eq(ThemeManager.accent(), Color("#2D7BB0"))
     assert_eq(ThemeManager.number(3), Color("#C0392B"))
@@ -101,3 +103,4 @@ func test_theme_palette_light() -> void:
     ThemeManager.mode = "dark"
     ThemeManager._target = ThemeManager._palette_for("dark")
     ThemeManager._active = ThemeManager._target.duplicate()
+    ThemeManager._phase_t = 1.0

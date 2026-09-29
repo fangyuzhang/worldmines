@@ -204,8 +204,12 @@ func test_every_theme_passes_all_three_wcag_gates():
 		assert_gt(r1, 4.5, "%s：text/bg = %.2f:1（需 >4.5）" % [m, r1])
 		var r2: float = _contrast(t.danger_text(), t.bg())
 		assert_gt(r2, 4.5, "%s：danger_text/bg = %.2f:1（需 >4.5）" % [m, r2])
-		var r3: float = _contrast(_blend(t.board_grid(), t.cell_hidden()), t.cell_hidden())
-		assert_gt(r3, 3.0, "%s：board_grid 混合后压 cell_hidden = %.2f:1（需 >3）" % [m, r3])
+		# 棱镜玻璃不画 board_grid 线（其 board_grid 全透明 ⇒ 混合后与 cell_hidden 同色），
+		# 瓦片区隔靠「缝隙 + tile_border + 半透玻璃垫」，由第 6 节的独立护栏验证。
+		# 格线 AA 门禁只对真的画格线的主题有意义。
+		if not t.is_glass():
+			var r3: float = _contrast(_blend(t.board_grid(), t.cell_hidden()), t.cell_hidden())
+			assert_gt(r3, 3.0, "%s：board_grid 混合后压 cell_hidden = %.2f:1（需 >3）" % [m, r3])
 
 
 func test_cozy_paired_roles_are_readable():
@@ -313,7 +317,12 @@ func test_all_palette_color_components_are_in_unit_range():
 	## 数值错误上完全脱钩 —— 只能单独钉一条量纲检查。
 	for m in _theme_ids():
 		for k in (TM._COZY.get(m, {}) as Dictionary).keys():
-			_assert_unit(TM._COZY[m][k], "CozyStyle/%s/%s" % [m, k])
+			var v = TM._COZY[m][k]
+			# 棱镜玻璃的色板混入了「形态维度」键（tile_gap_frac / glass / flag_style …
+			# 是 float / bool / String，不是颜色），量纲检查只对真正的 Color 做。
+			if not (v is Color):
+				continue
+			_assert_unit(v, "CozyStyle/%s/%s" % [m, k])
 	for m in TM.COZY_IDS:
 		var arr: Array = TM._COZY_NUM[m]
 		for i in range(arr.size()):
@@ -359,6 +368,115 @@ func test_board_mat_separates_the_board_from_the_page():
 	for m in ["dark", "light"]:
 		_set_theme(t, m)
 		assert_eq(t.board_mat().a, 0.0, "%s：旧主题不得画棋盘垫子（否则就是视觉回归）" % m)
+
+
+# ============================ 6. 棱镜玻璃（半透明玻璃体系，独立护栏）============================
+#
+# cozy_prism 是**半透明玻璃**主题：cell_hidden / cell_revealed / board_mat 三个角色都是 alpha<1 的
+# 玻璃层，且配了 bg_gradient + 烘焙渐变 PNG。它**故意**不满足 CozyStyle 的三条不透明契约
+# （键集一致 / 不透明配对可读性 / board_mat 不透明），所以被排除在 COZY_IDS 之外、在此单独守。
+#
+# 关键：引擎里这些玻璃层是**逐层叠在烘焙渐变上**画的（_draw_prism_background → _draw_board_mat →
+# _draw_tile）。WCAG 对比度判定必须把同一合成顺序复现出来，否则测的是「原料色」而非「玩家看到的色」。
+
+## 把棱镜玻璃的层合成成「玩家看到的不透明表面」（与引擎 draw 顺序一致）。
+## _blend(fg, bg) = 半透明 fg 压在不透明 bg 上的合成 RGB；贝壳链条：渐变底(近似取最深色) → 垫子 → 格底。
+func _prism_surface(t, hidden: bool) -> Color:
+	var base := Color("#141834")                       # 渐变 PNG 的最深色（保守下限）
+	var mat := _blend(t.board_mat(), base)            # 玻璃垫压在底上
+	if hidden:
+		return _blend(t.cell_hidden(), mat)           # 乳白毛玻璃未翻格
+	return _blend(t.cell_revealed(), mat)             # 清透压暗已翻格
+
+
+func test_prism_glass_paired_roles_are_readable():
+	## 半透明配对可读性：先合成表面，再上 WCAG。门槛与 CozyStyle 段一致（正文≥4.5 / 图形≥3），
+	## 差别只是「底色」是合成后的玻璃表面，不是某个不透明角色色。
+	var t = _fresh()
+	_set_theme(t, "cozy_prism")
+	var hid := _prism_surface(t, true)
+	var rev := _prism_surface(t, false)
+	assert_gt(_contrast(t.text(), rev), 4.5, "prism：text/cell_revealed 不足")
+	assert_gt(_contrast(t.accent_text(), t.accent()), 4.5, "prism：accent_text/accent 不足")
+	assert_gt(_contrast(t.text_secondary(), hid), 3.0, "prism：text_secondary/cell_hidden（旗杆）不足")
+	assert_gt(_contrast(t.danger(), hid), 3.0, "prism：danger/cell_hidden（旗面）不足")
+	assert_gt(_contrast(t.danger(), rev), 3.0, "prism：danger/cell_revealed（引爆格）不足")
+	assert_gt(_contrast(t.safe(), hid), 3.0, "prism：safe/cell_hidden 不足")
+	assert_gt(_contrast(t.safe(), rev), 3.0, "prism：safe/cell_revealed 不足")
+	assert_gt(_contrast(t.mine_body(), hid), 3.0, "prism：mine_body/cell_hidden（未翻开的雷）不足")
+	assert_gt(_contrast(t.mine_body(), rev), 3.0, "prism：mine_body/cell_revealed（已翻开的雷）不足")
+
+
+func test_prism_glass_number_colors_are_readable_and_distinct():
+	## 8 个线索数字：压在「已翻格合成表面」上可读（≥4.5），且两两色距 ≥45（玩家分得清）。
+	## 门槛与 CozyStyle 段一致；prism 是明亮的霓虹玻璃色，色距天然比粉彩宽，46.7 是实测下界留的余量。
+	var t = _fresh()
+	_set_theme(t, "cozy_prism")
+	var rev := _prism_surface(t, false)
+	var arr: Array = TM._COZY_NUM["cozy_prism"]
+	assert_eq(arr.size(), 8, "prism 应有 8 个线索数字色")
+	var worst := 999.0
+	var worst_pair := ""
+	for i in range(8):
+		assert_true(arr[i] is Color, "prism 第 %d 个应为 Color" % [i + 1])
+		assert_gt(_contrast(arr[i], rev), 4.5,
+			"prism 数字 %d 压 cell_revealed 只有 %.2f:1" % [i + 1, _contrast(arr[i], rev)])
+		for j in range(i + 1, 8):
+			var d: float = _color_dist(arr[i], arr[j])
+			if d < worst:
+				worst = d
+				worst_pair = "%d-%d" % [i + 1, j + 1]
+	assert_gt(worst, 45.0, "prism 数字色距过近（最差 %s = %.1f）——玩家分不出这两个数字" % [worst_pair, worst])
+
+
+func test_prism_glass_board_mat_is_a_translucent_panel():
+	## 【2026-09-30 对齐网页 token 修正】棱镜垫板是网页 --mat: rgba(255,255,255,.05)
+	## —— **半透明白**，缝里透出「淡灰」；面板的辨识度来自白边（--mat-bd）与大柔影
+	## （box-shadow 0 30px 70px -30px rgba(0,0,0,.6) = 悬浮高度），**不是靠压暗**。
+	## 旧断言「合成后比底色更暗」是把网页的白玻璃面板做成了深色板的错误设计，
+	## 本用例改钉网页原值方向（三层构造：瓦片 → 淡灰垫板 → 透镜底）。
+	var t = _fresh()
+	_set_theme(t, "cozy_prism")
+	var mat: Color = t.board_mat()
+	assert_true(mat.a > 0.02 and mat.a < 0.15,
+		"prism：board_mat 应是极淡半透层（a=%.3f，应 0.02~0.15）" % mat.a)
+	assert_true(mat.r >= 0.9 and mat.g >= 0.9 and mat.b >= 0.9,
+		"prism：board_mat 应是白色系（淡灰垫板层），实得 %s" % mat)
+	# 三件套之二：白边（网页 --mat-bd: 1px solid rgba(255,255,255,.14)）
+	assert_gte(t.mat_border_w(), 1, "prism：垫板必须有 1px 白边")
+	assert_gt(t.mat_border().a, 0.05, "prism：垫板白边必须可见（a>0.05）")
+	# 三件套之三：大柔影显高度（区别于 cozy 垫板的 shadow_size=10 小阴影）
+	assert_gt(t.mat_shadow_size(), 10.0, "prism：垫板影必须是大柔影（size>10）")
+	assert_gt(t.mat_shadow_offset().y, 0.0, "prism：投影向下（光源在上 = 高度感）")
+	assert_gt(t.mat_shadow_color().a, 0.3, "prism：投影必须足够深才读得出高度")
+
+
+func test_prism_glass_pet_family_is_complete_and_legible():
+	## 棱镜玻璃的伙伴色走玻璃体系，不进 test_companion_pet 的不透明 WCAG 门禁；这里单独守：
+	## (a) 10 个 pet_* 键齐全；(b) 8 条配对护栏（与 CozyStyle 同门槛）达标。
+	## 玻璃主题的 pet 是画在棋盘玻璃面上的，门禁取的 bg 用主题 bg（#141834），与 CozyStyle 同口径。
+	var want: Array = ["fur", "fur_2", "patch", "ink", "eye", "pupil", "nose",
+		"leaf", "leaf_2", "shadow"]
+	var gates: Array = [
+		["fur", "bg", 2.0], ["ink", "fur", 3.0], ["patch", "fur", 1.4],
+		["eye", "fur", 1.9], ["pupil", "eye", 4.5], ["nose", "fur", 1.4],
+		["leaf", "bg", 1.4], ["leaf_2", "leaf", 1.2],
+	]
+	var t = _fresh()
+	_set_theme(t, "cozy_prism")
+	var pal: Dictionary = t._active
+	var lack: Array = []
+	for k in want:
+		if not pal.has("pet_" + k):
+			lack.append(k)
+	assert_eq(lack, [], "prism 缺 pet_* 键：%s" % str(lack))
+	for gi in gates.size():
+		var g: Array = gates[gi]
+		var a: Color = pal["pet_" + str(g[0])]
+		var bcol: Color = (Color("#141834") if str(g[1]) == "bg" else pal["pet_" + str(g[1])])
+		var r: float = _contrast(a, bcol)
+		assert_gt(r, float(g[2]),
+			"prism P%d pet_%s⊥%s = %.3f:1（需 >%.1f）" % [gi + 1, g[0], g[1], r, float(g[2])])
 
 
 func test_text_on_returns_a_legible_foreground():

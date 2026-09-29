@@ -90,3 +90,14 @@ static func close() -> Texture2D:
 ## 禁用态（提示模式关掉）由 `icon_disabled_color` 走 text_secondary()，不另画灰版。
 static func hint() -> Texture2D:
 	return texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><g fill=\"#FFFFFF\"><circle cx=\"16\" cy=\"12.6\" r=\"9.2\"/><path d=\"M10.4 18.4h11.2v3.2a2 2 0 0 1-2 2h-7.2a2 2 0 0 1-2-2z\"/><rect x=\"12.2\" y=\"25\" width=\"7.6\" height=\"2.4\" rx=\"1.2\"/><rect x=\"13\" y=\"28.2\" width=\"6\" height=\"2.4\" rx=\"1.2\"/></g></svg>")
+
+
+## 调色板（换肤/主题切换）：**实心圆盘 + 拇指孔 + 三个颜料孔**的剪影，32×32 视图框。
+##
+## 造型口径与齿轮/时钟同一条已验证路径：**全填充**（ThorVG 的 stroke 支持在本工程
+## 没验证过，且 `_svg_texture` 失败是静默降级）。evenodd 让拇指孔与颜料孔成为"透底"的
+## 洞 —— 白模被按钮的 icon 色乘色后，洞里露出的是按钮底色，缩到 22px 时
+## 「圆盘 + 3 个点 + 一个偏心大孔」依然读作调色板，不会退化成一块曲奇。
+## 三个颜料孔特意**不等距**（颜料本就随手挤）：全等距会读成骰子/音量键。
+static func skin() -> Texture2D:
+	return texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><path fill=\"#FFFFFF\" fill-rule=\"evenodd\" d=\"M16 3.5a12.5 12.5 0 1 1 0 25 12.5 12.5 0 0 1 0-25zM10.5 18.2a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6zM11 8.1a2.1 2.1 0 1 0 0 4.2 2.1 2.1 0 0 0 0-4.2zM16.8 6.1a2.1 2.1 0 1 0 0 4.2 2.1 2.1 0 0 0 0-4.2zM22.2 10.3a2.1 2.1 0 1 0 0 4.2 2.1 2.1 0 0 0 0-4.2z\"/></svg>")

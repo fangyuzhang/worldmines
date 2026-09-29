@@ -291,8 +291,19 @@ func _ready() -> void:
 	else:
 		_rng.seed = rng_seed
 	_startup_tracks()
-	ThemeManager.theme_changed.connect(queue_redraw)
+	if not ThemeManager.theme_changed.is_connected(queue_redraw):
+		ThemeManager.theme_changed.connect(queue_redraw)
+	# 【2026-09-30 开放性】皮肤可带 pet/ 贴图整只换猫：激活信号触发重载（图元模式
+	# ↔ 精灵模式可互相切换，因核心三图齐全与否而定）。
+	if SkinService != null and not SkinService.skin_activated.is_connected(_on_skin_activated):
+		SkinService.skin_activated.connect(_on_skin_activated)
 	set_process(true)
+
+
+func _on_skin_activated() -> void:
+	_sprite_tex.clear()
+	_load_sprites()
+	queue_redraw()
 
 
 ## 加载水彩精灵。三张核心贴图（tail/body/head）齐 → 精灵模式；缺任何一张 →
@@ -325,6 +336,12 @@ func _load_sprites() -> void:
 
 
 func _load_tex(path: String) -> Texture2D:
+	# 【2026-09-30 开放性】皮肤 pet/ 贴图优先（文件名同内置：pet_tail.png 等）。
+	# 皮肤没给或加载失败 → 走内置路径 → 图元回退，三级降级都不崩。
+	if SkinService != null:
+		var over := SkinService.pet_tex(path.get_file())
+		if over != null:
+			return over
 	# ⚠️ 不许对未导入的 PNG 裸调 load()：引擎会刷 "Method/function failed" 错误，
 	# GUT 的错误监控会把整批不相干的测试判失败（2026-09-29 实测 20 个测试连坐）。
 	# ResourceLoader.exists 对没有 .import 的路径返回 false ⇒ 直接走运行时直读。
