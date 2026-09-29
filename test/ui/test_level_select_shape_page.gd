@@ -9,11 +9,13 @@
 #   ② 点变体卡 → **浮动弹窗**展示该变体的全部异形棋盘卡片，按档位分组（**抽样实测** 3 个变体：
 #      经典 / 一个 S 轴 / 一个 Z 轴；逐变体的完整性由数据层用例覆盖，避免每个变体都
 #      重建一次卡片墙导致用例跑上百秒）。2026-09-25 用户口径：弹窗与单项/混合/Mod 页
-#      **共用外壳**（同样的标题栏 / ✕ / 点外部 / ESC），见
+#      **共用外壳**；2026-09-29 起标题栏整体移除（关闭 = 点遮罩 / ESC），见
 #      test_shape_popup_shares_the_same_shell_as_other_pages；
 #   ③ 汇总两级的关卡归属 == res://levels/ 里全部异形关卡（不重不漏，动态扫描不写死）；
-#   ④ 教程入口在弹窗标题栏，指向当前变体（原先另有页内教程卡，位置与模式弹窗不一致）。
+#   ④ 变体的棋盘图解教程数据链路仍通（教程入口 2026-09-29 起只挂在模式弹窗右栏）。
 extends GutTest
+
+const TutorialOverlayScript := preload("res://ui/tutorial_overlay.gd")
 
 var _view
 var _expected_cache := {}
@@ -160,8 +162,8 @@ func test_variant_card_opens_popup_with_its_levels() -> void:
 	_view._open_shape_popup("classic")
 	assert_not_null(_view._overlay, "点变体卡应弹出浮动弹窗")
 	assert_not_null(_view._popup, "弹窗主体应存在")
-	assert_eq(_view._title_label.text, "%s · 异形棋盘" % VariantCatalog.display_name("classic"),
-		"弹窗标题应是该变体名（玩家要知道自己在看哪个变体）")
+	# 2026-09-29 用户口径：标题栏整体移除，「变体名 · 异形棋盘」标题不再存在。
+	assert_null(_view.get("_title_label"), "标题栏移除后不应再有标题标签")
 	var cards := _cards("shape_path")
 	assert_eq(cards.size(), int(counts["classic"]),
 		"弹窗里应有经典变体的全部 %d 张棋盘卡（实得 %d）" % [int(counts["classic"]), cards.size()])
@@ -174,27 +176,29 @@ func test_variant_card_opens_popup_with_its_levels() -> void:
 
 
 func test_shape_popup_shares_the_same_shell_as_other_pages() -> void:
-	## 弹窗外壳一致性（改造的核心诉求）：异形弹窗与模式弹窗共用 `_build_popup_shell`，
-	## 因此同样的标题栏（标题 / 教程 / ✕）、同样的关闭方式。这条防「改造后少一个出口」。
+	## 弹窗外壳一致性：异形弹窗与模式弹窗共用 `_build_popup_shell`（同一遮罩/尺寸/关闭方式）。
+	## 2026-09-29 用户口径：标题栏（标题 / 教程 / ✕）整体移除 ——
+	## 关闭出口 = 点遮罩任意处 / ESC，两条都在本用例钉住。
 	_view._show_tab(_view.PAGE_SHAPE)
 	_view._open_shape_popup("classic")
-	# ✕ 关闭按钮（2026-09-29 起为图标按钮：文字「✕」换成内联 SVG 图标，
-	# text 扫描会漏 —— 改按 popup_close meta 定位）
+	# 标题栏已删：弹窗内不应再有关闭按钮 / 教程入口
+	# （教程书本按钮只挂在模式弹窗右栏「继续游戏」上方——异形弹窗没有右栏）
 	var closes: Array = []
 	_collect(_view._overlay, "popup_close", closes)
-	assert_eq(closes.size(), 1, "浮窗应有关闭按钮（与其它页弹窗一致）")
-	# 教程入口：位置统一到标题栏，且指向当前变体（原先异形页是页内教程卡，位置与模式弹窗不一致）
+	assert_eq(closes.size(), 0, "标题栏移除后浮窗不应再有关闭按钮")
 	var tuts: Array = []
 	_collect(_view._overlay, "popup_tutorial", tuts)
-	assert_eq(tuts.size(), 1, "标题栏应有且仅有一个教程入口")
-	assert_eq(str((tuts[0] as Button).get_meta("popup_tutorial")), "classic",
-		"教程入口应指向当前变体")
-	# ESC 关弹窗（2026-09-25 一致性补齐：此前只有教程覆盖层响应 ESC，模式弹窗不响应）
+	assert_eq(tuts.size(), 0, "异形弹窗没有右栏，教程入口不再出现在这里")
+	# 出口 1：点遮罩关弹窗（2026-09-29 用户口径：点弹窗以外任意位置关闭）
+	_view._close_popup()
+	assert_null(_view._overlay, "点遮罩关闭后遮罩引用应立即释放")
+	# 出口 2：ESC 关弹窗（2026-09-25 一致性补齐，标题栏移除后仍保留）
+	_view._open_shape_popup("classic")
 	var esc := InputEventAction.new()
 	esc.action = "ui_cancel"
 	esc.pressed = true
 	_view._unhandled_input(esc)
-	assert_null(_view._overlay, "ESC 应能关掉弹窗（与 ✕ / 点外部并列出口）")
+	assert_null(_view._overlay, "ESC 应能关掉弹窗（与点遮罩并列出口）")
 
 
 func test_daisy_chain_is_in_classic_variant() -> void:
@@ -259,11 +263,12 @@ func test_is_shape_level_predicate() -> void:
 		"非空 topology → 异形")
 
 
-# 2026-09-23 审计补齐、2026-09-25 迁移：异形页应能读到**当前变体**的教程。
-# 为什么：异形页是 ani_*/vg_* 这批**变体形状关**的主入口（模式弹窗里没有它们），
-# 而教程入口此前只在模式弹窗标题栏与对局 HUD——在这一页选 s2/s3/z3/dt 棋盘的玩家
-# 无处读规则。改造后入口统一到**弹窗标题栏**（原先另有页内教程卡，位置与模式弹窗
-# 不一致）——这条契约钉住「标题栏有且仅有一个教程入口 + 它指向当前变体 + 点击能拉出覆盖层」。
+# 2026-09-23 审计补齐 → 2026-09-29 迁移：变体关的教程**数据**仍要可达。
+# 背景：异形页是 ani_*/vg_* 这批**变体形状关**的主入口（模式弹窗里没有它们）。
+# 2026-09-29 用户口径把弹窗标题栏整体移除后，异形弹窗不再内嵌教程入口
+# （教程书本按钮只挂在模式弹窗右栏）。本用例改钉两条：
+#   ① 异形弹窗内确实没有教程入口（防有人「顺手」加回突兀的角标）；
+#   ② 同一变体的棋盘图解教程经 TutorialOverlay 仍能正常拉出（数据链路不因入口迁移而断）。
 func test_variant_level_offers_variant_tutorial() -> void:
 	var counts := _counts_by_variant()
 	# 优先挑官方轴上有教程页的变体（s2/s3/z3/dt 均有 tutorial_*_0.txt）；
@@ -281,21 +286,15 @@ func test_variant_level_offers_variant_tutorial() -> void:
 	if vid == "":
 		pending("本机 levels/ 没有非 classic 变体的异形关")
 		return
+	# ① 异形弹窗内无教程入口（入口只活在模式弹窗右栏）
 	_view._open_shape_popup(vid)
-	# 教程入口在弹窗标题栏（复用 _build_popup_shell，与模式弹窗同一位置）
 	var tut: Array = []
 	_collect(_view._overlay, "popup_tutorial", tut)
-	assert_eq(tut.size(), 1, "变体 %s：标题栏应有且仅有一个教程入口" % vid)
-	if tut.is_empty():
-		return
-	assert_eq(str((tut[0] as Button).get_meta("popup_tutorial")), vid,
-		"教程入口应指向当前变体（期望 %s）" % vid)
-	(tut[0] as Button).pressed.emit()
-	var ov: Control = null
-	for c in _view.get_children():
-		if c.has_method("close_overlay"):
-			ov = c
-	assert_not_null(ov, "点教程入口应拉出覆盖层（变体 %s）" % vid)
+	assert_eq(tut.size(), 0, "变体 %s：异形弹窗内不应有教程入口（标题栏已移除）" % vid)
+	_view._close_popup()
+	# ② 详细教程数据链路仍通：show_for 直接拉覆盖层，页 id 指向该变体
+	var ov := TutorialOverlayScript.show_for(_view, vid)
+	assert_not_null(ov, "变体 %s 的教程覆盖层应能拉出" % vid)
 	if ov == null:
 		return
 	var title: Label = ov.get("_title")

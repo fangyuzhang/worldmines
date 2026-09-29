@@ -209,8 +209,8 @@ func test_ls2_mock_progress_is_not_persisted() -> void:
 				"演示预设绝不能写入真实存档（历史 bug：留下永久的假通关成绩）")
 
 
-# LS14：弹窗标题栏应有「教程」入口（2026-09-23 用户决策：教程改上下文相关——
-# 选关页弹窗点的是**当前变体**的教程）。点它 → 覆盖层挂出且加载该变体的页。
+# LS14：弹窗应有**上下文相关**的教程入口（2026-09-29 起下沉到右栏「继续游戏」上方：
+# 书本图标 + 一句话规则概括——标题栏已整体移除）。点它 → 覆盖层挂出且加载该变体的页。
 # 用 classic 测最稳：2026-09-23 起官方席位已全部有教程页（o1 等也有了），
 # 但经典是唯一「必有」的页（其它席位依赖内容创作进度）。
 func test_ls14_popup_offers_variant_tutorial() -> void:
@@ -220,10 +220,11 @@ func test_ls14_popup_offers_variant_tutorial() -> void:
 		return
 	_view._open_popup(ci)
 	assert_ne(_view._mode_idx, -1, "弹窗应已打开")
-	var tut := _find_button(_view._overlay, "教程")
-	assert_not_null(tut, "弹窗标题栏应有「教程」按钮")
+	var tut := _find_by_meta(_view._overlay, "popup_tutorial")
+	assert_not_null(tut, "弹窗右栏应有教程入口（书本图标按钮，popup_tutorial meta）")
 	if tut == null:
 		return
+	assert_eq(tut.text, "", "教程入口应是图标按钮（书本 SVG，无文字）")
 	tut.pressed.emit()
 	var ov: Control = null
 	for c in _view.get_children():
@@ -642,8 +643,9 @@ func _find_by_meta(node: Node, key: String) -> Button:
 # 弹窗外壳观感契约 ——
 #   ① 弹窗主体与右侧统计列必须有**实体面板底**（原先没写样式盒，引擎默认半透明深灰
 #      让粉彩页面整片透出来，是「丑」的主因）；
-#   ② ✕ 是**图标按钮**（popup_close meta），不再是「✕」字符按钮（字符叉粗细跟字体走，
-#      与图标体系并排突兀）；
+#   ② **标题栏整体移除**（2026-09-29 用户口径）：不再有「变体名 · 尺寸」标题、
+#      「教程」文字按钮和 ✕——教程入口下沉到右栏书本图标（popup_tutorial meta），
+#      关闭出口 = 点遮罩 / ESC；
 #   ③ 难度按钮 = **短档名**两行（普通/困难/噩梦 + N 关），窗口后缀「（2–3 条线索）」
 #      只准出现在 tooltip（120px 竖列里折三行、括号拦腰断）；
 #   ④ 网格四周内衬 ≥ 方块悬停放大量（scale 1.04 → 半边 ~2.4px）——
@@ -666,12 +668,17 @@ func test_ls15_popup_shell_surface_and_tier_labels() -> void:
 		assert_true(right.has_theme_stylebox_override("panel"),
 			"右侧统计列必须有 panel 样式盒")
 
-	# ② 图标 ✕（有 popup_close meta、无文字；教程按钮仍在标题栏）
-	var close := _find_by_meta(_view._overlay, "popup_close")
-	assert_not_null(close, "弹窗应有关闭按钮（popup_close meta）")
-	if close != null:
-		assert_eq(close.text, "", "关闭按钮应是图标按钮（不再用「✕」字符）")
-	assert_not_null(_find_button(_view._overlay, "教程"), "标题栏「教程」入口不得丢")
+	# ② 标题栏移除 + 教程入口下沉右栏（书本图标，入口唯一、无文字）
+	assert_null(_find_by_meta(_view._overlay, "popup_close"),
+		"标题栏移除后弹窗不应再有关闭按钮（出口 = 点遮罩 / ESC）")
+	assert_null(_find_button(_view._overlay, "教程"),
+		"标题栏移除后不应再有「教程」文字按钮")
+	var tut := _find_by_meta(_view._overlay, "popup_tutorial")
+	assert_not_null(tut, "教程入口应下沉到右栏（书本图标 + 一句话概括）")
+	if tut != null:
+		assert_eq(tut.text, "", "教程入口应是图标按钮（书本 SVG）")
+		assert_eq(str(tut.get_meta("popup_tutorial")), "classic",
+			"教程入口应指向当前变体")
 
 	# ③ 难度按钮短档名（关卡库模式才有难度列）
 	if bool(_view.get("_lib_mode")):

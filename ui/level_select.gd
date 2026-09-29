@@ -125,7 +125,9 @@ var _grid: GridContainer = null
 var _dots_box: VBoxContainer = null
 var _stat_label: Label = null
 var _play_btn: Button = null
-var _title_label: Label = null
+## 当前弹窗教程归属（变体 / 组合 id）：标题栏移除后，教程入口下沉到右栏书本图标，
+## _build_right 据此挂「一句话规则概括 + 图标按钮」（2026-09-29 用户口径）。
+var _popup_tutorial_id := ""
 ## 预热好的对局场景（首次进关的卡顿源：board_view 脚本首次编译 + 场景构建）。
 ## static：跨场景存活；且**持有引用**——裸 load 的返回值无引用会被释放、缓存随之失效
 ## （2026-09-22 实测踩过，见 main_menu._prewarm_board_view 注释）。
@@ -1494,10 +1496,9 @@ func _saved_level_hint(level_path: String) -> String:
 func _open_shape_popup(vid: String) -> void:
 	if _overlay != null or _popup_closing:
 		return
-	var vname := VariantCatalog.display_name(vid)
-	if vname == "":
-		vname = vid          # 未登记变体（未来新增 / Mod）：至少不显示空标题
-	var body := _build_popup_shell("%s · 异形棋盘" % vname, vid)
+	# 标题栏移除后变体名不再上墙（2026-09-29）：变体归属由玩家点的卡片自带语义，
+	# 弹窗内棋盘卡按档位分组的内容本身就是「我在看哪个变体」的答案。
+	var body := _build_popup_shell(vid)
 	# 内容：可滚动的纵向列表（棋盘卡数量随变体不同，最多十几张 —— 必须能滚）
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1707,27 +1708,31 @@ func _open_popup(mode_idx: int) -> void:
 	_scroll_accum = 0.0
 	_ensure_mock()
 
-	var body := _build_popup_shell("", str(MODES[mode_idx]["id"]))
+	var body := _build_popup_shell(str(MODES[mode_idx]["id"]))
 	_build_left(body)
 	_build_right(body)
 	_refresh_popup()
 	_play_popup_intro()
 
 
-## 浮动弹窗的**共用外壳**（2026-09-25 提取）：遮罩 + 面板 + 标题栏（标题 / 教程 / ✕）+ 内容容器。
+## 浮动弹窗的**共用外壳**（2026-09-25 提取）：遮罩 + 面板 + 内容容器。
+## 2026-09-29 起无标题栏：关闭 = 点遮罩 / ESC，教程入口在模式弹窗右栏（书本图标）。
 ##
 ## 为什么提取：异形棋盘页原先用「页内切到第二级」呈现某个变体的棋盘列表，而其它三页是
 ## 「点卡片弹弹窗」——同一页面两种交互（还多一个页内返回入口），用户要求统一成弹窗。
 ## 内容各异（模式弹窗 = 尺寸/难度/网格；异形弹窗 = 按档位分组的棋盘卡），但**外壳完全一样**
-## （同样的遮罩、尺寸、标题栏、关闭方式、入场动画），所以外壳一份、内容各自填。
+## （同样的遮罩、尺寸、关闭方式、入场动画），所以外壳一份、内容各自填。
 ##
 ## **复用同一套 `_overlay` / `_popup` / `_popup_closing` 状态**：主题刷新（_apply_popup_theme）、
 ## 弹窗期间 Mod 变更补建（_modes_dirty）、防重复打开、关闭动画等既有联动因此**自动对两种弹窗生效**，
 ## 不必各写一份。
 ##
-## title 传空 = 由调用方稍后填（模式弹窗在 `_refresh_popup` 里写）；
-## tutorial_id 决定标题栏「教程」按钮看谁的教程。
-func _build_popup_shell(title: String, tutorial_id: String) -> Control:
+## 2026-09-29 用户口径：**标题栏整体移除** ——「变体名 · 尺寸」标题、「教程」文字按钮、
+## ✕ 关闭按钮全删（此前截图实证这块是视觉噪声的重灾区：教程/✕挤在右上角突兀）。
+## 关闭出口 = **点遮罩任意处**（下方 shade 的 gui_input）/ ESC；教程入口下沉到
+## 模式弹窗右栏「继续游戏」上方：书本图标 + 一句话规则概括（见 _build_right）。
+## tutorial_id 决定右栏书本按钮看谁的教程（存 _popup_tutorial_id，测试按 meta 定位）。
+func _build_popup_shell(tutorial_id: String) -> Control:
 	# 遮罩（点击外部关闭）
 	_overlay = Control.new()
 	_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -1765,62 +1770,8 @@ func _build_popup_shell(title: String, tutorial_id: String) -> Control:
 	root.add_theme_constant_override("separation", 0)
 	_popup.add_child(root)
 
-	# 标题栏。⚠️ 内边距必须用 MarginContainer 承载：HBoxContainer 根本没有
-	# "margin_left/right" 这两个主题常量，原先直接写在 HBox 上是**静默 no-op** ——
-	# 标题顶着面板左缘、按钮顶着右缘（2026-09-29 截图实证）。
-	var head_wrap := MarginContainer.new()
-	head_wrap.add_theme_constant_override("margin_left", 22)
-	head_wrap.add_theme_constant_override("margin_right", 14)
-	head_wrap.add_theme_constant_override("margin_top", 10)
-	head_wrap.add_theme_constant_override("margin_bottom", 10)
-	root.add_child(head_wrap)
-	var head := HBoxContainer.new()
-	head.custom_minimum_size = Vector2(0, 40)
-	head.add_theme_constant_override("separation", 10)
-	head_wrap.add_child(head)
-
-	_title_label = Label.new()
-	_title_label.text = title
-	_title_label.add_theme_font_size_override("font_size", 24)
-	_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	head.add_child(_title_label)
-
-	# 教程入口（2026-09-23 用户决策）：从主菜单总入口改为**上下文相关**——标题栏里放
-	# 「教程」，点击看**当前变体**的教程（标题显示的就是变体名，语义直接对应）。
-	# 覆盖层 add 到 self（整页）：弹窗 _overlay 同级但更早，教程节点后加 → 盖在弹窗之上 ✓
-	# 2026-09-25：tutorial_id 参数化 —— 异形弹窗也走这里（此前它另有一张教程卡，位置与
-	# 模式弹窗不一致；现在两种弹窗的教程入口都在标题栏同一位置）。
-	var tut := Button.new()
-	tut.text = "教程"
-	tut.focus_mode = Control.FOCUS_ALL
-	tut.custom_minimum_size = Vector2(72, 40)
-	tut.set_meta("std_btn", true)
-	tut.set_meta("popup_tutorial", tutorial_id)   # 测试 / 调试可据此定位当前看谁的教程
-	tut.tooltip_text = "查看当前变体的教程"
-	tut.pressed.connect(func():
-		TutorialOverlayScript.show_for(self, tutorial_id))
-	head.add_child(tut)
-
-	# ✕ 用**图标**而不是「✕」字符：字符叉的笔画粗细 / 大小 / 基线跟字体走，
-	# 与同一标题栏的体系放在一起突兀（2026-09-29 用户反馈）。换成与齿轮 / 书本
-	# 同一套「内联 SVG 图标 + icon 色主题项」后，粗细、颜色、悬停着色自动一致。
-	# meta popup_close 供测试定位（原实现靠 text == "✕" 扫描，图标化后必须改 meta）。
-	var close := Button.new()
-	close.tooltip_text = "关闭（ESC）"
-	close.focus_mode = Control.FOCUS_ALL
-	close.custom_minimum_size = Vector2(40, 40)
-	close.set_meta("icon_btn", true)
-	close.set_meta("popup_close", true)
-	close.pressed.connect(_close_popup)
-	head.add_child(close)
-	_style_icon_button(close, Icons.close())
-
-	# 标题栏与内容区之间的一条细分隔线（颜色随主题刷新，meta 供 _apply_popup_theme 用）
-	var sep := ColorRect.new()
-	sep.custom_minimum_size = Vector2(0, 1)
-	sep.color = ThemeManager.grid_line()
-	sep.set_meta("popup_sep", true)
-	root.add_child(sep)
+	# 教程归属（标题栏移除后的入口迁移见函数头注释）。
+	_popup_tutorial_id = tutorial_id
 
 	# 内容区（各弹窗自行填充；模式弹窗是「左棋盘框 + 右面板」，异形弹窗是可滚动的棋盘列表）。
 	# 外边距同理：margin_* 常量写在 HBoxContainer 上是 no-op，必须 MarginContainer 承载。
@@ -1828,7 +1779,7 @@ func _build_popup_shell(title: String, tutorial_id: String) -> Control:
 	body_wrap.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body_wrap.add_theme_constant_override("margin_left", 18)
 	body_wrap.add_theme_constant_override("margin_right", 18)
-	body_wrap.add_theme_constant_override("margin_top", 14)
+	body_wrap.add_theme_constant_override("margin_top", 18)
 	body_wrap.add_theme_constant_override("margin_bottom", 16)
 	root.add_child(body_wrap)
 	var body := HBoxContainer.new()
@@ -2029,6 +1980,37 @@ func _build_right(parent: Node) -> void:
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	vbox.add_child(spacer)
 
+	# 教程行（2026-09-29 用户口径）：标题栏移除后教程入口下沉到这里 ——
+	# 书本图标 + 一句话规则概括，挂在「继续游戏」上方。点图标 = 当前变体的
+	# **棋盘图解教程**（TutorialOverlay：DemoGrid 盘面 + 分页文字，棋盘 + 文字结合讲规则）。
+	# 覆盖层 add 到 self（整页）：弹窗 _overlay 同级但更早，教程节点后加 → 盖在弹窗之上。
+	var summary := Label.new()
+	summary.set_meta("secondary", true)
+	summary.add_theme_font_size_override("font_size", 13)
+	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	summary.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	summary.max_lines_visible = 3
+	summary.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	summary.text = _variant_summary_text()
+
+	var book := Button.new()
+	book.focus_mode = Control.FOCUS_ALL
+	book.custom_minimum_size = Vector2(40, 40)
+	book.tooltip_text = "查看当前变体的详细教程（棋盘图解）"
+	book.set_meta("icon_btn", true)
+	book.set_meta("popup_tutorial", _popup_tutorial_id)   # 测试 / 调试可据此定位教程入口
+	book.pressed.connect(func():
+		TutorialOverlayScript.show_for(self, _popup_tutorial_id))
+	_style_icon_button(book, Icons.book())
+	# 悬停反馈同全局口径；40×40 在 18px 内衬里放大外扩 <1px，不会越界
+	UiTheme.bind_hover(book, HOVER_SCALE)
+
+	var tut_row := HBoxContainer.new()
+	tut_row.add_theme_constant_override("separation", 10)
+	tut_row.add_child(book)
+	tut_row.add_child(summary)
+	vbox.add_child(tut_row)
+
 	_play_btn = Button.new()
 	_play_btn.custom_minimum_size = Vector2(0, 54)
 	_play_btn.focus_mode = Control.FOCUS_ALL
@@ -2038,6 +2020,27 @@ func _build_right(parent: Node) -> void:
 	# 悬停 scale 1.04 的反馈保留（与全局口径一致）：按钮 ~244px 宽，放大外扩 ~5px，
 	# 现在 pad 四周有 18px 真内边距，反馈完整落在面板内——不再出现「按钮放大顶穿边界」。
 	UiTheme.bind_hover(_play_btn, HOVER_SCALE)
+
+
+## 右栏教程行的「一句话规则概括」正文（2026-09-29）。
+## 来源 = 规则插件 describe()["rule_text"]（与图鉴同源，改规则不用改这里）：
+## 线索取 1 句、全局约束各接 1 句（混合档自然拼出两条规则的组合说明）。
+## 取不到（规则无 rule_text / Mod 未声明）→ 兜底文案只指路不编规则。
+func _variant_summary_text() -> String:
+	if _mode_idx < 0 or _mode_idx >= MODES.size():
+		return ""
+	var m: Dictionary = MODES[_mode_idx]
+	var parts: Array[String] = []
+	var ct := VariantCatalog.rule_text(str(m.get("clue", "")))
+	if ct != "":
+		parts.append(ct.replace("\n", " "))
+	for g in (m.get("globals", []) as Array):
+		var gt := VariantCatalog.rule_text(str(g))
+		if gt != "":
+			parts.append(gt.replace("\n", " "))
+	if parts.is_empty():
+		return "点书本图标查看本变体的棋盘图解教程。"
+	return "；".join(parts)
 
 
 func _close_popup() -> void:
@@ -2062,7 +2065,7 @@ func _close_popup() -> void:
 ## ESC 关弹窗（2026-09-25 一致性补齐）。
 ##
 ## 此前只有教程覆盖层响应 ESC，模式弹窗不响应 —— 同一页里两种「后退」键位不一致。
-## 现在两种弹窗都能按 ESC 关（与 ✕ / 点外部并列的第三条出口）。
+## 现在两种弹窗都能按 ESC 关（标题栏移除后与「点遮罩」并列为仅有的两条出口）。
 ## 用 _unhandled_input 而非 gui_input：后者要控件有焦点才收键盘事件，而页面里
 ## 全部按钮都是 FOCUS_NONE（刻意不做键盘焦点链），走全局通道才可靠。
 func _unhandled_input(event: InputEvent) -> void:
@@ -2115,7 +2118,7 @@ func _refresh_popup() -> void:
 			if _size_available(m, SIZES[cand]):
 				_size_idx = cand
 				break
-	_title_label.text = "%s · %d×%d" % [m["name"], SIZES[_size_idx], SIZES[_size_idx]]
+	# 标题栏已移除（2026-09-29）：变体名 · 尺寸不再上墙，尺寸选择本身就是这行的语义。
 
 	# 尺寸按钮高亮 + 禁用（不可选组合置灰 + tooltip 说明原因，点不了）
 	var is_shape := str(m.get("kind", "")) == "shape"
