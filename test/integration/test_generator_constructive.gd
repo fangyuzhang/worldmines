@@ -51,7 +51,14 @@ func test_official_axes_constructive_smoke() -> void:
 	}
 	for code in cases:
 		var spec: Array = cases[code]
-		var level := gen.generate_with_rules(code, [], Vector2i(spec[0], spec[1]), spec[2], 7)
+		# ⚠️ timeout_ms 传 60s（2026-09-29 修复长期红）：默认 15s 是 **UI 交互**口径，
+		# 对 o2（邻序：八邻域内比大小）7×7 是**临界值**——探针实测（tools/_o2_probe*.gd）
+		# 其删线索自然耗时 12~23s，15s 截断约一半概率产出"不可推"产物被 verify 拒，
+		# attempt2 又已无预算 ⇒ 整体返回空（12 seed 成功率恰 6/12，seed=7 稳定落败）。
+		# 放宽到 60s 后 12/12 全成、最坏 23.0s、单 attempt 完成——这正是
+		# generate_with_rules 文档注释写明的「离线批量出关建议放宽」口径，非改测试凑绿。
+		var level := gen.generate_with_rules(code, [], Vector2i(spec[0], spec[1]), spec[2], 7,
+				0, 50, null, 60_000)
 		assert_false(level.is_empty(), "%s 应能构造式生成非空关卡" % code)
 		if level.is_empty():
 			continue
