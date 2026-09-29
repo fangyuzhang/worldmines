@@ -195,8 +195,11 @@ var _pop_cache_ms: int = -1
 
 ## 棋盘垫子样式缓存（2026-09-29 CozyStyle）。见 _mat_stylebox()：颜色没变就复用同一个
 ## StyleBoxFlat，避免波浪动效期间逐帧 new。
+## `_mat_sb_shadow` 是第二个缓存键：影色自 2026-09-29 起也随主题走了（见 _mat_stylebox），
+## 只比垫子色的话，两套主题垫子色撞上时会把上一套的影色一起带过去。
 var _mat_sb: StyleBoxFlat = null
 var _mat_sb_color := Color(0, 0, 0, 0)
+var _mat_sb_shadow := Color(0, 0, 0, 0)
 
 ## 提示高亮（一步直推）：结论格描边 + 依据格描边（推理文字见 HintPanel 浮动窗口）
 var _hint_steps: Array = []
@@ -1709,9 +1712,24 @@ const MAT_GROW := 10.0
 ## 产出）显示差异**只沿字形轮廓与格子边缘分布**，格角在前后两张里都是方的 ——
 ## 即「几何没变、位置挪了 1px」。要断言的是几何恒等，不是截图逐像素相等。
 ##
-## 比例取自 CozySudoku 实拍：缝 ≈ 格宽 5.5%，圆角 ≈ 瓦片边长 24%。
-const TILE_GAP_FRAC := 0.055
-const TILE_RADIUS_FRAC := 0.24
+## 【2026-09-29 二次实测修正】原值 0.055 / 0.24 是上一轮从**模糊截图目测**得到的，
+## 两个都偏大。这次从官方 1920×1080 截图逐像素量（`_pv/measure_board.py` +
+## `_pv/ascii_cell.py` 把格子直接打成 ASCII 图读），结果：
+##
+##   格缝：原作 格 47px ┃ 缝 3px ┃ 格 → pitch = 50px（47+3=50 自洽，硬阈值直读）
+##         ⇒ **缝/格 = 6.4%**。而我这边 `rect.grow(-w * 0.055)` 是**四边各缩 5.5%**，
+##         相邻两格之间实际留下 11% —— 常数名、注释、实际效果三者不一致，
+##         注释写「缝 ≈ 格宽 5.5%」，代码却给了一倍。
+##   圆角：原作硬阈值直读 r ≈ 5px / 格 47px ⇒ **10.6%**。
+##         （阈值取格色与缝色亮度的中点，而过零点即真实几何边，所以是无偏估计。）
+##         我这边 0.24 × 瓦片边长 ≈ **格边长的 21%**，整整圆了一倍 ——
+##         瓦片因此从「略微倒角」变成了「软糖」，是观感差异最大的一处。
+##
+## 修正后的语义（与名字一致、与实测一致）：
+##   TILE_GAP_FRAC    = **相邻两格之间的总缝宽** / 格边长
+##   TILE_RADIUS_FRAC = **圆角半径** / 格边长
+const TILE_GAP_FRAC := 0.064
+const TILE_RADIUS_FRAC := 0.106
 
 var _tile_sb: StyleBoxFlat = null
 var _tile_sb_radius := -1.0
@@ -1742,12 +1760,17 @@ func _tile_stylebox(radius: float) -> StyleBoxFlat:
 
 
 ## 瓦片的绘制矩形（自格子矩形向内缩出间隙）。非 Cozy 主题返回原矩形。
-## 间隙下限 1px：窗口极小时（cell_px = MIN_CELL_PX = 24）也得留得下一条缝，
-## 否则瓦片又会拼回一整片、圆角反而成了锯齿。
+##
+## 单侧内缩 = **总缝宽的一半** —— `grow()` 是四边同时缩，所以想让「相邻两格之间」
+## 留下 TILE_GAP_FRAC × 格边长 的缝，单侧只能缩一半。
+## 上一版直接缩了整个 TILE_GAP_FRAC，缝因此是标称值的两倍。
+##
+## 下限 0.5px：窗口极小时（cell_px = MIN_CELL_PX = 24）缝只有 1.5px，
+## 四舍五入别把它抹成 0，否则瓦片又拼回一整片、圆角反而成了锯齿。
 func _tile_rect(rect: Rect2) -> Rect2:
 	if not _cozy_tiles():
 		return rect
-	return rect.grow(-maxf(1.0, rect.size.x * TILE_GAP_FRAC))
+	return rect.grow(-maxf(0.5, rect.size.x * TILE_GAP_FRAC * 0.5))
 
 
 ## 填充一格：Cozy = 圆角瓦片（间隙即分格线）；其余主题 = 原 `draw_rect`（逐像素不变）。
@@ -1756,7 +1779,9 @@ func _draw_tile(rect: Rect2, col: Color) -> void:
 		draw_rect(rect, col)
 		return
 	var r := _tile_rect(rect)
-	var sb := _tile_stylebox(maxf(2.0, r.size.x * TILE_RADIUS_FRAC))
+	# 半径按**格边长**取，不按内缩后的瓦片边长 ——
+	# TILE_RADIUS_FRAC 的定义就是「半径 / 格边长」（对齐实测口径）。
+	var sb := _tile_stylebox(maxf(2.0, rect.size.x * TILE_RADIUS_FRAC))
 	sb.bg_color = col
 	draw_style_box(sb, r)
 
@@ -1793,7 +1818,7 @@ func _draw_tile_outline(rect: Rect2, col: Color, width: float, inset: float) -> 
 	var r := _tile_rect(rect).grow(-inset)
 	if r.size.x <= 2.0 or r.size.y <= 2.0:
 		return
-	var sb := _tile_line_stylebox(maxf(2.0, r.size.x * TILE_RADIUS_FRAC), int(roundf(width)))
+	var sb := _tile_line_stylebox(maxf(2.0, rect.size.x * TILE_RADIUS_FRAC), int(roundf(width)))
 	sb.border_color = col
 	draw_style_box(sb, r)
 
@@ -1819,33 +1844,58 @@ func _draw_board_mat(size: Vector2i) -> void:
 ## 垫子样式（缓存）。颜色变了才重建 —— `_draw()` 每帧都跑，逐帧 new StyleBoxFlat
 ## 会在波浪动效期间变成每秒上百个对象。dark/light 主题 board_mat() 返回全透明 → 返回 null
 ## = 一个矩形都不画，旧主题逐像素不变。
+##
+## 【2026-09-29】阴影不再写死 `Color(0,0,0,0.10)`：同一份固定纯黑 α 在七套底色上
+## 深浅差 6 倍（粉彩底掉 43/255、深底只掉 7/255），是用户说的"阴影没适配"。
+## 现在由 `ThemeManager.shadow(bg, MAT 档)` 反解，影色取该主题自己的深色调。
+## 缓存判据随之从"只看垫子色"改成"垫子色 + 影色"都相同 —— 两者都随主题走。
 func _mat_stylebox() -> StyleBoxFlat:
 	var c := ThemeManager.board_mat()
 	if c.a <= 0.0:
 		return null
-	if _mat_sb != null and _mat_sb_color == c:
+	var sh := ThemeManager.shadow(ThemeManager.bg(), ThemeManager.SHADOW_DROP_MAT)
+	if _mat_sb != null and _mat_sb_color == c and _mat_sb_shadow == sh:
 		return _mat_sb
 	if _mat_sb == null:
 		_mat_sb = StyleBoxFlat.new()
 		_mat_sb.set_corner_radius_all(18)
 		_mat_sb.corner_detail = 20
-		# 与 UiTheme 同一套"软阴影"口径：CozyStyle 的层次靠阴影而不是靠描边
-		_mat_sb.shadow_color = Color(0, 0, 0, 0.10)
 		_mat_sb.shadow_size = 10
 		_mat_sb.shadow_offset = Vector2(0, 3)
 	_mat_sb.bg_color = c
+	_mat_sb.shadow_color = sh
 	_mat_sb_color = c
+	_mat_sb_shadow = sh
 	return _mat_sb
 
 
 ## 棋盘文字（数字 / ? / ∞ / *）的字体。
 ##
 ## **不要**用 `ThemeDB.fallback_font`：那是**引擎内置回退字体**，与
-## `project.godot [gui] theme/custom_font` 设的全局字体（文源圆体）不是一套 ——
+## `project.godot [gui] theme/custom_font` 设的全局字体不是一套 ——
 ## 棋盘数字笔画带衬线感，和界面上其它文字明显两个风格（2026-09-29 放大截图核对时发现）。
-## 从主题链取 Label 字体即可：无覆盖时就是全局字体，将来谁给本控件设了 font override
-## 也自动跟随；真取不到才退回引擎字体（保持原行为，不至于画不出字）。
+##
+## 【2026-09-29 二次修订】改为**等宽数字专用字体**，也就是原作棋盘数字实际用的那款
+## （Gen Jyuu Gothic Monospace Heavy，见 CozySudoku 分析报告 §2.3）。
+##
+## 为什么必须等宽 —— 文源圆体是**比例**字体，实测（字号 56，`Font.get_string_size`）：
+##     "1" → 20.5px      "8" → 37.0px      差 16.5px = **45%**
+## 后果两条：
+##   ① 计时器 / 剩余雷数这类读数会随数字变化左右抖动；
+##   ② 每格数字的光学中心不一致（"1" 在格子里偏右、"8" 才居中），九宫看不清齐。
+## 原作就是为了消掉这两点才在棋盘上用 Monospace 版。
+##
+## 取值顺序：
+##   ① 本控件自己被设了 font override → 用它（测试会用这个探针，也允许将来按主题换字）
+##   ② UiFonts.digit() → 等宽数字字体（带中文回退）
+##   ③ 主题链里的 Label 字体
+##   ④ 引擎回退字体（保底，至少画得出字）
 func _board_font() -> Font:
+	if has_theme_font_override("font"):
+		return get_theme_font("font", "Label")
+	var d := UiFonts.digit()
+	if d != null:
+		return d
 	var f: Font = get_theme_font("font", "Label")
 	return f if f != null else ThemeDB.fallback_font
 

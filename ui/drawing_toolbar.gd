@@ -12,8 +12,12 @@ var _clear_btn: Button
 var _swatches: Array = []
 var _size_btns: Array = []
 var _tools_box: VBoxContainer
-# 毛笔图标缓存（key = 文字色|强调色）：ThemeManager 一次切换广播多次 theme_changed，
-# 不缓存则每次广播都重新 SVG 光栅化
+## 工具面板的**底板**（2026-09-29 新增）。原先 _tools_box 是个裸 VBoxContainer，
+## 色带 / 粗细 / 橡皮直接浮在棋盘上 —— 与棋盘格颜色一接近就糊成一团，也看不出
+## "这是一个面板"。包一层带卡片底 + 描边 + 软阴影的 PanelContainer 才像个物件。
+var _tools_panel: PanelContainer
+## 毛笔图标缓存（key = 文字色|强调色）：ThemeManager 一次切换广播多次 theme_changed，
+## 不缓存则每次广播都重新 SVG 光栅化
 var _icon_cache := {}
 
 
@@ -34,7 +38,13 @@ func _build_ui() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE  # 全屏但不拦截鼠标，仅按钮可点
 
-	# 「绘画」按钮：固定在界面右侧，毛笔图标，点击展开/收起工具面板（同时切换绘画模式）
+	# 「绘画」按钮：右上角工具簇第二行（第一行是 HUD 的「提示」灯泡），
+	# 毛笔图标，点击展开/收起工具面板（同时切换绘画模式）。
+	#
+	# ⚠️ 2026-09-29 之前它悬在 (right-68..right-20, y=150..198) —— 上下都不挨着任何东西，
+	#    是用户点名的"布局很丑"之一。现在与 hud.gd 的右上工具簇共用同一组常量
+	#    （hud.TOOLBAR_EDGE=24 / TOOLBAR_GAP=8 / ICON_BTN_SIZE=40），row 1 = 顶栏正下方。
+	#    两个场景各有一份常量、靠注释互相指着 —— hud.gd 那边改了必须同步这里。
 	_paint_btn = Button.new()
 	_paint_btn.text = ""
 	_paint_btn.icon = _brush_icon()
@@ -42,28 +52,36 @@ func _build_ui() -> void:
 	_paint_btn.tooltip_text = "绘画"
 	_paint_btn.toggle_mode = true
 	_paint_btn.focus_mode = Control.FOCUS_NONE
+	_paint_btn.custom_minimum_size = Vector2(40, 40)
 	_paint_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	_paint_btn.offset_left = -68
-	_paint_btn.offset_right = -20
-	_paint_btn.offset_top = 150
-	_paint_btn.offset_bottom = 198
+	_paint_btn.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_paint_btn.grow_vertical = Control.GROW_DIRECTION_END
+	_paint_btn.offset_left = -(24.0 + 40.0)
+	_paint_btn.offset_right = -24.0
+	_paint_btn.offset_top = 12.0 + (40.0 + 8.0)
+	_paint_btn.offset_bottom = 12.0 + (40.0 + 8.0) + 40.0
 	_paint_btn.toggled.connect(func(on: bool):
 		if _drawing != null:
 			_drawing.set_paint_mode(on)
-		if _tools_box != null:
-			_tools_box.visible = on)
+		if _tools_panel != null:
+			_tools_panel.visible = on)
 	add_child(_paint_btn)
 
-	# 绘画工具面板：竖向排列，在「绘画」按钮下方展开
+	# 绘画工具面板：带底板，在「绘画」按钮正下方展开
+	_tools_panel = PanelContainer.new()
+	_tools_panel.visible = false
+	_tools_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_tools_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_tools_panel.grow_vertical = Control.GROW_DIRECTION_END
+	_tools_panel.offset_left = -232.0
+	_tools_panel.offset_right = -24.0
+	_tools_panel.offset_top = 12.0 + 2.0 * (40.0 + 8.0)
+	_tools_panel.offset_bottom = 12.0 + 2.0 * (40.0 + 8.0) + 262.0
+	add_child(_tools_panel)
+
 	_tools_box = VBoxContainer.new()
-	_tools_box.visible = false
-	_tools_box.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	_tools_box.offset_left = -240
-	_tools_box.offset_right = -20
-	_tools_box.offset_top = 200
-	_tools_box.offset_bottom = 470
 	_tools_box.add_theme_constant_override("separation", 8)
-	add_child(_tools_box)
+	_tools_panel.add_child(_tools_box)
 
 	# 色带（7 色：横排一行）
 	var color_row := HBoxContainer.new()
@@ -152,8 +170,8 @@ func refresh() -> void:
 	if _drawing == null:
 		return
 	_paint_btn.set_pressed_no_signal(_drawing.paint_mode)
-	if _tools_box != null:
-		_tools_box.visible = _drawing.paint_mode
+	if _tools_panel != null:
+		_tools_panel.visible = _drawing.paint_mode
 	_erase_btn.set_pressed_no_signal(_drawing.is_erasing)
 	var partial: bool = _drawing.erase_mode == DrawingLayer.EraseMode.PARTIAL
 	_erase_mode_btn.set_pressed_no_signal(partial)
@@ -223,9 +241,30 @@ func _apply_theme() -> void:
 			_style_button(b)
 	if _paint_btn != null:
 		_paint_btn.icon = _brush_icon()  # 主题切换时图标颜色随取色更新
+	if _tools_panel != null:
+		_style_tools_panel()
 	if _drawing != null:
 		refresh()
 	queue_redraw()
+
+
+## 工具面板底板：卡片底 + 描边 + 常态软阴影（与按钮同一套阴影口径，见 UiTheme）。
+func _style_tools_panel() -> void:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = ThemeManager.card()
+	sb.set_corner_radius_all(12)
+	sb.corner_detail = 14
+	sb.anti_aliasing = true
+	sb.set_border_width_all(1)
+	sb.border_color = ThemeManager.grid_line()
+	sb.shadow_color = ThemeManager.shadow(ThemeManager.bg())
+	sb.shadow_size = UiTheme.NORMAL_SHADOW_SIZE
+	sb.shadow_offset = UiTheme.NORMAL_SHADOW_OFFSET
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
+	sb.content_margin_top = 10
+	sb.content_margin_bottom = 10
+	_tools_panel.add_theme_stylebox_override("panel", sb)
 
 
 func _style_button(btn: Button) -> void:

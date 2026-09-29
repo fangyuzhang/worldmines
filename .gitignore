@@ -46,6 +46,16 @@ __pycache__/
 /tools/_*.py
 /tools/_*.sh
 /tools/_*.txt
+# 探针运行日志（2026-09-29 补）：tools/_*.log 与 tools/_*.err 是各探针的 stdout/stderr
+# 落盘，属一次性调试产物。此前没有规则，113 个日志把 git status 刷成 ??；已清一批并加规则防再犯。
+/tools/_*.log
+/tools/_*.err
+# 探针数据产物（2026-09-29 补）：golden 快照 jsonl / 引擎打包 tgz / 探针工作目录，
+# 均可由 tools/_golden_snapshot.gd 等探针再生，不入库。
+/tools/_*.jsonl
+/tools/_*.tgz
+/tools/_mu/
+/tools/_s1_ab/
 
 # 批量生成运行日志目录（_probe_logs/_batch_logs/_fill*_logs 等）
 /_*_logs/

@@ -178,14 +178,11 @@ func test_shape_popup_shares_the_same_shell_as_other_pages() -> void:
 	## 因此同样的标题栏（标题 / 教程 / ✕）、同样的关闭方式。这条防「改造后少一个出口」。
 	_view._show_tab(_view.PAGE_SHAPE)
 	_view._open_shape_popup("classic")
-	# ✕ 关闭按钮
+	# ✕ 关闭按钮（2026-09-29 起为图标按钮：文字「✕」换成内联 SVG 图标，
+	# text 扫描会漏 —— 改按 popup_close meta 定位）
 	var closes: Array = []
-	_collect(_view._overlay, "std_btn", closes)
-	var has_close := false
-	for c: Button in closes:
-		if c.text == "✕":
-			has_close = true
-	assert_true(has_close, "浮窗应有关闭按钮（与其它页弹窗一致）")
+	_collect(_view._overlay, "popup_close", closes)
+	assert_eq(closes.size(), 1, "浮窗应有关闭按钮（与其它页弹窗一致）")
 	# 教程入口：位置统一到标题栏，且指向当前变体（原先异形页是页内教程卡，位置与模式弹窗不一致）
 	var tuts: Array = []
 	_collect(_view._overlay, "popup_tutorial", tuts)

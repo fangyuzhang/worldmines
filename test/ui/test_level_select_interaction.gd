@@ -626,3 +626,77 @@ func _find_button(node: Node, text: String) -> Button:
 		if r != null:
 			return r
 	return null
+
+
+func _find_by_meta(node: Node, key: String) -> Button:
+	if node is Button and (node as Button).has_meta(key):
+		return node as Button
+	for c in node.get_children():
+		var r := _find_by_meta(c, key)
+		if r != null:
+			return r
+	return null
+
+
+# LS15（2026-09-29 用户反馈「弹窗丑 / 右上角教程和叉号突兀 / 难度那几个字突兀」）：
+# 弹窗外壳观感契约 ——
+#   ① 弹窗主体与右侧统计列必须有**实体面板底**（原先没写样式盒，引擎默认半透明深灰
+#      让粉彩页面整片透出来，是「丑」的主因）；
+#   ② ✕ 是**图标按钮**（popup_close meta），不再是「✕」字符按钮（字符叉粗细跟字体走，
+#      与图标体系并排突兀）；
+#   ③ 难度按钮 = **短档名**两行（普通/困难/噩梦 + N 关），窗口后缀「（2–3 条线索）」
+#      只准出现在 tooltip（120px 竖列里折三行、括号拦腰断）；
+#   ④ 网格四周内衬 ≥ 方块悬停放大量（scale 1.04 → 半边 ~2.4px）——
+#      悬停放大被 clip_contents 裁掉一圈 = 「反馈效果超出边界」的缺角形态。
+func test_ls15_popup_shell_surface_and_tier_labels() -> void:
+	var ci: int = int(_view._mode_index.get("classic", -1))
+	assert_gte(ci, 0, "应有 classic 卡片")
+	if ci < 0:
+		return
+	_view._open_popup(ci)
+	assert_ne(_view._mode_idx, -1, "弹窗应已打开")
+
+	# ① 实体面板底
+	assert_true(_view._popup.has_meta("popup_panel"), "弹窗主体应带 popup_panel 标记")
+	assert_true(_view._popup.has_theme_stylebox_override("panel"),
+		"弹窗主体必须有 panel 样式盒（不许露引擎默认半透明底）")
+	var right := _find_panel_with_meta(_view._overlay, "side_panel")
+	assert_not_null(right, "右侧统计列应带 side_panel 标记")
+	if right != null:
+		assert_true(right.has_theme_stylebox_override("panel"),
+			"右侧统计列必须有 panel 样式盒")
+
+	# ② 图标 ✕（有 popup_close meta、无文字；教程按钮仍在标题栏）
+	var close := _find_by_meta(_view._overlay, "popup_close")
+	assert_not_null(close, "弹窗应有关闭按钮（popup_close meta）")
+	if close != null:
+		assert_eq(close.text, "", "关闭按钮应是图标按钮（不再用「✕」字符）")
+	assert_not_null(_find_button(_view._overlay, "教程"), "标题栏「教程」入口不得丢")
+
+	# ③ 难度按钮短档名（关卡库模式才有难度列）
+	if bool(_view.get("_lib_mode")):
+		for tb: Button in _view.get("_tier_btns"):
+			assert_false(tb.text.contains("（"),
+				"难度按钮文字应是短档名（普通/困难/噩梦），窗口后缀只进 tooltip，实得：%s" % tb.text)
+			assert_true(tb.tooltip_text.length() > 0, "完整档位说明应在 tooltip 里")
+		var stat: Label = _view.get("_stat_label")
+		assert_false(stat.text.contains("（（"), "统计文案不得出现嵌套括号")
+
+	# ④ 网格内衬 ≥ 悬停半增量（TILE.x=88 → 半边 1.76px；拉到最宽 ~118 → 2.36px）
+	var g: GridContainer = _view.get("_grid")
+	assert_gte(g.offset_left, 4, "网格左内衬必须 ≥4px（悬停放大不得被裁缺角）")
+	assert_gte(g.offset_top, 4, "网格上内衬必须 ≥4px")
+	assert_lte(g.offset_right, -4, "网格右内衬必须 ≥4px")
+	assert_lte(g.offset_bottom, -4, "网格下内衬必须 ≥4px")
+	var half_growth: float = float(g.get_child(0).custom_minimum_size.x if g.get_child_count() > 0 else 0) * 0.02
+	assert_lte(half_growth, 4.0, "方块悬停半增量必须 ≤ 网格内衬 4px")
+
+
+func _find_panel_with_meta(node: Node, key: String) -> PanelContainer:
+	if node is PanelContainer and (node as PanelContainer).has_meta(key):
+		return node as PanelContainer
+	for c in node.get_children():
+		var r := _find_panel_with_meta(c, key)
+		if r != null:
+			return r
+	return null

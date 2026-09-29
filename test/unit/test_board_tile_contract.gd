@@ -162,9 +162,17 @@ func test_legacy_themes_always_have_a_full_transparent_mat() -> void:
 # ============================ 3. CozyStyle 侧必须真的生效 ============================
 
 func test_cozy_themes_shrink_the_tile_by_the_declared_gap() -> void:
-	## 反向断言：CozyStyle 五套必须**真的**内缩、且缝宽 == max(1, 格宽 × TILE_GAP_FRAC)。
+	## 反向断言：CozyStyle 五套必须**真的**内缩，且**相邻两格之间的空隙**
+	## 恰好等于 `格宽 × TILE_GAP_FRAC`。
+	##
 	## 少了这一半，把门控写成"永远返回原矩形"也能让上面两条全绿 —— 那样棋盘就退回了
 	## 方格 + 网格线，而测试却一片绿。
+	##
+	## ⚠️ 2026-09-29 二次修订：这里的判据从「单侧内缩 == 格宽 × TILE_GAP_FRAC」
+	## 改成了「**两格之间**的空隙 == 格宽 × TILE_GAP_FRAC」。
+	## 原因：`Rect2.grow()` 是**四边同时**缩，原来的写法把标称值当成了单侧内缩，
+	## 于是实际缝宽是标称值的两倍 —— 而原断言与代码犯了同一个错，所以两边一起绿。
+	## 钉住"看得见的那个量"（相邻两格之间的空隙），才能挡住这类系数级错误。
 	var view = _mount()
 	await wait_process_frames(1)
 	var gap_frac: float = BV.TILE_GAP_FRAC
@@ -176,8 +184,8 @@ func test_cozy_themes_shrink_the_tile_by_the_declared_gap() -> void:
 		if not view._cozy_tiles():
 			continue
 		checked += 1
-		var gap := maxf(1.0, PROBE.size.x * gap_frac)
-		var want := PROBE.grow(-gap)
+		var inset := maxf(0.5, PROBE.size.x * gap_frac * 0.5)
+		var want := PROBE.grow(-inset)
 		var got: Rect2 = view._tile_rect(PROBE)
 		assert_almost_eq(got.position.x, want.position.x, 1e-4, "%s：瓦片左边界" % m)
 		assert_almost_eq(got.position.y, want.position.y, 1e-4, "%s：瓦片上边界" % m)
@@ -188,31 +196,48 @@ func test_cozy_themes_shrink_the_tile_by_the_declared_gap() -> void:
 			"%s：瓦片必须与格子同心（x）" % m)
 		assert_almost_eq(got.get_center().y, PROBE.get_center().y, 1e-4,
 			"%s：瓦片必须与格子同心（y）" % m)
+		# ★ 核心：右邻格（中心相距一个格宽）与本格之间的可见空隙
+		var nb := Rect2(PROBE.position + Vector2(PROBE.size.x, 0.0), PROBE.size)
+		var visible_gap: float = view._tile_rect(nb).position.x - got.end.x
+		assert_almost_eq(visible_gap, PROBE.size.x * gap_frac, 0.5,
+			"%s：相邻两格之间的空隙应 ≈ 格宽 × %.3f = %.2fpx（实得 %.2fpx）"
+			% [m, gap_frac, PROBE.size.x * gap_frac, visible_gap])
+		# 下邻格同理：缝必须四边一致，否则看起来是"只有横向留了缝"
+		var nb2 := Rect2(PROBE.position + Vector2(0.0, PROBE.size.y), PROBE.size)
+		var gap_v: float = view._tile_rect(nb2).position.y - got.end.y
+		assert_almost_eq(gap_v, visible_gap, 0.01,
+			"%s：纵向缝(%.2f)必须等于横向缝(%.2f)" % [m, gap_v, visible_gap])
 	assert_eq(checked, COZY_WITH_MAT, "应有 %d 套主题走到圆角瓦片（实得 %d）"
 		% [COZY_WITH_MAT, checked])
 
 
 func test_tile_corner_radius_follows_the_declared_fraction() -> void:
-	## 圆角半径 = clamp(round(瓦片边长 × TILE_RADIUS_FRAC), 2, 40)。
+	## 圆角半径 = clamp(round(**格边长** × TILE_RADIUS_FRAC), 2, 40)。
 	## 上限 40 是防"某个超大视口下圆角吃掉整块瓦片"；下限 2 是防小格子上圆角退化成直角。
+	##
+	## 按**格边长**而不是内缩后的瓦片边长取 —— 因为 TILE_RADIUS_FRAC 的定义
+	## （对齐 CozySudoku 官方截图的实测口径）就是「半径 / 格边长」。
 	var view = _mount()
 	await wait_process_frames(1)
 	var frac: float = BV.TILE_RADIUS_FRAC
 	assert_gt(frac, 0.0, "TILE_RADIUS_FRAC 应为正数")
-	assert_lt(frac, 0.5, "圆角超过半边长会退化成圆形/菱形")
+	assert_lt(frac, 0.2,
+		"圆角超过格边长的 20%% 就不是「略微倒角」而是「软糖」了 —— "
+		+ "原作官方截图实测 10.6%%（格 47px / 半径 5px），当前 %.3f" % frac)
 	for m: String in _theme_ids():
 		_use(m)
 		if not view._cozy_tiles():
 			continue
-		var r: Rect2 = view._tile_rect(PROBE)
-		var sb: StyleBoxFlat = view._tile_stylebox(maxf(2.0, r.size.x * frac))
-		var want := clampi(int(roundf(maxf(2.0, r.size.x * frac))), 2, 40)
+		var raw := maxf(2.0, PROBE.size.x * frac)
+		var sb: StyleBoxFlat = view._tile_stylebox(raw)
+		var want := clampi(int(roundf(raw)), 2, 40)
 		assert_eq(sb.corner_radius_top_left, want, "%s：圆角半径（左上）" % m)
 		assert_eq(sb.corner_radius_top_right, want, "%s：圆角半径（右上）" % m)
 		assert_eq(sb.corner_radius_bottom_left, want, "%s：圆角半径（左下）" % m)
 		assert_eq(sb.corner_radius_bottom_right, want, "%s：圆角半径（右下）" % m)
 		# 四角必须一致：任一角不同就是"某边没设到"的典型症状
 		assert_true(sb.anti_aliasing, "%s：圆角必须开抗锯齿（否则看出多边形）" % m)
+
 
 
 # ============================ 4. 结构性护栏 ============================
@@ -232,19 +257,33 @@ func test_all_three_entry_points_carry_the_guard_in_source() -> void:
 
 # ============================ 5. 那两处「全局」改动（同样作用在旧主题上）============================
 
-func test_board_font_comes_from_the_theme_not_the_engine_fallback() -> void:
+func test_board_font_is_the_equal_width_digit_face() -> void:
 	## 棋盘数字是 draw_string 画的，**不继承**主题样式 —— 必须显式取字体。
-	## 改动前用的是 ThemeDB.fallback_font（引擎内置回退字体），笔画与界面明显两个风格；
-	## 改成主题链的 Label 字体后与全局字体（文源圆体）一致。
-	## 这条钉住"优先级"：有主题字体就用主题字体，真取不到才允许退回引擎字体。
+	## 改动前用的是 ThemeDB.fallback_font（引擎内置回退字体），笔画与界面明显两个风格。
+	##
+	## 2026-09-29 二次修订：从「主题链的 Label 字体（文源圆体）」进一步改成
+	## **等宽数字字体**（源柔ゴシック等宽 Heavy，即原作棋盘数字实际用的那一款）。
+	##
+	## 判据刻意不写成"等于某个资源路径"，而是**它真的等宽** ——
+	## 因为比例字体下 `get_string_size("1")=20.5px` 而 `"8"=37.0px`（字号 56 实测，差 45%），
+	## 后果是计时器随秒数抖动、格内数字光学中心不一致。这条断言直接钉住这个后果，
+	## 将来换成别的等宽字体照样通过。
 	var view = _mount()
 	await wait_process_frames(1)
 	var f: Font = view._board_font()
 	assert_not_null(f, "_board_font 不得为 null（否则画不出字）")
-	var themed: Font = view.get_theme_font("font", "Label")
-	if themed != null:
-		assert_eq(f, themed, "有主题字体时必须用它 —— 否则棋盘字与界面字两套风格")
+	# 无 font override 时，必须命中 UiFonts.digit()
+	assert_eq(f, UiFonts.digit(), "无 override 时棋盘字体应走 UiFonts.digit()")
+	var w1: float = f.get_string_size("1", HORIZONTAL_ALIGNMENT_LEFT, -1, 56).x
+	var w8: float = f.get_string_size("8", HORIZONTAL_ALIGNMENT_LEFT, -1, 56).x
+	assert_almost_eq(w1, w8, 0.6,
+		"棋盘数字必须等宽：'1'=%.1fpx 而 '8'=%.1fpx（差 %.1fpx = %.0f%%）"
+		% [w1, w8, absf(w8 - w1), 100.0 * absf(w8 - w1) / maxf(0.01, w8)])
+	# 中文仍要画得出来（回退链在场），否则笔记里的字会变豆腐块
+	var wcjk: float = f.get_string_size("剩余雷数", HORIZONTAL_ALIGNMENT_LEFT, -1, 56).x
+	assert_gt(wcjk, 56.0 * 3.0, "中文应经由回退链渲染（4 个字至少 3 个字宽）")
 	assert_not_null(ThemeDB.fallback_font, "引擎回退字体应恒存在（仅作为最后兜底）")
+
 
 
 func test_icon_button_content_area_can_actually_fit_a_22px_icon() -> void:

@@ -620,6 +620,10 @@ const TRACKS: Array = [
 ## 解析在 companion_pet._build_skeleton() 里做**一次**并缓存下标 —— 本文件只提供数据。
 const GAZE_ROT_BONES: Array = ["Chest", "SpineRib", "Spine"]
 const GAZE_TX_BONES: Array = ["FaceControl", "FaceAll", "Neck"]
+## 视线"转头"的落点（2026-09-29 新增第三支路）：精灵占位下眼睛画死在贴图里，
+## 平移支路（下面的 tx）在 192px 停靠宽里只有 ~1.7px 的眼球滑动，玩家读不出；
+## 直接转 Head（与 Chest 叠加，满偏 12°）才是可感知的"朝鼠标看"。
+const GAZE_HEAD_BONES: Array = ["Head", "Neck"]
 
 
 ## 骨骼名 -> 数组下标（BONES 的父级引用用的是名字，正向遍历要按下标找父级的世界变换）。

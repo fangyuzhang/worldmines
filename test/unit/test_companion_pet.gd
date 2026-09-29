@@ -285,9 +285,11 @@ func _clear_tracks() -> void:
 
 
 func test_gaze_cascades_through_the_constraint_chain() -> void:
-	## 写源头（Chest 旋转 + FaceControl 平移）之后，偏移必须按约束的 mix 逐级衰减到脸上：
+	## 写源头（Chest/Head 旋转 + FaceControl 平移）之后，偏移必须按约束的 mix 逐级衰减到脸上：
 	##   FaceControl ×1 → FaceAll ×0.3 → EyeL/EyeR ×0.3×0.5 = ×0.15
 	## 这条同时守住「约束只走一遍」的正确性：若顺序写反，下面第三、四行会各差一级。
+	## ⚠️ 平移断言看 **局部 y 取负**（2026-09-29 轴向修正）：Body 是 r=90 的骨，局部 +x
+	## 在世界里指向 +y——旧版写 (gaze·TX, 0) 时鼠标横移脸只会上下颤。局部 −y 才是 +x。
 	_clear_tracks()
 	_pet._gaze = 1.0
 	_pet._pose()
@@ -295,14 +297,17 @@ func test_gaze_cascades_through_the_constraint_chain() -> void:
 	assert_almost_eq(_pet._off_p[int(_pet._idx["Chest"])].length(), 0.0, 0.001,
 		"视线写 Chest 的是**旋转**不是平移")
 	assert_almost_eq(_pet._off_r[int(_pet._idx["Chest"])],
-		deg_to_rad(PET.GAZE_CHEST_DEG), 0.0001, "Chest 的旋转应等于 GAZE_CHEST_DEG")
-	assert_almost_eq(_pet._off_p[int(_pet._idx["FaceControl"])].x, gx, 0.001,
-		"FaceControl 拿到视线全量平移（它是链的源头）")
-	assert_almost_eq(_pet._off_p[int(_pet._idx["FaceAll"])].x, gx * 0.3, 0.001,
-		"FaceAll 应拿到 0.3 倍（约束 FaceControl_Face 的 mixX）")
-	assert_almost_eq(_pet._off_p[int(_pet._idx["EyeR"])].x, gx * 0.15, 0.001,
+		-deg_to_rad(PET.GAZE_CHEST_DEG), 0.0001,
+		"Chest 的旋转 = −GAZE_CHEST_DEG（+θ 把头顶推左，会和平移支路打架，见 _apply_gaze）")
+	assert_almost_eq(_pet._off_r[int(_pet._idx["Head"])],
+		-deg_to_rad(PET.GAZE_HEAD_DEG), 0.0001, "Head 的旋转 = −GAZE_HEAD_DEG")
+	assert_almost_eq(_pet._off_p[int(_pet._idx["FaceControl"])].y, -gx, 0.001,
+		"FaceControl 拿到视线全量平移（局部 −y = 世界 +x，见轴向修正注释）")
+	assert_almost_eq(_pet._off_p[int(_pet._idx["FaceAll"])].y, -gx * 0.3, 0.001,
+		"FaceAll 应拿到 0.3 倍（约束 FaceControl_Face 的 mix）")
+	assert_almost_eq(_pet._off_p[int(_pet._idx["EyeR"])].y, -gx * 0.15, 0.001,
 		"EyeR 应拿到 0.3×0.5 = 0.15 倍（级联，不是 0.5）")
-	assert_almost_eq(_pet._off_p[int(_pet._idx["EyeL"])].x, gx * 0.15, 0.001, "EyeL 同 EyeR")
+	assert_almost_eq(_pet._off_p[int(_pet._idx["EyeL"])].y, -gx * 0.15, 0.001, "EyeL 同 EyeR")
 
 
 func test_gaze_sources_are_resolved_from_the_rig_not_hardcoded() -> void:
@@ -366,9 +371,11 @@ func test_gaze_direction_follows_mouse_side() -> void:
 	_clear_tracks()
 	_pet._gaze = -1.0
 	_pet._pose()
-	assert_almost_eq(_pet._off_p[int(_pet._idx["FaceControl"])].x, -PET.GAZE_TX, 0.001,
-		"鼠标在左侧时 FaceControl 应向负方向偏（左右不能反）")
-	assert_lt(_pet._off_r[int(_pet._idx["Chest"])], 0.0, "Chest 的旋转方向应随之取反")
+	# 轴向修正后平移走局部 y：gaze=-1（鼠标左）⇒ 局部 (0, +TX)（= 世界 −x）
+	assert_almost_eq(_pet._off_p[int(_pet._idx["FaceControl"])].y, PET.GAZE_TX, 0.001,
+		"鼠标在左侧时 FaceControl 应朝世界 −x 偏（左右不能反）")
+	assert_gt(_pet._off_r[int(_pet._idx["Chest"])], 0.0,
+		"Chest 的旋转方向应随之取反（−gaze·DEG，gaze=−1 ⇒ 正）")
 
 
 func test_gaze_converges_frame_rate_independently() -> void:

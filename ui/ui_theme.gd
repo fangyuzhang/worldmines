@@ -7,23 +7,32 @@
 # 2026-09-29 CozyStyle 改造（几何/阴影部分）：
 #   · 圆角 6 → 12（按钮）/ 4 → 8（色标）。CozyStyle 的观感建立在"大圆角 + 低对比"
 #     上，旧版的 6px 圆角配粉彩底色会显得又硬又方，是"换了色但不像换了皮"的主因之一。
-#   · 常态就给一层极浅软阴影（α0.10 / size 8 / offset (0,2)），不再只有 hover 才浮起——
-#     粉彩体系的层次完全靠阴影撑，没有阴影的纯色块会糊成一片。
+#   · 常态就给一层软阴影（不再只有 hover 才浮起）——粉彩体系的层次有一半靠阴影撑。
 #   · 同时把圆角细分度显式拉满（corner_detail）并开抗锯齿：半径变大后 6 边细分的
 #     多边形会被看出来是一圈多边形而不是圆。
 #   · pressed 态背景是 accent（实心强调色），字色随之改用 accent_text —— 见下方注释。
+#
+# 2026-09-29 **二次修订（用户反馈「悬停阴影没有适配、有些突兀」）**：
+#   · 阴影的**深度**从这里搬走了 —— 原先两个写死的纯黑常量（α0.10 / α0.22）要服务
+#     七套底色，实测同一份 α 在粉彩底上掉 43/255、在深色底上只掉 7/255（差 6 倍）：
+#     粉彩主题得到一圈脱色的脏灰，深色主题几乎看不见。
+#     现在深度由 `ThemeManager.shadow(base, drop)` **按主题反解**，目标压暗量固定，
+#     影色也随主题取（CozyStyle 用该主题自己的深色调）。详见 theme_manager.gd 那一节。
+#   · 这里只保留**范围**（模糊半径 / 下移量），且把常态→悬停的跨度收窄
+#     （size 8→12 改成 8→10）：换 stylebox 是**瞬时**的，跨度大了就是"影先跳、按钮后长"，
+#     正是"弹一下…有个阴影…突兀"的观感来源。
 class_name UiTheme
 
-## 常态软阴影（静止时也浮着一点）。
-const NORMAL_SHADOW := Color(0, 0, 0, 0.10)
+## 阴影的**范围**。深度不在常量里 —— 见 ThemeManager.shadow()。
+##
+## 常态：贴着一层浅浅的浮起感，让静止的按钮也不像"贴纸"。
 const NORMAL_SHADOW_OFFSET := Vector2(0, 2)
 const NORMAL_SHADOW_SIZE := 8
 
-## 悬停阴影：比常态更深更大，形成"抬起一档"的层次差；但比旧版的 α0.4 柔和很多
-## （粉彩底上 α0.4 的黑影是脏灰，不是柔和投影）。
-const HOVER_SHADOW := Color(0, 0, 0, 0.22)
-const SHADOW_OFFSET := Vector2(0, 4)
-const SHADOW_SIZE := 12
+## 悬停：只比常态深一档、宽一点点。"抬起一档"还由描边换 accent + 底色提亮 + scale
+## 1.03 三条一起表达，阴影不需要独立承担整个层次差。
+const HOVER_SHADOW_OFFSET := Vector2(0, 3)
+const HOVER_SHADOW_SIZE := 10
 
 ## 圆角半径。**不要**用 StyleBoxFlat.expand_margin 去放大投影范围 —— 那会把整个
 ## stylebox 的绘制矩形撑开，导致相邻控件互相覆盖（已实测踩过）。
@@ -61,7 +70,7 @@ static func style_button(btn: Button, pad_x: int = BTN_PAD_X, pad_y: int = BTN_P
 	_round(normal, BTN_RADIUS)
 	normal.set_border_width_all(1)
 	normal.border_color = ThemeManager.grid_line()
-	normal.shadow_color = NORMAL_SHADOW
+	normal.shadow_color = ThemeManager.shadow(ThemeManager.bg())
 	normal.shadow_size = NORMAL_SHADOW_SIZE
 	normal.shadow_offset = NORMAL_SHADOW_OFFSET
 	btn.add_theme_stylebox_override("normal", normal)
@@ -73,9 +82,9 @@ static func style_button(btn: Button, pad_x: int = BTN_PAD_X, pad_y: int = BTN_P
 	_round(hover, BTN_RADIUS)
 	hover.set_border_width_all(1)
 	hover.border_color = ThemeManager.accent()
-	hover.shadow_color = HOVER_SHADOW
-	hover.shadow_size = SHADOW_SIZE
-	hover.shadow_offset = SHADOW_OFFSET
+	hover.shadow_color = ThemeManager.shadow(ThemeManager.bg(), ThemeManager.SHADOW_DROP_HOVER)
+	hover.shadow_size = HOVER_SHADOW_SIZE
+	hover.shadow_offset = HOVER_SHADOW_OFFSET
 	btn.add_theme_stylebox_override("hover", hover)
 	btn.add_theme_color_override("font_hover_color", ThemeManager.text())
 
@@ -102,6 +111,11 @@ static func style_button(btn: Button, pad_x: int = BTN_PAD_X, pad_y: int = BTN_P
 	_round(focus_sb, BTN_RADIUS)
 	focus_sb.set_border_width_all(2)
 	focus_sb.border_color = ThemeManager.accent()
+	# 【2026-09-29 补】focus 以前**没有阴影**，而 hover 有 —— 于是用 Tab 把焦点移到
+	# 某个按钮上，阴影会"啪"地出现/消失，同一个悬停语义两种观感。与 hover 取同一档。
+	focus_sb.shadow_color = ThemeManager.shadow(ThemeManager.bg(), ThemeManager.SHADOW_DROP_HOVER)
+	focus_sb.shadow_size = HOVER_SHADOW_SIZE
+	focus_sb.shadow_offset = HOVER_SHADOW_OFFSET
 	btn.add_theme_stylebox_override("focus", focus_sb)
 	btn.add_theme_color_override("font_focus_color", ThemeManager.text())
 
@@ -134,7 +148,7 @@ static func style_swatch(sw: Button, color: Color, selected: bool) -> void:
 	else:
 		sb.set_border_width_all(1)
 		sb.border_color = ThemeManager.grid_line()
-	sb.shadow_color = NORMAL_SHADOW
+	sb.shadow_color = ThemeManager.shadow(ThemeManager.bg())
 	sb.shadow_size = NORMAL_SHADOW_SIZE
 	sb.shadow_offset = NORMAL_SHADOW_OFFSET
 	sw.add_theme_stylebox_override("normal", sb)

@@ -329,6 +329,20 @@ func _ready() -> void:
         SettingsManager.settings_changed.connect(_on_settings)
 
 
+## 尽早装配字体回退链。
+##
+## `UiFonts.ui()` 是**惰性**装配的（第一次调用时才 `load()` 并设 `Font.fallbacks`）。
+## 本 autoload 排在第 5 位，前面还有 `RNGService` / `ModAPI` / `DebugMenu` 三个，
+## 其中 `DebugMenu` 是**场景型** autoload；它若先建出带中文的 Label 并按
+## 「Nerko 且无回退」塑形一次，那一帧就会闪豆腐块。提前到 `_init()` 里装配最省事。
+##
+## 注：这**不是**正确性的依赖项 —— `project.godot [gui] theme/custom_font` 已经填了
+## 中文覆盖完整的文源圆体，这里没装配好也只会退化成「中文走文源」，不会画不出来。
+func _init() -> void:
+    UiFonts.ui()
+    UiFonts.digit()
+
+
 func _settings_mode() -> String:
     var want := DEFAULT_COZY
     if SettingsManager != null and SettingsManager.theme_mode != null:
@@ -454,6 +468,15 @@ func _apply_clear_color() -> void:
     RenderingServer.set_default_clear_color(bg())
 
 
+## 需要显式下发字体的控件类型（见 `_apply_default_theme` 里那段说明）。
+## 只列**带 `font` 主题条目**的类型：TextEdit/CodeEdit 走 `font` 之外的条目，不在此列。
+const _FONT_TYPES: Array = [
+    "Label", "RichTextLabel", "LinkButton", "TooltipLabel",
+    "Button", "OptionButton", "MenuButton", "CheckBox", "CheckButton",
+    "LineEdit", "PopupMenu", "TabBar", "ItemList", "Tree",
+]
+
+
 ## 【2026-09-29 新增】全局兜底文本色。
 ##
 ## 缘起：截图验收时发现选关页大标题「选择关卡」是**白字压粉彩底**（≈1.5:1），
@@ -468,6 +491,47 @@ func _apply_clear_color() -> void:
 func _apply_default_theme() -> void:
     if _default_theme == null:
         _default_theme = Theme.new()
+    # ---- 字体角色（2026-09-29 新增，见 ui/ui_fonts.gd）----
+    # CSS 的 `font-family` 是一张**列表**（逐字回退），Godot 是「主字体 + Font.fallbacks」。
+    # 组装在 UiFonts 里，这里只负责把它下发到主题。
+    #
+    # ★ 机制结论（2026-09-29 探针 v4/v5/v8 逐例实测，见 `_pv/font_probe*_out.txt`）：
+    #   Godot 4 的主题继承**只在 Control / Window 祖先之间传递** —— 路径上夹一个普通
+    #   `Node`（或 `CanvasLayer`，如 `addons/debug_menu`）就**整条断掉**，
+    #   `font` 与 `font_color` **一起断**。解析顺序：
+    #       自身 theme → 最近的 Control/Window 祖先 theme → ThemeDB 项目主题 → ThemeDB 默认主题
+    #   而 ThemeDB 那一层的 `font` 条目就是 `project.godot [gui] theme/custom_font`。
+    #
+    #   真机链路完好：`run/main_scene` 与 `change_scene_to_file` 都把 Control 场景根
+    #   直接挂到 root 下，所以这里 `root.theme = _default_theme` **确实生效**。
+    #   实证（v8）：在 `custom_font` 已换回**文源圆体**的前提下，真实 level_select 的
+    #   **103/103** 个 Label 依旧全部解析到 NerkoOne —— 此时 Nerko 只可能来自 root.theme。
+    #   对照（同一次运行）：同一份场景挂在普通 Node 下 ⇒ 103/103 解析到文源圆体（断链）。
+    #
+    #   ⚠️ 曾经把这条记成「`Theme.default_font` 不生效」+「custom_font 优先级高于节点链」
+    #   ——**是误判**。当时的验收工具（`tools/_cozy_shot.gd`）把场景挂在**普通 Node** 下，
+    #   链路本来就是断的，`root.theme` 根本轮不到，于是「改了没反应」被归因成"优先级低"。
+    #   工具已修（宿主改为直挂 root 的 Control）；`test/ui/test_theme_surface_contrast.gd`
+    #   里留了防回归断言。
+    #
+    #   为什么仍要按类型 `set_font("font", type, ...)`：`Theme.default_font` 只是
+    #   **本 theme 内**「该类型没有 font 条目」时的回退，覆盖不完全；逐类型下发是双保险，
+    #   多写的类型只是多一条用不到的条目，无害。
+    #
+    # ⚠️ 与 `project.godot [gui] theme/custom_font` 的分工（**别搞混**）：
+    #   那一项 = **引擎级兜底**，只服务「断链」的节点（CanvasLayer 子树的 addon、
+    #   独立 Window、引擎内部控件）。所以它必须填**中文覆盖完整**的字体 ——
+    #   2026-09-29 一度把它填成纯拉丁的 Nerko One，那种写法下断链节点上的中文
+    #   （例如 DebugMenu）会**整段画不出来**。界面主力字体走 root.theme（本函数）。
+    #
+    # ⚠️ 故意**不设** `default_font_size`：那会覆盖引擎默认的 16，
+    # 凡是没显式设字号的地方会一起变，属于超出「换字体」范围的改动。
+    var want_font: Font = UiFonts.ui()
+    if want_font != null:
+        if _default_theme.default_font != want_font:
+            _default_theme.default_font = want_font
+        for ft: String in _FONT_TYPES:
+            _default_theme.set_font("font", ft, want_font)
     var t: Color = text()
     _default_theme.set_color("font_color", "Label", t)
     _default_theme.set_color("font_color", "RichTextLabel", t)
@@ -744,3 +808,93 @@ func hover_neighbor_overlay() -> Color:
 
 func endgame_dim() -> Color:
     return _active.get("endgame_dim", _OVERLAY_DARK.endgame_dim)
+
+
+# ============ 软阴影（2026-09-29 用户反馈修复）============
+#
+# 起因（用户原话）：「鼠标放上去弹一下那种效果……有个阴影。阴影没有做好很好的适配，
+# 有些突兀。」
+#
+# 改动前：UiTheme 用**一份固定的纯黑 α**（常态 0.10 / 悬停 0.22）服务全部七套主题。
+# 实拍量测（`_pv/hover_b/`，逐行亮度剖面，0..255 编码值口径，见 `_measure.txt`）：
+#   · 同一份 α0.22 压在粉彩底（L≈198）上掉 **43.4/255**，压在深色底（L≈30）上只掉
+#     **7.1/255** —— 相差 6 倍。于是粉彩主题上是一圈**脱色的脏灰**，深色主题上几乎
+#     看不见（等于白画）。这就是"没有做好适配"的本体：**一套 α 服务七套底色**。
+#   · 常态→悬停是**瞬时换 stylebox**（α0.10→0.22、size 8→12 一帧到位），而 scale 是
+#     0.2s 缓动 —— 影先跳、按钮后长，观感就是"弹一下"里夹着一记突兀的加深。
+#     （实测跳变 2.2×，绝对差 23.8/255。）
+#
+# 修法两条：
+#   ① **影色随主题走**（不再纯黑）：CozyStyle 主题取该主题自己的深色调（board_mat 的
+#      色相/饱和度，明度已解算过）—— 冷底得冷影、暖底得暖影，不再是脱色的灰。
+#      dark / light 的底本身中性，没有专属深色调，仍用纯黑。
+#   ② **α 由目标压暗量反解**，不写死：目标是**绝对**亮度差（0..255），七套主题因此
+#      看起来"浮起程度"接近，而不是粉彩主题独重。
+#
+# ⚠️ 为什么反解 α 是可算的：Godot 2D 的 canvas 混合发生在**编码值空间**（不是线性空间）。
+#    实测确认：bg `#b7c9d4` 叠纯黑 α0.10 后加权亮度 = 178.4，与 `0.9×198.0 + 0.1×0`
+#    逐位吻合。故 观感亮度差 == α · (lum(bg) − lum(tint))，直接解出 α 即可。
+#    （这也是为什么不能用 WCAG 的线性亮度：那套口径下"深色底最多只能掉 0.012"，
+#     反解会得到 α→1 的荒谬值 —— 阴影本来就不是对比度问题，是**明度微差**问题。）
+
+## 常态影的目标压暗量（0..255）。取值依据：改动前实测 19.6 明显过重（粉彩底上已经是
+## 一圈脏灰），按"看得见、但读起来是层次而不是污渍"重定。
+const SHADOW_DROP_NORMAL := 7.0
+## 悬停影的目标压暗量。刻意只比常态深 1.86 倍（改动前是 2.2 倍、绝对差 23.8）——
+## 「抬起一档」的提示由描边换 accent + 底色提亮 0.06 + scale 1.03 三条共同承担，
+## 阴影只负责补一点点，跳变才不会被看出来。
+const SHADOW_DROP_HOVER := 13.0
+## 大面板（棋盘垫子）的目标压暗量。面积越大越需要多一点影才"托得住"，
+## 小控件套这个值会显得脏，故单独一档。
+const SHADOW_DROP_MAT := 14.0
+## α 钳制范围。
+##
+## 上限 0.42：避免近黑主题反解出 0.7+ 那种硬边黑影（那不是柔影，是一圈黑边）。
+## 下限 0.02：只要不是 0 就行，**不要**往上抬 —— 第一版取 0.05，结果只在最亮的
+## `light`（底 L=243.7，反解出 α=0.029）上触发，把压暗量从 7 顶到 12.2，
+## 恰好顶出契约带（4~10）被测试当场抓住。这条下限原本是想防"深底算出 0"，
+## 但深底方向是 **span 小 ⇒ α 大**，撞的是上限，下限根本不该承担那个职责。
+const SHADOW_ALPHA_MIN := 0.02
+const SHADOW_ALPHA_MAX := 0.42
+
+
+## 影色（不含 α）：CozyStyle 取该主题自己的深色调，dark/light 取纯黑。
+func shadow_tint() -> Color:
+    if _COZY.has(mode):
+        var m := board_mat()
+        if m.a > 0.0:
+            return Color(m.r, m.g, m.b, 1.0)
+    return Color(0, 0, 0)
+
+
+## 直接可用的 shadow_color：目标压暗量 / 底与影的亮度跨度 ⇒ α。
+##
+## base = 影**落上去的那块底**（一般是 bg()；压在卡片上时传 card()）。
+## drop 省略时用常态档；`ThemeManager.SHADOW_DROP_HOVER` 传进来就是悬停档。
+func shadow(base: Color, drop: float = SHADOW_DROP_NORMAL) -> Color:
+    var tint := shadow_tint()
+    var span := sdr_lum(base) - sdr_lum(tint)
+    if span <= 1.0:
+        # 底已经和影同亮（近黑主题 + 纯黑影）：反解会除爆，退回"亮度差的固定比例"。
+        span = maxf(1.0, sdr_lum(base) * 0.25)
+    var a := clampf(drop / span, SHADOW_ALPHA_MIN, SHADOW_ALPHA_MAX)
+    return Color(tint.r, tint.g, tint.b, a)
+
+
+## 影落在 base 上之后的实际观感亮度差（0..255 口径）。测试与工具用它验证
+## 「七套主题的压暗量落在同一窄带」。
+##
+## ⚠️ 这里**手算闭式**而不是调 `Color.blend()`：
+##    `Color.blend()` 的语义是「把**参数**盖在 self 上」（实现取的是参数的 α），
+##    写成 `shadow(base).blend(base)` 会把底盖回影上 ⇒ 恒等于 base ⇒ 压暗量恒为 0。
+##    第一版就是这么写的，测试直接报「七套主题压暗量全 0」。
+##    又因为混合在编码值空间是线性的（见本节开头），闭式就是精确值，没必要再调 API。
+func shadow_drop(base: Color, drop: float = SHADOW_DROP_NORMAL) -> float:
+    var s := shadow(base, drop)
+    return s.a * (sdr_lum(base) - sdr_lum(Color(s.r, s.g, s.b, 1.0)))
+
+
+## 编码值空间的加权亮度（0..255）。**不要**拿它当 WCAG 亮度用 —— 那套是线性化的，
+## 见 `_lin` / `contrast_ratio`。本函数只服务"阴影压暗了多少"这类观感量。
+static func sdr_lum(c: Color) -> float:
+    return 255.0 * (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b)

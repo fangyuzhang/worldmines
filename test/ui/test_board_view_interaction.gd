@@ -156,18 +156,28 @@ func test_b5_pause_toggle_roundtrip() -> void:
 
 
 # B9：对局 HUD 左上角有「教程」入口（2026-09-23 用户决策：从主菜单总入口挪到
-# 上下文相关位置，对局中看**当前变体**的教程）。位置契约：紧跟「雷数」之后。
+# 上下文相关位置，对局中看**当前变体**的教程）。位置契约：紧跟「雷数」读数组之后。
+#
+# 2026-09-29：教程从文字按钮改成**书本图标**（与选关页右上角同一本书），故查找方式从
+# `_find_btn_by_text` 改成按 meta —— 图标按钮没有文字可找。位置契约的语义没变，
+# 只是「前一个兄弟是雷数 Label」升级成「前一个兄弟是雷数**读数组**（雷图标 + 数字）」。
 func test_b9_hud_tutorial_entry_sits_after_mines() -> void:
-	var tut := _find_btn_by_text(_view, "教程")
-	assert_not_null(tut, "对局 HUD 应有「教程」入口")
+	var tut := _find_btn_by_meta(_view, "tutorial_btn")
+	assert_not_null(tut, "对局 HUD 应有「教程」入口（meta: tutorial_btn）")
 	if tut == null:
 		return
+	assert_not_null(tut.icon, "教程入口必须是书本图标（SVG 解析失败会静默降级为空图标）")
+	assert_ne(str(tut.tooltip_text), "", "纯图标控件必须有 tooltip（可读名）")
 	var box := tut.get_parent()
 	assert_true(box is HFlowContainer or box is HBoxContainer,
 		"教程按钮应在 HUD 的按钮排（_box）里（2026-09-25 起为 HFlowContainer：窄窗自动换行）")
-	assert_eq(tut.get_index(), 1, "应在「雷数」之后（索引 0 = 雷数标签）= 左上角")
-	assert_true(box.get_child(tut.get_index() - 1) is Label,
-		"教程按钮的前一个兄弟应是「雷数」标签（左上角定位语义）")
+	assert_eq(tut.get_index(), 1, "应在「雷数」读数组之后（索引 0 = 雷数组）= 左上角")
+	var prev: Node = box.get_child(tut.get_index() - 1)
+	assert_true(prev is HBoxContainer,
+		"教程按钮的前一个兄弟应是「雷数」读数组（2026-09-29 起 = 图标 + 数字）")
+	if prev is HBoxContainer:
+		assert_not_null(_find_first(prev, "TextureRect"), "雷数读数组应带雷图标（形态改造的锚点）")
+		assert_not_null(_find_first(prev, "Label"), "雷数读数组应带数字 Label")
 	# 变体身份推导（入口的取数链）：before_each 载入 classic_01（普通关卡，无规则声明）
 	# → 应推导为 classic（不能是空串，否则点了必然走「暂无教程」兜底）
 	assert_eq(GameSession.current_variant_id(), "classic",
@@ -177,8 +187,8 @@ func test_b9_hud_tutorial_entry_sits_after_mines() -> void:
 # B10：打开教程 = **静默暂停**（读规则时计时不该空转），覆盖层释放即恢复对局
 #（2026-09-23 审查修复：此前教程打开期间计时继续走，且按键会穿透给对局快捷键）。
 func test_b10_hud_tutorial_pauses_session() -> void:
-	var tut := _find_btn_by_text(_view, "教程")
-	assert_not_null(tut, "对局 HUD 应有「教程」入口")
+	var tut := _find_btn_by_meta(_view, "tutorial_btn")
+	assert_not_null(tut, "对局 HUD 应有「教程」入口（meta: tutorial_btn）")
 	if tut == null:
 		return
 	assert_eq(GameSession.state, GameSession.State.PLAYING, "前置：对局进行中")
@@ -204,6 +214,28 @@ func _find_btn_by_text(node: Node, want: String) -> Button:
 		return node as Button
 	for c in node.get_children():
 		var r := _find_btn_by_text(c, want)
+		if r != null:
+			return r
+	return null
+
+
+## 深度优先找第一个带指定 meta 的按钮（图标按钮没有文字，只能这样定位）。
+func _find_btn_by_meta(node: Node, key: String) -> Button:
+	if node is Button and (node as Button).has_meta(key):
+		return node as Button
+	for c in node.get_children():
+		var r := _find_btn_by_meta(c, key)
+		if r != null:
+			return r
+	return null
+
+
+## 深度优先找第一个指定类的节点（用于断言「读数组里带图标 / 带 Label」）。
+func _find_first(node: Node, cls: String) -> Node:
+	if node.is_class(cls):
+		return node
+	for c in node.get_children():
+		var r := _find_first(c, cls)
 		if r != null:
 			return r
 	return null

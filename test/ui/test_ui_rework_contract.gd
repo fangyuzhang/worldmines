@@ -123,13 +123,18 @@ func test_hud_two_columns_and_removed_buttons() -> void:
 	assert_false(texts.has("重开"), "HUD 不得再有「重开」（进行中重开已按用户决策删除）")
 	assert_false(texts.has("主菜单"), "HUD 不得再有「主菜单」（主菜单场景已删）")
 	assert_true(texts.has("关卡列表"), "HUD 必须有「关卡列表」")
-	assert_true(texts.has("教程"), "顶栏「教程」不得丢")
-	# 「提示」按钮文本是动态的（充能中显示「提示 N%%」，禁用时置灰）——按前缀判定
-	var has_hint := false
-	for t in texts:
-		if t.begins_with("提示"):
-			has_hint = true
-	assert_true(has_hint, "顶栏「提示」不得丢")
+	# 「教程 / 提示」2026-09-29 起是**图标按钮**（书本 / 灯泡），没有文字可扫，
+	# 改按 meta 定位 —— 与本文件右上角书本/齿轮用例同一套查找方式。
+	var tut := _find_by_meta(hud, "tutorial_btn")
+	assert_not_null(tut, "顶栏「教程」入口不得丢（2026-09-29 起为书本图标按钮）")
+	if tut != null:
+		assert_not_null(tut.icon, "书本图标必须解析成功（SVG 解析失败会静默降级为空图标）")
+		assert_ne(str(tut.tooltip_text), "", "纯图标控件必须有 tooltip（可读名）")
+	var hint := _find_by_meta(hud, "hint_btn")
+	assert_not_null(hint, "顶栏「提示」不得丢（2026-09-29 起为灯泡图标按钮，锚右上角）")
+	if hint != null:
+		assert_not_null(hint.icon, "灯泡图标必须解析成功")
+		assert_ne(str(hint.tooltip_text), "", "纯图标控件必须有 tooltip（可读名）")
 
 
 # ---- ⑤ 侧列与棋盘不重叠（2026-09-28 自查修复，防复发）----

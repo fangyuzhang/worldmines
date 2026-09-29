@@ -19,6 +19,8 @@ extends Control
 
 # 教程覆盖层用 preload 而非 class_name 引用（headless 下新全局类不在 .godot 缓存里，见坑表 #26）
 const TutorialOverlayScript := preload("res://ui/tutorial_overlay.gd")
+# 图标（书本 / 齿轮）走同一个工厂：对局 HUD 的「教程」入口用的是同一本书
+const Icons := preload("res://ui/ui_icons.gd")
 
 # ===== 常量 =====
 # 序列相关的常量统一托管在 LevelSequence（终局页要靠它算「下一关」，两处必须同源）。
@@ -47,7 +49,11 @@ const MOCK_CLEARED := 1         # 模拟存档：首次进入预置已通关数�
 const SCROLL_THRESHOLD := 2.0   # 滚轮累积阈值（factor 单位）
 const ANIM := 0.22              # 统一过渡时长（0.2~0.25s）
 const POPUP_SIZE := Vector2(1040, 640)
-const TILE := Vector2(116, 84)
+## 关卡方块的**最小**尺寸（实际宽由 GridContainer 均分拉伸，见 _make_tile）。
+## 116 → 88（2026-09-29）：难度列 + 分页圆点 + 内边距把框内可用宽压到 ~510px，
+## 5 列 × 116 + 4 × 14 缝 = 636 必然把第 5 列顶出框外被 clip 裁掉（截图实证：
+## 第 5 颗方块只剩半颗）。88 时最小总宽 496 ≤ 510，剩余宽度由 EXPAND_FILL 均分。
+const TILE := Vector2(88, 84)
 ## 卡片 / 按钮的 hover 放大系数（唯一来源）。
 ## 2026-09-25 统一：此前同一页混用 1.03 / 1.04 / 1.05 三档（同一种「悬停」在不同控件上
 ## 反馈强度不同，属于交互不一致）。取原众数 1.04。
@@ -150,6 +156,7 @@ func _ready() -> void:
 	# R4：昂贵重建只跟「末步收口」信号（一次切换只跑一次，取代原先自己实现的 300ms 去抖）
 	ThemeManager.theme_settled.connect(_on_theme_settled)
 	_tab = _tab_memory
+	_measure_card_metrics()   # 卡片高度按字体实算，必须在建页之前（页内容 = 卡片的派生）
 	_refresh_modes()      # 变体表必须在建页之前生成：页内容 = MODES 的派生
 	_build_ui()
 	_consume_pending_focus()
@@ -475,12 +482,34 @@ func _build_single_page() -> Control:
 ## 300+ px，每行只排得下 3 张、第 16 张被挤出可视区（实测踩过）。
 ## 子 Label 走 autowrap，宽度则由 custom_minimum_size 唯一决定。
 const CARD_W := 272
-const CARD_H := 104
+## 描述区的行数预算：三处卡片构建器共用。
+const DESC_LINES := 3
+
+## 卡片高度：**按当前字体实算**，不再写死 104。
+## 为什么：文源圆体的行高比引擎默认大不少，104 只装得下「标题 + 2 行半」——
+## 3 行长描述会把末行顶出卡片底边、且压到进度条上（2026-09-29 截图实测，
+## 溢出 ~25px）。高度 = 上留白 8 + 标题 1 行 + 间距 4 + 描述 3 行 + 下留白 15
+##（进度条画在 size.y-7，与描述区隔着留白不会重叠）。页面在 ScrollContainer 里，
+## 变高由纵向滚动吸收，不会撑破布局。
+var _card_h := 104.0
+var _desc_h := 57.0
+
+## 用 UiFonts 的**真实字体**量行高（get_height 已含 fallback 链的最高字形，
+## 混入「–」「…」等回退字形也不会再让某一行悄悄变高顶出卡片）。
+func _measure_card_metrics() -> void:
+	var f := UiFonts.ui()
+	var title_h := 22.0
+	var line_h := 19.0
+	if f != null:
+		title_h = f.get_height(16)   # 三处标题字号 15/16/15，取最大
+		line_h = f.get_height(13)
+	_desc_h = ceilf(line_h * float(DESC_LINES))
+	_card_h = ceilf(8.0 + title_h + 4.0 + _desc_h + 15.0)
 
 
 func _make_card(mode_idx: int, m: Dictionary) -> Button:
 	var btn := Button.new()
-	btn.custom_minimum_size = Vector2(CARD_W, CARD_H)
+	btn.custom_minimum_size = Vector2(CARD_W, _card_h)
 	btn.focus_mode = Control.FOCUS_ALL
 	btn.tooltip_text = _card_tooltip(m)
 	btn.set_meta("card_btn", true)
@@ -511,8 +540,10 @@ func _make_card(mode_idx: int, m: Dictionary) -> Button:
 	desc.add_theme_color_override("font_color", ThemeManager.text_secondary())
 	desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART   # 中文断行按字，标点不落行首
-	desc.max_lines_visible = 3
+	desc.max_lines_visible = DESC_LINES
 	desc.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	desc.custom_minimum_size = Vector2(0, _desc_h)   # 显式钳到 3 行预算（见 _measure_card_metrics）
+	desc.clip_contents = true                        # 兜底：就算再溢出也裁在卡内，不许画到底板外
 	desc.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	desc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(desc)
@@ -1286,7 +1317,7 @@ func _make_tier_header(tier: String, count: int) -> Control:
 ## 第一级卡片：变体名 + 覆盖（「3 / 4」= 已通关 / 该变体的异形棋盘数）。
 func _make_variant_card(v: Dictionary) -> Button:
 	var btn := Button.new()
-	btn.custom_minimum_size = Vector2(CARD_W, CARD_H)
+	btn.custom_minimum_size = Vector2(CARD_W, _card_h)
 	btn.focus_mode = Control.FOCUS_ALL
 	btn.set_meta("card_btn", true)
 	btn.set_meta("variant_id", str(v["id"]))       # 测试 / 调试可据此定位变体
@@ -1321,8 +1352,10 @@ func _make_variant_card(v: Dictionary) -> Button:
 	desc.add_theme_color_override("font_color", ThemeManager.text_secondary())
 	desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	desc.max_lines_visible = 3
+	desc.max_lines_visible = DESC_LINES
 	desc.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	desc.custom_minimum_size = Vector2(0, _desc_h)   # 显式钳到 3 行预算（见 _measure_card_metrics）
+	desc.clip_contents = true                        # 兜底：就算再溢出也裁在卡内，不许画到底板外
 	desc.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	desc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(desc)
@@ -1379,40 +1412,24 @@ func _style_icon_button(b: Button, tex: Texture2D = null) -> void:
 
 ## 内联 SVG 字符串 → 纹理。失败返回 null（图标缺失不影响按钮可点性，只少个图案）。
 ## 为什么内联：项目不引入外部图标资源（同 ui/drawing_toolbar.gd 的先例）。
+##
+## 【2026-09-29】实现搬到 `ui/ui_icons.gd`：同一个「书」现在两处要用
+## （本页右上角的规则图鉴、对局 HUD 的教程入口），造型是迭代两轮才定下的，
+## 抄第二份必然漂移。这里保留同名薄壳，调用点与语义都没变。
 func _svg_texture(svg: String) -> Texture2D:
-	var img := Image.new()
-	if img.load_svg_from_string(svg, 1.0) != OK or img.is_empty():
-		return null
-	return ImageTexture.create_from_image(img)
+	return Icons.texture(svg)
 
 
 ## 齿轮（设置）：evenodd 圆环 + 4 直齿 + 4 斜齿，32×32 视图框。
-##
-## 2026-09-29 造型对齐 CozyStyle：CozySudoku 的齿轮是**厚环 + 圆头短齿**的胖齿轮，
-## 缩到 40×40 按钮上（≈22px）依然认得出是齿轮。旧版齿宽 4、环厚 5 在 22px 下齿会细成
-## 一排毛刺。现取 环厚 5.6（外 9.5 / 孔 3.9）+ 齿 5.4×6.6 / rx 1.8。
-##
-## ⚠️ 齿必须**压进环里** 1.3px（齿根圆心距离 = 9.5 + 3.3 − 1.3 = 11.5）。
-## 旧版齿根正好停在环外沿（y=7 == 16−9），抗锯齿下一圈会有肉眼可见的**接缝**。
+## 详细造型依据（厚环 / 圆头短齿 / 齿根必须压进环里 1.3px）见 ui/ui_icons.gd::gear()。
 func _svg_gear() -> Texture2D:
-	return _svg_texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><g fill=\"#FFFFFF\"><path fill-rule=\"evenodd\" d=\"M16 6.5a9.5 9.5 0 1 1 0 19 9.5 9.5 0 0 1 0-19zm0 5.6a3.9 3.9 0 1 0 0 7.8 3.9 3.9 0 0 0 0-7.8z\"/><rect x=\"13.3\" y=\"1.2\" width=\"5.4\" height=\"6.6\" rx=\"1.8\"/><rect x=\"13.3\" y=\"24.2\" width=\"5.4\" height=\"6.6\" rx=\"1.8\"/><rect x=\"1.2\" y=\"13.3\" width=\"6.6\" height=\"5.4\" rx=\"1.8\"/><rect x=\"24.2\" y=\"13.3\" width=\"6.6\" height=\"5.4\" rx=\"1.8\"/><rect x=\"5.17\" y=\"4.57\" width=\"5.4\" height=\"6.6\" rx=\"1.8\" transform=\"rotate(-45 7.87 7.87)\"/><rect x=\"21.43\" y=\"4.57\" width=\"5.4\" height=\"6.6\" rx=\"1.8\" transform=\"rotate(45 24.13 7.87)\"/><rect x=\"5.17\" y=\"20.83\" width=\"5.4\" height=\"6.6\" rx=\"1.8\" transform=\"rotate(45 7.87 24.13)\"/><rect x=\"21.43\" y=\"20.83\" width=\"5.4\" height=\"6.6\" rx=\"1.8\" transform=\"rotate(-45 24.13 24.13)\"/></g></svg>")
+	return Icons.gear()
 
 
 ## 书本（规则图鉴）：**展开的书**——上下各向书脊收腰的单片剪影，32×32 视图框。
-##
-## 2026-09-29 重画，两次迭代：
-##   ① 旧版两页是**贴合**的（左页画到 x=16、右页从 x=16 起，只在上下沿留了个 2px 的弧口），
-##      缩到 22px 时弧口被抗锯齿糊掉 ⇒ 整个图标退化成**一块深色圆角方块**
-##      （放大截图确认：与齿轮并排时就是"方块 + 齿轮"）。
-##   ② 改成"两片留 3px 中缝的独立圆角矩形"后又踩一坑：22px 下读作 **⏸ 暂停**——
-##      两片等高、等宽、竖直平行的方块，与播放器暂停图标是同一个形状。
-##
-## 终版用**单片剪影**：封面两端 (2.8,2.6)/(29.2,2.6) 比书脊 (16,6.6)/(16,29.4) 高，
-## 上下各向中间收 4px 的腰 ⇒ 一眼是"摊开的书"，不可能与暂停混淆；
-## 且只有一条轮廓，小尺寸下没有会被糊掉的内缝。上下对称（y 2.6..29.4，中心 16）——
-## 图标本身偏心的话，正方形按钮里摆正也救不回来。
+## 为什么是单片剪影、为什么不能是"两片"（会被读成 ⏸ 暂停）见 ui/ui_icons.gd::book()。
 func _svg_book() -> Texture2D:
-	return _svg_texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><path fill=\"#FFFFFF\" d=\"M16 6.6 L2.8 2.6 V26.2 L16 29.4 L29.2 26.2 V2.6 Z\"/></svg>")
+	return Icons.book()
 
 
 # ============ 未完成对局提示（2026-09-28 从 main_menu 搬迁） ============
@@ -1530,7 +1547,7 @@ func _fill_shape_popup_col(col: VBoxContainer, vid: String) -> void:
 
 func _make_shape_card(info: Dictionary) -> Button:
 	var btn := Button.new()
-	btn.custom_minimum_size = Vector2(CARD_W, CARD_H)
+	btn.custom_minimum_size = Vector2(CARD_W, _card_h)
 	btn.focus_mode = Control.FOCUS_ALL
 	btn.set_meta("card_btn", true)
 	btn.set_meta("shape_path", str(info["path"]))   # 测试 / 调试可据此定位关卡
@@ -1567,8 +1584,10 @@ func _make_shape_card(info: Dictionary) -> Button:
 	desc.add_theme_color_override("font_color", ThemeManager.text_secondary())
 	desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART   # 中文断行按字，标点不落行首
-	desc.max_lines_visible = 3
+	desc.max_lines_visible = DESC_LINES
 	desc.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	desc.custom_minimum_size = Vector2(0, _desc_h)   # 显式钳到 3 行预算（见 _measure_card_metrics）
+	desc.clip_contents = true                        # 兜底：就算再溢出也裁在卡内，不许画到底板外
 	desc.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	desc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(desc)
@@ -1709,7 +1728,7 @@ func _build_popup_shell(title: String, tutorial_id: String) -> Control:
 	add_child(_overlay)
 
 	var shade := ColorRect.new()
-	shade.color = Color(0, 0, 0, 0.55)
+	shade.color = Color(0, 0, 0, 0.45)
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	shade.mouse_filter = Control.MOUSE_FILTER_STOP
 	shade.gui_input.connect(func(ev: InputEvent):
@@ -1725,6 +1744,10 @@ func _build_popup_shell(title: String, tutorial_id: String) -> Control:
 		minf(POPUP_SIZE.x, vp_size.x * 0.92),
 		minf(POPUP_SIZE.y, vp_size.y * 0.92))
 	_popup = PanelContainer.new()
+	# ★ 弹窗必须有**实体面板底**（meta 供 _apply_popup_theme 刷样式）：原先没写 panel
+	# 样式盒 ⇒ 用引擎默认半透明深灰（α≈0.6），粉彩页面整片透过来，弹窗看起来像
+	# 「一块脏玻璃」（2026-09-29 截图实证：页面卡片、标题、卡片文字全部透出）。
+	_popup.set_meta("popup_panel", true)
 	_popup.custom_minimum_size = psize
 	_popup.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	_popup.position = -psize * 0.5
@@ -1735,12 +1758,19 @@ func _build_popup_shell(title: String, tutorial_id: String) -> Control:
 	root.add_theme_constant_override("separation", 0)
 	_popup.add_child(root)
 
-	# 标题栏
+	# 标题栏。⚠️ 内边距必须用 MarginContainer 承载：HBoxContainer 根本没有
+	# "margin_left/right" 这两个主题常量，原先直接写在 HBox 上是**静默 no-op** ——
+	# 标题顶着面板左缘、按钮顶着右缘（2026-09-29 截图实证）。
+	var head_wrap := MarginContainer.new()
+	head_wrap.add_theme_constant_override("margin_left", 22)
+	head_wrap.add_theme_constant_override("margin_right", 14)
+	head_wrap.add_theme_constant_override("margin_top", 10)
+	head_wrap.add_theme_constant_override("margin_bottom", 10)
+	root.add_child(head_wrap)
 	var head := HBoxContainer.new()
-	head.custom_minimum_size = Vector2(0, 58)
-	head.add_theme_constant_override("margin_left", 22)
-	head.add_theme_constant_override("margin_right", 18)
-	root.add_child(head)
+	head.custom_minimum_size = Vector2(0, 40)
+	head.add_theme_constant_override("separation", 10)
+	head_wrap.add_child(head)
 
 	_title_label = Label.new()
 	_title_label.text = title
@@ -1764,22 +1794,39 @@ func _build_popup_shell(title: String, tutorial_id: String) -> Control:
 		TutorialOverlayScript.show_for(self, tutorial_id))
 	head.add_child(tut)
 
+	# ✕ 用**图标**而不是「✕」字符：字符叉的笔画粗细 / 大小 / 基线跟字体走，
+	# 与同一标题栏的体系放在一起突兀（2026-09-29 用户反馈）。换成与齿轮 / 书本
+	# 同一套「内联 SVG 图标 + icon 色主题项」后，粗细、颜色、悬停着色自动一致。
+	# meta popup_close 供测试定位（原实现靠 text == "✕" 扫描，图标化后必须改 meta）。
 	var close := Button.new()
-	close.text = "✕"
+	close.tooltip_text = "关闭（ESC）"
 	close.focus_mode = Control.FOCUS_ALL
 	close.custom_minimum_size = Vector2(40, 40)
-	close.set_meta("std_btn", true)
+	close.set_meta("icon_btn", true)
+	close.set_meta("popup_close", true)
 	close.pressed.connect(_close_popup)
 	head.add_child(close)
+	_style_icon_button(close, Icons.close())
 
-	# 内容区（各弹窗自行填充；模式弹窗是「左棋盘框 + 右面板」，异形弹窗是可滚动的棋盘列表）
+	# 标题栏与内容区之间的一条细分隔线（颜色随主题刷新，meta 供 _apply_popup_theme 用）
+	var sep := ColorRect.new()
+	sep.custom_minimum_size = Vector2(0, 1)
+	sep.color = ThemeManager.grid_line()
+	sep.set_meta("popup_sep", true)
+	root.add_child(sep)
+
+	# 内容区（各弹窗自行填充；模式弹窗是「左棋盘框 + 右面板」，异形弹窗是可滚动的棋盘列表）。
+	# 外边距同理：margin_* 常量写在 HBoxContainer 上是 no-op，必须 MarginContainer 承载。
+	var body_wrap := MarginContainer.new()
+	body_wrap.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body_wrap.add_theme_constant_override("margin_left", 18)
+	body_wrap.add_theme_constant_override("margin_right", 18)
+	body_wrap.add_theme_constant_override("margin_top", 14)
+	body_wrap.add_theme_constant_override("margin_bottom", 16)
+	root.add_child(body_wrap)
 	var body := HBoxContainer.new()
-	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation", 18)
-	body.add_theme_constant_override("margin_left", 18)
-	body.add_theme_constant_override("margin_right", 18)
-	body.add_theme_constant_override("margin_bottom", 18)
-	root.add_child(body)
+	body.add_theme_constant_override("separation", 16)
+	body_wrap.add_child(body)
 	_popup_body = body
 	return body
 
@@ -1834,11 +1881,10 @@ func _build_left(parent: Node) -> void:
 	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	# 显式写 FILL（= 默认值）：右列要撑满行高，让内部的 grid_row 拿到剩余高度；
 	# 顺带把"这里**故意不改**成 SHRINK_CENTER"这件事写成代码，免得后人顺手统一。
+	# ⚠️ 内边距由外层 _frame 的 content_margin（10px）承担 —— margin_* 主题常量
+	# 写在 VBoxContainer 上是**静默 no-op**（与 HBox 同类坑，2026-09-29 清理）。
 	vbox.size_flags_vertical = Control.SIZE_FILL
 	vbox.add_theme_constant_override("separation", 12)
-	vbox.add_theme_constant_override("margin_right", 16)
-	vbox.add_theme_constant_override("margin_top", 14)
-	vbox.add_theme_constant_override("margin_bottom", 16)
 	row.add_child(vbox)
 
 	# 尺寸选择栏
@@ -1874,6 +1920,12 @@ func _build_left(parent: Node) -> void:
 	_grid.add_theme_constant_override("h_separation", 14)
 	_grid.add_theme_constant_override("v_separation", 14)
 	_grid.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# 四周留 4~8px 内衬：方块悬停 scale 1.04 会长出 ~2px，贴边方块悬停放大会被
+	# _grid_wrap 的 clip_contents 裁掉一圈（反馈效果缺角 = 「反馈超出边界」的一种）。
+	_grid.offset_left = 4
+	_grid.offset_top = 4
+	_grid.offset_right = -8
+	_grid.offset_bottom = -4
 	_grid_wrap.add_child(_grid)
 
 	_dots_box = VBoxContainer.new()
@@ -1917,7 +1969,11 @@ func _refresh_tier_buttons() -> void:
 	for i in _tier_btns.size():
 		var t: String = str(LevelLibrary.TIER_ORDER[i])
 		var n := int(c.get(t, 0))
-		_tier_btns[i].text = "%s\n%d 关" % [_tier_text(t), n]
+		# 档名用**短标签**（普通 / 困难 / 噩梦）+ 关数两行：tier_text 的窗口后缀
+		# 「普通（2–3 条线索）」塞进 120px 竖列会折成三行、括号拦腰断开
+		#（2026-09-29 用户反馈「这几个字有些突兀」）；完整窗口说明挪到 tooltip。
+		_tier_btns[i].text = "%s\n%d 关" % [Difficulty.tier_short(t), n]
+		_tier_btns[i].tooltip_text = _tier_text(t)
 		_tier_btns[i].disabled = n <= 0
 		_style_choice(_tier_btns[i], t == _tier)
 
@@ -1937,6 +1993,9 @@ func _on_tier_selected(t: String) -> void:
 func _build_right(parent: Node) -> void:
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(280, 0)
+	# meta 供 _apply_popup_theme 刷样式：原先没写 panel 样式盒，与弹窗主体一样
+	# 露着引擎默认半透明深灰底（统计文字像浮在玻璃上）。
+	panel.set_meta("side_panel", true)
 	parent.add_child(panel)
 
 	var vbox := VBoxContainer.new()
@@ -2102,6 +2161,8 @@ func _rebuild_grid() -> void:
 	for _k in range(PAGE_SIZE - shown):
 		var ph := Control.new()
 		ph.custom_minimum_size = TILE
+		# 占位块与真方块同宽（EXPAND_FILL 均分），否则空关页的真方块会被撑宽
+		ph.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_grid.add_child(ph)
 	# 内容淡入
 	_grid_wrap.modulate.a = 0.0
@@ -2112,6 +2173,9 @@ func _rebuild_grid() -> void:
 func _make_tile(idx: int) -> Button:
 	var btn := Button.new()
 	btn.custom_minimum_size = TILE
+	# 横向均分拉伸：网格锚定 FULL_RECT 后总宽随弹窗走，方块等分填满行宽——
+	# 窄框里不再溢出被裁，宽框里也不挤在左边留一大条空。
+	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	btn.focus_mode = Control.FOCUS_ALL
 	var unlocked := _is_unlocked(idx)
 	var cleared := _is_cleared(_level_key(idx))
@@ -2167,8 +2231,11 @@ func _refresh_stat() -> void:
 		if _is_cleared(_level_key(i)):
 			cleared += 1
 	if _lib_mode:
-		_stat_label.text = "已通关 %d / %d\n（%s 档）" % [cleared, _set_count(),
-				_tier_text(_tier)]
+		# 短档名 + tooltip 全称：tier_text 直接嵌进括号会出现
+		# 「（普通（2–3 条线索） 档）」的嵌套括号（2026-09-29 截图实证）。
+		_stat_label.text = "已通关 %d / %d\n难度：%s" % [cleared, _set_count(),
+				Difficulty.tier_short(_tier)]
+		_stat_label.tooltip_text = _tier_text(_tier)
 	else:
 		_stat_label.text = "已通关 %d / %d" % [cleared, _set_count()]
 	# 按钮：选中最新解锁关卡 → 继续游戏；手选其他 → 开始游戏；未开放变体 → 禁用
@@ -2596,20 +2663,25 @@ func _bounce(dir: float) -> void:
 # ==================== 样式 / 主题 ====================
 
 ## 棋盘框：选中尺寸后整体蓝色高亮 + 微弱发光。
+## 底色 = 页面底色再压一档（弹窗主体的面板底就是 bg()，见 _apply_popup_theme）：
+## 框内是「凹陷下去的棋盘区」，比亮 card 的方块 / 难度按钮低一档，层次靠明度差。
+## 原先 card().darkened(0.25) 是给引擎默认深灰面板配的，换成实体面板后发灰。
 func _style_frame() -> void:
 	if _frame == null:
 		return
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = ThemeManager.card().darkened(0.25)
+	sb.bg_color = ThemeManager.bg().darkened(0.08)
 	sb.set_corner_radius_all(10)
 	sb.set_border_width_all(2)
 	sb.border_color = ThemeManager.accent()
 	sb.shadow_color = Color(ThemeManager.accent().r, ThemeManager.accent().g, ThemeManager.accent().b, 0.35)
 	sb.shadow_size = 14
-	sb.content_margin_left = 4
-	sb.content_margin_right = 4
-	sb.content_margin_top = 4
-	sb.content_margin_bottom = 4
+	# 10px 内衬（原 4）：尺寸栏 / 网格 / 难度列与框缘的呼吸位。4px 时尺寸栏几乎
+	# 贴着框顶（截图实证），且方块悬停 scale 1.04 的放大也会顶到框边。
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
+	sb.content_margin_top = 10
+	sb.content_margin_bottom = 10
 	_frame.add_theme_stylebox_override("panel", sb)
 
 
@@ -2716,15 +2788,44 @@ func _apply_theme() -> void:
 	queue_redraw()
 
 
-## 弹窗内主题：Label 直接刷色；Button 只刷新「标准按钮」（标记 std_btn）。
+## 弹窗内主题：Label 直接刷色（带 secondary meta 的用次级色）；Button 按 meta 分流
+## （std_btn = 文字按钮走 style_button，icon_btn = 图标按钮走 _style_icon_button）；
+## PanelContainer 按 meta 刷**实体面板底**（popup_panel = 弹窗主体 / side_panel = 右侧统计列）
+## —— 原先这两块没写样式盒，露着引擎默认半透明深灰，粉彩页面整片透过来。
 ## 关卡方块 / 尺寸选项 / 分页圆点是自定义样式，由 _refresh_popup 重建；
 ## 若在此遍历覆盖，会把它们打回默认外观（选中高亮、圆点全失效）。
 func _apply_popup_theme(root: Node) -> void:
 	for c in root.get_children():
 		if c is Label:
-			c.add_theme_color_override("font_color", ThemeManager.text())
-		elif c is Button and c.has_meta("std_btn") and bool(c.get_meta("std_btn")):
-			UiTheme.style_button(c)
+			var lb := c as Label
+			lb.add_theme_color_override("font_color",
+				ThemeManager.text_secondary() if lb.has_meta("secondary") else ThemeManager.text())
+		elif c is Button:
+			if c.has_meta("icon_btn"):
+				_style_icon_button(c)
+			elif c.has_meta("std_btn") and bool(c.get_meta("std_btn")):
+				UiTheme.style_button(c)
+		elif c is PanelContainer:
+			var pc := c as PanelContainer
+			if pc.has_meta("popup_panel"):
+				var sb := StyleBoxFlat.new()
+				sb.bg_color = ThemeManager.bg()
+				sb.set_corner_radius_all(16)
+				sb.set_border_width_all(1)
+				sb.border_color = ThemeManager.grid_line()
+				sb.shadow_color = ThemeManager.shadow(ThemeManager.bg(), ThemeManager.SHADOW_DROP_HOVER)
+				sb.shadow_size = 18
+				sb.shadow_offset = Vector2(0, 6)
+				pc.add_theme_stylebox_override("panel", sb)
+			elif pc.has_meta("side_panel"):
+				var sb2 := StyleBoxFlat.new()
+				sb2.bg_color = ThemeManager.card()
+				sb2.set_corner_radius_all(12)
+				sb2.set_border_width_all(1)
+				sb2.border_color = ThemeManager.grid_line()
+				pc.add_theme_stylebox_override("panel", sb2)
+		elif c is ColorRect and c.has_meta("popup_sep"):
+			(c as ColorRect).color = ThemeManager.grid_line()
 		if c.get_child_count() > 0 and not (c is Button):
 			_apply_popup_theme(c)
 

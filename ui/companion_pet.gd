@@ -43,7 +43,11 @@ const GAZE_SPEED := 3.2
 ## 是 (眼白半长 59 − 虹膜半长 33) ≈ 26 ⇒ 只用掉一半，眼球不会贴边。
 const GAZE_TX := 88.0
 ## 视线写进 Chest 的最大旋转（度）。Chest 是 Head 的祖先 ⇒ 整只头跟着偏，形成"转头"。
-const GAZE_CHEST_DEG := 3.4
+## 2026-09-29 从 3.4 提到 7.0：192px 停靠下 3.4° 的头转只有 ~2.6px，玩家读不出"在看鼠标"。
+const GAZE_CHEST_DEG := 7.0
+## 视线写进 Head 的最大旋转（度）。与 Chest 叠加后满偏 12°：头部明显朝鼠标方向偏——
+## 这是精灵占位（2026-09-29 起，眼睛画死在贴图里不能滑动）下唯一可读的"看鼠标"表达。
+const GAZE_HEAD_DEG := 5.0
 
 ## 外部事件触发的点击反应冷却（ms）：连点不会把 IdleClick 反复打断成抽搐。
 const CLICK_COOLDOWN_MS := 900
@@ -164,6 +168,56 @@ const PARTS := {
 ## 描边宽度（px，按停靠尺寸等比缩放）。
 const INK_PX := 2.0
 
+# ==================== 精灵占位（2026-09-29，水彩分层素材） ====================
+#
+# 用户指令：把参考项目重绘的动物伙伴素材（虎斑小奶猫，与原作同风格水的合法重绘图，
+# 见 E:\STEAM\...\CozySudoku_动物伙伴素材包\使用说明.md）挂进本项目当占位形象，
+# 替换程序化图元。图元路径**整段保留**作为素材缺失时的回退（headless 沙盒 / 误删资产）。
+#
+# 皮肤方式 = **delta 变换**：每个部件记录一份"rest 摆位"（rig 空间的完整 Transform2D），
+# 每帧用 骨骼当前世界变换 × 骨骼 rest 世界变换⁻¹ 提取**纯运动增量**，乘在摆位上——
+# 部件跟着骨骼动（呼吸 / 摆尾 / 转头 / 视线），而摆位本身可以自由校准，不受骨骼朝向约束
+# （Body 是 r=90 的骨，直接用骨骼坐标系摆贴图会把图立起来，delta 法绕开这一整类坑）。
+#
+# 锚点口径（texture px，素材已缩半 ⇒ 1 tpx = 2 art px）：
+#   body  领口 (416, 0)   → rig (0, 700)      头底与领口重叠 ~54 rig，头压住身（后画）
+#   head  颌底 (179, 310) → rig (0, 770)      头顶 ≈1173，与骨架 rest 头区 766..1166 对齐
+#   tail  尾根 (59, 502)  → rig Tail1 rest 原点，art 上方(-y) 旋转到 rig +x
+#   lidL  画眼 L (180, 342)→ tpx (90, 171)    lidR (447, 337) → tpx (223, 168)
+#   muzzle 鼻 (161,154)   → head tpx (76, 55) 对齐 head 画好的鼻 (314, 265)
+const SPRITE_DEFS := {
+	"tail": {"tex": "res://assets/pet/pet_tail.png", "bone": "Tail1",
+		"pos": Vector2(194.8679, 83.48084), "rot_deg": -90.0, "s": 1.24,
+		"anchor": Vector2(59, 502)},
+	"body": {"tex": "res://assets/pet/pet_body.png", "bone": "Chest",
+		"pos": Vector2(0, 700), "rot_deg": 0.0, "s": 0.80,
+		"anchor": Vector2(416, 0)},
+	"head": {"tex": "res://assets/pet/pet_head.png", "bone": "Head",
+		"pos": Vector2(0, 724), "rot_deg": 0.0, "s": 1.30,
+		"anchor": Vector2(179, 310)},
+}
+## 眨眼盖 / 吐舌：画在 **head 贴图坐标系**里（跟头一起动），不直接进 rig。
+##   center=true → pos 是贴图**中心**（绕中心旋转，适合眼睑这种要贴眼轴转的）；
+##   center=false → pos 是贴图左上角（muzzle 整块口鼻，直接摆）。
+## s = 在 head 贴图坐标系里的额外缩放——muzzle 没缩过半（382px 原尺寸），head 缩了半，
+## 必须补 0.5 才对得上（第一版漏了，吐舌块大出一倍糊住半张脸，2026-09-29 探针实拍抓到）。
+## lid 旋转 ±12°：虎的眼轴是外高内低的斜线，水平贴会成"推上去的眼镜"（探针 a2 实拍）。
+const HEAD_OVERLAYS := {
+	"lid_l": {"tex": "res://assets/pet/pet_lid_l.png", "pos": Vector2(80.0, 171.0),
+		"s": 1.0, "rot_deg": 0.0, "center": true},
+	"lid_r": {"tex": "res://assets/pet/pet_lid_r.png", "pos": Vector2(248.0, 169.0),
+		"s": 1.0, "rot_deg": 0.0, "center": true},
+	"muzzle": {"tex": "res://assets/pet/pet_muzzle.png", "pos": Vector2(78.7, 163.4),
+		"s": 0.5, "rot_deg": 0.0, "center": false},
+}
+
+## 加载好的纹理（key → Texture2D；加载失败不进表 ⇒ 走图元回退）。
+var _sprite_tex := {}
+## 骨骼 rest 世界变换（_ready 里清零增量后 compose 一次取样；delta = now × rest⁻¹）。
+var _world_rest: Array[Transform2D] = []
+## 精灵模式开关：tail/body/head 三张核心贴图齐了才算。
+var _sprite_mode := false
+
 # ==================== 骨骼运行时 ====================
 
 var _n := 0
@@ -207,6 +261,8 @@ var _gaze_target := 0.0
 ## 在 _build_skeleton() 里按 RIG.GAZE_ROT_BONES / GAZE_TX_BONES 解析一次 —— 见 _apply_gaze。
 var _gaze_rot_i := -1
 var _gaze_tx_i := -1
+## 头部旋转源（视线"转头"的落点，GAZE_HEAD_BONES 候选表解析；无则该支路跳过）。
+var _gaze_head_i := -1
 ## 鼠标位置（控件本地坐标）
 var _pointer := Vector2.ZERO
 
@@ -227,6 +283,7 @@ func _ready() -> void:
 	add_to_group("themed")
 	_build_skeleton()
 	_precompile_anims()
+	_load_sprites()
 	if color_of.is_null():
 		color_of = func(k: String) -> Color: return ThemeManager.pet_c(k)
 	if rng_seed < 0:
@@ -236,6 +293,49 @@ func _ready() -> void:
 	_startup_tracks()
 	ThemeManager.theme_changed.connect(queue_redraw)
 	set_process(true)
+
+
+## 加载水彩精灵。三张核心贴图（tail/body/head）齐 → 精灵模式；缺任何一张 →
+## 整体回退程序化图元（宁可回到旧观感，也不画一只缺胳膊少腿的拼贴猫）。
+## 眨眼盖 / 吐舌是增强件：缺失只少表情，不影响模式判定。
+## 为什么用 Image.load_from_file 兜底：新拷进项目的 PNG 还没生成 .import 时
+## load() 拿不到资源（直接跑场景的工具链不触发导入），运行时直读文件最稳。
+func _load_sprites() -> void:
+	var core := 0
+	for key in SPRITE_DEFS:
+		var tex := _load_tex(str(SPRITE_DEFS[key]["tex"]))
+		if tex != null:
+			_sprite_tex[key] = tex
+			core += 1
+	_sprite_mode = core == SPRITE_DEFS.size()
+	for key in HEAD_OVERLAYS:
+		var tex2 := _load_tex(str(HEAD_OVERLAYS[key]["tex"]))
+		if tex2 != null:
+			_sprite_tex[key] = tex2
+	if _sprite_mode:
+		# rest 世界变换：清零增量 compose 一次取样（delta 变换的基准帧）。
+		_world_rest.resize(_n)
+		for i in _n:
+			_off_p[i] = Vector2.ZERO
+			_off_r[i] = 0.0
+			_off_s[i] = Vector2.ONE
+		_compose()
+		for i in _n:
+			_world_rest[i] = _world[i]
+
+
+func _load_tex(path: String) -> Texture2D:
+	# ⚠️ 不许对未导入的 PNG 裸调 load()：引擎会刷 "Method/function failed" 错误，
+	# GUT 的错误监控会把整批不相干的测试判失败（2026-09-29 实测 20 个测试连坐）。
+	# ResourceLoader.exists 对没有 .import 的路径返回 false ⇒ 直接走运行时直读。
+	if ResourceLoader.exists(path, "Texture2D"):
+		var tex := load(path) as Texture2D
+		if tex != null:
+			return tex
+	var f := Image.load_from_file(ProjectSettings.globalize_path(path))
+	if f == null:
+		return null
+	return ImageTexture.create_from_image(f)
 
 
 
@@ -271,6 +371,7 @@ func _build_skeleton() -> void:
 	# 视线链的两根源骨：**按候选表解析一次**（换动物时名字会变，见 _apply_gaze 的说明）
 	_gaze_rot_i = _pick_bone(RIG.GAZE_ROT_BONES)
 	_gaze_tx_i = _pick_bone(RIG.GAZE_TX_BONES)
+	_gaze_head_i = _pick_bone(RIG.GAZE_HEAD_BONES)
 
 
 ## 候选表里第一根**本骨架确实存在**的骨骼下标（都没有 -> -1）。
@@ -464,10 +565,19 @@ func _sample(c: Dictionary, t: float) -> float:
 ## 不报错、不崩溃，只是"眼睛几乎不跟着鼠标动了"（实测 −93%，见 companion_rig.gd 的说明）。
 ## 下标在 _build_skeleton() 里解析一次并缓存；取不到就是 -1，该支路跳过。
 func _apply_gaze() -> void:
+	# ⚠️ 旋转取**负号**：rig 是 y 向上，+θ（逆时针）把头顶推向屏幕**左**——实测与平移
+	# 支路方向相反会互相抵消（开平移支路眼球世界位移反而变小：156 < 198，探针抓到）。
+	# 统一成"鼠标在右 ⇒ 面部右移 + 头顶右倾"的同向组合。
 	if _gaze_rot_i >= 0:
-		_off_r[_gaze_rot_i] += deg_to_rad(_gaze * GAZE_CHEST_DEG)
+		_off_r[_gaze_rot_i] += deg_to_rad(-_gaze * GAZE_CHEST_DEG)
+	if _gaze_head_i >= 0:
+		_off_r[_gaze_head_i] += deg_to_rad(-_gaze * GAZE_HEAD_DEG)
 	if _gaze_tx_i >= 0:
-		_off_p[_gaze_tx_i] += Vector2(_gaze * GAZE_TX, 0.0)
+		# ⚠️ 轴向修正（2026-09-29）：Body 是 r=90 的骨，FaceControl 的**局部 +x 在世界里
+		# 指向 +y**——旧版直接写 (gaze·TX, 0)，鼠标横移时脸只会上下颤，等于没有视线
+		# （companion_rig.gd 613~615 行的实测记录早已指出，但写入端一直没改）。
+		# 局部 −y 才映射到世界 +x ⇒ 写 (0, −gaze·TX)：鼠标在右（gaze>0）脸朝右偏。
+		_off_p[_gaze_tx_i] += Vector2(0.0, -_gaze * GAZE_TX)
 
 
 ## 约束求值：把源骨骼本帧的**局部增量**按 mixX/mixY 加权叠加到目标骨骼上。
@@ -655,10 +765,106 @@ func _draw() -> void:
 	var sc := _screen_xf()
 	var col := {}      # 本帧色缓存：避免每个图元都过一次 Callable
 	_draw_shadow(sc, col)
+	if _sprite_mode:
+		_draw_leaves(sc, col)
+		_draw_sprites(sc)
+	else:
+		for bn in DRAW_ORDER:
+			if not _idx.has(bn) or not PARTS.has(bn):
+				continue
+			_draw_part(sc, int(_idx[bn]), PARTS[bn], col)
+
+
+## 精灵模式下的环境植物：图元叶没有素材对应物，两条路都保留（见 SPRITE_DEFS 注释）。
+func _draw_leaves(sc: Transform2D, col: Dictionary) -> void:
 	for bn in DRAW_ORDER:
-		if not _idx.has(bn) or not PARTS.has(bn):
+		var key := str(bn)
+		if not _idx.has(key) or not PARTS.has(key):
 			continue
-		_draw_part(sc, int(_idx[bn]), PARTS[bn], col)
+		var spec: Dictionary = PARTS[key]
+		if str(spec.get("k", "")) != "leaf":
+			continue
+		_draw_part(sc, int(_idx[key]), spec, col)
+
+
+## 水彩精灵绘制：尾 → 身 → 头（后画压前画，头盖住领口缝），再叠眨眼盖 / 吐舌。
+## 全部走 delta 变换（见 SPRITE_DEFS 注释），动画 / 视线 / 点击反应零改动地驱动贴图。
+func _draw_sprites(sc: Transform2D) -> void:
+	# 点击反应的挤压脉冲：IdleClick 播放期间的 0..1 正弦包络（播完自动回 0）
+	var squash := 0.0
+	var ti5 := RIG.track_index("click")
+	var clicking := ti5 >= 0 and _track_anim[ti5] != ""
+	if clicking:
+		var d := maxf(RIG.anim_duration(_track_anim[ti5]), 0.001)
+		squash = sin(clampf(_track_t[ti5] / d, 0.0, 1.0) * PI)
+	var head_xf := Transform2D()
+	for key in ["tail", "body", "head"]:
+		var def: Dictionary = SPRITE_DEFS[key]
+		var bi := int(_idx[str(def["bone"])])
+		var delta: Transform2D = _world[bi] * _world_rest[bi].affine_inverse()
+		var xf: Transform2D = sc * delta * _sprite_placement(def)
+		if key == "head":
+			head_xf = xf
+		var tex: Texture2D = _sprite_tex[key]
+		draw_set_transform_matrix(xf)
+		if key == "body" and squash > 0.0:
+			# 挤压以**脚底**为轴（pivot = 领口正下方一个身位）：y 压 x 鼓，
+			# 绕领口缩放会让脚离地，观感是"跳起来"而不是"被戳了一下"。
+			var pivot := Vector2(416.0, 868.0)
+			var sxf := Transform2D(0.0, Vector2.ONE, 0.0, pivot) \
+					* Transform2D(0.0, Vector2(1.0 + 0.06 * squash, 1.0 - 0.08 * squash), 0.0, Vector2.ZERO) \
+					* Transform2D(0.0, Vector2.ONE, 0.0, -pivot)
+			draw_set_transform_matrix(xf * sxf)
+		draw_texture_rect(tex, Rect2(Vector2.ZERO, tex.get_size()), false)
+	# 眨眼：eye 轨道在播（Eye1..Eye5 都是眼皮动作）→ 盖上闭眼贴图
+	if _eye_track_playing():
+		for key in ["lid_l", "lid_r"]:
+			if _sprite_tex.has(key):
+				_draw_overlay(head_xf, key)
+	# 吐舌：点击反应期间换上带舌头的口鼻块（素材本意就是"替换 muzzle attachment"）
+	if clicking and _sprite_tex.has("muzzle"):
+		_draw_overlay(head_xf, "muzzle")
+
+
+func _draw_overlay(head_xf: Transform2D, key: String) -> void:
+	var od: Dictionary = HEAD_OVERLAYS[key]
+	var tex: Texture2D = _sprite_tex[key]
+	var s := float(od.get("s", 1.0))
+	var sz := tex.get_size()
+	var m := head_xf
+	if bool(od.get("center", false)):
+		# 中心锚点：贴图中心落在 pos 上，旋转/缩放都绕中心（眼睑要贴着眼轴转）
+		var piv: Vector2 = od["pos"]
+		m = m * Transform2D(0.0, Vector2.ONE, 0.0, piv)
+		if absf(float(od.get("rot_deg", 0.0))) > 0.001:
+			m = m * Transform2D(deg_to_rad(float(od["rot_deg"])), Vector2.ONE, 0.0, Vector2.ZERO)
+		if not is_equal_approx(s, 1.0):
+			m = m * Transform2D(0.0, Vector2(s, s), 0.0, Vector2.ZERO)
+		m = m * Transform2D(0.0, Vector2.ONE, 0.0, -sz * 0.5)
+	else:
+		m = m * Transform2D(0.0, Vector2.ONE, 0.0, od["pos"])
+		if absf(float(od.get("rot_deg", 0.0))) > 0.001:
+			m = m * Transform2D(deg_to_rad(float(od["rot_deg"])), Vector2.ONE, 0.0, Vector2.ZERO)
+		if not is_equal_approx(s, 1.0):
+			m = m * Transform2D(0.0, Vector2(s, s), 0.0, Vector2.ZERO)
+	draw_set_transform_matrix(m)
+	draw_texture_rect(tex, Rect2(Vector2.ZERO, sz), false)
+
+
+func _eye_track_playing() -> bool:
+	var ti := RIG.track_index("eye")
+	return ti >= 0 and _track_anim[ti] != ""
+
+
+## 部件摆位：art 贴图像素空间（y 向下）→ rig 空间（y 向上）。
+## rig = T(pos) · R(rot) · S(s, −s) · T(−anchor)：先平到锚点，翻转 y，转到位，落到 pos。
+func _sprite_placement(def: Dictionary) -> Transform2D:
+	var s := float(def["s"])
+	var flip := Transform2D(Vector2(s, 0.0), Vector2(0.0, -s), Vector2.ZERO)
+	var rot := Transform2D(deg_to_rad(float(def["rot_deg"])), Vector2.ONE, 0.0, Vector2.ZERO)
+	var anch: Vector2 = def["anchor"]
+	return Transform2D(0.0, Vector2.ONE, 0.0, def["pos"]) * rot * flip \
+			* Transform2D(0.0, Vector2.ONE, 0.0, -anch)
 
 
 ## 停靠区**设计**尺寸：宽 DESIGN_W、高由骨架 bbox 的长宽比决定。
