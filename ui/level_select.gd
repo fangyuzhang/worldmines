@@ -1073,13 +1073,18 @@ func _mod_empty_state() -> Control:
 	sb.border_color = ThemeManager.grid_line()
 	panel.add_theme_stylebox_override("panel", sb)
 
+	# margin_* 写在 VBox 上是静默 no-op（同 _build_right）：内边距用 MarginContainer 承载，
+	# 否则「还没有加载任何 Mod」整块文字顶着面板边缘。
+	var pad := MarginContainer.new()
+	pad.add_theme_constant_override("margin_left", 20)
+	pad.add_theme_constant_override("margin_right", 20)
+	pad.add_theme_constant_override("margin_top", 22)
+	pad.add_theme_constant_override("margin_bottom", 22)
+	panel.add_child(pad)
+
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 10)
-	vb.add_theme_constant_override("margin_left", 20)
-	vb.add_theme_constant_override("margin_right", 20)
-	vb.add_theme_constant_override("margin_top", 22)
-	vb.add_theme_constant_override("margin_bottom", 22)
-	panel.add_child(vb)
+	pad.add_child(vb)
 
 	var title := Label.new()
 	title.text = "还没有加载任何 Mod"
@@ -1501,10 +1506,12 @@ func _open_shape_popup(vid: String) -> void:
 	body.add_child(scroll)
 	var margin := MarginContainer.new()
 	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	margin.add_theme_constant_override("margin_left", 6)
-	margin.add_theme_constant_override("margin_right", 6)
-	margin.add_theme_constant_override("margin_top", 2)
-	margin.add_theme_constant_override("margin_bottom", 12)
+	# 内衬 ≥ 卡片悬放半增量：CARD_W=272 × scale1.04 → 左右各外扩 ~5.4px，
+	# 原先 6px 是贴线状态（用户口径「类似的按钮和排版都处理下」），放宽到 12px 留足余量。
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_top", 6)
+	margin.add_theme_constant_override("margin_bottom", 14)
 	scroll.add_child(margin)
 	var col := VBoxContainer.new()
 	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1995,13 +2002,19 @@ func _build_right(parent: Node) -> void:
 	panel.set_meta("side_panel", true)
 	parent.add_child(panel)
 
+	# margin_* 主题常量写在 VBoxContainer 上是**静默 no-op**（只属于 MarginContainer，
+	# 与标题栏 head_wrap 同一陷阱）——原先统计文字和按钮全顶着面板边缘
+	# （2026-09-29 截图实证，用户口径「快要突出边界了」）。真内边距必须 MarginContainer 承载。
+	var pad := MarginContainer.new()
+	pad.add_theme_constant_override("margin_left", 18)
+	pad.add_theme_constant_override("margin_right", 18)
+	pad.add_theme_constant_override("margin_top", 18)
+	pad.add_theme_constant_override("margin_bottom", 18)
+	panel.add_child(pad)
+
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 16)
-	vbox.add_theme_constant_override("margin_left", 18)
-	vbox.add_theme_constant_override("margin_right", 18)
-	vbox.add_theme_constant_override("margin_top", 18)
-	vbox.add_theme_constant_override("margin_bottom", 18)
-	panel.add_child(vbox)
+	pad.add_child(vbox)
 
 	var cap := Label.new()
 	cap.text = "通关统计"
@@ -2022,6 +2035,8 @@ func _build_right(parent: Node) -> void:
 	_play_btn.set_meta("std_btn", true)
 	_play_btn.pressed.connect(_on_play)
 	vbox.add_child(_play_btn)
+	# 悬停 scale 1.04 的反馈保留（与全局口径一致）：按钮 ~244px 宽，放大外扩 ~5px，
+	# 现在 pad 四周有 18px 真内边距，反馈完整落在面板内——不再出现「按钮放大顶穿边界」。
 	UiTheme.bind_hover(_play_btn, HOVER_SCALE)
 
 
