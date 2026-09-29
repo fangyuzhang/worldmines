@@ -1937,14 +1937,11 @@ func _build_left(parent: Node) -> void:
 	_build_tier_col()
 
 
-## 难度列：四档竖排（关卡库模式）。每格 = 档名 + 该档关数；无内容的档置灰。
+## 难度列：三档竖排（关卡库模式）。每格 = 档名 + 该档关数；无内容的档置灰。
 ## 整个（变体 × 尺寸）库内无内容 → 整列隐藏，回退「按种子生成 3 关」的老流程。
+## 不放「难度」小标题（2026-09-29 用户口径）：档名本身就是难度（普通/困难/噩梦），
+## 标题与选项排在同一列里读起来像多出第四个选项；每个按钮的 tooltip 里有完整档位说明。
 func _build_tier_col() -> void:
-	var cap := Label.new()
-	cap.text = "难度"
-	cap.add_theme_font_size_override("font_size", 15)
-	cap.set_meta("secondary", true)
-	_tier_col.add_child(cap)
 	for t in LevelLibrary.TIER_ORDER:
 		var b := Button.new()
 		b.focus_mode = Control.FOCUS_ALL
