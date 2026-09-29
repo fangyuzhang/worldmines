@@ -114,6 +114,10 @@ func _build_ui() -> void:
 	var top := HBoxContainer.new()
 	top.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
 	top.offset_top = 12
+	# 左右边距 24（本工程页面基线）：原先只给 offset_top，左端默认 0 ⇒ 标题「模组管理」
+	# 紧贴窗口左边缘（截图里几乎被裁掉），而右端「返回」自带 offset_right = -24。
+	top.offset_left = 24
+	top.offset_right = -24
 	top.add_theme_constant_override("separation", 16)
 	add_child(top)
 
@@ -198,7 +202,12 @@ func _build_ui() -> void:
 
 
 func _rebuild_list() -> void:
+	# remove_child 是**必须**的，不能只 queue_free：queue_free 要到本帧末才真正释放，
+	# 期间旧节点仍是 _list_vbox 的子节点。函数末尾的 _align_list_column 会递归数一遍
+	# 行标签并取最大文字宽，若把上一轮那些已经被标记删除的标签也数进去，
+	# 列宽就会按**旧文案**算出来（例如卸载后还在按「（已加载）」的宽度排）。
 	for c in _list_vbox.get_children():
+		_list_vbox.remove_child(c)
 		c.queue_free()
 
 	# 目标档位选择器插在**列表页头**（列表容器的第一个子节点）：本页没有独立的页头容器
@@ -218,6 +227,11 @@ func _rebuild_list() -> void:
 	ex_lb.text = "示例规则包（四邻和线索 + 左右镜像约束）%s" % ("（已安装）" if ExampleMod.is_installed() else "")
 	ex_lb.custom_minimum_size = Vector2(360, 40)
 	ex_lb.add_theme_font_size_override("font_size", 17)
+	# 垂直居中（2026-09-29）：本页所有「标签 + 按钮」行的 Label 都给了 34/40 的固定框高，
+	# 而 16/17/19px 字的行高只有 24/25/29 —— Label 的 vertical_alignment 默认 TOP，
+	# 文字会被顶在框顶，与同一行右侧按钮的中心错开 5.5~7.5px（只在截图里看得出来）。
+	ex_lb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	ex_lb.set_meta("_row_label", true)
 	ex_row.add_child(ex_lb)
 	var ex_btn := Button.new()
 	ex_btn.text = "安装"
@@ -240,6 +254,8 @@ func _rebuild_list() -> void:
 	demo_lb.text = "代码 Mod 示例（双倍对角规则 x2diag）%s" % ("（已安装）" if ExampleMod.demo_rule_mod_installed() else "")
 	demo_lb.custom_minimum_size = Vector2(360, 40)
 	demo_lb.add_theme_font_size_override("font_size", 17)
+	demo_lb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	demo_lb.set_meta("_row_label", true)
 	demo_row.add_child(demo_lb)
 	var demo_btn := Button.new()
 	demo_btn.text = "安装"
@@ -261,6 +277,7 @@ func _rebuild_list() -> void:
 		empty_lb.text = "未找到可用模组（把规则包放入 user://mods/ 后重进本页）"
 		empty_lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		empty_lb.custom_minimum_size = Vector2(0, 48)
+		empty_lb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		_list_vbox.add_child(empty_lb)
 	else:
 		for m in mods:
@@ -296,7 +313,50 @@ func _rebuild_list() -> void:
 		off_lb.add_theme_font_size_override("font_size", 14)
 		off_lb.set_meta("secondary", true)
 		_list_vbox.add_child(off_lb)
+	# 全部子节点都就位之后再统一顶层列宽（要等最宽的那条在场才量得准）。
+	_align_list_column(_list_vbox)
 	_apply_theme()
+
+
+## 把本页列表**顶层**行标签的宽度统一到最宽的那条（2026-09-29）。
+##
+## 为什么必须量：改前这些行各自写死了互不相同的宽度 ——
+##   · 目标档位 90   · 示例规则包 / 代码 Mod 示例 360   · 模组行 320
+## 于是同一列里控件起始 x 出现 102 / 336 / 372 三种，截图里最直观的是「安装」按钮
+## 比下面的「加载 / 卸载」往右凸出 36px。写死值还会随文案再次失配：这两条示例行的文案
+## 在安装成功后会追加「（已安装）」（+4 个汉字 ≈ 68px），一旦超过 360 标签就会自己长宽，
+## 把按钮再顶出去 —— 列宽当场又散了。量一遍就不存在这个问题。
+##
+## 只改宽、不改高；Label 的 horizontal_alignment 是 LEFT（默认），加宽只增加**右侧空白**，
+## 文字位置一个像素不动。
+##
+## ⚠️ 缩进子行（线索 Def / 生成行 / 自定义规则行，都设了 offset_left = 24）**不在**这一列，
+## 它们故意缩进一级表示「属于上一条目」。所以标记只打在顶层行标签上（见各构造函数的
+## set_meta("_row_label")）—— 千万别图省事在这里按「全部 Label」收集。
+func _align_list_column(scope: Node) -> void:
+	var labels: Array[Label] = []
+	_gather_row_labels(scope, labels)
+	if labels.size() < 2:
+		return
+	var widest := 0.0
+	for lb in labels:
+		var f: Font = lb.get_theme_font("font")
+		if f == null:
+			continue
+		widest = maxf(widest, f.get_string_size(lb.text, HORIZONTAL_ALIGNMENT_LEFT, -1,
+			lb.get_theme_font_size("font_size")).x)
+	if widest <= 0.0:
+		return
+	var w: float = ceilf(widest / 4.0) * 4.0
+	for lb in labels:
+		lb.custom_minimum_size = Vector2(w, lb.custom_minimum_size.y)
+
+
+func _gather_row_labels(root: Node, out: Array[Label]) -> void:
+	for c in root.get_children():
+		if c is Label and (c as Label).has_meta("_row_label"):
+			out.append(c as Label)
+		_gather_row_labels(c, out)
 
 
 ## 目标档位选择器（页面级，v4.0 深度口径）：生成入口的验收窗口由它决定。
@@ -312,6 +372,13 @@ func _build_tier_picker() -> HBoxContainer:
 	lb.text = "目标档位"
 	lb.custom_minimum_size = Vector2(90, 34)
 	lb.add_theme_font_size_override("font_size", 16)
+	# 垂直居中（2026-09-29）：固定框高 34 比 16px 字的行高（24）高 10 ⇒ 默认 TOP
+	# 会把文字顶在框顶，和同排下拉的中心错开 5px。本页所有「标签 + 控件」行同理。
+	lb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	# 打标记：本行属于**列表顶层列**，列宽由 _align_list_column 统一（见该函数注释）。
+	# 缩进子行（def / rule / wasm，offset_left=24）**不打标记**——它们是嵌套子列表，
+	# 故意缩进一级，不该被拉进顶层那一列。
+	lb.set_meta("_row_label", true)
 	row.add_child(lb)
 	var opt := OptionButton.new()
 	opt.focus_mode = Control.FOCUS_ALL
@@ -358,6 +425,8 @@ func _make_mod_row(mod_name: String) -> VBoxContainer:
 	lb.text = "%s  %s" % [mod_name, "（已加载）" if loaded else ""]
 	lb.custom_minimum_size = Vector2(320, 40)
 	lb.add_theme_font_size_override("font_size", 19)
+	lb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lb.set_meta("_row_label", true)
 	row.add_child(lb)
 	var btn := Button.new()
 	btn.text = "卸载" if loaded else "加载"
@@ -429,6 +498,7 @@ func _make_wasm_row(mod_name: String) -> HBoxContainer:
 	lb.text = "wasm 黑盒生成"
 	lb.custom_minimum_size = Vector2(240, 34)
 	lb.add_theme_font_size_override("font_size", 16)
+	lb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(lb)
 	for kind in [["clue", "线索关"], ["global", "约束关"]]:
 		var btn := Button.new()
@@ -527,6 +597,7 @@ func _make_def_row(mod_name: String, def_name: String) -> HBoxContainer:
 	lb.text = "线索 %s" % def_name
 	lb.custom_minimum_size = Vector2(240, 34)
 	lb.add_theme_font_size_override("font_size", 16)
+	lb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(lb)
 	var gen_btn := Button.new()
 	gen_btn.text = "生成 5 关"
@@ -580,6 +651,12 @@ func _make_rule_row(rule_id: String) -> HBoxContainer:
 	lb.text = "规则 %s" % desc
 	lb.custom_minimum_size = Vector2(240, 34)
 	lb.add_theme_font_size_override("font_size", 16)
+	lb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	# 打标记：本行由 `_rebuild_list` **直接加进 `_list_vbox`**（不像 def / wasm 行那样挂在
+	# 每个 mod 自己的 block 里），所以它就是列表顶层那一列的一员，必须跟着统一列宽。
+	# 漏标的后果与修复前一样，只是要等玩家装了自定义规则包才会显形（首屏无自定义规则时
+	# 这条行根本不存在，探针也照不出来）：它自己 240、别家按最宽文案对齐 ⇒ 控件起始 x 又散开。
+	lb.set_meta("_row_label", true)
 	row.add_child(lb)
 	var gen_btn := Button.new()
 	# v4.0：按钮文案带上当前目标档——生成是按峰值窗口验收的，点之前就该知道在产哪一档。

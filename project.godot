@@ -47,6 +47,10 @@ project/assembly_name="世界扫雷 (Copy)"
 
 enabled=PackedStringArray("res://addons/debug_menu/plugin.cfg", "res://addons/godot_ai/plugin.cfg", "res://addons/gut/plugin.cfg")
 
+[gui]
+
+theme/custom_font="res://assets/fonts/WenYuanRoundedSCVF.ttf"
+
 [rendering]
 
 rendering_device/driver.windows="d3d12"

@@ -1,13 +1,34 @@
 # ui_theme.gd —— 统一 UI 样式与悬停微交互（class_name UiTheme）
-# 悬停浮动效果：阴影（0 4px 24px rgba(0,0,0,0.4)）+ 边框变强调色 + 背景稍亮
-# + pivot 居中的轻微 scale 抬起（0.2s 过渡，≤1.15 倍）。
+# 悬停浮动效果：阴影 + 边框变强调色 + 背景稍亮 + pivot 居中的轻微 scale 抬起
+# （0.2s 过渡，≤1.15 倍）。
 # 注：Godot Container 布局下 translateY 会被布局覆盖，故用 scale 表达「抬起」，
 # 视觉等价且不破坏布局。所有取色经 ThemeManager。
+#
+# 2026-09-29 CozyStyle 改造（几何/阴影部分）：
+#   · 圆角 6 → 12（按钮）/ 4 → 8（色标）。CozyStyle 的观感建立在"大圆角 + 低对比"
+#     上，旧版的 6px 圆角配粉彩底色会显得又硬又方，是"换了色但不像换了皮"的主因之一。
+#   · 常态就给一层极浅软阴影（α0.10 / size 8 / offset (0,2)），不再只有 hover 才浮起——
+#     粉彩体系的层次完全靠阴影撑，没有阴影的纯色块会糊成一片。
+#   · 同时把圆角细分度显式拉满（corner_detail）并开抗锯齿：半径变大后 6 边细分的
+#     多边形会被看出来是一圈多边形而不是圆。
+#   · pressed 态背景是 accent（实心强调色），字色随之改用 accent_text —— 见下方注释。
 class_name UiTheme
 
-const HOVER_SHADOW := Color(0, 0, 0, 0.4)
+## 常态软阴影（静止时也浮着一点）。
+const NORMAL_SHADOW := Color(0, 0, 0, 0.10)
+const NORMAL_SHADOW_OFFSET := Vector2(0, 2)
+const NORMAL_SHADOW_SIZE := 8
+
+## 悬停阴影：比常态更深更大，形成"抬起一档"的层次差；但比旧版的 α0.4 柔和很多
+## （粉彩底上 α0.4 的黑影是脏灰，不是柔和投影）。
+const HOVER_SHADOW := Color(0, 0, 0, 0.22)
 const SHADOW_OFFSET := Vector2(0, 4)
 const SHADOW_SIZE := 12
+
+## 圆角半径。**不要**用 StyleBoxFlat.expand_margin 去放大投影范围 —— 那会把整个
+## stylebox 的绘制矩形撑开，导致相邻控件互相覆盖（已实测踩过）。
+const BTN_RADIUS := 12
+const SWATCH_RADIUS := 8
 
 ## 按钮内边距（左右 / 上下）。
 ## 中文字形接近方块，且字体行高自带额外留白——沿用主题默认内边距会出现
@@ -15,22 +36,41 @@ const SHADOW_SIZE := 12
 const BTN_PAD_X := 16
 const BTN_PAD_Y := 8
 
+## **图标按钮**的内容区内边距。必须与文字按钮分开给：
+## 文字按钮的 16/8 是给中文方块字留的呼吸位，而图标按钮的内容区**就是图标本身** ——
+## 套用 16/8 后内容区缩成 (W−32)×(H−16)，40×40 的齿轮按钮只剩 **8×8**，
+## `expand_icon` 于是老老实实把图标按 8px 画出来（2026-09-29 实测复现：选关页右上角的
+## 齿轮/书本、对局页的毛笔，三个图标全都缩成一个小方块）。
+## 取 9：40×40 → 22×22，48×48 → 30×30，与 12px 圆角 + 1px 描边的比例配得上。
+const ICON_PAD := 9
+
+
+## 统一圆角，顺带把细分度与抗锯齿一次设好（见文件头说明）。
+static func _round(sb: StyleBoxFlat, radius: int) -> void:
+	sb.set_corner_radius_all(radius)
+	sb.corner_detail = clampi(radius + 2, 8, 20)
+	sb.anti_aliasing = true
+
 
 ## 统一按钮样式 + 悬停浮动（scale 1.03 ≈ 2px 抬起感）。
-static func style_button(btn: Button) -> void:
+## pad_x / pad_y 可覆盖：图标按钮走 style_icon_button（见该函数与 ICON_PAD 的说明）。
+static func style_button(btn: Button, pad_x: int = BTN_PAD_X, pad_y: int = BTN_PAD_Y) -> void:
 	var normal := StyleBoxFlat.new()
-	_set_pad(normal)
+	_set_pad(normal, pad_x, pad_y)
 	normal.bg_color = ThemeManager.card()
-	normal.set_corner_radius_all(6)
+	_round(normal, BTN_RADIUS)
 	normal.set_border_width_all(1)
 	normal.border_color = ThemeManager.grid_line()
+	normal.shadow_color = NORMAL_SHADOW
+	normal.shadow_size = NORMAL_SHADOW_SIZE
+	normal.shadow_offset = NORMAL_SHADOW_OFFSET
 	btn.add_theme_stylebox_override("normal", normal)
 	btn.add_theme_color_override("font_color", ThemeManager.text())
 
 	var hover := StyleBoxFlat.new()
-	_set_pad(hover)
+	_set_pad(hover, pad_x, pad_y)
 	hover.bg_color = ThemeManager.card().lightened(0.06)
-	hover.set_corner_radius_all(6)
+	_round(hover, BTN_RADIUS)
 	hover.set_border_width_all(1)
 	hover.border_color = ThemeManager.accent()
 	hover.shadow_color = HOVER_SHADOW
@@ -40,21 +80,26 @@ static func style_button(btn: Button) -> void:
 	btn.add_theme_color_override("font_hover_color", ThemeManager.text())
 
 	var pressed := StyleBoxFlat.new()
-	_set_pad(pressed)
+	_set_pad(pressed, pad_x, pad_y)
 	pressed.bg_color = ThemeManager.accent()
-	pressed.set_corner_radius_all(6)
+	_round(pressed, BTN_RADIUS)
 	pressed.set_border_width_all(1)
 	pressed.border_color = ThemeManager.accent()
 	btn.add_theme_stylebox_override("pressed", pressed)
-	btn.add_theme_color_override("font_pressed_color", ThemeManager.text())
+	# 按下态背景换成了**实心 accent**，字色就必须跟着换 accent_text。
+	# 原先这里沿用 text()：深色主题下 accent 是深蓝、text 是近白，勉强能看；
+	# 但浅色主题 accent=#2D7BB0 配 text=#232323 只有 1.9:1 —— 一个从旧版就存在、
+	# 一直没人发现的无障碍缺陷（深色主题把它盖住了）。CozyStyle 五套粉彩全是浅底，
+	# 再不改就是五个主题一起踩。accent_text 是成对算出来的（每个主题都 ≥4.5:1）。
+	btn.add_theme_color_override("font_pressed_color", ThemeManager.accent_text())
 
 	# 键盘焦点样式（2026-09-25 无障碍审计）：与 hover 同款但描边**更粗** —— 焦点必须
 	# 比悬停更显眼（键盘用户全靠它定位）。此前没有 focus 样式 ⇒ 聚焦时会落到引擎默认
 	# 焦点框（浅色细线，与项目深色主题格格不入）。
 	var focus_sb := StyleBoxFlat.new()
-	_set_pad(focus_sb)
+	_set_pad(focus_sb, pad_x, pad_y)
 	focus_sb.bg_color = ThemeManager.card().lightened(0.06)
-	focus_sb.set_corner_radius_all(6)
+	_round(focus_sb, BTN_RADIUS)
 	focus_sb.set_border_width_all(2)
 	focus_sb.border_color = ThemeManager.accent()
 	btn.add_theme_stylebox_override("focus", focus_sb)
@@ -63,25 +108,35 @@ static func style_button(btn: Button) -> void:
 	bind_hover(btn, 1.03)
 
 
-## 应用均衡内边距（normal/hover/pressed 三态共用，避免切换时按钮尺寸跳动）。
-static func _set_pad(sb: StyleBoxFlat) -> void:
-	sb.content_margin_left = BTN_PAD_X
-	sb.content_margin_right = BTN_PAD_X
-	sb.content_margin_top = BTN_PAD_Y
-	sb.content_margin_bottom = BTN_PAD_Y
+## 图标按钮（按钮上只有 icon、没有 text，配 expand_icon）：
+## 与 style_button 同一套颜色/圆角/阴影/悬停，只把内边距换成**对称的图标内边距**。
+## 不这么做就会踩 ICON_PAD 注释里那个坑（图标被内容区压成 8px）。
+static func style_icon_button(btn: Button) -> void:
+	style_button(btn, ICON_PAD, ICON_PAD)
+
+
+## 应用内边距（normal/hover/pressed/focus 四态共用，避免切换时按钮尺寸跳动）。
+static func _set_pad(sb: StyleBoxFlat, pad_x: int, pad_y: int) -> void:
+	sb.content_margin_left = pad_x
+	sb.content_margin_right = pad_x
+	sb.content_margin_top = pad_y
+	sb.content_margin_bottom = pad_y
 
 
 ## 色标（圆形/方形色块）：悬停 scale 1.15 放大，不浮动；选中态 accent 边框。
 static func style_swatch(sw: Button, color: Color, selected: bool) -> void:
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = color
-	sb.set_corner_radius_all(4)
+	_round(sb, SWATCH_RADIUS)
 	if selected:
 		sb.set_border_width_all(2)
 		sb.border_color = ThemeManager.accent()
 	else:
 		sb.set_border_width_all(1)
 		sb.border_color = ThemeManager.grid_line()
+	sb.shadow_color = NORMAL_SHADOW
+	sb.shadow_size = NORMAL_SHADOW_SIZE
+	sb.shadow_offset = NORMAL_SHADOW_OFFSET
 	sw.add_theme_stylebox_override("normal", sb)
 	sw.add_theme_stylebox_override("hover", sb)
 	sw.add_theme_stylebox_override("pressed", sb)

@@ -23,6 +23,24 @@ var _clue_cache: Dictionary = {}      # "x,y=值" -> pkg
 ## 不影响强制格结论。
 var num_workers: int = 0
 
+## 累计求解预算（v4.0，挂死治理）：单次 Solve 有 max_time_in_seconds 上限，但
+## **单次有界 ≠ 累计有界**——FindForcedCells 一次调用要做 O(自由格数) 次探测，
+## MinimalForcedClueCount 最多 8 次 Solve，删线索又是 O(n) 条 × 序贯 O(轮) 次调用。
+## 预算按「单次调用」计（耗尽即停，保守方向：未探测格不报强制、无 core 报 -1），
+## 故不会因预算而产出坏关（R01/R02 不破），最多让该候选被拒。
+## 调用方可按剩余墙钟收紧（见 PuzzleGenerator._solve_rules_stepwise 的 deadline_ms）；
+## 0 = 关闭（回到旧行为，仅排查用）。
+##
+## 【默认值取 30s 的理由（2026-09-27 实测定标）】预算只应兜「病态」，**绝不该碰到正常调用**：
+## 实测正常小盘一次 find_forced_cells 只需毫秒级（24 格 5×5 在 1ms 内已探完 3 格），
+## 6×6 全盘 6 seed 的删线索总耗时才 0.4~100s（每次调用远低于 1s）。
+## 而病态实例单次调用可达「自由格数 × 8s」（9×9 约 640s）且被删线索 O(n) 次放大成小时级。
+## 30s = 正常调用的 30~100 倍余量（永不触发）+ 病态调用的 20 倍收敛（仍然有界）。
+## ⚠ 调小此值会**降低关卡难度**（探测被截断 → 少报强制格 → 删线索变保守 → 保留更多线索），
+## 属质量红线，除非有 A/B 证据否则不要动。
+var probe_budget_ms: int = 30_000   # 一次 find_forced_cells 内所有 assumption 探测的累计上限
+var core_budget_ms: int = 30_000    # 一次 minimal_clue_count_unsat 内 unsat_core 迭代的累计上限
+
 
 func _init(p_clue_rule: Object = null, p_global_rules: Array = [], p_grid_size: Vector2i = Vector2i(0, 0), p_total_mines: int = -1, p_topology: GridInterface = null) -> void:
 	clue_rule = p_clue_rule
@@ -182,4 +200,10 @@ func build_spec(active: Dictionary, known_mines: Array = [], masked: Dictionary 
 	}
 	if num_workers > 0:
 		spec["num_workers"] = num_workers
+	# 累计预算（见 var 声明）：只在开启时下发，缺键 = C# 侧默认值（保持旧行为可比）。
+	# 调用方可写 spec["probe_budget_ms"] 覆盖（按剩余墙钟收紧）。
+	if probe_budget_ms > 0:
+		spec["probe_budget_ms"] = probe_budget_ms
+	if core_budget_ms > 0:
+		spec["core_budget_ms"] = core_budget_ms
 	return spec

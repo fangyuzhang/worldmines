@@ -152,9 +152,12 @@ class VariRadiusRule:
 			return []
 		return dirs_to_neighbors(pos, grid_size, NB8)
 
-	## 效率布雷 + r=2 分配（一次成型）。k = _k_of（默认 = 格数/4）。
-	func place_mines(rng: RandomNumberGenerator, cols: int, rows: int, count: int) -> Array[Vector2i]:
-		# r=2 分配：从全部格中无放回抽 k 个
+	## r=2 分配（隐藏态）：从全部格中无放回抽 k 个。**只写 _r2，不产出雷**。
+	## P0（2026-09-27）：抽为独立入口——复合档（o4 + 全局规则）的雷布局由全局规则/CP-SAT
+	## 给出，此时**不会**走到 o4.place_mines，必须由生成器显式调用本方法补齐隐藏态
+	##（否则 _r2 为空 → compute_clue 退化成「只算八邻」；或残留上一盘 → 落盘状态不属于本盘）。
+	## 逐 rng 调用与原先完全一致 ⇒ 单线索档（o4@6/o4@8）产物逐字节不变。
+	func init_hidden_state(rng: RandomNumberGenerator, cols: int, rows: int, _count: int) -> void:
 		_r2.clear()
 		var all_cells: Array = []
 		for r in rows:
@@ -165,6 +168,11 @@ class VariRadiusRule:
 			var pick_idx := rng.randi_range(0, all_cells.size() - 1)
 			_r2[all_cells[pick_idx]] = true
 			all_cells.remove_at(pick_idx)
+
+	## 效率布雷 + r=2 分配（一次成型）。k = _k_of（默认 = 格数/4）。
+	func place_mines(rng: RandomNumberGenerator, cols: int, rows: int, count: int) -> Array[Vector2i]:
+		# 隐藏态首步采样（与本方法抽出前逐 rng 同序 —— 黄金网「单线索档逐字节不变」约束）
+		init_hidden_state(rng, cols, rows, count)
 		# 效率布雷（低聚类 + 偏边缘加权序列采样）
 		var weights: Dictionary = {}
 		for r in rows:

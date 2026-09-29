@@ -26,6 +26,112 @@ var _legacy := PuzzleGeneratorLegacy.new()
 ## 强制格结论与 worker 数无关（探测「假设反值不可行」与首解无关），降 worker 不改变任何质量/难度。
 var num_workers: int = 0
 
+
+
+## C# 累计探测预算覆盖（0 = 用 RuleOracle 默认 30s）。
+## 只服务两类用途：① A/B 实验（比较预算对难度的影响）；② 调用方按剩余墙钟收紧。
+## ⚠ 调小会让探测被截断 → 少报强制格 → 删线索保守 → **关卡变简单**，属质量红线参数。
+var probe_budget_ms: int = 0
+
+
+## 删线索**尝试顺序**策略（v4.1 降废品，2026-09-27）。
+##
+## 为什么顺序能降废品：窗口模式下的"废品"主因不是生成失败（实测 brep_fail/verify_fail/
+## prune_empty/prewon/timeout 全为 0），而是 **peak_miss**——难度峰值没落进请求档。
+## 而难度由「删完线索后留下的那组线索」决定；删除是单调的（先成功删掉的越多，后面的试探
+## 面对更小的集合越容易失败而被恢复），所以**尝试顺序决定了最终落在哪个局部极小集上**。
+##
+## 安全性（为什么这不是质量红线）：**判据一字未改**——删除仍要求「删后仍序贯纯逻辑可解」
+##（`_solve_rules_stepwise`，R01 真义），故任何策略产出的关卡都等价合格；变的只是"挑中
+## 哪一个极小集"。策略比较必须用窗口命中率 + 难度画像做 A/B（见 tools/_ab_probe.gd）。
+##   0 行优先（现状基线，确定性）
+##   1 弱信息优先：值小的线索（局部约束最松）先试删 → 留下多为强线索，峰值预期抬升
+##   2 强信息优先：值大的先试删（对照组，峰值预期下降）
+##   3 冗余优先：邻域线索格多的（局部信息重复）先试删 → 留下稀疏线索，峰值预期抬升
+## 同分一律回落到行优先，保证确定性（同 seed 可复现）。
+var prune_order: int = 0
+
+
+## A1-ii 短路开关（2026-09-27）：若**全量**线索集 A 的序贯演绎在某轮
+## 「真·无强制格」而失败，则由单调性定理（B⊆A ⇒ forced_B(r) ⊆ D_A(r)）任何子集 B⊆A
+## 同轮必失败 ⇒ `_prune_sequential` 的每条删除试探都必失败 ⇒ prune 必为 no-op。
+## 此时立即返回（`active` 一字不动），省掉 O(n) 次完整演绎；产出与逐条试探**逐字节相同**。
+##
+## 【09-27 复核结论：默认置 **false**（不部署）】——**保留实现与可观测计数，但在生产里走旧路径**。
+## 依据（全部为实测，见 docs/GEN_PERF_PLAN_0927.md §14）：
+##   ① **命中率为 0**：等价性对拍在真实语料上连续 4 组 `skip=0`（短路从未触发）。
+##      原因：生成路径的候选其「全量线索集」几乎总是可推完的，故②的触发条件罕见。
+##   ② **不命中时有净成本**：预跑多消耗一次完整演绎 ⇒ 实测 `tprune ON 57929ms vs OFF 54783ms`
+##      = **+5.7%**（seed2 +3.8%）。即"安全但略负"。
+##   ③ **机制自检未通过**：`tools/_prune_equiv.gd` 的机制自检 3 项 FAIL 2 项
+##      （含「欠定盘应置 stuck 却未置」）⇒ 该机制**并未被证明可用**，不应进热路径。
+## 保留价值：`stats["stuck"]` 信号是「确定性判死结构零产出单元」的唯一廉价判据
+##（`classic+s3@8` 一类；见 §11.6），故实现与信号保留，仅默认不启用。
+## 重新启用前必须：先让机制自检 3/3 通过，并给出 `skip>0` 的真实语料证据 + `t_prune` 不劣化。
+var prune_noop_shortcut: bool = false
+
+
+## ⛔ **禁止启用·仅存档**（2026-09-28 实测否证）：①「逐轮白名单 D_A(r) 限制候选探测面」。
+##
+## 做了什么：全集线索集 A 的序贯演绎逐轮记下强制格 D_A(r)，候选 B⊆A 的第 r 轮只探测 D_A(r)。
+## 理论依据（单调性）：A 的模型约束更多 ⇒ forced_B(r) ⊆ D_A(r)。
+##
+## 【实测否证（真 dll 首次跑通后，`tools/_i1_equiv.gd`，2026-09-28）】
+##   `o4+s1@8 seed1`：OFF `tries=31/ok=31`、`clue_count=7` ｜ ON `tries=31/**ok=30**`、`clue_count=8`
+##   ⇒ **一次合法删除被白名单挡住 ⇒ 产出改变**（其余 7 例一致，8 例中 1 例不等价）。
+##   且 ON 在所有档上都更慢：`o4@8` 18.59→20.01s、`classic+s3@7` 58.56→63.16s、`o4+s1@8` 9.88→10.94s
+##   （唯一"更快"的 `o4@6` 是噪声）。⇒ **既不等价也无收益。**
+## 疑因（未定论）：轮次对应关系在"B 与 A 的知识集不同步"时可能错位——定理给的是**模型级**
+##   包含关系，而按"轮号"对齐隐含了"B 的第 r 轮状态 ⊆ A 的第 r 轮状态"，这一点在有隐藏态/
+##   全局规则的复合档上未必成立。**要复活它必须先给出逐轮 `new == old` 的语料证据。**
+##
+## 已保留的资产：C# 侧 `spec["probe_cells"]` 能力 + 两个自检守卫（旧 dll ⇒ 静默忽略时告警；
+##   预算绑定 ⇒ 自动停用白名单）；`_i1_equiv.gd` 对拍工具（含空结果防假通过）。
+var prune_probe_whitelist: bool = false
+
+
+const _PRUNE_NEIGH8: Array[Vector2i] = [
+	Vector2i(-1, -1), Vector2i(0, -1), Vector2i(1, -1),
+	Vector2i(-1, 0), Vector2i(1, 0),
+	Vector2i(-1, 1), Vector2i(0, 1), Vector2i(1, 1),
+]
+
+
+## 删线索顺序比较器（确定性）。order 见 prune_order 说明。
+func _prune_less(a: Variant, b: Variant, values: Dictionary, active: Dictionary) -> bool:
+	var pa: Vector2i = a
+	var pb: Vector2i = b
+	var ka := _prune_rank(pa, values, active)
+	var kb := _prune_rank(pb, values, active)
+	if ka != kb:
+		return ka < kb
+	if pa.y != pb.y:
+		return pa.y < pb.y
+	return pa.x < pb.x
+
+
+func _prune_rank(p: Vector2i, values: Dictionary, active: Dictionary) -> int:
+	# ⚠ 值型安全（实测 bug，2026-09-27）：线索值**不一定是 int**——多值线索规则（同格双数字，
+	# 如 hv：Array/Vector2i）会让 `int(values[p])` 在 sort_custom 比较器内抛
+	# "Nonexistent 'int' constructor"，一次生成刷上百条引擎错误（GUT 记为 Unexpected Errors）。
+	# 非 int 一律记 0（中性 → 同分回落行优先），不影响正确性。
+	var raw: Variant = values.get(p, 0)
+	var v := int(raw) if raw is int else 0
+	match prune_order:
+		1:
+			return v
+		2:
+			return -v
+		3:
+			var n := 0
+			for dp in _PRUNE_NEIGH8:
+				if active.has(p + dp):
+					n += 1
+			return -n
+		_:
+			return 0
+
+
 ## 阶段统计（v2.9.3 服务器分析增强）：每次 generate_with_rules 重置，
 ## 批量工具读取后写入 issues —— 把「空返回」分解为布雷/删线索/验证各阶段失败，
 ## 让「布雷成功率」「端到端接受率」可按组合观测（服务器低接受率排查用）。
@@ -346,14 +452,23 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 	mine_count = clampi(mine_count, 1, n - 1)
 	var deadline: int = Time.get_ticks_msec() + timeout_ms
 	last_call_stats = {"attempts": 0, "brep_fail": 0, "no_clues": 0, "prune_empty": 0,
-		"verify_fail": 0, "timeout": 0, "success": 0,
-		"t_place_ms": 0, "t_prune_ms": 0, "t_verify_ms": 0, "prune_tries": 0, "prune_ok": 0}
+		"verify_fail": 0, "timeout": 0, "success": 0, "hs_uninit": 0,
+		"t_place_ms": 0, "t_prune_ms": 0, "t_verify_ms": 0, "prune_tries": 0, "prune_ok": 0,
+		# A1-ii（2026-09-27）可观测：prune 因「全量集卡住 ⇒ 必为 no-op」被整体短路的次数
+		#（prune_skipped = 被跳过的 prune 调用数；prune_skip_stuck = 其中因卡住而跳过的）。
+		"prune_skip_stuck": 0, "prune_skipped": 0, "t_prune_pre_ms": 0}
 
 	for attempt in attempts:
 		# 种子派生：每 attempt 独立确定性随机流（同 seed+attempt 必同盘，可复现）。
 		# attempts=1 即「固定种子单次尝试」——一颗种子 = 一次尝试，可复现零歧义。
 		_rng.seed = _derive_seed(seed, attempt)
 		last_call_stats["attempts"] = int(last_call_stats["attempts"]) + 1
+		# P0（2026-09-27）：每 attempt 入口先清空线索规则的隐藏态。
+		# 作用：把「残留上一盘」（注册表单例，跨关卡/跨尺寸都不清）**降级为「空」**——
+		# 空是下面门禁拦得住的，残留拦不住（残留的基数是上一盘的、看起来合法）。
+		# 对纯线索档零副作用：place_mines 内部本就先 clear，且本调用不消耗 rng ⇒ 逐字节不变。
+		if clue_rule.has_method("import_hidden_state"):
+			clue_rule.call("import_hidden_state", {})
 		if Time.get_ticks_msec() > deadline:
 			last_call_stats["timeout"] = int(last_call_stats["timeout"]) + 1
 			push_warning("PuzzleGenerator: 规则生成超时 %s" % clue_rule_id)
@@ -364,7 +479,8 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 		if topology != null:
 			mines = _place_random_topo(topology, mine_count)
 		else:
-			mines = _place_mines_rules(clue_rule, globals, cols, rows, mine_count)
+			# 传 attempt 的墙钟 deadline：布雷（多 G 时 7 次 CP-SAT 采样）也要能被截断。
+			mines = _place_mines_rules(clue_rule, globals, cols, rows, mine_count, deadline)
 		last_call_stats["t_place_ms"] = int(last_call_stats["t_place_ms"]) + (Time.get_ticks_msec() - t_place0)
 		if mines.is_empty():
 			last_call_stats["brep_fail"] = int(last_call_stats["brep_fail"]) + 1
@@ -400,6 +516,8 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 		var mine_total := mines.size()
 		var oracle := RuleOracle.new(clue_rule, globals, size, mine_total, topology)
 		oracle.num_workers = num_workers
+		if probe_budget_ms > 0:
+			oracle.probe_budget_ms = probe_budget_ms
 		var active := {}
 		for p in clue_cells:
 			active[p] = values[p]
@@ -420,6 +538,13 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 		if bool(pr_state.get("prune_timeout", false)):
 			last_call_stats["prune_timeout"] = int(last_call_stats.get("prune_timeout", 0)) + 1
 			push_warning("generate_with_rules: attempt %d 删线索墙钟触发——删减被提前截断（非确定性判停，重跑可能波动）" % attempt)
+		# A1-ii 可观测：prune 被「全量集卡住」短路（省 O(n) 次演绎、active 不变）的留痕。
+		# 透传 state 里的计数器，使「窗口模式下有多少候选走了短路」可直接聚合（batch unit_done
+		# 用 .get() 读 last_call_stats，新增键不改变既有字段语义）。
+		last_call_stats["prune_skipped"] = int(last_call_stats.get("prune_skipped", 0)) + int(pr_state.get("prune_skipped", 0))
+		if bool(pr_state.get("prune_skip_stuck", false)):
+			last_call_stats["prune_skip_stuck"] = int(last_call_stats.get("prune_skip_stuck", 0)) + 1
+		last_call_stats["t_prune_pre_ms"] = int(last_call_stats.get("t_prune_pre_ms", 0)) + int(pr_state.get("pre_ms", 0))
 		if active.is_empty():
 			last_call_stats["prune_empty"] = int(last_call_stats["prune_empty"]) + 1
 			continue
@@ -437,7 +562,7 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 		#    同时收集难度统计（P0-难度量化，成本近零——演绎本就要跑）
 		var diff_stats := {"rounds": [], "complexities": []}
 		var t_verify0 := Time.get_ticks_msec()
-		var v_ok := _solve_rules_stepwise(size, active, masked, mine_total, oracle, values, diff_stats)
+		var v_ok := _solve_rules_stepwise(size, active, masked, mine_total, oracle, values, diff_stats, deadline)
 		last_call_stats["t_verify_ms"] = int(last_call_stats["t_verify_ms"]) + (Time.get_ticks_msec() - t_verify0)
 		if not v_ok:
 			last_call_stats["verify_fail"] = int(last_call_stats["verify_fail"]) + 1
@@ -454,6 +579,22 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 			continue
 		# 5. 输出（规则关卡 JSON；播放接线见 Board 集成，本路径先供生成/验证/工坊）
 		var level := _build_level_from_rules(clue_rule_id, global_rule_ids, rows, cols, mines, active, masked, seed, topology)
+		# P0 门禁（2026-09-27）：声明了 hidden_state 的线索规则，状态必须真的落进关卡。
+		#
+		# 为什么必须是**硬门禁**而不是日志：隐藏态缺陷此前**四处门禁全放行**——线索值由
+		# compute_clue **现算**（关卡不存 value）、求解器读的又是同一份状态，于是「空状态」
+		# 下的盘面在门禁眼里完全自洽（实测 verify_fail=0）。但它其实已退化成另一条规则：
+		# o4 空态 = 只算八邻（≈classic）、o5x 空态 = 恒走主斜线（隐藏选择消失），
+		# 而玩家侧会照着同一份空状态复现 ⇒ 「自述 o4、实为 classic」的关静默入库。
+		# 宁可拒收该候选（上层换 seed / 记 hs_uninit 可见），也不产出这种关。
+		var hs_caps: Dictionary = {}
+		if clue_rule.has_method("declares"):
+			hs_caps = clue_rule.call("declares")
+		if bool(hs_caps.get("hidden_state", false)) \
+				and not (level.get("hidden_state", {}) as Dictionary).has(clue_rule_id):
+			last_call_stats["hs_uninit"] = int(last_call_stats.get("hs_uninit", 0)) + 1
+			push_warning("PuzzleGenerator: %s 声明 hidden_state 但落盘缺失 —— 拒收候选（隐藏态未初始化）" % clue_rule_id)
+			continue
 		# 难度画像落盘（4 组难度常量体系的筛选依据；Board 加载不读，纯元数据）。
 		# 线索覆盖度一并记录：对同尺寸同密度的题，线索越少玩家信息越少 = 越难。
 		var prof := difficulty_from_stats(diff_stats)
@@ -544,9 +685,15 @@ func _derive_seed(seed: int, attempt: int) -> int:
 ## 全部采样失败（UNSAT/超时）→ 返回空，交上层重试（与单次 find_solution 同语义）。
 const SOLUTION_SAMPLES := 7
 
-func _find_solution_best(oracle: RuleOracle, cols: int, rows: int) -> Array[Vector2i]:
+## deadline_ms（v4.0 挂死治理，可选，0 = 不限）：7 次采样 × 每次单解上限（默认 8s）
+## = 单次布雷最长 56s，而布雷在 attempts 循环里最多跑 50 次 —— 又一处「单次有界、累计无界」。
+## 已有解时预算耗尽即停采样（解照常参与择优）；一个解都没有时至少跑满 1 次，
+## 避免预算为 0 时永不布雷（那是纯退化，不是保护）。
+func _find_solution_best(oracle: RuleOracle, cols: int, rows: int, deadline_ms: int = 0) -> Array[Vector2i]:
 	var sols: Array = []
 	for _i in SOLUTION_SAMPLES:
+		if not sols.is_empty() and deadline_ms > 0 and Time.get_ticks_msec() > deadline_ms:
+			break
 		var spec := oracle.build_spec({}, [], {})
 		# random_seed 从本实例确定性 RNG 派生（_rng 已按 _derive_seed(seed,attempt) 设置）
 		# → 同 seed 重放走同一条采样路径得同盘。
@@ -611,15 +758,15 @@ static func _uniformity_score(mines: Array[Vector2i], cols: int, rows: int) -> f
 ## 产出「6×6 只有 12 雷」的违约关（违反 R07 固定雷数红线）。Mod 变体无法逐一修，
 ## 故在此统一校验：返回非空时雷数必须精确等于请求值，否则判失败（上层重试/换尺寸），
 ## 违规插件只会导致「该组合生成失败」（可提示），永远不会产出坏关。
-func _place_mines_rules(clue_rule: Object, globals: Array, cols: int, rows: int, count: int) -> Array[Vector2i]:
-	var m := _place_mines_rules_raw(clue_rule, globals, cols, rows, count)
+func _place_mines_rules(clue_rule: Object, globals: Array, cols: int, rows: int, count: int, deadline_ms: int = 0) -> Array[Vector2i]:
+	var m := _place_mines_rules_raw(clue_rule, globals, cols, rows, count, deadline_ms)
 	if not m.is_empty() and m.size() != count:
 		push_warning("PuzzleGenerator: 布雷器返回 %d 雷 ≠ 请求 %d（插件违约，已拒绝该布雷）" % [m.size(), count])
 		return []
 	return m
 
 
-func _place_mines_rules_raw(clue_rule: Object, globals: Array, cols: int, rows: int, count: int) -> Array[Vector2i]:
+func _place_mines_rules_raw(clue_rule: Object, globals: Array, cols: int, rows: int, count: int, deadline_ms: int = 0) -> Array[Vector2i]:
 	# 多 G 叠加（G+G / 2G+1C / 3G）：布雷必须**同时满足所有 G**。
 	# 旧策略「只取第一个非空 G 的 place_mines」有两个致命缺陷：
 	#   ① 状态性 G（dt 骨牌划分）不生成 → build_global_constraints 用空/残留划分，约束静默丢失；
@@ -641,15 +788,20 @@ func _place_mines_rules_raw(clue_rule: Object, globals: Array, cols: int, rows: 
 				if g.get_rule_id() == &"pf":
 					var mirrored: Array[Vector2i] = g.call("place_mines_mirrored", _rng, cols, rows, count)
 					if not mirrored.is_empty():
+						_init_clue_hidden_state(clue_rule, cols, rows, count)
 						return mirrored
 		var oracle := RuleOracle.new(clue_rule, globals, Vector2i(cols, rows), count, null)
 		# 多解取优（v2.9.3）：find_solution 第一可行解结构差（堆簇）→ 删线索/序贯验证
 		# 通过率低（PF/mx+pf 已用专用采样救活，其余多 G——如 rl+ep 9×9——仍受此影响）。
-		return _find_solution_best(oracle, cols, rows)
+		var sol_multi := _find_solution_best(oracle, cols, rows, deadline_ms)
+		if not sol_multi.is_empty():
+			_init_clue_hidden_state(clue_rule, cols, rows, count)
+		return sol_multi
 	# 单 G：沿用构造式布雷（确定性、快）
 	for g in globals:
 		var m: Array[Vector2i] = g.place_mines(_rng, cols, rows, count)
 		if not m.is_empty():
+			_init_clue_hidden_state(clue_rule, cols, rows, count)
 			return m
 	# 构造式失败兜底：CP-SAT 直接求满足全局约束的布局。旧代码 fallback 到随机布雷，
 	# 而随机布雷违反全局约束（如 PF 9×9=32雷，place_mines 300 次随机+过滤碰不到可行布局）
@@ -657,13 +809,34 @@ func _place_mines_rules_raw(clue_rule: Object, globals: Array, cols: int, rows: 
 	# 约束数学可行（is_feasible=Y）时 find_solution 必有解。
 	if not globals.is_empty():
 		var oracle_fb := RuleOracle.new(clue_rule, globals, Vector2i(cols, rows), count, null)
-		var sol_fb := _find_solution_best(oracle_fb, cols, rows)
+		var sol_fb := _find_solution_best(oracle_fb, cols, rows, deadline_ms)
 		if not sol_fb.is_empty():
+			_init_clue_hidden_state(clue_rule, cols, rows, count)
 			return sol_fb
+	# 线索规则自己的构造式布雷：**不**在此补初始化——place_mines 内部已按同序采样，
+	# 重复调用会多消耗一层 rng ⇒ 单线索档（o4/o5x 无全局）产物不再逐字节可复现（黄金网会破）。
 	var m2: Array[Vector2i] = clue_rule.place_mines(_rng, cols, rows, count)
 	if not m2.is_empty():
 		return m2
-	return _place_random(cols, rows, count)
+	var m3 := _place_random(cols, rows, count)
+	if not m3.is_empty():
+		_init_clue_hidden_state(clue_rule, cols, rows, count)
+	return m3
+
+
+## 隐藏态初始化（P0，2026-09-27）：雷布局**不是**由线索规则给出时（全局规则 / CP-SAT 兜底 /
+## 随机兜底），为当前盘面补采样线索规则的隐藏态。
+##
+## 背景与实证：隐藏态原本只在 place_mines 内部采样 ⇒ 复合档从不采样，全新会话下为空
+##（compute_clue 退化：o4 只算八邻、o5x 恒走主斜线；而求解器读同一份状态 ⇒ R01 仍通过
+## verify_fail=0，坏关静默过关）；规则又是注册表单例，残留上一盘时落盘状态不属于本盘
+##（实测 7×7 盘落 16 个 s=1 格，而 _k_of(7,7)=12 —— 跨尺寸时连 k 配额都对不上）。
+##
+## 幂等性由规则侧的实现契约保证（先清空再采样，见 RulePlugin.init_hidden_state）。
+## 未实现该方法的规则是空实现，调用零副作用 ⇒ 本函数无需前置能力判断。
+func _init_clue_hidden_state(clue_rule: Object, cols: int, rows: int, count: int) -> void:
+	if clue_rule != null and clue_rule.has_method("init_hidden_state"):
+		clue_rule.call("init_hidden_state", _rng, cols, rows, count)
 
 
 ## 经典/无约束：随机布雷（主路径兜底，用本实例 _rng 保证确定性）。
@@ -737,13 +910,59 @@ func _prune_clues_rules(oracle: RuleOracle, active: Dictionary, deadline: int, g
 		if masked.has(p):
 			continue
 		keys.append(p)
-	keys.sort_custom(func(a, b):
-		var pa: Vector2i = a
-		var pb: Vector2i = b
-		if pa.y != pb.y:
-			return pa.y < pb.y
-		return pa.x < pb.x)
+	# 尝试顺序由 prune_order 决定；**判据不变**（删除仍要求删后序贯可解），见 prune_order 注释。
+	# 【09-28 修正：order==0 必须**完全跳过**排序】原实现无条件 `sort_custom`，把 keys 改成**行优先**；
+	# 而旧路径的 keys 顺序是 `active` 的**插入序**（`:886 for p in active`，Godot 字典保序 = 线索加入
+	# `active` 的顺序，即 clue_cells 顺序，一般**不是**行优先）⇒ 该排序静默改变了删线索**尝试顺序**
+	# ⇒ 换到另一个局部极小集 ⇒ 产出与耗时都变（与"0 = 逐位等价旧行为"的注释假设相反）。
+	# 实测证据（`classic+s3@7 seed1`，同板、同机、独占、冷热各一次）：
+	#   · 09-27 19:3x 基线（无排序，`_golden_post_p0.jsonl`）：`prune_tries=29 / prune_ok=22 /
+	#     t_prune=53.3s`，5/5 产出；
+	#   · 加入排序后：`27 / 20 / 打满 90s` ⇒ 0/5 空返回 + `prune_timeout=1` + `verify_fail=1`；
+	#   · 同机 `o4@6` 反而 ×0.81（更快）⇒ 已排除机器/C# 后端（dll 与 solver 均停在 14:55 未重建）。
+	# 故 order==0 不做任何排序 = 旧路径逐位等价；策略 1/2/3 才排序（其收益必须自行 A/B）。
+	if prune_order != 0:
+		keys.sort_custom(func(a, b): return _prune_less(a, b, values, active))
 	var state := {"target": target_difficulty, "reached": false, "tries": 0, "ok": 0, "prune_timeout": false}
+	# A1-ii（2026-09-27）：全量线索集 A 的「卡住即 no-op」短路。
+	#
+	# 定理（单调性）：设 A = 全量 active、B ⊆ A，同口径（masked={}）。序贯演绎逐轮归纳可得
+	#   forced_B(r) ⊆ D_A(r)（B 约束更少 ⇒ 模型集更大 ⇒ 蕴含的事实更少）。
+	# 推论：A 在某轮「真·无强制格」而失败 ⇒ 任何 B⊆A 同轮（或更早）也失败 ⇒ 删除试探
+	#（每次都在 A 的某个子集上跑）全部失败 ⇒ 逐条试探最终一条也删不掉、active 一字不动。
+	# ⇒ 直接返回，产出与旧逐条试探**逐字节相同**，省掉 O(n) 次完整演绎。
+	#
+	# ⚠ 只有 false 的原因是「真·无强制格」时才可短路：预算耗尽（deadline / C# 累计探测预算 /
+	#   单次 Solve 超时）时对 A 能否推完**一无所知**，一律按旧路径继续，**严禁**短路。
+	#   「真·无强制格」的判定在 `_solve_rules_stepwise`（只在可证明未被预算截断时置 `stuck`）——
+	#   这是本优化正确性的核心。
+	# 预跑本身受同一 `deadline` 约束（墙钟绝对时刻，不存在重复扣预算的问题）；预跑成功时其结果
+	# 无法复用到循环（循环首次演绎是在 A\{keys[0]} 上、集合不同），故不省这一次演绎。
+	# 【(i) ①+② 合并（2026-09-28）】`prune_noop_shortcut` 现在是**合并开关**：
+	# **同一次**全集演绎（即下面这次预跑）同时产出两样东西——
+	#   ② 卡住判据：A 真·无强制格 ⇒ 由单调性定理，任何子集 B⊆A 同轮必卡住 ⇒ 整个 prune 必为 no-op
+	#      ⇒ 直接返回（`active` 一字不动，与逐条试探**逐字节相同**）；
+	#   ① 逐轮白名单 ∪D_A(r)：D_A(r) 之外的格在候选 B 上必不强制 ⇒ 候选只探测白名单内的格
+	#      ⇒ **输出逐格相等**，少做 O(|free|−|D_A|) 次 assumption 探测。
+	# 合并的意义：原先只做 ② 时，"未触发即净亏 +5.7%"（A1 实测）⇒ 默认关；合并后预跑成本被 ①
+	# 的削减摊销，② 变成顺带白得。**是否默认开仍由产线聚合压缩比决定**（见 §14 / §20）。
+	if (prune_noop_shortcut or prune_probe_whitelist) and not keys.is_empty() and active.size() > 1:
+		var pre_stats := {"rounds": []}
+		if prune_probe_whitelist:
+			pre_stats["forced_sets"] = []
+		var t_pre0 := Time.get_ticks_msec()
+		var pre_ok := _solve_rules_stepwise(grid_size, active, {}, total_mines, oracle, values, pre_stats, deadline)
+		state["pre_ms"] = Time.get_ticks_msec() - t_pre0
+		if not pre_ok and bool(pre_stats.get("stuck", false)):
+			state["prune_skip_stuck"] = true
+			state["prune_skipped"] = int(state.get("prune_skipped", 0)) + 1
+			return state
+		if pre_ok and prune_probe_whitelist:
+			# ⛔ 实测**不等价**（`o4+s1@8` 出现 ok 31→30）且更慢 ⇒ 仅由独立开关 `prune_probe_whitelist`
+			# 控制，**与 ②（卡住即 no-op）解耦**，防止启用 ② 时连带启用这条不成立的优化。
+			# 逐轮白名单 D_A(r) 直接交给候选侧按轮取用（**不要**并集化：并集在可推完的盘上等于全集 ⇒ 收益归零）。
+			state["probe_sets"] = pre_stats.get("forced_sets", [])
+			state["wl_sets"] = (pre_stats.get("forced_sets", []) as Array).size()
 	_prune_sequential(oracle, active, keys, deadline, grid_size, total_mines, values, state, masked)
 	return state
 
@@ -761,7 +980,9 @@ func _prune_sequential(oracle: RuleOracle, active: Dictionary, keys: Array, dead
 			# 墙钟兜底触发：**非确定性判停**（负载影响删减数量 ⇒ 重跑波动，
 			# 实测同一批数据重跑后 ani_crab 从可推变不可推）。记录到 state 供上层
 			# 写入 last_call_stats 并打 warning 留痕——缺口必须可见，不能静默截断。
-			# 根治（判停改步数/迭代数 + 删减顺序按信息量排序）属生成算法变更，独立课题。
+			# 【2026-09-27 进度】根治的另一半「删减顺序按信息量排序」已实现（prune_order 旋钮，
+			# 默认 0 = 行优先保持旧行为）；「判停改步数/迭代数」仍未做——但它只影响重跑波动，
+			# 不影响单次产出质量，优先级低于窗口命中率。
 			state["prune_timeout"] = true
 			return
 		# 保底：至少保留 1 条线索。全局约束自带开局信息的组合（如 mx+dt：骨牌外强制非雷
@@ -778,7 +999,13 @@ func _prune_sequential(oracle: RuleOracle, active: Dictionary, keys: Array, dead
 		# 盘退化为「全线索」（既无删减也谈不上难度提升）。遮蔽格只受「不许删」保护（keys 排除），
 		# 删减逻辑按精确线索口径找最小充分集——这才是前置的设计意图（选格前移 + MSC 照常重建）。
 		var stats := {"rounds": []}
-		if _solve_rules_stepwise(grid_size, active, {}, total_mines, oracle, values, stats):
+		# 【(i)①（09-28）】带上传入的**逐轮**白名单（由 `_prune_clues_rules` 的全集预跑采集）；
+		# 缺省不设该键 = 旧行为（全探测）。
+		if state.has("probe_sets"):
+			stats["probe_sets"] = state["probe_sets"]
+		# 传 deadline：删线索是 O(n) 条循环，只有让每次演绎都能被墙钟截断，
+		# 上方 `Time.get_ticks_msec() > deadline` 才真正有效（否则单条线索就能冲出界）。
+		if _solve_rules_stepwise(grid_size, active, {}, total_mines, oracle, values, stats, deadline):
 			state["ok"] = int(state["ok"]) + 1
 			if float(state["target"]) > 0.0:
 				var d := float(difficulty_from_stats(stats)["difficulty"])
@@ -791,13 +1018,18 @@ func _prune_sequential(oracle: RuleOracle, active: Dictionary, keys: Array, dead
 ## 纯逻辑序贯演绎（无 Board 依赖）：每轮用 CP-SAT forced-cell 检测「被强制的格」，
 ## 翻安全格（新线索进 active）→ 确认雷 → 直到全盘确定（胜）或某轮无强制格（真二选一，败）。
 ## 这是替代「全盘枚举」的关键：序贯求解每次只做 O(自由格数) 次 assumption 探测。
-func _minimal_clue_count(oracle: RuleOracle, cur_active: Dictionary, known_mines: Array[Vector2i], masked: Dictionary, target: Vector2i, _total_mines: int) -> int:
+func _minimal_clue_count(oracle: RuleOracle, cur_active: Dictionary, known_mines: Array[Vector2i], masked: Dictionary, target: Vector2i, _total_mines: int, deadline_ms: int = 0) -> int:
 	if cur_active.is_empty():
 		return 0
 	# unsat_core 方案：直接求「推出 target 格」所需的最少线索数（见 rule_cpsat.minimal_clue_count_unsat）。
 	# 实测显著优于移除顺序敏感的贪心（大盘 45 线索时贪心 11 vs unsat 2），且更快（一次 Solve vs O(N) 次）。
 	# 无 C# 后端时返回 -1 → 0（难度画像退化，主路径依赖 C# 后端）。
 	var spec := oracle.build_spec(cur_active, known_mines, masked)
+	if deadline_ms > 0:
+		var remain := deadline_ms - Time.get_ticks_msec()
+		if remain <= 0:
+			return 0  # 预算耗尽：不做 unsat_core（复杂度记 0，宁可画像偏保守，不进无界求解）
+		spec["core_budget_ms"] = clampi(remain, 500, maxi(500, oracle.core_budget_ms))
 	var k := RuleCpSat.minimal_clue_count_unsat(spec, target.y, target.x)
 	return k if k >= 0 else 0
 
@@ -809,7 +1041,17 @@ func _minimal_clue_count(oracle: RuleOracle, cur_active: Dictionary, known_mines
 ## 这是生成器**内部**的 CP-SAT 强制格循环（直调 find_forced_cells，带难度统计）。
 ## 与 ProofLog.build（玩家视角 + HintSolver，canonical 落盘路径）同构但用途不同：
 ## 本函数以「生成期校验 + 难度采集」为目的直接信任自己的 known_mines，不落盘、不产生证明链。
-func _solve_rules_stepwise(grid_size: Vector2i, active: Dictionary, masked: Dictionary, total_mines: int, oracle: RuleOracle, values: Dictionary, stats: Variant = null) -> bool:
+##
+## deadline_ms（v4.0 挂死治理，可选，0 = 不限）：本函数是**迭代调用** CP-SAT 的循环
+## （每轮 1 次强制格探测 + 1 次必要线索数），且它自己被删线索 O(n) 条 × 每轮地调用——
+## 只在上层 attempt 之间判墙钟永远判不住单次调用（实测单次可冲到数百秒）。
+## 传入后：每轮按剩余预算收紧 C# 侧累计预算，耗尽即返回 false（按「推不动」拒绝本盘）。
+## 保守方向不变：只会少推、不会误推，绝不产出坏关（R01/R02 不破）。
+##
+## stats["stuck"]（A1-ii，可选出参）：返回 false 时**仅当**原因是「真·无强制格」才置 true。
+## false 有两类原因且必须可区分——① 真二选一（单调性可推出子集必失败，调用方可短路 prune）；
+## ② 预算/超时截断（对「推不动」一无所知，调用方**不得**短路）。②绝不置位。判定依据见函数内注释。
+func _solve_rules_stepwise(grid_size: Vector2i, active: Dictionary, masked: Dictionary, total_mines: int, oracle: RuleOracle, values: Dictionary, stats: Variant = null, deadline_ms: int = 0) -> bool:
 	var cur_active := active.duplicate()
 	var known_mines: Array[Vector2i] = []
 	# 异形拓扑：真实格子数 = 拓扑 cell_count（洞格已在 build_spec 里固定为非雷，不参与演绎）
@@ -820,9 +1062,62 @@ func _solve_rules_stepwise(grid_size: Vector2i, active: Dictionary, masked: Dict
 		steps += 1
 		if steps > total_cells + 8:
 			return false
-		var forced := RuleCpSat.find_forced_cells(oracle.build_spec(cur_active, known_mines, masked))
+		var spec := oracle.build_spec(cur_active, known_mines, masked)
+		# 【(i)① 白名单（09-28）】stats["probe_sets"]（入参，可选）：**逐轮**白名单 D_A(r)。
+		# 单调性定理（A ⊇ B ⇒ forced_B(r) ⊆ D_A(r)）保证 D_A(r) 之外的格在第 r 轮必不强制
+		# ⇒ 输出**逐格相等**，只是少做原子探测。
+		# ⚠ 必须**逐轮**用，不能退化成并集 ∪D_A：对"可推完"的盘 ∪D_A 就是全部自由格 ⇒ 收益归零
+		#（实测：并集版在 o4@6 / o5x@7 / classic+s3@7 上与旧路径耗时一致）。轮次超出 A 的轮数
+		#（D_A(r) 无定义）时**不写该键** ⇒ 自动退回全探测（完备性靠这条兜住）。
+		if stats != null and stats is Dictionary:
+			var psets: Array = stats.get("probe_sets", [])
+			if not psets.is_empty():
+				var rr: int = (stats.get("rounds", []) as Array).size()
+				if rr < psets.size():
+					spec["probe_cells"] = psets[rr]
+		if deadline_ms > 0:
+			var remain := deadline_ms - Time.get_ticks_msec()
+			if remain <= 0:
+				return false  # 预算耗尽：停止演绎（保守，按不可解拒绝）
+			spec["probe_budget_ms"] = clampi(remain, 500, maxi(500, oracle.probe_budget_ms))
+		# A1-ii：记录本次 find_forced_cells 的墙钟耗时与下发的预算，用于区分下面两种 false。
+		var t_fc0 := Time.get_ticks_msec()
+		var forced := RuleCpSat.find_forced_cells(spec)
+		var fc_ms := Time.get_ticks_msec() - t_fc0
+		# 【09-28 深度核实：① 的两个自检守卫】（仅在"本轮确实下发了白名单"时生效）
+		if spec.has("probe_cells"):
+			# 守卫 A：**dll 过旧** ⇒ 白名单被静默忽略（服务器 dll 未重建时正是此状态：特性变 no-op
+			# 且无人察觉）。C# 侧启用白名单时会回写 `probe_filtered`，**缺键即"未生效"**。
+			if not forced.has("probe_filtered") and not Engine.has_meta("i1_wl_unsupported"):
+				Engine.set_meta("i1_wl_unsupported", true)
+				push_warning("PuzzleGenerator: 白名单 probe_cells 未被 C# 侧接受（dll 过旧？）——本次白名单不生效；结果仍正确但无收益；启用 ① 前请先重建 dll")
+			# 守卫 B：**预算绑定** ⇒ 白名单会**改变结论**（实测 tries/ok 23/19→25/20）⇒ 立刻停用。
+			# `stats["probe_sets"]` 与 `state["probe_sets"]` 是**同一个 Array 引用** ⇒ clear() 会同时
+			# 清掉 prune 级状态 ⇒ 后续每条候选自动退回全探测（等价性由此重新获得保障）。
+			if bool(forced.get("budget_hit", false)):
+				var ps_ref: Array = stats.get("probe_sets", [])
+				ps_ref.clear()
+				if not Engine.has_meta("i1_wl_budget_off"):
+					Engine.set_meta("i1_wl_budget_off", true)
+					push_warning("PuzzleGenerator: C# 探测预算绑定 ⇒ 白名单会改变结论，已停用白名单（本 prune 退回全探测）")
 		if forced.is_empty():
-			return false  # 无强制格 → 真二选一，拒绝本盘
+			# 空结果有两个来源，**只有其一**能推出「任何子集同轮也卡住」（单调性定理）：
+			#   ① 真·无强制格（真二选一）→ 可短路：stats["stuck"] = true；
+			#   ② C# 侧探测被截断——累计 probe_budget_ms 耗尽（RuleSolver.FindForcedCells
+			#      在循环顶 `ElapsedMilliseconds >= budget` 即 break）、单次 Solve 撞 8s 墙钟
+			#      （Unknown 不当 Infeasible）、或首解超时 → 空只是预算/超时的产物，
+			#      **对 A 能否推完一无所知** ⇒ 严禁当成 ①（否则可能把本可删线索的候选误判成
+			#      「删不掉」，改产出、破坏等价性）。
+			# 保守判据（只认能证明为 ① 的情形）：
+			#   · 整调用耗时 < probe_budget_ms ⇒ 未 break ⇒ 全部自由格**都跑过探测**；
+			#   · 整调用耗时 < timeout_ms(8s) ⇒ 无任何 Solve 返回 Unknown、首解也非超时。
+			# 两者同时成立 ⇒ 每格都拿到了明确的 Feasible 结论 ⇒ 真·无强制格。
+			# 任一不成立即不置位（保守方向：宁可不短路，也不改变产出）。
+			var probe_budget := int(spec.get("probe_budget_ms", 30000))
+			var solve_limit := int(spec.get("timeout_ms", 8000))
+			if stats != null and stats is Dictionary and fc_ms < mini(probe_budget, solve_limit):
+				stats["stuck"] = true
+			return false  # 无强制格 → 真二选一（或被预算截断），拒绝本盘
 		var progressed := false
 		var pushed := 0
 		var first_target := Vector2i(-1, -1)
@@ -847,9 +1142,19 @@ func _solve_rules_stepwise(grid_size: Vector2i, active: Dictionary, masked: Dict
 					first_target = pos
 		if stats != null and stats.has("rounds"):
 			stats["rounds"].append(pushed)
+			# 【(i)①（09-28）】白名单采集：把本轮强制的格收集起来（调用方用 ∪D_A(r) 限制候选探测面）。
+			# 用**并集**而非逐轮集合：并集是逐轮 D_A(r) 的超集 ⇒ 限制更弱但**依然完备**
+			#（forced_B(r) ⊆ D_A(r) ⊆ ∪D_A），换来"白名单与轮次无关"的简单实现（无 r>K 退化分支）。
+			if stats.has("forced_sets"):
+				var fcells: Array = []
+				for fm in forced.get("mine", []):
+					fcells.append([int(fm[0]), int(fm[1])])
+				for fsc in forced.get("safe", []):
+					fcells.append([int(fsc[0]), int(fsc[1])])
+				(stats["forced_sets"] as Array).append(fcells)
 			# 必要线索数（精确复杂度）：用推进前的线索集，算「推出第一个格」所需的最少线索
 			if stats.has("complexities") and first_target.x >= 0:
-				var cplx := _minimal_clue_count(oracle, active_before, mines_before, masked, first_target, total_mines)
+				var cplx := _minimal_clue_count(oracle, active_before, mines_before, masked, first_target, total_mines, deadline_ms)
 				stats["complexities"].append(cplx)
 		if not progressed:
 			return false

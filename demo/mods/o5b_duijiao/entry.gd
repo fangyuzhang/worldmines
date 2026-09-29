@@ -74,6 +74,45 @@ class DiagGroupRule:
 	func supports_mask() -> bool:
 		return false  # 实验版暂不启用遮蔽
 
+	# ==== 隐藏态契约三件套（2026-09-27 补，r4 独立核验 N2）====
+	# 原缺陷：`_dir1` 被 compute_clue(:64) 读、被 place_mines(:132-145) 写，却**没有 declares()、
+	# 没有 export/import**（基类默认 {} / 空实现）⇒ 生成落盘不带 hidden_state ⇒ 载盘 _dir1 恒空
+	# ⇒ compute_clue 恒返回组 A（t[0]+t[3]），「看哪组对角」的隐藏维度**静默消失**，
+	# 盘面自述 o5b 实为确定性规则；而门禁全放行（线索值现算、求解器读同一份状态 ⇒ 自洽）。
+	# 本席位在 BUNDLED_SKIP 中（设计档案，默认不加载），但 `--mods` 批产按目录名直载会绕过 skip；
+	# 且创作者会把它当模板 → 该缺陷会随每个新 Mod 复制（这才是补它的理由，不是它当前有没有产量）。
+
+	func declares() -> Dictionary:
+		return {"hidden_state": true, "mask": false}   # 无 k 旋钮（k 硬编码 = 格数/4）
+
+	func export_hidden_state() -> Dictionary:
+		var arr: Array = []
+		for p in _dir1:
+			arr.append({"c": p.x, "r": p.y})
+		arr.sort_custom(RulePlugin.state_pos_less)
+		return {"dir1": arr}
+
+	func import_hidden_state(state: Dictionary) -> void:
+		_dir1.clear()
+		for it in state.get("dir1", []):
+			_dir1[Vector2i(int(it["c"]), int(it["r"]))] = true
+
+	## P0 契约（见 RulePlugin.init_hidden_state）：只采隐藏态、不产出雷。
+	## 复合档（o5b + 全局规则）的雷布局由全局规则/CP-SAT 给出时，由生成器显式调用本方法。
+	func init_hidden_state(rng: RandomNumberGenerator, cols: int, rows: int, _count: int) -> void:
+		_dir1.clear()
+		var all_cells: Array = []
+		for r in rows:
+			for c in cols:
+				all_cells.append(Vector2i(c, r))
+		var k := (cols * rows) / 4
+		if k < 1:
+			k = 1
+		for _i in range(mini(k, all_cells.size())):
+			var pi := rng.randi_range(0, all_cells.size() - 1)
+			_dir1[all_cells[pi]] = true
+			all_cells.remove_at(pi)
+
 	# ==== 逆向编码 ====
 
 	static func _did(c: int, r: int) -> int:
@@ -130,19 +169,9 @@ class DiagGroupRule:
 	# ==== 构造式布雷 + dir 配额分配 ====
 
 	func place_mines(rng: RandomNumberGenerator, cols: int, rows: int, count: int) -> Array[Vector2i]:
-		# dir=1 配额：全盘随机选 k 个
-		_dir1.clear()
-		var all_cells: Array = []
-		for r in rows:
-			for c in cols:
-				all_cells.append(Vector2i(c, r))
-		var k := (cols * rows) / 4
-		if k < 1:
-			k = 1
-		for _i in range(mini(k, all_cells.size())):
-			var pi := rng.randi_range(0, all_cells.size() - 1)
-			_dir1[all_cells[pi]] = true
-			all_cells.remove_at(pi)
+		# 隐藏态首步采样（抽出为 init_hidden_state：逐 rng 同序 ⇒ 本席位行为逐字节不变，
+		# 而复合档可由生成器显式调用补齐——见 RulePlugin.init_hidden_state 契约）
+		init_hidden_state(rng, cols, rows, count)
 		# 效率布雷（同 O1/O5 方案：低聚类 + 偏边缘加权序列采样）
 		var weights: Dictionary = {}
 		for r in rows:

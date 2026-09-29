@@ -118,6 +118,13 @@ var question_mark_enabled: bool = false
 var restart_confirm: bool = true
 # 界面缩放档位（v3.4，任务三「代价低且已支持」项）：只改 _apply_content_scale 的 canvas_items
 # 参考分辨率，不触碰任何棋盘 / UI 布局代码；取值 1.0 / 1.25 / 1.5。全局生效（棋盘一并缩放，属预期）。
+## 【09-28 审计修复 A10：显示设置的「真源规则」写在这里，因为它是 durable 的】
+## `project.godot` 的 `[display]`（1280×720 + canvas_items + expand）是**引擎级引导值**；
+## 玩家可见可调的显示项**只有本文件这两个**：
+##   * `fullscreen` → DisplayServer 窗口模式
+##   * `ui_scale`   → `_apply_content_scale()` 重算 `content_scale_size`（1.0/1.25/1.5）
+## ⇒ 规则：**引擎引导值改 project.godot；用户可见可调的默认值改这里**，两边不要互相抄。
+## （`project.godot` 里的注释活不下来——Godot 保存设置时会重写整个文件、丢掉注释，2026-09-28 实测。）
 var ui_scale: float = 1.0
 
 
@@ -148,8 +155,13 @@ func load_cfg() -> void:
     active_skin = _get_str(cfg, "active_skin", "")
     hint_font_size = int(cfg.get_value("game", "hint_font_size", 16))
     seen_play_hint = _get_bool(cfg, "seen_play_hint", false)
-    hint_window_pos = cfg.get_value("game", "hint_window_pos", Vector2.ZERO)
-    hint_window_size = cfg.get_value("game", "hint_window_size", Vector2(320, 200))
+    # 【09-28 审计修复 R10】原先直接 `cfg.get_value(...)` 赋给 Vector2 类型字段：ConfigFile 会
+    # **原样返回文件里的 Variant**，手改/写坏的 settings.cfg（字符串/数组）会让强类型赋值在启动时
+    # 抛错（同函数其余字段都有 _get_str/_get_bool/clampi 兜底，只有这两项漏了）。
+    var hp: Variant = cfg.get_value("game", "hint_window_pos", Vector2.ZERO)
+    hint_window_pos = hp if hp is Vector2 else Vector2.ZERO
+    var hsz: Variant = cfg.get_value("game", "hint_window_size", Vector2(320, 200))
+    hint_window_size = hsz if hsz is Vector2 else Vector2(320, 200)
     hint_mode = clampi(int(cfg.get_value("game", "hint_mode", 0)), 0, 2)
     hint_charge = _get_bool(cfg, "hint_charge", true)
     no_guess_mode = clampi(int(cfg.get_value("game", "no_guess_mode", 0)), 0, 2)

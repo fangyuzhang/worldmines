@@ -24,7 +24,9 @@ func set_full_settings_entry(v: bool) -> void:
     if _more_btn != null:
         _more_btn.visible = v
 
-const THEME_MODES := ["system", "dark", "light"]
+## 主题取值表**不再自带副本**（2026-09-29）：改读 ThemeManager.THEME_IDS（唯一事实源）。
+## 原 `const THEME_MODES := ["system","dark","light"]` 与三行 add_item() 是同一事实的
+## 两份副本，接入 CozyStyle 五主题后本弹窗漏改 ⇒ 对局内选不到新主题、且下拉显示空白。
 
 
 func _ready() -> void:
@@ -63,11 +65,24 @@ func _build_ui() -> void:
     row1.add_theme_constant_override("separation", 20)
     _add_label(row1, "主题模式")
     _theme_opt = OptionButton.new()
-    _theme_opt.add_item("跟随系统")
-    _theme_opt.add_item("深色")
-    _theme_opt.add_item("亮色")
+    # 【2026-09-29】与 settings_panel._build_video_page 同源：按 ThemeManager.THEME_IDS 渲染。
+    # 原先本文件自带一份 `THEME_MODES := ["system","dark","light"]` + 三行 add_item ——
+    # 接入 CozyStyle 五主题后（2026-09-29）弹窗只能选 3 个（对局内换不了粉彩主题），
+    # 且当前主题是 CozyStyle 时 `THEME_MODES.find()` 返回 -1 ⇒ 下拉显示**空白**。
+    # 同一个事实两份副本必然漂移；显示名统一走 theme_label()，顺序由 THEME_IDS 决定
+    #（system 恒在 0 位，与整页面板一致）。
+    var theme_ids: Array = ThemeManager.THEME_IDS
+    for i in theme_ids.size():
+        var tid := str(theme_ids[i])
+        _theme_opt.add_item(ThemeManager.theme_label(tid))
+        # 浅色系（CozyStyle 与旧亮色）在深色下拉弹层里要标明，避免选完才发现是亮的
+        if tid != "system" and tid != "dark":
+            _theme_opt.set_item_tooltip(i, "浅色系主题")
     _theme_opt.item_selected.connect(func(idx: int):
-        SettingsManager.set_theme_mode(THEME_MODES[idx]))
+        SettingsManager.set_theme_mode(str(theme_ids[idx])))
+    # 存档里的脏 id → 落回 0 位（跟随系统），而不是让下拉停在 -1 显示空白
+    var sel: int = theme_ids.find(SettingsManager.theme_mode)
+    _theme_opt.selected = sel if sel >= 0 else 0
     row1.add_child(_theme_opt)
     vbox.add_child(row1)
 
@@ -172,7 +187,11 @@ func _build_ui() -> void:
     close.pressed.connect(func(): hide())
     vbox.add_child(close)
 
-    _theme_opt.selected = THEME_MODES.find(SettingsManager.theme_mode)
+    # 全部行都在场之后再统一标签列宽（必须最后做：量的是"最宽的那条"，见 _align_label_column）
+    _align_label_column(vbox)
+
+    # 主题下拉的初值已在「外观」分组里设好（见那里的 sel）——不要在这里再 set 一遍，
+    # 两份初值逻辑必然漂移（本次修的正是这类副本问题）。
     _apply_theme()
 
 
@@ -193,7 +212,42 @@ func _add_label(parent: Node, text: String) -> void:
     lb.text = text
     lb.custom_minimum_size = Vector2(160, 32)
     lb.add_theme_font_size_override("font_size", 18)
+    # 垂直居中（2026-09-29）：框高 32 > 行高 27，默认 TOP 会让文字比同排控件中心高 2.5px。
+    # 与 settings_panel._add_label 同一条理由，两处必须一致，否则全屏面板与快捷弹窗
+    # 的同一项会看起来"一个高一个低"。
+    lb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    lb.set_meta("_row_label", true)
     parent.add_child(lb)
+
+
+## 把本弹窗所有「行标签」的宽度统一到最宽的那条（2026-09-29，与 settings_panel 同源）。
+## 原实现给死 160，而「连携操作（一键展开 / 拖动插旗）」（18px 下 268px）等几条超出它 ⇒
+## 超宽那几行的开关被顶到 268+20 处、其余行留在 180 处，一列开关左右参差。
+## 只改宽不改高：horizontal_alignment 是 LEFT，加宽只让右侧空白变多，文字位置不动。
+func _align_label_column(scope: Node) -> void:
+    var labels: Array[Label] = []
+    _gather_row_labels(scope, labels)
+    if labels.size() < 2:
+        return
+    var widest := 0.0
+    for lb in labels:
+        var f: Font = lb.get_theme_font("font")
+        if f == null:
+            continue
+        widest = maxf(widest, f.get_string_size(lb.text, HORIZONTAL_ALIGNMENT_LEFT, -1,
+            lb.get_theme_font_size("font_size")).x)
+    if widest <= 0.0:
+        return
+    var w: float = ceilf(widest / 4.0) * 4.0
+    for lb in labels:
+        lb.custom_minimum_size = Vector2(w, lb.custom_minimum_size.y)
+
+
+func _gather_row_labels(root: Node, out: Array[Label]) -> void:
+    for c in root.get_children():
+        if c is Label and (c as Label).has_meta("_row_label"):
+            out.append(c as Label)
+        _gather_row_labels(c, out)
 
 
 ## 分组标题：次级色 + 略小字号；带 meta 以便 _apply_theme 换主题时仍用次级色。

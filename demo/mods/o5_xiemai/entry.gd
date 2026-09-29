@@ -157,7 +157,13 @@ class XiemaiRule:
 
 	# ==== 构造式布雷 + s 配额分配 ====
 
-	func place_mines(rng: RandomNumberGenerator, cols: int, rows: int, count: int) -> Array[Vector2i]:
+	## s=1（选副斜线）集合（隐藏态）：从全部格中无放回抽 k 个。**只写 _s1，不产出雷**。
+	## P0（2026-09-27）：抽为独立入口——复合档（o5x + 全局规则）的雷布局由全局规则/CP-SAT
+	## 给出，不会走到 o5x.place_mines，必须由生成器显式调用本方法补齐隐藏态
+	##（否则 _s1 为空 → compute_clue 恒走主斜线、隐藏选择消失；或残留上一盘状态，
+	##  跨尺寸时连 k 配额都对不上——实测 7×7 盘落盘 16 个 s=1 格而 _k_of(7,7)=12）。
+	## 逐 rng 调用与原先完全一致 ⇒ 单线索档（o5x@7/o5x@8）产物逐字节不变。
+	func init_hidden_state(rng: RandomNumberGenerator, cols: int, rows: int, _count: int) -> void:
 		_s1.clear()
 		var all_cells: Array = []
 		for r in rows:
@@ -168,6 +174,10 @@ class XiemaiRule:
 			var pi := rng.randi_range(0, all_cells.size() - 1)
 			_s1[all_cells[pi]] = true
 			all_cells.remove_at(pi)
+
+	func place_mines(rng: RandomNumberGenerator, cols: int, rows: int, count: int) -> Array[Vector2i]:
+		# 隐藏态首步采样（与本方法抽出前逐 rng 同序 —— 黄金网「单线索档逐字节不变」约束）
+		init_hidden_state(rng, cols, rows, count)
 		# 效率布雷（同 O1/O5：低聚类 + 偏边缘加权序列采样）
 		var weights: Dictionary = {}
 		for r in rows:

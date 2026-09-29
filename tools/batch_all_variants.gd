@@ -25,8 +25,15 @@ extends SceneTree
 #     unit_done 事件带 peak_miss/peak_hist（可反推命中率与单候选成本）。
 #     ⚠️ 运维注意：① 空缺参数位必须填占位值（tiered 填 `off`、k 旋钮填 `-1`）——PowerShell 会
 #        丢弃空字符串参数导致后续参数整体错位、窗口静默失效（实测踩过）；② 窗口模式要求目录口径
-#        干净（含旧口径文件会拒绝续跑）；③ 输出的文件名档位 = 峰值口径，顶层 `difficulty` 字段
-#        仅作紧凑度画像（报表分组需按峰值口径另算）。
+#        干净（含**峰值不属于任何档**的文件会拒绝续跑，S1 起语义见下）；③ 输出的文件名档位 = 峰值口径，
+#        顶层 `difficulty` 字段仅作紧凑度画像（报表分组需按峰值口径另算）。
+#   · 第 17 参（S1 跨档路由，2026-09-27，见 docs/GEN_PERF_PLAN_0927.md §17）：缺省 on，
+#     填 `off` = 旧行为（窗口外直接拒收）——**仅供 A/B 对拍/回滚**。
+#     语义：候选峰值在窗口外但属于某个档（2..20）时**不再丢弃**，按其峰值对应的档落盘
+#     （文件名 `<tier>_<N>`，如 easy-run 里 peak=4 的候选写成 `normal_XX.json`）。
+#     边界：peak<=1（一眼盘）与 peak>=PEAK_OVER（超纲）**仍然拒收**（difficulty.gd:89 设计排除）。
+#     配额：路由产物**只填空缺**——目标档已达 per_tier 即丢弃且不落盘；**不计入本单元 made**
+#     （S1 是纯增量，不挤占既有排产）；unit_done 事件带 `routed` 字段单独计数。
 #
 # 关键设计（防废品/防复工）：
 #   1. is_feasible 预筛：不含 dt 的组合在生成前判数学可行性，UNSAT（如 RL 6×6 奇偶矛盾、
@@ -119,6 +126,10 @@ var _tiered_target := false    # 第 13 参数："tiered" = 方案 B 动态目�
 var _stall_max := 60           # 第 14 参数：停滞阈值覆盖（默认 60；调小 = 满档后更早停单元）
 var _k_public := -1            # 第 15 参数：k 旋钮（0=不公开 / 1=公开；缺省 -1=不设置，保持规则默认）
 var _peak_window := Vector2i(-1, -1)  # 第 16 参数：峰值窗口 "lo-hi"（如 "9-20"）；缺省 -1 = 不限（旧行为）
+## 第 17 参（S1 跨档路由，2026-09-27，见 docs/GEN_PERF_PLAN_0927.md §17）：默认 on。
+## 填 `off` = 旧行为（峰值不在窗口内直接拒收）——**仅供 A/B 对拍与回滚**，生产默认不变。
+## 语义：窗口外但峰值为 2..20 的合法关卡，按其峰值对应的档落盘（路由只改归属，不改内容）。
+var _route_peak := true
 
 ## per_tier 模式停滞阈值：连续 N 次尝试全部撞「已满档」→ 停止该单元
 ##（防「easy 满后为 normal/hard 白跑满 seed_max」——O1 等低难度天花板算子的常态）。
@@ -354,7 +365,8 @@ func _fingerprint(level: Dictionary) -> String:
 
 
 ## 断点续跑：扫描单元目录已有关卡（总数 / 各档最大编号 / 指纹集 / 雷位集用于相似度门）。
-## 窗口模式（第 16 参）下另收集「窗口外文件」清单 window_bad —— 续跑前据此拒绝脏口径目录（复审 I3）。
+## 窗口模式（第 16 参）下另收集「峰值不属于任何档」的清单 window_bad —— 续跑前据此拒绝脏口径目录（复审 I3）。
+## S1 起语义为"不在**任何**档"（peak<=1/>=PEAK_OVER），见函数内说明（§17.1 ①）。
 func _scan_unit(combo_dir: String) -> Dictionary:
 	var out := {"count": 0, "max_idx": {}, "fps": {}, "mine_sets": [], "tier_count": {}, "window_bad": []}
 	var d := DirAccess.open(combo_dir)
@@ -371,11 +383,15 @@ func _scan_unit(combo_dir: String) -> Dictionary:
 			for m in level.get("mines", []):
 				ms[Vector2i(int(m["c"]), int(m["r"]))] = true
 			(out["mine_sets"] as Array).append(ms)
-			# 窗口模式：峰值不在窗口内 = 旧口径/超纲残留 → 记入 window_bad（续跑前拒绝）
+			# S1（§17.1 ①，2026-09-27）：window_bad 语义 = 峰值**不属于任何档**（peak<=1 或 >=PEAK_OVER），
+			# 即真正的「旧口径脏数据/超纲残留」。**不能**沿用"不在我的窗口"——三档共用同一目录
+			# （`user://cmp_<combo>/<combo>/<SxS>/`）时，S1 路由会把 easy 文件写进 hard 目录（文件名
+			# 仍为该峰值的档），旧口径会让 hard 的续跑**拒绝自己**（下方 push_error + fail++）。
+			# 判据与 tier_of_peak 同源（对 peak<0 / >=PEAK_OVER 返回 ""）。
 			if _peak_window.x >= 0:
 				var mc: Variant = (level.get("difficulty_profile", {}) as Dictionary).get("max_complexity")
 				var wpk := int(mc) if mc != null else -1
-				if not Difficulty.in_window(wpk, _peak_window.x, _peak_window.y):
+				if Difficulty.tier_of_peak(wpk) == "":
 					(out["window_bad"] as Array).append("%s/%s" % [combo_dir, f])
 		var parts := str(f.get_basename()).split("_", false)
 		if parts.size() == 2:
@@ -427,6 +443,20 @@ func _window_tiers_full(made_by_tier: Dictionary) -> bool:
 		if int(made_by_tier.get(tid, 0)) < _per_tier:
 			return false
 	return covered
+
+
+## S1（§17.1 ④）：峰值窗口**完全落在单一档区间内**时返回该档名，否则返回 ""。
+## 用途：只有"单档窗口"才满足「该档满了 ⇒ 窗口内任何候选都收不了」⇒ 可安全把档满判定前移
+## （省掉最坏 _stall_max 次全额生成，§12.2 的 W1）。跨档窗口（如 "2-20"）或含超纲端的窗口
+## 必须返回 ""，否则会把仍可接收（属于另一档）的候选整体腰斩 —— 这是硬约束，不得省略。
+## 正确性：档窗口 [2,3]/[4,5]/[6,20] 连续且互斥，故 lo 与 hi 同档 ⟹ 其间任意峰值也同档。
+func _window_single_tier() -> String:
+	if _peak_window.x < 0:
+		return ""
+	var t_lo := Difficulty.tier_of_peak(_peak_window.x)
+	if t_lo == "" or t_lo != Difficulty.tier_of_peak(_peak_window.y):
+		return ""
+	return t_lo
 
 
 ## 与组内已有盘的峰值 Jaccard 相似度（雷位集 交/并）。> SIMILARITY_MAX 时拒收新关——
@@ -541,6 +571,15 @@ func _initialize() -> void:
 				CliShutdown.request_exit(1)
 				return
 			_peak_window = Vector2i(p_lo, p_hi)
+	# 第 17 参（S1 跨档路由）：显式 `off` = 关闭（旧行为，A/B 对拍/回滚用）；缺省或其它值 = 开启。
+	if args.size() >= 17 and str(args[16]) == "off":
+		_route_peak = false
+	# 【09-28 深查修正】缺省即 on，而 `tools/run_window_production.sh` 与旧计划生成器只传 **16 参**
+	# ⇒ 计划侧"以为没开路由"、实际开着（实测服务器在跑的那轮就是此状态）。
+	# 这里**把生效口径打进日志**，杜绝下次再靠推理判断（不改变行为；要旧行为必须显式传 `off`）。
+	print("[口径] 跨档路由(第17参)=%s%s" % [
+		"ON" if _route_peak else "OFF",
+		"" if args.size() >= 17 else "（**未提供该参数 ⇒ 按缺省 ON 生效**）"])
 	DirAccess.make_dir_recursive_absolute(_out_dir)
 	# 记录文件路径（分片命名——多进程写同一文件会互相覆盖，v2.9.3 probe 实测教训）
 	_issues_path = "%s/%s" % [_out_dir,
@@ -577,7 +616,7 @@ func _initialize() -> void:
 	gen.num_workers = 1 if _shard_total > 1 else 0
 	var t0 := Time.get_ticks_msec()
 	var stats := {"units": 0, "ok": 0, "partial": 0, "skipped": 0, "design_skip": 0, "resumed": 0, "fail": 0,
-		"similar_skipped": 0, "tiers": {"intro": 0, "easy": 0, "normal": 0, "hard": 0}}
+		"similar_skipped": 0, "routed": 0, "tiers": {"intro": 0, "easy": 0, "normal": 0, "hard": 0}}
 	var skipped: Array = []
 	var design_skip: Array = []
 	var partial: Array = []
@@ -655,10 +694,13 @@ func _initialize() -> void:
 			# 断点续跑：扫描已有产出。满额单元直接跳过（重跑安全、不重复生成）；
 			# 未满单元编号接续 + 指纹去重（同 seed 重跑撞已有盘时跳过，不产生冗余文件）。
 			var existing := _scan_unit(combo_dir)
-			# 窗口模式下目录必须是"干净口径"：含旧口径文件（峰值不在窗口内）时拒绝续跑，
-			# 否则会继承错误的档位计数 → made=0 且看似"窗口太严"（复审 I3 的静默零产出）。
+			# 窗口模式下目录必须是"干净口径"：含**峰值不属于任何档**的文件（peak<=1/>=PEAK_OVER）
+			# 时拒绝续跑，否则会继承错误的档位计数 → made=0 且看似"窗口太严"（复审 I3 的静默零产出）。
+			# S1（§17.1 ①）：判据已从"不在本窗口"改为"不在任何档"——三档共用目录 + 路由之下，
+			# 旧判据会把路由到别的档的合法文件当脏数据，导致 hard 单元续跑拒绝自己。
 			if _peak_window.x >= 0 and not (existing["window_bad"] as Array).is_empty():
-				push_error("[量产] 窗口模式目录含旧口径文件，拒绝续跑: %s（%d 个，例：%s）；请换新目录或清理后重跑" % [
+				push_error("[量产] 窗口模式目录含峰值不属于任何档的文件（peak<=1 或 >=%d），拒绝续跑: %s（%d 个，例：%s）；请换新目录或清理后重跑" % [
+					Difficulty.PEAK_OVER,
 					combo_dir, (existing["window_bad"] as Array).size(),
 					str((existing["window_bad"] as Array)[0])])
 				stats["fail"] = int(stats.get("fail", 0)) + 1
@@ -688,6 +730,12 @@ func _initialize() -> void:
 			var u_peak_miss := 0                     # 窗口外拒收计数（第 16 参启用时）
 			var u_peak_min := 1 << 30                # 已见候选峰值下界（窗口外止损证据，G3）
 			var u_peak_max := -(1 << 30)             # 已见候选峰值上界（同上）
+			# S1（§17.1 ②③）：路由计数与「真·不可救 miss」的独立记账
+			#  —— 止损判据只看后者（peak<=1 或 >=PEAK_OVER），否则会因可路由候选而误停/误续。
+			var u_routed := 0                        # 按峰值跨档落盘的关卡数（不计入 made）
+			var u_miss_dead := 0                     # 窗口外且**不属于任何档**的候选数
+			var u_dead_min := 1 << 30                # 上述候选的峰值下界
+			var u_dead_max := -(1 << 30)             # 上述候选的峰值上界
 			var peak_hist: Dictionary = {}           # 候选峰值直方图（供能力档案/命中率分析）
 			# 阶段统计累计（v2.9.3 检测器增强）：布雷/删线索/验证各阶段失败可观测
 			var u_attempts := 0
@@ -699,7 +747,16 @@ func _initialize() -> void:
 			var u_t0 := Time.get_ticks_msec()
 			var max_diff_seen := -1.0
 			var unreachable := false
+			# S1（§17.1 ④）：仅当峰值窗口**完全落在单一档区间内**才允许「档满前移」。
+			# 跨档窗口（如 "2-20"）或含超纲端的窗口 → ""，不前移（否则会把仍可路由/仍可接收的
+			# 候选整体腰斩）。
+			var win_single_tier := _window_single_tier()
 			for seed in range(_seed_start, _seed_max + 1):
+				# S1（§17.1 ④）档满判定前移（消 W1）：单档窗口下该档已满 ⇒ 后续窗口内候选
+				# 全归同一档、一个都收不了 ⇒ 直接停单元，省掉最坏 _stall_max 次全额生成。
+				if _per_tier > 0 and win_single_tier != "" \
+						and int(made_by_tier.get(win_single_tier, 0)) >= _per_tier:
+					break
 				# 难度可达性预筛（放循环开头：失败分支会 continue，只有迭代开始处才必然执行到）—
 				# 前若干次尝试全「进不了档」且难度上限远低于门槛 → 该单元在难度维不可达，
 				# 停止耗尽 seed_max（mx_ep/8x8 等实测 40 seed 全废，省下 90% 白跑）。
@@ -744,23 +801,44 @@ func _initialize() -> void:
 				peak_hist[peak] = int(peak_hist.get(peak, 0)) + 1
 				u_peak_min = mini(u_peak_min, peak)      # 止损证据：累计已见峰值的 [min,max]
 				u_peak_max = maxi(u_peak_max, peak)
-				# v4.0 窗口验收（第 16 参）：peak 不在窗口 → 拒收（记 peak_miss）
+				# v4.0 窗口验收（第 16 参）+ S1 跨档路由（§17.1 ②，2026-09-27）：
+				#   · peak 在窗口内                         → 原流程接收（routed=false）；
+				#   · peak 在窗口外但属于某个档（2..20）    → **不拒收**，按该峰值的档走后续流程
+				#                                            （routed=true，文件名 <tier>_<N> 即归属）；
+				#   · peak 不属于任何档（<=1 或 >=PEAK_OVER）→ 真拒收（既有 tier_empty 语义不变）。
+				# 关路由（第 17 参 = off）时退回旧行为：窗口外一律拒收。
+				var routed := false
 				if _peak_window.x >= 0 and not Difficulty.in_window(peak, _peak_window.x, _peak_window.y):
 					u_peak_miss += 1
+					var rt := Difficulty.tier_of_peak(peak)
+					if rt == "":
+						# 一眼盘(<=1)/超纲(>=21) 属设计排除（difficulty.gd:89）——只有它们才构成
+						# 「窗口结构性不可达」的证据，止损只看这一类（见下方判据）。
+						u_miss_dead += 1
+						u_dead_min = mini(u_dead_min, peak)
+						u_dead_max = maxi(u_dead_max, peak)
 					unit_lines.append(_ev({"t": "peak_miss", "combo": combo["id"], "side": side,
-						"seed": seed, "peak": peak, "cost_s": cost_ms / 1000.0}))
-					# v4.0 窗口外止损（复审 G3）：结构性不可达窗口不白跑满 seed_max。
-					# 判据 = miss 数达阈值 + 已见峰值全在窗口同侧（低于下界或高于上界）——
-					# 为什么不能只按 miss 计数停：部分可达窗口的 miss 累计必然越过阈值（实测
-					# s1@8 追 9-20 命中 10% → 100 关需 ~1000 候选、miss ~900），只按计数停会把
-					# 正常单元腰斩；而「60 个候选峰值从未触窗」对 10% 命中率的误停概率仅约
-					# 0.9^60 ≈ 0.2%（对 0% 的结构性不可达则必然命中）。阈值与「档已满 stall」
-					# 同源（_stall_max）；实测代价：o8 追 9-20 命中 0%，此前白跑满 seed_max
-					# ≈ 50 分钟/单元，此止损后 ~60 个候选即停。
-					if u_peak_miss >= _stall_max \
-							and (u_peak_max < _peak_window.x or u_peak_min > _peak_window.y):
-						break
-					continue
+						"seed": seed, "peak": peak, "routed_tier": rt, "cost_s": cost_ms / 1000.0}))
+					if rt == "" or not _route_peak:
+						# v4.0 窗口外止损（复审 G3）：结构性不可达窗口不白跑满 seed_max。
+						# 判据 = miss 数达阈值 + 已见峰值全在窗口同侧（低于下界或高于上界）——
+						# 为什么不能只按 miss 计数停：部分可达窗口的 miss 累计必然越过阈值（实测
+						# s1@8 追 9-20 命中 10% → 100 关需 ~1000 候选、miss ~900），只按计数停会把
+						# 正常单元腰斩；而「60 个候选峰值从未触窗」对 10% 命中率的误停概率仅约
+						# 0.9^60 ≈ 0.2%（对 0% 的结构性不可达则必然命中）。阈值与「档已满 stall」
+						# 同源（_stall_max）；实测代价：o8 追 9-20 命中 0%，此前白跑满 seed_max
+						# ≈ 50 分钟/单元，此止损后 ~60 个候选即停。
+						# S1 修订（开关 ON 时）：止损只看**不可路由**的 miss（peak<=1/>=21）——
+						# 否则"峰值全在窗口同侧但可路由到别的档"的单元会被误停（S1 的主要收益池）。
+						# 开关 OFF 时仍用全体 miss 的 [min,max]，与旧行为逐位一致（A/B 对拍用）。
+						var _sn := u_miss_dead if _route_peak else u_peak_miss
+						var _slo := u_dead_min if _route_peak else u_peak_min
+						var _shi := u_dead_max if _route_peak else u_peak_max
+						if _sn >= _stall_max \
+								and (_shi < _peak_window.x or _slo > _peak_window.y):
+							break
+						continue
+					routed = true
 				# 2026-09-23 审计：无窗口参数时走旧标量口径 —— 它会产出 intro（旧四档之一），
 				# 而下游 import_batch_to_lib 只认 easy/normal/hard，intro 会被静默丢弃。
 				# 这里保留旧模式（core/difficulty.gd 明确把 intro 留作回退路径），但把风险显式化。
@@ -775,12 +853,16 @@ func _initialize() -> void:
 					continue
 				# per_tier 模式：该档已收满 → 静默跳过（继续为未满档生成）；
 				# 连续撞满档达 STALL_MAX → 停单元（防低难度天花板算子白跑满 seed_max）。
+				# S1（§17.1 ③）：路由产物**只填空缺** —— 目标档已满即丢弃（不落盘），
+				# 且不计入停滞计数（路由是纯增量，不挤占本单元排产，也不该掩盖本单元的停滞）。
 				if _per_tier > 0 and int(made_by_tier.get(tier, 0)) >= _per_tier:
-					u_full_stall += 1
-					if u_full_stall >= _stall_max:
-						break
+					if not routed:
+						u_full_stall += 1
+						if u_full_stall >= _stall_max:
+							break
 					continue
-				u_full_stall = 0
+				if not routed:
+					u_full_stall = 0
 				# 生成后复核：可加载 + 序贯可解（与 verify_batch 同口径，杜绝废品入库）
 				var log: Dictionary = ProofLog.build(level)
 				if not bool(log.get("solved", false)):
@@ -812,21 +894,28 @@ func _initialize() -> void:
 				level["name"] = "%s_%02d" % [tier, idx]
 				level["difficulty"] = diff
 				_write("%s/%s_%02d.json" % [combo_dir, tier, idx], level)
-				made += 1
+				# S1（§17.1 ③）：磁盘档计数必须真实累加（否则编号会撞、续跑会重复落盘），
+				# 但路由产物**不计入本单元 made**——S1 是纯增量，不能挤占既有排产，
+				# 也不能因路由产物让 hard 单元提前 break（spec §11.4 / §17.1③）。
 				made_by_tier[tier] = int(made_by_tier.get(tier, 0)) + 1
 				stats["tiers"][tier] = int(stats["tiers"].get(tier, 0)) + 1
+				if routed:
+					u_routed += 1
+				else:
+					made += 1
 				if _per_tier > 0:
 					if _all_tiers_full(made_by_tier) or _window_tiers_full(made_by_tier):
 						break
 				elif made >= _per_type:
 					break
 			stats["ok"] += made
+			stats["routed"] = int(stats.get("routed", 0)) + u_routed  # S1：跨档路由落盘数（纯增量）
 			# 单元完成行（兼心跳：远程 getfile 拉最后几行即可看进度）
 			# 阶段字段（v2.9.3）：attempts=布雷尝试总数；brep_fail/prune_empty/verify_fail/timeout
 			# 为各阶段失败数——「布雷成功率」= 1 - brep_fail/attempts，「端到端接受率」= made/tried。
 			unit_lines.append(_ev({"t": "unit_done", "combo": combo["id"], "side": side,
 				"made": made, "tried": u_tried, "empty": u_empty, "tier_empty": u_tier,
-				"proof_fail": u_proof, "dup": u_dup, "similar": u_sim,
+				"proof_fail": u_proof, "dup": u_dup, "similar": u_sim, "routed": u_routed,
 				"attempts": u_attempts, "brep_fail": u_brep_fail, "prune_empty": u_prune_empty,
 				"verify_fail": u_verify_fail, "timeout": u_timeout, "prewon": u_prewon,
 				"mines": mines, "mines_fallback": mines_fallback,
@@ -851,9 +940,9 @@ func _initialize() -> void:
 	print("  单元(组合×尺寸): %d | 入库总关数 %d | 设计跳过(FR难度) %d | 跳过(数学UNSAT) %d | 续跑满额跳过 %d | 相似拒收 %d | 部分成功 %d" % [
 		stats["units"], stats["ok"], stats["design_skip"], stats["skipped"], stats.get("resumed", 0),
 		stats.get("similar_skipped", 0), stats["partial"]])
-	print("  难度分布: intro=%d easy=%d normal=%d hard=%d | 候选雷数回退单元 %d" % [
+	print("  难度分布: intro=%d easy=%d normal=%d hard=%d | 候选雷数回退单元 %d | S1 跨档路由落盘 %d（不计入入库总关数）" % [
 		stats["tiers"].get("intro", 0), stats["tiers"]["easy"], stats["tiers"]["normal"],
-		stats["tiers"]["hard"], int(stats.get("mines_fallback", 0))])
+		stats["tiers"]["hard"], int(stats.get("mines_fallback", 0)), int(stats.get("routed", 0))])
 	if design_skip.size() > 0:
 		print("  设计跳过清单(%d，FR难度天然<0.3，见GDD 3.3): %s" % [design_skip.size(), ", ".join(design_skip)])
 	if skipped.size() > 0:

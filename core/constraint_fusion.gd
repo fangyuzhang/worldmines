@@ -213,8 +213,9 @@ static func _rows_ep(grid_size: Vector2i, frontier: Array[Vector2i], known_mines
 
 ## G4 四象：去中央行/列后四象限雷数相等 → Q1-Q2=0, Q2-Q3=0, Q3-Q4=0（3 行）
 static func _rows_qd(grid_size: Vector2i, frontier: Array[Vector2i], known_mines: Dictionary) -> Array:
-	var mid_r: int = grid_size.y / 2
-	var mid_c: int = grid_size.x / 2
+	# 【09-28 审计修复 A8】int/int 显式化
+	var mid_r: int = floori(grid_size.y / 2.0)
+	var mid_c: int = floori(grid_size.x / 2.0)
 	var qcells: Array = [[], [], [], []]
 	var qbase: Array = [0, 0, 0, 0]
 	for y in grid_size.y:

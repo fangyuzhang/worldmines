@@ -10,6 +10,16 @@
 # 动效状态机（wave / pop / ripple）与它们的时间常量**一律未动**，只吃传进去的矩形。
 extends Control
 
+## 伙伴骨架数据（只取 ASPECT 与 DESIGN_W/EDGE 做停靠尺寸换算）。纯数据脚本、不引用任何
+## autoload，故这里的 preload 不会给 board_view 添运行时依赖。
+const RIGDATA := preload("res://ui/companion_rig.gd")
+## 伙伴本体脚本，**当类型注解用**（Godot 4 允许把 const preload 的脚本作类型）：
+## 于是 _pet.react() / _pet.frozen / _pet.hit_test() 都有静态检查，而不是先转 Control
+## 再靠 `call("react")` 这种一改签名就静默失效的动态调用。
+## 也不必给 companion_pet.gd 注册 class_name —— 那会多一个全局名字，与工具链/CI 的类名
+## 扫描打架（RIPPLE_RINGS 就是为此才不注册的）。
+const PetScript := preload("res://ui/companion_pet.gd")
+
 # ============ 蜂窝（六边形）几何常量 ============
 # 数值来源 = 原版游戏字节码（T4 已确证），**照用勿改**：
 #   格心（晶格单位，(x,y) = 格坐标）：cx = 0.75*(x+y)、cy = (√3/4)*(x−y)
@@ -43,6 +53,30 @@ const MIN_CELL_PX := 24                   # cell_px 下限（与矩形路径原�
 ## 不给编译期依赖再添一环（纯值复制 + 测试守卫在这里更稳）。
 const HUD_SIDE_RESERVE := 104.0
 
+## ── 动物伙伴「占位猫」的右侧停靠区（2026-09-29）────────────────────────────────
+## 三条值与 ui/companion_pet.gd 的 DESIGN_W / EDGE 是**两处独立声明**（沿用 HUD_SIDE_RESERVE
+## 的先例：board_view 会被 headless 工具链间接加载，不给编译期依赖再添一环），
+## 由 test_companion_pet.gd 的一致性断言守住——改一处忘另一处就是「猫被棋盘压住」。
+##
+## 为什么是 192（而不是"越大越好"）——PET_W 只影响两件事，两件都已量化
+## （_pv/pet_size_sweep.py，1280×720，179 关）：
+##   ① 条带够宽的关卡能显示**满尺寸**猫的关数：168→147 / **192→144** / 216→143 / 240→127
+##      / 264→16（**断崖**：棋盘定位后右侧条带的天花板就是 ~242，越过它满尺寸关数崩掉）；
+##   ② 必须让位的那 31 关里格子缩多少 = PET_RESERVE / 1024：192→−21.1% / 240→−25.8%
+##      / 288→−30.5%（线性，每 +24px 猫宽多付 ~2.3%）。
+## 192 与 216 在①上只差 1 关，而②要多付 2.3% ⇒ 取 192。要继续调大请先重跑那张表。
+const PET_W := 192.0
+const PET_EDGE := 12.0
+## 停靠区可用宽低于此值就**不显示**伙伴。取 ≈ 0.77×PET_W：再小就比三个格子还窄，看不出是猫；
+## 与其塞一只被压扁/被盖住的，不如没有（伙伴是装饰，不是信息）。
+## 注意它**不是**让位阈值以外的第二个阈值：条带 ∈ [PET_MIN_W, PET_W) 时会显示一只
+## 按条带宽度等比缩小的猫（不触发让位），实测有 4 关落在这个区间。
+const PET_MIN_W := 148.0
+## 右侧额外让位宽度 = PET_W + 2×PET_EDGE。让位后棋盘右边缘到 HUD 右列保留线之间
+## **恒有 ≥ PET_RESERVE + 24px** 的条带（推导见 _apply_layout 的 avail_left，
+## 与实测 179 关一致：所有让位关的条带都恰好 = 216）。故绝不会有"让位了还放不下"。
+const PET_RESERVE := 216.0
+
 # ============ 自定义多边形（数据驱动，T-D2）几何常量与口径 ============
 # 数据来源：关卡 JSON 的 custom_shapes（level_loader 在 load_level 后挂到 board 的 meta 上；
 # core/Board/GridInterface 一行不改）：bbox = [minX,minY,maxX,maxY]（**原版世界坐标**，只用于
@@ -75,6 +109,14 @@ const CUSTOM_HL_TAPER_STEPS := 4          # taper 段的细分段数（分段变
 var cell_px: int = 48
 ## 棋盘绘制原点（恒居中）。矩形路径 = 格 (0,0) 的左上角；蜂窝路径 = 晶格原点（格心 = origin + 晶格坐标×unit）。
 var board_origin: Vector2 = Vector2.ZERO
+## 棋盘的**视觉包围盒**（屏幕像素）。三条布局路径都在 _apply_layout 里从各自的纯函数
+## 取 vis_rect 写入（矩形路径当场构造），唯一消费者是 _pet_dock_rect。
+##
+## ⚠️ 为什么不能拿 board_origin 当左边缘：board_origin 是「坐标系原点」而不是「实绘左上角」——
+##    自定义盘的世界坐标**不必从 0 起**（girih_02 的最小顶点是负的，origin 比实绘左边缘靠右
+##    近 50px），蜂窝盘的 origin 也要再向外扩 R 才到实绘边缘。2026-09-29 第一版就是这么错的，
+##    症状是 girih_02 的停靠条带被算窄 49px、伙伴莫名消失。
+var board_vis_rect: Rect2 = Rect2()
 ## 蜂窝路径的「每晶格单位像素数」（由 _layout() 按六边形实际跨度 scale-to-fit 算出）。
 ## 只经 _unit_px() 读取；矩形路径不使用。
 var _hex_unit_px: float = 48.0
@@ -151,6 +193,11 @@ var _pops: Dictionary = {}
 var _pop_cache: Dictionary = {}
 var _pop_cache_ms: int = -1
 
+## 棋盘垫子样式缓存（2026-09-29 CozyStyle）。见 _mat_stylebox()：颜色没变就复用同一个
+## StyleBoxFlat，避免波浪动效期间逐帧 new。
+var _mat_sb: StyleBoxFlat = null
+var _mat_sb_color := Color(0, 0, 0, 0)
+
 ## 提示高亮（一步直推）：结论格描边 + 依据格描边（推理文字见 HintPanel 浮动窗口）
 var _hint_steps: Array = []
 var _hint_until_ms: int = -1
@@ -184,6 +231,10 @@ func _ready() -> void:
 		GameSession.hint_ready.connect(_on_hint_ready)
 	if not GameSession.guess_rejected.is_connected(_on_guess_rejected):
 		GameSession.guess_rejected.connect(_on_guess_rejected)
+	# 终局冻结伙伴（暂停那一路在 _toggle_pause 里，开局那一路在 _on_session_started 里）——
+	# 三个入口各管一段状态迁移，覆盖 PLAYING → PAUSED → PLAYING 与 PLAYING → WON/LOST。
+	if not GameSession.game_ended.is_connected(_on_game_ended_for_pet):
+		GameSession.game_ended.connect(_on_game_ended_for_pet)
 	# 鼠标移出棋盘：不再有 MouseMotion 事件，悬停高亮会永远定格在最后一格
 	mouse_exited.connect(_on_mouse_exited)
 	# 绘画层（棋盘之上、HUD 之下）+ 底栏工具栏
@@ -194,6 +245,8 @@ func _ready() -> void:
 	# 换算本身仍是「棋盘坐标 → 屏幕」的线性映射（绘画层代码零改动），只是蜂窝盘要换成晶格仿射映射，
 	# 否则笔记会整片错位（蜂窝的格心间距与矩形不同）。
 	_drawing.set_board_transform(_board_pt_to_screen, _screen_pt_to_board)
+	# 动物伙伴（占位猫）：纯装饰，跟在绘画层之后、HUD 之前（见 _setup_pet）。
+	_setup_pet()
 	var hud: Control = load("res://ui/hud.tscn").instantiate()
 	add_child(hud)
 	_toolbar = load("res://ui/drawing_toolbar.tscn").instantiate()
@@ -241,6 +294,9 @@ var _drawing: DrawingLayer
 var _toolbar: Control
 var _hint_panel: HintPanel
 var _pause_menu: PopupPanel
+## 动物伙伴「占位猫」（ui/companion_pet.gd）。类型走 PetScript（见文件头的说明）——
+## 它是纯装饰：所有对外调用都先判 null，且坏了也绝不该影响对局。
+var _pet: PetScript = null
 
 
 func _on_session_started() -> void:
@@ -299,6 +355,10 @@ func _on_hint_ready(steps: Array) -> void:
 	if _hint_panel != null:
 		_hint_panel.show_hint(steps)
 	queue_redraw()
+	# 【09-28 审计修复 R2】必须唤醒帧回调：`_process` 在无动效时会 `set_process(false)`，而提示高亮的
+	# TTL 到期清理**发生在 _process 里** ⇒ 不唤醒就永不过期（静止盘上点"提示"，描边一直留着；
+	# 关掉"翻开动效"后连 pop/wave 都不唤醒，问题稳定复现）。`_request_frames()` 是既有的对称接口。
+	_request_frames()
 
 
 ## 盘面一变（翻开/插旗）旧提示即失效，避免误导。
@@ -325,6 +385,12 @@ func _connect_board() -> void:
 func _on_cell_changed(pos: Vector2i) -> void:
 	_clear_hint()  # 盘面变化 → 旧推理结论失效
 	_group_dirty = true   # 插旗/翻开都会改变「分色剩余雷数」
+	# 伙伴反应：翻开/插旗都摸它一下。真机规格书里 track 5 只挂「点击」，本工程扩成
+	# 「玩家的每一个操作」—— 猫对盘面变化有反应，比只对点击有反应更像活物。
+	# 泛洪时本信号会逐格连发几十次，但 companion_pet 里有两道闸（REACT_MIN_GAP_MS 去抖 +
+	# CLICK_COOLDOWN_MS 冷却），最终退化成约 0.9s 一次 —— 闸就是为这个场景设的。
+	if _pet != null:
+		_pet.react(1.0)
 	# 单格 pop：每次翻开该格都登记一次（数字格/任意单格都有反馈）。
 	# 泛洪时每个被翻开的格子都会各走一次本分支 → 每格各有一次 pop，与波浪并存。
 	# 注意：波浪**不在这里**触发——它只由 Board.flood_planned(zero_flood=true) 驱动（见下）。
@@ -390,23 +456,49 @@ func _on_mouse_exited() -> void:
 	queue_redraw()
 
 
+## 棋盘布局。**两遍**：先按「不让位」排一次量出右侧还剩多宽的条带；条带够就收工
+## （此时棋盘一格都没变小），不够才带着 PET_RESERVE 重排一次。
+##
+## 为什么要两遍而不是无条件让位：实测 179 关里有 148 关**本来就放得下**伙伴
+## （正方形盘受高度限制 → 横向必有富余）。无条件让位会让这 148 关的格子白缩 20%，
+## 只为摆一只装饰猫 —— 不划算。两遍法的代价：那 31 关宽扁盘才真的让位，
+## 且中位损失仍是 0%（数据见 _pv/pet_layout_sim.txt，含最差 12 关的逐关数字）。
 func _layout() -> void:
 	if GameSession.board == null or GameSession.board.grid == null:
 		return
+	var vp := get_viewport_rect().size
+	_apply_layout(vp, 0.0)
+	if _pet_dock_rect(vp).size.x < PET_MIN_W:
+		_apply_layout(vp, PET_RESERVE)
+		if _pet_dock_rect(vp).size.x < PET_MIN_W:
+			# 让位也腾不出条带 ⇒ **回滚**。会走到这里的是「棋盘被 MIN_CELL_PX 撑到比可用区
+			# 还宽」的极端盘（格子已无法再缩，让位只是白亏 216px），或窗口本身就极窄。
+			# 有回滚这条路，_layout 才不必去猜"让位有没有用"——它自己会证明。
+			_apply_layout(vp, 0.0)
+	_sync_pet(vp)
+
+
+## 按 reserve（右侧额外让位宽度，px）排一次盘面。reserve = 0 时与改造前**逐像素等价**。
+func _apply_layout(vp: Vector2, reserve: float) -> void:
 	# `size`/`scale` 与 Control 自身属性同名（遮蔽告警）——局部只读使用，注解表达有意
 	@warning_ignore("shadowed_variable_base_class")
 	var size := GameSession.board.grid.size()  # Vector2i(cols, rows)
 	var cols: int = size.x
 	var rows: int = size.y
-	var vp := get_viewport_rect().size
 	# 边距：左右 24、上 HUD 64 + 上边距 24、下边距 24 + 底栏 64（随窗口自适应，无 48px 上限）
 	# 侧列保留（2026-09-28 HUD 两列改造）：左右两列浮在棋盘两侧，棋盘必须让出这段宽度——
 	# 否则左右边缘约半格被按钮盖住（点不到、也看不清）。原先 avail_w 占满 vp.x−48，
 	# 侧列各占约 96px，重叠不可避免。
-	var avail_w: float = vp.x - 48.0 - 2.0 * HUD_SIDE_RESERVE
+	# 伙伴让位（2026-09-29）：reserve 再从右侧扣一道，且**只从右侧扣**（见 avail_left）。
+	var avail_left: float = 24.0 + HUD_SIDE_RESERVE
+	var avail_w: float = maxf(vp.x - 48.0 - 2.0 * HUD_SIDE_RESERVE - reserve, 1.0)
 	var avail_h: float = vp.y - 64.0 - 64.0 - 48.0
-	# 可用区域的中心：矩形路径的 board_origin 公式隐含就是这个中心，蜂窝路径直接用它对齐。
-	var avail_center := Vector2(vp.x * 0.5, 64.0 + avail_h * 0.5)
+	# 可用区域的中心。**左边缘锚定**（= 左边距 + 左侧列保留）而不是 vp.x×0.5：
+	#   · reserve = 0 时下式恒等于 vp.x×0.5（128 + (vp.x−256)/2 = vp.x/2），与改造前逐像素等价；
+	#   · reserve > 0 时棋盘是「左边界不动、右边界左移」，而不是对称压小 ——
+	#     对称压小的话棋盘右边缘仍会顶到 vp.x−104 附近，右侧条带根本腾不出来（推导：
+	#     条带 = vp.x − HUD − (128 + avail_w) = PET_RESERVE + 24，与 vp.x 无关）。
+	var avail_center := Vector2(avail_left + avail_w * 0.5, 64.0 + avail_h * 0.5)
 	# 自定义多边形盘（数据驱动）：同样按**视觉包围盒**（所有格心 + 所有顶点的并集，不是
 	# grid.size() 的 15×15 紧凑包围盒、也不是 bbox 字段的格心包围盒）做 scale-to-fit + 居中。
 	if _custom_layout():
@@ -416,6 +508,7 @@ func _layout() -> void:
 		_custom_unit_px = float(layout["unit_px"])
 		cell_px = maxi(int(layout["cell_px"]), MIN_CELL_PX)
 		board_origin = layout["origin"]
+		board_vis_rect = layout["vis_rect"]
 		queue_redraw()
 		return
 	# 蜂窝：按六边形**实际几何跨度**（不是 grid.size() 包围盒方阵）做 scale-to-fit。
@@ -425,14 +518,90 @@ func _layout() -> void:
 		_hex_unit_px = float(layout["unit_px"])
 		cell_px = maxi(int(layout["cell_px"]), MIN_CELL_PX)
 		board_origin = layout["origin"]
+		board_vis_rect = layout["vis_rect"]
 		queue_redraw()
 		return
-	# ↓ 矩形路径：以下逐行是原实现（唯一改动 = 字面量 24 → 同值常量 MIN_CELL_PX）。
+	# ↓ 矩形路径：以下逐行是原实现（唯一改动 = 字面量 24 → 同值常量 MIN_CELL_PX，
+	#   以及居中基准 vp.x → avail_left：reserve=0 时两者恒等）。
 	cell_px = maxi(floori(min(avail_w / float(cols), avail_h / float(rows))), MIN_CELL_PX)
 	var board_w: float = float(cols) * cell_px
 	var board_h: float = float(rows) * cell_px
-	board_origin = Vector2((vp.x - board_w) * 0.5, 64.0 + (avail_h - board_h) * 0.5)
+	board_origin = Vector2(avail_left + (avail_w - board_w) * 0.5, 64.0 + (avail_h - board_h) * 0.5)
+	board_vis_rect = Rect2(board_origin, Vector2(board_w, board_h))
 	queue_redraw()
+
+
+# ============ 动物伙伴「占位猫」的停靠（2026-09-29）============
+#
+# 伙伴是**纯装饰**：不参与任何规则，不吃输入（companion_pet 的 mouse_filter = IGNORE），
+# 点击由下面的 _pet_touched() 用轮廓命中转发。故它坏了也绝不该影响对局 ——
+# 所有对外调用都先判 _pet != null。
+
+## 创建伙伴并挂进棋盘页。挂载点在绘画层之后、HUD 之前：伙伴不压 HUD/底栏，但压在棋盘之上
+## （停靠区反正与棋盘不重叠，这个顺序只是保底）。
+func _setup_pet() -> void:
+	_pet = PetScript.new()
+	add_child(_pet)
+	_sync_pet(get_viewport_rect().size)
+
+
+## 伙伴停靠区：棋盘右边缘 → HUD 右列保留线之间那条竖带，纵向与棋盘可用区同高。
+## 宽度可能 ≤ 0（棋盘很宽时）；调用方据 PET_MIN_W 判定要不要显示伙伴。
+func _pet_dock_rect(vp: Vector2) -> Rect2:
+	var avail_h: float = vp.y - 64.0 - 64.0 - 48.0
+	var left: float = board_vis_rect.end.x + PET_EDGE
+	var right: float = vp.x - HUD_SIDE_RESERVE - PET_EDGE
+	return Rect2(Vector2(left, 64.0), Vector2(maxf(right - left, 0.0), maxf(avail_h, 0.0)))
+
+
+## 把伙伴摆进停靠区：**右下角对齐** —— 与棋盘共用同一条「地面线」，读起来是「站在棋盘边上
+## 的伙伴」而不是「浮在半空的图标」。宽度取停靠区宽（上限 PET_W），高度按骨架长宽比推。
+##
+## 高宽比必须走 companion_rig.ASPECT（= 1661.18/1293.24 = 1.2845，真机骨架包围盒实测）：
+## 硬编码 0.78 之类的近似值会让猫看起来「胖了一圈」，而 companion_pet._screen_xf 是等比
+## 缩放的 —— 比例不符时它只会留白，于是误差表现为「猫比预留框小」，很难反查。
+func _sync_pet(vp: Vector2) -> void:
+	if _pet == null:
+		return
+	var dock := _pet_dock_rect(vp)
+	if dock.size.x < PET_MIN_W or dock.size.y <= 0.0:
+		# 空间不够：直接隐藏。硬塞会得到一只被压扁、或被棋盘盖掉一半的猫 ——
+		# 那比没有猫更糟（伙伴是装饰，不是信息）。
+		_pet.visible = false
+		_sync_pet_frozen()
+		return
+	var w: float = minf(dock.size.x, PET_W)
+	var h: float = w / maxf(RIGDATA.ASPECT, 0.0001)
+	_pet.size = Vector2(w, h)
+	_pet.position = Vector2(dock.position.x, dock.position.y + dock.size.y - h)
+	_pet.visible = true
+	_sync_pet_frozen()
+
+
+## 暂停 / 终局时冻结伙伴：它是个活物，暂停面板开着还继续眨眼会立刻出卖「这是装饰」。
+## 反过来也成立 —— 终局揭晓时它还在若无其事地甩尾巴，观感上是「不关心玩家」。
+func _sync_pet_frozen() -> void:
+	if _pet != null:
+		_pet.frozen = GameSession.state != GameSession.State.PLAYING
+
+
+## GameSession.game_ended 的伙伴侧接收端（终局 → 冻结）。
+func _on_game_ended_for_pet(_won: bool) -> void:
+	_sync_pet_frozen()
+
+
+## 点伙伴 = 摸它一下（真机规格书的 track 5 / IdleClick）。
+## 用**轮廓命中**（companion_pet.hit_test）而不是控件矩形：停靠区里的空白角落必须放行，
+## 否则那一片死区会把本该落到棋盘上的点击吞掉。
+func _pet_touched() -> bool:
+	if _pet == null or not _pet.visible:
+		return false
+	if not _pet.hit_test(get_global_mouse_position()):
+		return false
+	_pet.trigger_click()
+	return true
+
+
 
 
 # ============ 几何抽象（矩形 / 蜂窝两套坐标映射的唯一出口） ============
@@ -664,18 +833,18 @@ func _cell_polygon_inset(pos: Vector2i, inset: float) -> PackedVector2Array:
 
 
 ## 填充一个格子（覆盖层用）：蜂窝 = 六边形多边形；自定义盘 = 数据多边形；
-## 矩形 = 原 draw_rect（逐像素不变）。
+## 矩形 = 圆角瓦片（CozyStyle 主题）/ 原 draw_rect（其余主题逐像素不变），见 _draw_tile。
 func _draw_cell_fill(pos: Vector2i, col: Color) -> void:
 	if _hex_layout() or _custom_layout():
 		var poly := _cell_polygon(pos)
 		if poly.size() >= 3:   # 自定义盘缺格数据 → 不画，绝不臆造形状
 			draw_colored_polygon(poly, col)
 		return
-	draw_rect(_cell_rect(pos), col)
+	_draw_tile(_cell_rect(pos), col)
 
 
 ## 描边一个格子（覆盖层用）：蜂窝/自定义盘 = 沿该格多边形折线（顶点向格心内缩 inset）；
-## 矩形 = 原 rect.grow(-inset) 描边（逐像素不变）。
+## 矩形 = Cozy 走同形圆角描边 / 其余主题走原 rect.grow(-inset) 方角描边（逐像素不变）。
 func _draw_cell_outline(pos: Vector2i, col: Color, width: float, inset: float = 0.0) -> void:
 	if _hex_layout() or _custom_layout():
 		var poly := _cell_polygon_inset(pos, inset)
@@ -685,7 +854,7 @@ func _draw_cell_outline(pos: Vector2i, col: Color, width: float, inset: float = 
 		closed.append(closed[0])   # draw_polyline 画折线，需手动闭合
 		draw_polyline(closed, col, width)
 		return
-	draw_rect(_cell_rect(pos).grow(-inset), col, false, width)
+	_draw_tile_outline(_cell_rect(pos), col, width, inset)
 
 
 # ============ 变体纹理（格子内的主题徽记） ============
@@ -1240,13 +1409,18 @@ static func hex_visual_span(positions: Array) -> Vector2:
 
 
 ## 蜂窝布局（纯函数）：在 avail_w×avail_h 的可用区域里按视觉跨度做 scale-to-fit，并居中。
-## 返回 {unit_px, origin, span, cell_px}：
+## 返回 {unit_px, origin, span, cell_px, vis_rect}：
 ##   unit_px —— 每晶格单位像素数；origin —— 晶格原点（格心 = origin + 晶格坐标×unit）；
-##   span    —— 视觉跨度（晶格单位，便于核对/报告）；cell_px —— 内接正方形边长（像素，= 渲染用的 cell_px）。
+##   span    —— 视觉跨度（晶格单位，便于核对/报告）；cell_px —— 内接正方形边长（像素，= 渲染用的 cell_px）；
+##   vis_rect —— **实绘的屏幕包围盒**（= origin + 外扩后的视觉包围盒）。
+## ⚠️ origin ≠ vis_rect.position：origin 是「晶格坐标 0」落在屏幕哪里，而晶格坐标 0 未必
+## 就是最左/最上的格子（异形盘的最小坐标可以不是 0）。任何要"棋盘画在哪、多宽"的调用方
+## （现在就一处：伙伴停靠区）都必须用 vis_rect，用 origin 会在异形盘上偏掉半个外扩量。
 static func hex_layout_for(positions: Array, avail_w: float, avail_h: float, center: Vector2) -> Dictionary:
 	var span := hex_visual_span(positions)
 	if span.x <= 0.0 or span.y <= 0.0:
-		return {"unit_px": 0.0, "origin": center, "span": Vector2.ZERO, "cell_px": 0}
+		return {"unit_px": 0.0, "origin": center, "span": Vector2.ZERO, "cell_px": 0,
+				"vis_rect": Rect2(center, Vector2.ZERO)}
 	var unit := minf(avail_w / span.x, avail_h / span.y)
 	var sq := 2.0 * HEX_SQ_HALF * unit
 	if sq < float(MIN_CELL_PX):
@@ -1256,11 +1430,15 @@ static func hex_layout_for(positions: Array, avail_w: float, avail_h: float, cen
 	# 左右/上下的外扩是对称的 ⇒ 视觉包围盒中心 == 格心跨度中点，直接拿它对准可用区中心即可。
 	var bounds := hex_lattice_bounds(positions)
 	var mid := bounds.position + bounds.size * 0.5
+	var origin := center - mid * unit
+	# 视觉包围盒的左上角 = 晶格包围盒的左上角再各向外扩（左/右 R，上/下 半高）。
+	var vis_lo := origin + Vector2(bounds.position.x - HEX_R, bounds.position.y - HEX_HALF_H) * unit
 	return {
 		"unit_px": unit,
-		"origin": center - mid * unit,
+		"origin": origin,
 		"span": span,
 		"cell_px": int(round(sq)),
+		"vis_rect": Rect2(vis_lo, span * unit),
 	}
 
 
@@ -1323,16 +1501,21 @@ static func custom_visual_bounds(cells: Array) -> Rect2:
 
 
 ## 自定义盘布局（纯函数）：在 avail_w×avail_h 的可用区域里按**视觉包围盒** scale-to-fit 并居中。
-## 返回 {scale, unit_px, origin, span, cell_px}：
+## 返回 {scale, unit_px, origin, span, cell_px, vis_rect}：
 ##   scale   —— px / 世界单位（世界 → 屏幕的唯一比例）；
 ##   unit_px —— px / 棋盘单位（= scale × unit，绘画层换算用的比例）；
 ##   origin  —— 世界原点在屏幕上的位置（世界点 w ↦ origin + w × scale）；
-##   span    —— 视觉跨度（世界单位，便于核对/报告）；cell_px —— 内容/字号密度基准。
+##   span    —— 视觉跨度（世界单位，便于核对/报告）；cell_px —— 内容/字号密度基准；
+##   vis_rect —— **实绘的屏幕包围盒**。
+## ⚠️ origin ≠ vis_rect.position：世界坐标**不必从 0 起** —— girih_02 的格心/顶点最小值是
+## **负数**（实测 min_x·scale ≈ −49px），此时 origin 比实绘左边缘靠右近 50px。
+## 要"棋盘画在哪、多宽"就用 vis_rect（唯一调用方：伙伴停靠区）。
 ## 与 hex_layout_for 逐条对照：贴合口径（等比缩放 + 某一维恰好贴满）、居中口径（视觉包围盒
 ## 中心对准可用区中心）、以及同样的 MIN_CELL_PX 下限（窗口极小时宁可溢出，也不把格子缩成糊）。
 static func custom_layout_for(bounds: Rect2, unit: float, avail_w: float, avail_h: float, center: Vector2) -> Dictionary:
 	if bounds.size.x <= 0.0 or bounds.size.y <= 0.0 or unit <= 0.0:
-		return {"scale": 0.0, "unit_px": 0.0, "origin": center, "span": Vector2.ZERO, "cell_px": 0}
+		return {"scale": 0.0, "unit_px": 0.0, "origin": center, "span": Vector2.ZERO, "cell_px": 0,
+				"vis_rect": Rect2(center, Vector2.ZERO)}
 	var scale: float = minf(avail_w / bounds.size.x, avail_h / bounds.size.y)
 	var unit_px: float = scale * unit
 	var cell: float = CUSTOM_CELL_FRAC * unit_px
@@ -1341,12 +1524,14 @@ static func custom_layout_for(bounds: Rect2, unit: float, avail_w: float, avail_
 		unit_px = cell / CUSTOM_CELL_FRAC
 		scale = unit_px / unit
 	var mid := bounds.position + bounds.size * 0.5
+	var origin := center - mid * scale
 	return {
 		"scale": scale,
 		"unit_px": unit_px,
-		"origin": center - mid * scale,
+		"origin": origin,
 		"span": bounds.size,
 		"cell_px": int(round(cell)),
+		"vis_rect": Rect2(origin + bounds.position * scale, bounds.size * scale),
 	}
 
 
@@ -1500,6 +1685,171 @@ func _cull_pops(now_ms: int) -> bool:
 
 # ============ 渲染（§8.4.8 逐格绘制，全部色值经 ThemeManager） ============
 
+## 棋盘垫子向每边外扩的像素。太小（<6）垫子看起来像描边而不是"板子"，
+## 太大（>16）在 5×5 小盘上垫子比棋盘本身还显眼。
+const MAT_GROW := 10.0
+
+## ── CozyStyle 圆角瓦片（2026-09-29）────────────────────────────────────────────
+## CozySudoku 的棋盘不是「方格 + 网格线」，而是**一块块圆角瓦片留缝拼在板子上**：
+## 状态靠瓦片自身的底色与描边表达，不靠格线。这里按同样的几何复刻 ——
+##   瓦片 = 格子矩形向内缩 GAP、四角倒 RADIUS 的圆角；缝里透出来的就是棋盘垫子
+##   （board_mat）⇒「格线」由**间隙**天然构成，那圈 1px 描边不再需要。
+##
+## **只在有垫子的主题下生效**（CozyStyle 五套）。dark/light 的 board_mat 是全透明
+## ⇒ `_cozy_tiles()` 为假 ⇒ `_draw_tile` / `_tile_rect` / `_draw_tile_outline`
+## 三个函数**第一行就原路返回**，走的还是改造前那一条 `draw_rect`（同样的 rect、
+## 同样的 inset、同样的 width）⇒ **瓦片几何**对旧主题是严格恒等的（零回归）。
+##
+## ⚠️ 别把这句话读成「旧主题的截图一个像素都不变」—— 那一天还做了两处**全局**改动，
+## 它们同样作用在 dark/light 上，实测让这两套主题的棋盘截图有非零差异：
+##   · 棋盘数字从 `ThemeDB.fallback_font` 改成主题链的 Label 字体（见 `_board_font`）；
+##   · 图标按钮的内容边距 16/8 → 9/9 ⇒ 毛笔按钮最小宽度 −14px ⇒ 棋盘可用区变化、
+##     整块棋盘平移约 1px。
+## 截图对比实测：dark 79,335 px 差异中 76,388 px 落在棋盘区，差异图（`_pv/diff_amp.py`
+## 产出）显示差异**只沿字形轮廓与格子边缘分布**，格角在前后两张里都是方的 ——
+## 即「几何没变、位置挪了 1px」。要断言的是几何恒等，不是截图逐像素相等。
+##
+## 比例取自 CozySudoku 实拍：缝 ≈ 格宽 5.5%，圆角 ≈ 瓦片边长 24%。
+const TILE_GAP_FRAC := 0.055
+const TILE_RADIUS_FRAC := 0.24
+
+var _tile_sb: StyleBoxFlat = null
+var _tile_sb_radius := -1.0
+var _tile_line_sb: StyleBoxFlat = null
+var _tile_line_radius := -1.0
+
+
+## 是否走 CozyStyle 圆角瓦片（判据 = 该主题画不画棋盘垫子）。
+func _cozy_tiles() -> bool:
+	return ThemeManager.board_mat().a > 0.0
+
+
+## 瓦片样式（缓存单例）。`_draw()` 每帧都跑、且**每格调用一次**，逐格 new StyleBoxFlat
+## 会在波浪动效期间变成每秒上百个对象（同 `_mat_stylebox` 的教训）。
+## 复用同一个实例是安全的：`draw_style_box` 在调用当帧就把绘制指令记进 canvas item，
+## 之后再改 `bg_color` 不会回头影响已经发出的那一条。
+func _tile_stylebox(radius: float) -> StyleBoxFlat:
+	if _tile_sb == null:
+		_tile_sb = StyleBoxFlat.new()
+		_tile_sb.anti_aliasing = true
+	if not is_equal_approx(_tile_sb_radius, radius):
+		_tile_sb_radius = radius
+		var r := clampi(int(roundf(radius)), 2, 40)
+		_tile_sb.set_corner_radius_all(r)
+		# 半径变大后 6 边细分的多边形会被看成一圈多边形而不是圆（同 UiTheme._round 口径）
+		_tile_sb.corner_detail = clampi(r + 4, 8, 24)
+	return _tile_sb
+
+
+## 瓦片的绘制矩形（自格子矩形向内缩出间隙）。非 Cozy 主题返回原矩形。
+## 间隙下限 1px：窗口极小时（cell_px = MIN_CELL_PX = 24）也得留得下一条缝，
+## 否则瓦片又会拼回一整片、圆角反而成了锯齿。
+func _tile_rect(rect: Rect2) -> Rect2:
+	if not _cozy_tiles():
+		return rect
+	return rect.grow(-maxf(1.0, rect.size.x * TILE_GAP_FRAC))
+
+
+## 填充一格：Cozy = 圆角瓦片（间隙即分格线）；其余主题 = 原 `draw_rect`（逐像素不变）。
+func _draw_tile(rect: Rect2, col: Color) -> void:
+	if not _cozy_tiles():
+		draw_rect(rect, col)
+		return
+	var r := _tile_rect(rect)
+	var sb := _tile_stylebox(maxf(2.0, r.size.x * TILE_RADIUS_FRAC))
+	sb.bg_color = col
+	draw_style_box(sb, r)
+
+
+## 瓦片**描边**样式（缓存单例，与填充样式分开 —— 同一个实例既填又描会让边框宽度
+## 残留到下一次填充上）。`draw_center = false` ⇒ 只画边框，不铺底。
+func _tile_line_stylebox(radius: float, width: int) -> StyleBoxFlat:
+	if _tile_line_sb == null:
+		_tile_line_sb = StyleBoxFlat.new()
+		_tile_line_sb.anti_aliasing = true
+		_tile_line_sb.draw_center = false
+	if not is_equal_approx(_tile_line_radius, radius):
+		_tile_line_radius = radius
+		var r := clampi(int(roundf(radius)), 2, 40)
+		_tile_line_sb.set_corner_radius_all(r)
+		_tile_line_sb.corner_detail = clampi(r + 4, 8, 24)
+	var w := maxi(1, width)
+	# 只在真的变了才写：StyleBoxFlat 每次 set_border_width_* 都会 emit changed
+	if _tile_line_sb.border_width_top != w:
+		_tile_line_sb.set_border_width_all(w)
+	return _tile_line_sb
+
+
+## 描边一格：Cozy = 与瓦片同形的圆角描边（**含同一个间隙**，所以描边正好箍在瓦片上）；
+## 其余主题 = 原 `rect.grow(-inset)` 方角描边（逐像素不变）。
+##
+## 为什么必须同形：方角描边是按**原格矩形**画的，而瓦片已经内缩出缝、四角是圆的 ——
+## 直接沿用会在缝里画出一个方框，四角横切圆弧，看起来像"选中的方块露出来了"。
+## 光标框 / 提示描边 / 猜测被拒闪烁三处都走本函数，改一处即可全中。
+func _draw_tile_outline(rect: Rect2, col: Color, width: float, inset: float) -> void:
+	if not _cozy_tiles():
+		draw_rect(rect.grow(-inset), col, false, width)
+		return
+	var r := _tile_rect(rect).grow(-inset)
+	if r.size.x <= 2.0 or r.size.y <= 2.0:
+		return
+	var sb := _tile_line_stylebox(maxf(2.0, r.size.x * TILE_RADIUS_FRAC), int(roundf(width)))
+	sb.border_color = col
+	draw_style_box(sb, r)
+
+
+## 棋盘垫子（mat）—— CozyStyle 的 BoardBg 角色，见 ThemeManager.board_mat() 的说明。
+##
+## 插在 `_draw()` 里、所有格填充之前，所以它天然位于棋盘与动效之下，
+## 且与格子共用同一套坐标（board_origin / cell_px）⇒ 窗口缩放、换关、切主题都自动跟随，
+## 不需要任何布局同步代码。
+##
+## **蜂窝盘与自定义几何盘不画**：它们的格子是内接正方形/多边形，逐格拼不出一个矩形外框，
+## 外扩矩形反而会在四周露出方角，收益为负。矩形路径覆盖了全部经典 / 变体关卡。
+func _draw_board_mat(size: Vector2i) -> void:
+	if _hex_layout() or _custom_layout():
+		return
+	var sb := _mat_stylebox()
+	if sb == null:
+		return
+	var rect := Rect2(board_origin, Vector2(size) * cell_px).grow(MAT_GROW)
+	draw_style_box(sb, rect)
+
+
+## 垫子样式（缓存）。颜色变了才重建 —— `_draw()` 每帧都跑，逐帧 new StyleBoxFlat
+## 会在波浪动效期间变成每秒上百个对象。dark/light 主题 board_mat() 返回全透明 → 返回 null
+## = 一个矩形都不画，旧主题逐像素不变。
+func _mat_stylebox() -> StyleBoxFlat:
+	var c := ThemeManager.board_mat()
+	if c.a <= 0.0:
+		return null
+	if _mat_sb != null and _mat_sb_color == c:
+		return _mat_sb
+	if _mat_sb == null:
+		_mat_sb = StyleBoxFlat.new()
+		_mat_sb.set_corner_radius_all(18)
+		_mat_sb.corner_detail = 20
+		# 与 UiTheme 同一套"软阴影"口径：CozyStyle 的层次靠阴影而不是靠描边
+		_mat_sb.shadow_color = Color(0, 0, 0, 0.10)
+		_mat_sb.shadow_size = 10
+		_mat_sb.shadow_offset = Vector2(0, 3)
+	_mat_sb.bg_color = c
+	_mat_sb_color = c
+	return _mat_sb
+
+
+## 棋盘文字（数字 / ? / ∞ / *）的字体。
+##
+## **不要**用 `ThemeDB.fallback_font`：那是**引擎内置回退字体**，与
+## `project.godot [gui] theme/custom_font` 设的全局字体（文源圆体）不是一套 ——
+## 棋盘数字笔画带衬线感，和界面上其它文字明显两个风格（2026-09-29 放大截图核对时发现）。
+## 从主题链取 Label 字体即可：无覆盖时就是全局字体，将来谁给本控件设了 font override
+## 也自动跟随；真取不到才退回引擎字体（保持原行为，不至于画不出字）。
+func _board_font() -> Font:
+	var f: Font = get_theme_font("font", "Label")
+	return f if f != null else ThemeDB.fallback_font
+
+
 func _draw() -> void:
 	var session := GameSession
 	if session.board == null or session.board.grid == null:
@@ -1520,7 +1870,7 @@ func _draw() -> void:
 	var size := board.grid.size()
 	@warning_ignore("shadowed_variable_base_class")
 	var scale := float(cell_px) / 48.0
-	var font := ThemeDB.fallback_font
+	var font := _board_font()
 	var endgame: bool = board.state != Board.GameState.PLAYING
 	# 总开关状态：关闭时本帧走静止绘制路径（无收缩/无脉冲/线色原值）。
 	# 这里再兜底清一次在途波浪/单格 pop，保证任何重绘入口（窗口缩放/主题切换/测试直调）都无残留。
@@ -1532,6 +1882,8 @@ func _draw() -> void:
 	_tex_col_now = _texture_color() if _tex_kind_now != "" else Color(0, 0, 0, 0)
 
 	var hex := _hex_layout()
+	# CozyStyle 棋盘垫子（2026-09-29）：必须早于所有格填充，垫在下面。
+	_draw_board_mat(size)
 	for r in size.y:
 		for c in size.x:
 			var pos := Vector2i(c, r)
@@ -1652,18 +2004,18 @@ func _draw_cell(pos: Vector2i, cell: Cell, rect: Rect2, scale: float, font: Font
 		Cell.State.HIDDEN:
 			if not poly_filled:
 				# 走 _cell_base_color ⇒ 矩形/挖洞盘也能吃到颜色分组（分色棋盘）
-				draw_rect(rect, _cell_base_color(pos, cell, pop_e))
+				_draw_tile(rect, _cell_base_color(pos, cell, pop_e))
 		Cell.State.FLAGGED:
 			_draw_flag(rect, scale, not poly_filled)
 		Cell.State.QUESTION:
 			if not poly_filled:
-				draw_rect(rect, _cell_base_color(pos, cell, pop_e))
+				_draw_tile(rect, _cell_base_color(pos, cell, pop_e))
 			_draw_question(rect, scale, font)
 		Cell.State.REVEALED:
 			# 单格 pop 的颜色通道：由「瞬变」改为 0.20s 内 未翻开色 → 已翻开色 插值。
 			# pop_e = sin(PI*p/2) ∈ [0,1]；无 pop（静止/未登记）时传 1.0 → 精确取状态色。
 			if not poly_filled:
-				draw_rect(rect, _cell_base_color(pos, cell, pop_e))
+				_draw_tile(rect, _cell_base_color(pos, cell, pop_e))
 			_draw_clue_value(cell, rect, scale, font)
 
 
@@ -2120,6 +2472,12 @@ func _draw_grid_lines() -> void:
 					var g: float = float(e["g"])
 					col = line.lerp(glow, WAVE_GLOW * g)
 					lw = _grid_line_width(g)
+			# CozyStyle：分格完全由瓦片**间隙**承担，静态帧一律不画 rect 描边 ——
+			# 描边是沿原格矩形画的，会横切圆角、在四个角上露出方角小块。
+			# 波浪帧仍走原 rect 描边：它是翻开动效的**主通道**（线色/线宽逐格随波变化），
+			# 只在这个 0.2s 瞬态里出现，且此时格子本身正在收缩，读作"高亮框"而非格线。
+			if _cozy_tiles() and lw <= 1.0:
+				continue
 			# 只有被波浪波及（lw>1）时才开抗锯齿：静态帧保持原绘制路径不变。
 			draw_rect(rect, col, false, lw, lw > 1.0)
 
@@ -2348,6 +2706,11 @@ func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		if GameSession.state != GameSession.State.PLAYING:
 			return  # 终局冻结（重开/返回是 HUD/GameOver 层的例外按钮）
+		# 伙伴优先于格子：先问它一下。命中就吞掉事件 —— 伙伴撞不到格子（停靠区在棋盘
+		# 右边缘之外），所以"优先"在这里不会抢走任何一次翻格。
+		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed and _pet_touched():
+			accept_event()
+			return
 		var pos := _pick(event.position)
 		if pos.x < 0:
 			return
@@ -2608,7 +2971,9 @@ func _toggle_pause() -> void:
 		GameSession.set_paused(true)
 		if _pause_menu != null:
 			_pause_menu.popup_center_refreshed()
-	
+	# 伙伴跟着暂停/继续（见 _sync_pet_frozen 的两条理由）
+	_sync_pet_frozen()
+
 
 
 ## 外部入口（HUD「暂停」按钮）。

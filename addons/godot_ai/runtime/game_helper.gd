@@ -111,6 +111,12 @@ func _ready() -> void:
 	## to skip registration in the game and time out every capture.
 	if Engine.is_editor_hint():
 		return
+	## 【09-28 安全审计修复 A2：发布门控】本 autoload 会注册 `EngineDebugger` 消息捕获
+	##（`mcp:game_eval` 可在运行时执行任意 GDScript）并把游戏日志外送——在**正式导出**里
+	## 等于保留一个远程代码执行面。保留编辑器与 **debug 导出**（分别带 "editor"/"debug" 特征）
+	## 以维持正常调试流程；release 导出两者皆无 ⇒ 直接返回、不注册任何东西。
+	if not (OS.has_feature("editor") or OS.has_feature("debug")):
+		return
 	## Keep ticking while the tree is paused: _process both ferries game logs
 	## and timestamps main-loop liveness for the stalled-loop screenshot
 	## fallback (#777). A paused game still iterates its loop and renders, and

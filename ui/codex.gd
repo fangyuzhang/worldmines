@@ -166,6 +166,10 @@ func _section(parent: Node, text: String) -> Label:
     lb.text = text
     lb.add_theme_font_size_override("font_size", 26 if text == "规则图鉴" else 20)
     lb.custom_minimum_size = Vector2(0, 36)
+    # 垂直居中（2026-09-29）：小节标题用 20px 字（行高 30）却套了 36 的固定框高，
+    # 默认 TOP 会把标题顶高 3px。页大标题（26px / 行高 39）本来就撑破 36，
+    # 框会按文字自动长到 39、居中等于不动 —— 所以这一行对两种字号都安全。
+    lb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
     parent.add_child(lb)
     return lb
 

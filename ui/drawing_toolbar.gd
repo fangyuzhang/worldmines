@@ -171,14 +171,20 @@ func _style_swatch(sw: Button, i: int) -> void:
 
 
 func _style_size_btn(b: Button, i: int) -> void:
+	var active: bool = _drawing.current_size == i
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = ThemeManager.accent() if _drawing.current_size == i else ThemeManager.card()
+	sb.bg_color = ThemeManager.accent() if active else ThemeManager.card()
 	sb.set_corner_radius_all(6)
 	b.add_theme_stylebox_override("normal", sb)
-	b.add_theme_color_override("font_color", ThemeManager.text())
+	# 选中态的底是**实心 accent**，字色必须是配套的 accent_text；
+	# 未选中态底是 card，才用 text。原先两种状态共用 text()，
+	# 在浅色系主题下（accent #2D7BB0 vs text #232323 ≈ 1.9:1）会糊成一片。
+	var font := ThemeManager.accent_text() if active else ThemeManager.text()
+	b.add_theme_color_override("font_color", font)
 	var sbh := sb.duplicate()
 	sbh.bg_color = ThemeManager.accent()
 	b.add_theme_stylebox_override("hover", sbh)
+	b.add_theme_color_override("font_hover_color", ThemeManager.accent_text())
 	UiTheme.bind_hover(b, 1.03)
 
 
@@ -223,7 +229,13 @@ func _apply_theme() -> void:
 
 
 func _style_button(btn: Button) -> void:
-	UiTheme.style_button(btn)
+	# 图标按钮（只有 icon、没有 text，配 expand_icon）必须走**对称内边距**那套：
+	# 文字按钮的 16/8 会把 48×48 的「绘画」按钮的内容区压成 16×16，毛笔图标随之被
+	# 缩成一小块（2026-09-29 实测；同款问题见 UiTheme.ICON_PAD 的说明）。
+	if btn.text == "" and btn.icon != null:
+		UiTheme.style_icon_button(btn)
+	else:
+		UiTheme.style_button(btn)
 
 
 func _on_theme_changed() -> void:

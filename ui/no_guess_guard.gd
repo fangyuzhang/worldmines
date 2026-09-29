@@ -32,7 +32,15 @@ func reset() -> void:
     _safe_cache = {}
     _cache_valid = false
     _rejected = 0
-    # 注意：不清 _bound_board —— 换盘时 _bind_board 自会识别并换绑（见下）。
+    # 【09-28 审计修复 R8】原注释"不清 _bound_board —— 换盘时 _bind_board 自会识别并换绑"只覆盖了
+    # **换到新盘**的情形，没覆盖**本局结束**：`Board extends RefCounted`，被 `_bound_board` 强引用后
+    # 永不释放（每重开/换关泄漏一块 Board 及其 Cell/Grid），而且守卫仍挂在所有历史盘的
+    # `cell_state_changed` 上。此处显式断开并置空；下次 `is_deducible_safe` 会重新绑定
+    # （`_bind_board` 本身幂等：同盘直接 return）。
+    if _bound_board != null:
+        if _bound_board.cell_state_changed.is_connected(_on_board_changed):
+            _bound_board.cell_state_changed.disconnect(_on_board_changed)
+        _bound_board = null
 
 
 ## 猜测被拒时由 session 调用（计数归守卫持有）。

@@ -71,8 +71,10 @@ tools/_archive/
 /0/
 .git-msg-*.txt
 
-# 文件复制残渣（2026-09-26 审计）：robocopy 反复覆盖同一个大文件时会留下
-# `~xxx.dll~RFxxxx.TMP` 中间文件。实测在 addons/godot-wasm/bin/windows/ 累积了
-# 12 个 × 11 MB = 132 MB（备份/同步时反复覆盖导致）。已清理，这里加规则防再犯。
-~*.TMP
-*.tmp
+# 仓库根的一次性生成物（2026-09-28 审计 A15）：静态扫描报告与镜像打包产物
+# 落在仓库根（`sast_report.txt` 107KB / `sast_format_report.json` 111KB / `mirror_0927.tar.gz` 490KB），
+# 属可再生文件、不入库。注意：`tools/` 下的同类文件已由上面的 `/tools/_*.txt` 覆盖，此处只补根目录。
+/sast_*.txt
+/sast_*.json
+/mirror_*.tar.gz
+/mirror_*.zip

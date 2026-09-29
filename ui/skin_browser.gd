@@ -38,6 +38,7 @@ func _build_ui() -> void:
 	var tip := Label.new()
 	tip.text = "皮肤可全局换肤；内置主题不可删除。"
 	tip.add_theme_font_size_override("font_size", 14)
+	tip.set_meta("skin_role", "secondary")
 	tip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bar.add_child(tip)
 	# 键盘可聚焦 + 自带统一样式（2026-09-25 审计补）：本文件此前没有 style_button 调用，
@@ -114,6 +115,7 @@ func _make_card(skin: Dictionary) -> Control:
 	var name_lb := Label.new()
 	name_lb.text = skin["name"]
 	name_lb.add_theme_font_size_override("font_size", 16)
+	name_lb.set_meta("skin_role", "title")
 	name_lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(name_lb)
 
@@ -121,6 +123,7 @@ func _make_card(skin: Dictionary) -> Control:
 	var meta_lb := Label.new()
 	meta_lb.text = "%s · v%s" % [skin["author"], skin["version"]]
 	meta_lb.add_theme_font_size_override("font_size", 12)
+	meta_lb.set_meta("skin_role", "secondary")
 	meta_lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(meta_lb)
 
@@ -186,6 +189,27 @@ func _apply_card_styles() -> void:
 		card.add_theme_stylebox_override("panel", sb)
 		badge.visible = active
 		badge.add_theme_color_override("font_color", ThemeManager.accent())
+	# 文字色必须跟着一起刷（见 _paint_labels）
+	_paint_labels(self)
+
+
+## 给本页所有打了 `skin_role` 标记的 Label 上色。
+##
+## ⚠️ 为什么本页必须**自己**刷 Label：settings_panel 的递归上色**刻意跳过整棵皮肤页子树**
+##（那里写的理由是"皮肤页自管配色"），而本页此前只刷了**卡片底板**与**角标**，
+## 一个 Label 都没上色 ⇒ 名称/作者两行一直吃引擎默认的**白色**：
+##   · 白字压 card() #cbf5fc = **实测 1.16:1** —— 卡片标题基本看不见（浅色粉彩主题下尤其）；
+##   · 页首那行「皮肤可全局换肤…」同样是白字，它**只是**因为压在一块引擎默认的深色底板上
+##     才侥幸达标（5.11:1）—— 所以底板一改回浅色 card()，它反而会立刻糊掉。
+## 两个症状同源：**没有显式字色 ⇒ 读到的永远是"上一层的偶然结果"**。
+## 统一在这里按角色取色，和 settings_panel 的 text() / text_secondary() 同一口径。
+func _paint_labels(root: Node) -> void:
+	for c in root.get_children():
+		if c is Label and c.has_meta("skin_role"):
+			var role := str(c.get_meta("skin_role"))
+			c.add_theme_color_override("font_color",
+				ThemeManager.text() if role == "title" else ThemeManager.text_secondary())
+		_paint_labels(c)
 
 
 func _on_delete(skin_id: String, skin_name: String) -> void:

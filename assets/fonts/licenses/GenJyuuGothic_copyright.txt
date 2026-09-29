@@ -1,0 +1,16 @@
+Licenses and Copyrights
+
+Genji Goth is a modified version of Gennokaku Gothic , and includes some character glyphs derived from M + OUTLINE FONTS.
+The copyright of the letter glyphs derived from the Genno-kaku Gothic in the font data is owned by Adobe.
+The copyright of the character glyphs derived from M + OUTLINE FONTS included in the font data is owned by M + FONTS PROJECT.Genji Gothic font files can be used under the same SIL Open Font License 1.1 as Gennokaku Gothic, so they can be used for commercial use without any restrictions. For more information, please see Font License .
+
+[Source Han Sans]
+Copyright (c) 2014, 2015 Adobe Systems Incorporated (http://www.adobe.com/), with Reserved Font Name 'Source'.
+
+[M+ OUTLINE FONTS]
+Copyright(c) 2015 M+ FONTS PROJECT
+
+
+Designed by:
+Dr. Ken Lunde (project architect, glyph set definition & overall production);
+Masataka HATTORI 服部正貴 (production & ideograph elements)

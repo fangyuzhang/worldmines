@@ -141,6 +141,13 @@ func _init() -> void:
 	# This must be done here instead of `_ready()` to avoid having `visibility_changed` be emitted immediately.
 	visible = false
 
+	# 【09-28 安全审计修复 A2：发布门控】正式导出（release）里彻底失效：不再注册 F3/F4/F5 全局动作
+	#（原实现无条件 `InputMap.add_action`，会占玩家键位、也可能被玩家误触调试面板）。
+	# 保留编辑器与 debug 导出（分别带 "editor"/"debug" 特征）以维持调试流程。
+	if not (OS.has_feature("editor") or OS.has_feature("debug")):
+		process_mode = Node.PROCESS_MODE_DISABLED
+		return
+
 	if not InputMap.has_action("cycle_debug_menu"):
 		# Create default input action if no user-defined override exists.
 		# We can't do it in the editor plugin's activation code as it doesn't seem to work there.
@@ -166,6 +173,12 @@ func _init() -> void:
 		InputMap.action_add_event("debug_menu_screenshot", event)
 
 func _ready() -> void:
+	# 【09-28 安全审计修复 A2：发布门控】与 _init 同源：release 导出里不读项目设置、不连信号，
+	# 也不启动末尾的硬件信息线程（原实现在 _ready 里无条件 thread.start）。
+	if not (OS.has_feature("editor") or OS.has_feature("debug")):
+		visible = false
+		process_mode = Node.PROCESS_MODE_DISABLED
+		return
 	# start visibility from project settings
 	if ProjectSettings.has_setting("DebugMenu/settings/startup_visibility"):
 		style = ProjectSettings.get_setting("DebugMenu/settings/startup_visibility")

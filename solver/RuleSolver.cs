@@ -56,15 +56,25 @@ namespace MinesweeperSolver
                 return 0;
             }
 
-            var solver = MakeSolver(spec);
-            var status1 = solver.Solve(_model);
+            // 【09-28 审计修复 A4】native 对象显式释放（原来全靠 GC 终结器）：
+            // 一次 prune ≈27 次 FindForcedCells，每单元会产生数千个 CpModel/CpSolver/约束原生对象，
+            // 终结器队列是长尾卡顿（乃至 native 互等）的温床。
+            // 注：`CpModel` 在 9.15 无公开 Dispose（见 BuildModel 注释），故此处释放 solver1 不是
+            // 为了避开 use-after-free，而是**让 native 内存尽早回收**：紧接着会新建第二个模型，
+            // 把第一解对应的 solver/模型一起悬着只会让终结器队列更长。
+            var solver1 = MakeSolver(spec);
+            var status1 = solver1.Solve(_model);
             if (status1 != CpSolverStatus.Optimal && status1 != CpSolverStatus.Feasible)
+            {
+                solver1.Dispose();
                 return 0; // 无解
+            }
 
             // 记录第一解
             var firstSolution = new List<long>();
             foreach (var v in _freeVars)
-                firstSolution.Add(solver.Value(v));
+                firstSolution.Add(solver1.Value(v));
+            solver1.Dispose();   // ← 必须在下面那次 BuildModel 之前
 
             // 第二解：重建模型 + 附加「排除第一解」约束。
             // 注意：不能在已求解过的 CpModel 上追加约束再复用 CpSolver——
@@ -79,7 +89,7 @@ namespace MinesweeperSolver
             }
             if (excludeLits.Count > 0)
                 _model.AddBoolOr(excludeLits);
-            var solver2 = MakeSolver(spec);
+            using var solver2 = MakeSolver(spec);   // A4：出作用域即释放
             var status2 = solver2.Solve(_model);
             return (status2 == CpSolverStatus.Optimal || status2 == CpSolverStatus.Feasible) ? 2 : 1;
         }
@@ -113,7 +123,7 @@ namespace MinesweeperSolver
             // 复用单一 CpSolver 实例：每个自由格要做 assumption 探测，
             // 原先每次探测都 new 一个 solver（O(n) 次构造 + 参数字符串解析），
             // 这是序贯演绎在大盘上的主要开销。CpSolver 可安全地对同一 model 反复 Solve。
-            var solver = MakeSolver(spec);
+            using var solver = MakeSolver(spec);   // A4：出作用域即释放 native solver
             var status = solver.Solve(_model);
             if (status != CpSolverStatus.Optimal && status != CpSolverStatus.Feasible)
                 return result; // 无解
@@ -136,10 +146,56 @@ namespace MinesweeperSolver
             for (int i = 0; i < _freeVars.Count; i++)
                 firstSol[i] = solver.Value(_freeVars[i]);
 
+            // 累计探测预算（probe_budget_ms，默认 8000）：本函数要做 O(自由格数) 次
+            // assumption 探测，每次 Solve 的上限是 timeout_ms（默认 8s）——单次有界 ≠ 累计有界。
+            // 9×9 约 40 自由格 × 8s = 理论 320s/次调用，而删线索是 O(n) 条 × 序贯 O(轮) 次调用，
+            // 墙钟会被拖到小时级，进程外看门狗只能事后杀（09-17 挂死 ≥14.5h 的成因链之一）。
+            // 预算耗尽即停止探测：未探测的格一律**不报强制**（保守方向）——上层序贯演绎判
+            // 「推不动」→ 拒绝该候选，绝不产出坏关（R01 序贯可解 / R02 提示不害玩家均不破）。
+            // 默认 30s：只兜病态、绝不碰正常调用（实测正常小盘一次调用耗时毫秒级，
+            // 病态可达「自由格数 × 8s」＝ 9×9 约 640s，且被删线索 O(n) 次放大成小时级）。
+            // ⚠ 调小会截断合法探测 → 少报强制格 → 删线索保守 → 关卡**变简单**（质量红线）。
+            int probeBudgetMs = spec.ContainsKey("probe_budget_ms")
+                ? spec["probe_budget_ms"].AsInt32() : 30000;
+            var probeWatch = System.Diagnostics.Stopwatch.StartNew();
+
+            // 【(i)① 白名单（2026-09-28）】可选 spec["probe_cells"] = [[r,c],..]：**只探测**这些格。
+            // 依据单调性定理（A = 全量线索集、B ⊆ A、同口径 masked={} ⇒ 逐轮 forced_B(r) ⊆ D_A(r)）：
+            // D_A(r) 之外的格在 B 上**必然不被强制**；本函数不探测它就不会报告它，
+            // 因此结果与原实现**逐格相等**，只是少做 O(|free| − |D_A|) 次 assumption 探测。
+            // 缺键 = 旧行为（全探测）。调用方在「D_A(r) 无定义」（语义上需全探测）的场合必须不写该键。
+            System.Collections.Generic.HashSet<(int, int)> probeOnly = null;
+            if (spec.ContainsKey("probe_cells"))
+            {
+                probeOnly = new System.Collections.Generic.HashSet<(int, int)>();
+                var probeArr = spec["probe_cells"].AsGodotArray();
+                for (int k = 0; k < probeArr.Count; k++)
+                {
+                    var pr = probeArr[k].AsGodotArray();
+                    if (pr.Count >= 2)
+                        probeOnly.Add((pr[0].AsInt32(), pr[1].AsInt32()));
+                }
+                // 【09-28 深度核实守卫 A】回写"白名单已被接受"的可观测标志：调用方据此自检
+                // **dll 是否过旧**（旧 dll 不认识 probe_cells ⇒ 静默忽略 ⇒ 特性变 no-op 且无人察觉）。
+                result["probe_filtered"] = probeOnly.Count;
+            }
+
             for (int i = 0; i < _freeVars.Count; i++)
             {
+                if (probeBudgetMs > 0 && probeWatch.ElapsedMilliseconds >= probeBudgetMs)
+                {
+                    // 【09-28 守卫 B】预算绑定 ⇒ 白名单会改变结论（少探测使预算消耗变慢 ⇒ 多报强制格，
+                    // 实测 `classic+s3@7` 的 tries/ok 由 23/19 变 25/20）⇒ 必须让调用方知道并停用白名单。
+                    result["budget_hit"] = true;
+                    break; // 预算耗尽：停止探测（保守，宁少报强制格）
+                }
                 var v = _freeVars[i];
                 var (r, c) = _freeCells[i];
+                // 白名单之外：定理保证不被强制 ⇒ 跳过探测（等价于旧实现里它不被报告）。
+                // ⚠ 这也会让累计预算消耗变慢 ⇒ 在**预算绑定**的病态实例上会多报强制格
+                //（方向是"更完整"，不是"更保守"）；等价性验证须在非绑定实例上做。
+                if (probeOnly != null && !probeOnly.Contains((r, c)))
+                    continue;
                 // 注意：这里**不能**剪掉「未被任何线索引用的格」。
                 // 早前有个剪枝假设这类格只受总雷数约束、free>remaining 时必不强制——
                 // 那是错的：当其余格已被线索逼成雷、总雷数恰好被填满时，这格会被
@@ -188,16 +244,16 @@ namespace MinesweeperSolver
                 GD.PushError($"RuleSolver.FindSolution: {e.Message}");
                 return new Godot.Collections.Array();
             }
-            var solver = MakeSolver(spec);
+            using var solver = MakeSolver(spec);   // A4：出作用域即释放 native solver
             // 可复现性：FindSolution 的解必须确定（同 spec 同解），否则「落盘 seed 重放」会得到
             // 不同盘（probe40 实测 pf_classic/9x9 seed=4 重放不一致）。两个非确定源都要钉死：
             //   ① 多 worker 并行 → 线程调度决定先找到哪个可行解 → 强制单 worker；
             //   ② CP-SAT 内部随机 → 显式 random_seed（由生成器确定性 RNG 派生，spec 传入）。
             // 可行性/强制格探测（IsFeasible/ForcedCells）不受影响——布尔结论是数学事实。
             int seed = spec.ContainsKey("random_seed") ? spec["random_seed"].AsInt32() : 0;
-            int timeoutMs = spec.ContainsKey("timeout_ms") ? spec["timeout_ms"].AsInt32() : 8000;
-            solver.StringParameters =
-                $"max_time_in_seconds:{timeoutMs / 1000.0} num_search_workers:1 random_seed:{seed}";
+            // 参数必须走统一构造点：旧写法整体替换 StringParameters 且只写两个字段，静默丢掉了
+            // max_deterministic_time —— 病态实例的「无限枚举」失去硬上界（长尾挂死 + 重跑波动）。
+            solver.StringParameters = Params(spec, workers: 1, randomSeed: seed);
             var status = solver.Solve(_model);
             if (status != CpSolverStatus.Optimal && status != CpSolverStatus.Feasible)
                 return new Godot.Collections.Array(); // 无解（UNSAT 或超时）
@@ -243,7 +299,7 @@ namespace MinesweeperSolver
             var v = _cellVars[r, c];
             if (v == null)
                 return true; // 目标格是固定格（safe/mine），已确定 → 必然强制
-            var solver = MakeSolver(spec);
+            using var solver = MakeSolver(spec);   // A4：出作用域即释放 native solver
             // 先检查模型有解：无解的 spec 谈不上「强制」——
             // 否则假设 safe 不可行（实为整体无解）会被误判为「必雷」。
             var status = solver.Solve(_model);
@@ -280,7 +336,7 @@ namespace MinesweeperSolver
                 GD.PushError($"RuleSolver.IsFeasible: {e.Message}");
                 return false;
             }
-            var solver = MakeSolver(spec);
+            using var solver = MakeSolver(spec);   // A4：出作用域即释放 native solver
             var status = solver.Solve(_model);
             return status == CpSolverStatus.Optimal || status == CpSolverStatus.Feasible;
         }
@@ -332,9 +388,21 @@ namespace MinesweeperSolver
             }
             _model.Add(targetVar == wantValue);
 
-            var solver = MakeSolver(spec);
-            // unsat_core 需单 worker（多 worker 会并行找 core，结果不确定）
-            solver.StringParameters = "num_search_workers:1";
+            using var solver = MakeSolver(spec);   // A4：出作用域即释放 native solver
+            // unsat_core 需单 worker（多 worker 会并行找 core，结果不确定）。
+            // 但**不得**因此丢掉时间上限：历史写法只赋 "num_search_workers:1" 会整体替换
+            // StringParameters → max_time_in_seconds / max_deterministic_time 双双丢失 →
+            // 本路径变成**无界求解**。而它被 _solve_rules_stepwise 每轮调用（难度统计的
+            // minimal_clue_count）⇒ 又一次「单次有界但累计无界」的挂死源。统一走 Params。
+            solver.StringParameters = Params(spec, workers: 1);
+
+            // 累计预算（core_budget_ms，默认 8000）：本函数最多 4 轮迭代，每轮一次 Solve。
+            // 耗尽即返回 -1（= 该方向未被强制）——与既有 Unknown 分支同口径，保守且绝不误报
+            // core 大小（曾把超时当不可行 → core 空 → 误报「0 条线索推出」= 难度画像畸高）。
+            // 默认 30s，同 probe_budget_ms 的理由与警告（调小 → 复杂度画像被压成 0 → 难度下降）。
+            int coreBudgetMs = spec.ContainsKey("core_budget_ms")
+                ? spec["core_budget_ms"].AsInt32() : 30000;
+            var coreWatch = System.Diagnostics.Stopwatch.StartNew();
 
             // 初始：全部线索激活
             var active = new HashSet<int>();
@@ -344,6 +412,8 @@ namespace MinesweeperSolver
             int lastSize = _clueGates.Count;
             for (int iter = 0; iter < 4; iter++)
             {
+                if (coreBudgetMs > 0 && coreWatch.ElapsedMilliseconds >= coreBudgetMs)
+                    return -1; // 预算耗尽：按「未被强制」返回（保守）
                 var assumptions = new List<ILiteral>();
                 for (int i = 0; i < _clueGates.Count; i++)
                 {
@@ -397,6 +467,11 @@ namespace MinesweeperSolver
             int cols = spec["cols"].AsInt32();
             int totalMines = spec["total_mines"].AsInt32();
 
+            // 【09-28 审计修复 A4，实测修正】原计划在此 Dispose 旧模型——**做不到**：
+            // Google.OrTools 9.15 的 `CpModel` 根本没有公开 `Dispose`（编译期 CS1061 实测；`CpSolver` 有）。
+            // ⇒ 模型仍只能靠 GC 终结器回收；本条的收益来自 **solver 的确定性释放**
+            //（`using var solver = MakeSolver(...)`，每个候选/每次探测一个，数量远多于模型）。
+            // 若日后要压模型 churn，只能从"少重建"入手（复用同一 spec 的模型），而不是靠 Dispose。
             _model = new CpModel();
             _cols = cols;
             _rows = rows;
@@ -700,27 +775,27 @@ namespace MinesweeperSolver
             return merged;
         }
 
-        private static CpSolver MakeSolver(Godot.Collections.Dictionary spec)
+        /// <summary>
+        /// 求解参数串的**唯一构造点**。
+        /// 为什么要收口：任何一处「整体赋 StringParameters」都会把没用到的字段静默清空——
+        /// 历史上 FindSolution 丢掉 max_deterministic_time、_ClueCoreSize 丢掉 max_time_in_seconds，
+        /// 使这两条路径变成无界求解（09-17 挂死 ≥14.5h 的成因之一）。
+        /// 三个字段缺一不可：
+        ///   · max_time_in_seconds：墙钟硬上限（快机器也停）。
+        ///   · max_deterministic_time：确定性工作量上限（慢/病态实例也停；同 seed 同参数
+        ///     停在同一处 ⇒ 产物逐字节可复现）。
+        ///   · num_search_workers：默认 1（确定性；多线程搜索非确定 ⇒ 同 seed 不同盘，
+        ///     且实测 6 子进程同时挂死 CPU 近 0，多线程长尾是嫌疑之一）。
+        /// 批量离线场景可用 spec["num_workers"] 显式调回多线程，但需接受上述风险并在调用处写明理由。
+        /// </summary>
+        private static string Params(Godot.Collections.Dictionary spec, int workers, int randomSeed = -1)
         {
             int timeoutMs = spec.ContainsKey("timeout_ms") ? spec["timeout_ms"].AsInt32() : 8000;
-            // num_workers 默认 1（2026-09-24，原 4）。两个理由：
-            //   ① 确定性：CP-SAT 多线程搜索非确定 ⇒ 同 seed 两次生成可能得到不同盘面。
-            //      实测重跑同一 SPEC 后 clue_count 12→8、关卡从「可推」变「不可推」——
-            //      多线程是墙钟之外的另一层波动源，而项目目标是「重跑逐字节复现」。
-            //   ② 稳定性：实测 6 个子进程同时挂死（CPU 近 0、无输出、内存停滞），
-            //      多线程长尾/线程互等是嫌疑之一，单 worker 下不存在。
-            // 性能折衷：批量离线场景可用 spec["num_workers"] 显式调回多线程（接口保留），
-            // 但需接受上述两条风险并在调用处写明理由。unsat_core 路径（_ClueCoreSize）仍强制单 worker。
-            int workers = spec.ContainsKey("num_workers") ? spec["num_workers"].AsInt32() : 1;
-            // max_deterministic_time（OR-Tools 确定性工作量上限，单位≈参考机秒）：
-            // 与 max_time_in_seconds 并存、谁先到谁停。它补上墙钟给不了的两件事：
-            //   ① 病态实例的「无限枚举」在确定性工作量上有**硬上界**（墙钟下机器快跑得久、
-            //      慢机器提前停——这正是重跑波动的根源，实测 6 子进程挂死 CPU 近 0）；
-            //   ② 同 seed 同参数 ⇒ 恰好停在同一处 ⇒ 产物逐字节可复现。
+            // max_deterministic_time（单位≈参考机秒）：与墙钟并存、谁先到谁停。
             // 默认取墙钟秒数的 2 倍：正常求解先撞墙钟（行为不变），病态枚举被 det 上界兜住。
             // 可用 spec["max_deterministic_time"] 显式覆盖。
             // 注意 double 必须用 InvariantCulture 格式化——区域设置为逗号小数点时
-            // StringParameters 会解析失败（顺带修掉 timeoutMs/1000.0 的同款隐患）。
+            // StringParameters 会解析失败（timeoutMs/1000.0 同款隐患）。
             var inv = System.Globalization.CultureInfo.InvariantCulture;
             double detSeconds = spec.ContainsKey("max_deterministic_time")
                 ? System.Convert.ToDouble(spec["max_deterministic_time"], inv)
@@ -728,9 +803,18 @@ namespace MinesweeperSolver
             string pars = string.Format(inv,
                 "max_time_in_seconds:{0} max_deterministic_time:{1} num_search_workers:{2}",
                 timeoutMs / 1000.0, detSeconds, workers);
+            // random_seed 仅解搜索路径（FindSolution）需要：同 spec 同解，保证 seed 重放可复现。
+            if (randomSeed >= 0)
+                pars += string.Format(inv, " random_seed:{0}", randomSeed);
+            return pars;
+        }
+
+        private static CpSolver MakeSolver(Godot.Collections.Dictionary spec)
+        {
+            int workers = spec.ContainsKey("num_workers") ? spec["num_workers"].AsInt32() : 1;
             return new CpSolver
             {
-                StringParameters = pars
+                StringParameters = Params(spec, workers)
             };
         }
     }

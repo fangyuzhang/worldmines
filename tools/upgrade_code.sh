@@ -26,12 +26,17 @@ mkdir -p "$TMP"
 tar -xzf "$M" -C "$TMP"
 
 echo "=== 差异概览（镜像 vs 现网）==="
-for d in core demo/mods tools; do
+# 【09-27 补齐】目录清单原先只有 core/demo/tools —— 漏了 **solver/**，
+# 于是 C# 走后端的修（含 09-24 的 max_deterministic_time 病态枚举硬上界）从未上线，
+# 现网 dll 一直停在 09-15，是挂死/长尾反复复发的直接原因。四目录必须齐全。
+for d in core demo/mods tools solver; do
   n=$(diff -rq "$TMP/$d" "$R/$d" 2>/dev/null | grep -c . || true)
   echo "  $d: $n 处差异"
 done
 echo "--- core 差异明细（前 20）---"
 diff -rq "$TMP/core" "$R/core" 2>/dev/null | head -20 || true
+echo "--- solver 差异明细 ---"
+diff -rq "$TMP/solver" "$R/solver" 2>/dev/null || true
 
 if [ "$APPLY" = "0" ]; then
   echo "（dry-run：确认无误后执行  bash /root/upgrade_code.sh --apply）"
@@ -42,6 +47,7 @@ echo "=== 备份 → /root/backup_$STAMP/ ==="
 mkdir -p "/root/backup_$STAMP"
 cp -a "$R/core" "/root/backup_$STAMP/" 2>/dev/null || true
 cp -a "$R/tools" "/root/backup_$STAMP/" 2>/dev/null || true
+cp -a "$R/solver" "/root/backup_$STAMP/" 2>/dev/null || true
 if [ -d "$R/demo/mods" ]; then
   mkdir -p "/root/backup_$STAMP/demo"
   cp -a "$R/demo/mods" "/root/backup_$STAMP/demo/" 2>/dev/null || true
@@ -50,10 +56,27 @@ fi
 echo "=== 升级 ==="
 cp -a "$TMP/core" "$R/"
 cp -a "$TMP/tools" "$R/"
+cp -a "$TMP/solver" "$R/"
 mkdir -p "$R/demo"
 cp -a "$TMP/demo/mods" "$R/demo/"
 rm -rf "$TMP"
-echo "已升级（回滚：cp -a /root/backup_$STAMP/core /root/backup_$STAMP/tools $R/）"
+echo "已升级（回滚：cp -a /root/backup_$STAMP/core /root/backup_$STAMP/tools /root/backup_$STAMP/solver $R/）"
+
+echo "=== C# 重建（solver/ 变了就必须重建，否则 GDScript 用新、C# 用旧 = 半同步）==="
+# 原子替换：构建到独立目录后 rename —— 运行中的 Godot 持有旧 inode 不受影响，
+# 新起的进程才拿到新 dll（就地覆盖会让已映射旧 dll 的进程读到残缺 IL 而崩溃）。
+cd "$R"
+export HOME=/root
+rm -rf /root/_newbuild
+if timeout 900 dotnet build wm_server.csproj -v q -o /root/_newbuild 2>&1 | tail -3; then
+  if [ -f /root/_newbuild/wm_server.dll ]; then
+    mv -f /root/_newbuild/wm_server.dll "$R/.godot/mono/temp/bin/Debug/wm_server.dll"
+    echo "已替换 wm_server.dll（$(stat -c%s "$R/.godot/mono/temp/bin/Debug/wm_server.dll") B）"
+  else
+    echo "[warn] 构建未产出 dll —— C# 仍是旧版，请人工确认" >&2
+  fi
+fi
+rm -rf /root/_newbuild
 
 echo "=== 类缓存刷新（--import）—— 新增 class_name 后必须刷，防 half-sync（not declared）==="
 cd "$R"

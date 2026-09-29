@@ -103,7 +103,7 @@ static func build_hex(size: int) -> Dictionary:
 	if size <= 0:
 		push_error("ShapeGenerator.build_hex: size 必须为正整数（收到 %d）" % size)
 		return _empty()
-	var half := (size - 1) / 2
+	var half := floori((size - 1) / 2.0)   # A8：int/int 显式化
 	var cells := {}
 	for r in size:
 		for c in size:
@@ -469,7 +469,7 @@ static func build_from_cells(cells_geo: Array, style: String, params: Dictionary
 	for pk in shared:
 		if int(shared[pk]) < min_shared:
 			continue
-		var lo2: int = int(pk) / 100000
+		var lo2: int = floori(int(pk) / 100000.0)   # A8：int/int 显式化（pk 打包值恒 ≥0）
 		var hi2: int = int(pk) % 100000
 		_add_edge(cells, seen, adjacency, cells_geo[lo2]["pos"], cells_geo[hi2]["pos"])
 	return {"positions": positions, "adjacency": adjacency, "style": style, "params": params}

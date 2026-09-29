@@ -21,7 +21,10 @@ static func _data() -> Dictionary:
         if f != null:
             var parsed = JSON.parse_string(f.get_as_text())
             f.close()
-            if parsed is Dictionary and (parsed as Dictionary).has("levels"):
+            # 【09-28 审计修复 R3】原先只查键存在、不查类型；下面 `var levels: Dictionary = d["levels"]`
+            # 是强类型赋值 ⇒ 畸形档（如 {"levels": []}，手改/旧版/写坏）会运行时报错并中断函数，
+            # 导致 record_clear/is_cleared/best_time 全线失效（通关不打勾、下一关不解锁）。
+            if parsed is Dictionary and (parsed as Dictionary).get("levels") is Dictionary:
                 _cache = parsed
     _migrate_legacy_keys()   # 只操作 _cache，不回调 _data()，无递归
     return _cache

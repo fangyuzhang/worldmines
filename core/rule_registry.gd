@@ -204,7 +204,7 @@ class MxRule:
 
 	func build_global_constraints(b: RuleBuilder) -> void:
 		for r in b.rows:
-			for c in int(b.cols / 2):
+			for c in floori(b.cols / 2.0):   # A8：int/int 显式化
 				b.add_eq(b.cell_var(r, c), b.cell_var(r, b.cols - 1 - c))
 
 	## 构造式布雷：左半区采样 + 镜像；奇数雷数需中轴列。
@@ -213,10 +213,10 @@ class MxRule:
 		var left: Array[Vector2i] = []
 		var axis: Array[Vector2i] = []
 		for r in rows:
-			for c in int(cols / 2):
+			for c in floori(cols / 2.0):   # A8：int/int 显式化
 				left.append(Vector2i(c, r))
 			if has_axis:
-				axis.append(Vector2i(cols / 2, r))
+				axis.append(Vector2i(floori(cols / 2.0), r))   # A8：int/int 显式化
 		# 收集合法 (k, j)：2k + j = count
 		var options: Array = []
 		for j in range(axis.size() + 1):
@@ -225,7 +225,7 @@ class MxRule:
 			var rem := count - j
 			if rem % 2 != 0:
 				continue
-			var k := rem / 2
+			var k := floori(rem / 2.0)   # A8：int/int 显式化（rem 恒 ≥0）
 			if k > left.size():
 				continue
 			options.append([k, j])
@@ -374,7 +374,7 @@ class PfRule:
 		return []
 
 	static func _mirrored_stratified(rng: RandomNumberGenerator, cols: int, rows: int, count: int) -> Array[Vector2i]:
-		var half := int(cols / 2)
+		var half := floori(cols / 2.0)   # A8：int/int 显式化
 		var has_axis := (cols % 2 == 1)
 		var axis_cells: Array[Vector2i] = []
 		if has_axis:
@@ -392,7 +392,7 @@ class PfRule:
 		if j_options.is_empty() or (not has_axis and count % 2 != 0):
 			return []
 		var j_pick: int = j_options[rng.randi_range(0, j_options.size() - 1)]
-		var k := (count - j_pick) / 2
+		var k := floori((count - j_pick) / 2.0)   # A8：int/int 显式化
 		if k < 0:
 			return []
 		# 左半区分层采样 k 雷（_stratified_mines 的 cols=half；k=0 时直接空盘）

@@ -109,8 +109,9 @@ static func _check_qd(mine_set: Dictionary, grid_size: Vector2i) -> bool:
 ## 校验器、QdRule（规则平台）、生成器都必须调用本函数，禁止各自手写划分
 ## （历史上三处实现各自漂移，偶数盘曾出现「布雷放中轴、校验却把中轴算进右下象限」的冲突）。
 static func quadrant_of(r: int, c: int, rows: int, cols: int) -> int:
-	var half_r := rows / 2
-	var half_c := cols / 2
+	# 【09-28 审计修复 A8】int/int 显式化（尺寸恒 ≥0 ⇒ floori 与旧截断逐值相同）
+	var half_r := floori(rows / 2.0)
+	var half_c := floori(cols / 2.0)
 	if (rows % 2 == 1) and r == half_r:
 		return -1
 	if (cols % 2 == 1) and c == half_c:

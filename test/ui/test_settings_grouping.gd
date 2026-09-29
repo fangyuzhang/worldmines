@@ -188,8 +188,53 @@ func test_initial_values_match_manager() -> void:
     assert_eq(panel._ui_scale_opt.selected, 1, "界面缩放初值应落在 125% 档")
     assert_almost_eq(panel._opacity_slider.value, 0.7, 0.001, "绘画层透明度初值应 = 当前值")
     assert_eq(panel._ripple_chk.button_pressed, false, "翻开动效初值应 = 当前值")
-    assert_eq(panel._theme_opt.selected, ["system", "dark", "light"].find(SettingsManager.theme_mode),
+    assert_eq(panel._theme_opt.selected, ThemeManager.THEME_IDS.find(SettingsManager.theme_mode),
         "主题模式初值应 = 当前值")
+    # 2026-09-29：这里原先硬编码 ["system","dark","light"]（主题表的第二份副本）。接入
+    # CozyStyle 五主题后该副本已过期 —— 只要当前主题是任一 cozy id，旧写法就会得到 -1 而
+    # 面板给出真实索引 ⇒ 误报。改为直接读 ThemeManager.THEME_IDS（唯一事实源）。
+
+
+# ---------- ③b 主题下拉必须真正暴露全部主题（含 CozyStyle 五套） ----------
+
+func test_theme_dropdown_exposes_every_theme() -> void:
+    ## 守住「接了新主题但下拉里选不到」这类静默缺失：下拉项数、顺序、文案都要与
+    ## ThemeManager.THEME_IDS / theme_label() 对齐（两者是同源渲染，这里验它真的照做了）。
+    var panel := _make_panel()
+    var opt: OptionButton = panel._theme_opt
+    assert_eq(opt.item_count, ThemeManager.THEME_IDS.size(),
+        "主题下拉项数应等于 THEME_IDS 长度（实得 %d vs %d）" % [opt.item_count, ThemeManager.THEME_IDS.size()])
+    for i in ThemeManager.THEME_IDS.size():
+        var tid := str(ThemeManager.THEME_IDS[i])
+        assert_eq(opt.get_item_text(i), ThemeManager.theme_label(tid),
+            "第 %d 项文案应为 theme_label(%s)" % [i, tid])
+    for m in ThemeManager.COZY_IDS:
+        var i: int = ThemeManager.THEME_IDS.find(m)
+        assert_gte(i, 0, "CozyStyle 主题 %s 必须在 THEME_IDS 里" % m)
+        assert_eq(opt.get_item_text(i), ThemeManager.theme_label(m),
+            "CozyStyle 主题 %s 必须在下拉第 %d 项可见" % [m, i])
+
+
+func test_theme_dropdown_selection_changes_palette() -> void:
+    ## 端到端：从下拉选一个 CozyStyle 主题 → SettingsManager 落值 → ThemeManager 真的换色板。
+    ## 只断言"下拉索引变了"是不够的 —— 换主题链路断在中间时索引照样会变。
+    var panel := _make_panel()
+    var saved_mode: String = ThemeManager.mode
+    var idx: int = ThemeManager.THEME_IDS.find("cozy_terracotta")
+    panel._theme_opt.item_selected.emit(idx)
+    assert_eq(SettingsManager.theme_mode, "cozy_terracotta", "选中应立即写入 SettingsManager")
+    # 立即收口（绕过 300ms tween），再比对目标色板
+    ThemeManager.mode = "cozy_terracotta"
+    ThemeManager._target = ThemeManager._palette_for("cozy_terracotta")
+    ThemeManager._active = ThemeManager._target.duplicate()
+    var terra: Dictionary = ThemeManager._COZY["cozy_terracotta"]
+    assert_almost_eq(ThemeManager.bg().r, (terra["bg"] as Color).r, 0.001,
+        "切换到陶土后 bg 应为该主题色板值")
+    assert_ne(ThemeManager.bg(), ThemeManager._DARK.bg, "不得仍停留在旧深色色板")
+    # 还原现场：本用例会把 mode 拨到 cozy，若不还原会把"当前主题"泄漏给后续用例
+    ThemeManager.mode = saved_mode
+    ThemeManager._target = ThemeManager._palette_for(saved_mode)
+    ThemeManager._active = ThemeManager._target.duplicate()
 
 
 # ---------- ④ 切换控件 → SettingsManager 字段变化 ----------

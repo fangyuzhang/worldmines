@@ -10,7 +10,13 @@
     <!-- 让 .editorconfig 的代码风格规则也在 build 时生效（与 dotnet format 同一套规则） -->
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <!-- 只编译自己的源码：排除 Godot 缓存/导入目录（bin/ obj/ 由 SDK 自动排除） -->
-    <DefaultItemExcludes>$(DefaultItemExcludes);.godot/**;.mono/**</DefaultItemExcludes>
+    <!-- 【2026-09-28 审计 A15/警告存量】再排除第三方 addon 的 C# 源码：
+         `addons/dialogue_manager/*.cs`（DialogueManager.cs 等 8 个文件）原先被通配编译带上，
+         贡献了 112 条分析器警告里的 ~110 条（CA1051 44 / CA1805 22 / CA1711 14 …）。
+         该 addon（a）**未在 project.godot 的 [editor_plugins] 启用**、（b）**不随导出包发布**
+         （见 export_presets.cfg 的 exclude_filter）、（c）本工程唯一的自有 C# 是 solver/RuleSolver.cs，
+         不引用其类型 ⇒ 排除后编译面只剩自家代码，警告才落回真实存量。 -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);.godot/**;.mono/**;addons/dialogue_manager/**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Google.OrTools" Version="9.15.*" />

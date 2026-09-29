@@ -51,8 +51,14 @@ func _load(sound_name: String) -> AudioStream:
 	var path: String = SFX[sound_name]
 	if not ResourceLoader.exists(path):
 		return null
-	var wav := AudioStreamWAV.load_from_file(path)
-	if wav == null:
+	# 【09-28 审计修复 R1】原先 `AudioStreamWAV.load_from_file(path)` 直读 res:// 原始 wav：
+	# 编辑器态能读到磁盘文件，但**导出后 wav 源文件不进 PCK**（只会打进 .godot/imported/*.sample，
+	# 且 export_presets 的 include_filter 未列 assets/sfx/*）⇒ load_from_file 返回 null ⇒
+	# play() 静默 return ⇒ **发布版翻开/插旗/爆炸/胜利四个音效全部无声且无任何日志**。
+	# 改为走资源加载（拿导入后的 AudioStream），编辑器与导出行为一致；失败时留告警便于发现。
+	var stream := load(path) as AudioStream
+	if stream == null:
+		push_warning("AudioManager: 音效加载失败 %s（请确认该 wav 已随导出包）" % path)
 		return null
-	_cache[sound_name] = wav
-	return wav
+	_cache[sound_name] = stream
+	return stream

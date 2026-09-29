@@ -34,14 +34,23 @@ const GRACE_SEC := 2
 static var _armed := false
 static var _code := 0
 static var _frames := 0
+static var _wd_armed := false
 
 
-## 在 CLI 脚本 _initialize() 末尾调用，代替 quit()。只是「登记」，真正的退出在 poll() 里。
+## 在 CLI 脚本 _initialize() 末尾调用，代替 quit()。**登记退出 + 立刻装好看门狗**（真正的退出在 poll()）。
+##
+## 【09-28 审计修复 P2：兜底必须"当帧"装上，不能等 poll 的第 3 帧】
+## 依据（服务器一次挂死 ≥7h17m 的取证）：挂死日志**已打印到 batch_all_variants 的"事件记录"行**
+##（在 request_exit 之前），说明 request_exit 之前的代码都跑到了；而 `_arm_watchdog()` 原先只在
+## poll() 的第 3 帧执行 ⇒ 主循环一旦卡在"登记"与"第 3 帧"之间，`sleep 2; kill -9` 的强杀子进程
+## **永远不会被装上**，父 shell 只能死等到进程外看门狗（`prod_watchdog.sh`）出手。
+## 把 arm 提前到登记时安装（幂等：`_wd_armed` 守卫），无论主循环是否还能推进，进程都会在 GRACE_SEC 内被杀。
 static func request_exit(code := 0) -> void:
 	ProjectSettings.set_setting("application/run/flush_stdout_on_print", true)
 	_code = code
 	_frames = 0
 	_armed = true
+	_arm_watchdog()
 
 
 ## 在 CLI 脚本的 _process(delta) 里 `return CliShutdown.poll(self)`。
@@ -58,7 +67,11 @@ static func poll(tree: SceneTree) -> bool:
 
 
 ## 延时子进程兜底：正常退出则 taskkill 打空；卡住则在 GRACE_SEC 后被强杀。
+## 幂等（`_wd_armed`）：request_exit 与 poll 都可能调用，重复装会多起一个击杀子进程。
 static func _arm_watchdog() -> void:
+	if _wd_armed:
+		return
+	_wd_armed = true
 	var pid := OS.get_process_id()
 	# 第三参必须给 Array（传 null 会 Parse Error：Cannot pass a value of type "null" as "Array"）
 	var sink: Array = []

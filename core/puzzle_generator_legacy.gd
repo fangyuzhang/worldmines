@@ -360,14 +360,14 @@ func place_random(cols: int, rows: int, mine_count: int) -> Array[Vector2i]:
 ## G1 镜像：反推左半区(不含轴) k 个 + 轴列 j 个（2k+j = mine_count），确定性放置。
 func place_mx(cols: int, rows: int, mine_count: int) -> Array[Vector2i]:
 	var has_axis := (cols % 2 == 1)
-	var left_cols := cols / 2  # 不含轴列的左半区列数（偶数=cols/2，奇数=(cols-1)/2）
+	var left_cols := floori(cols / 2.0)  # 不含轴列的左半区列数（偶数=cols/2，奇数=(cols-1)/2）｜A8：int/int 显式化
 	var left_cells: Array[Vector2i] = []
 	var axis_cells: Array[Vector2i] = []
 	for r in rows:
 		for c in left_cols:
 			left_cells.append(Vector2i(c, r))
 		if has_axis:
-			axis_cells.append(Vector2i(cols / 2, r))
+			axis_cells.append(Vector2i(floori(cols / 2.0), r))   # A8：int/int 显式化
 	# 收集所有合法 (k, j)：2k + j = mine_count
 	var options: Array = []
 	var max_j: int = axis_cells.size() if has_axis else 0
@@ -377,7 +377,7 @@ func place_mx(cols: int, rows: int, mine_count: int) -> Array[Vector2i]:
 		var rem := mine_count - j
 		if rem % 2 != 0:
 			continue
-		var pairs := rem / 2
+		var pairs := floori(rem / 2.0)   # A8：int/int 显式化（rem 恒 ≥0）
 		if pairs > left_cells.size():
 			continue
 		options.append([pairs, j])
@@ -487,7 +487,7 @@ func place_ep(cols: int, rows: int, mine_count: int) -> Array[Vector2i]:
 func place_4c(cols: int, rows: int, mine_count: int) -> Array[Vector2i]:
 	if mine_count % 2 != 0:
 		return []  # 总雷数必须为偶数
-	var k := mine_count / 2
+	var k := floori(mine_count / 2.0)   # A8：int/int 显式化
 	var black: Array[Vector2i] = []
 	var white: Array[Vector2i] = []
 	for r in rows:

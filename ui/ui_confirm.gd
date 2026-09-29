@@ -64,7 +64,8 @@ static func confirm_restart(parent: Node, on_ok: Callable) -> void:
 		on_ok.call()
 		return
 	var secs := int(GameSession.elapsed)
-	var tip := "重开会从头开始本关（当前已用时 %02d:%02d），确定吗？" % [secs / 60, secs % 60]
+	# 【09-28 审计修复 A8】int/int 显式化（secs 恒 ≥0 ⇒ floori 与截断逐值相同）
+	var tip := "重开会从头开始本关（当前已用时 %02d:%02d），确定吗？" % [floori(secs / 60.0), secs % 60]
 	if GameSession.has_saved_draft():
 		tip += "\n注意：重开后本关的绘画草稿也会被清除。"
 	var dlg := ConfirmationDialog.new()

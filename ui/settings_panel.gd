@@ -16,6 +16,9 @@ extends Control
 
 # 顶层承载卡片：_apply_theme 需要给它刷 stylebox —— 存引用比按层级遍历耐用。
 var _panel: PanelContainer
+# 页签容器：**自带一块不透明的 `panel` 样式盒**铺在内容区底下（页签条下面那整块）。
+# 递归上色只认 Label / Button ⇒ 结构上够不到它，必须存引用单独刷（见 _style_tabs）。
+var _tabs: TabContainer
 # 皮肤页引用：其内部自带 theme_changed 处理，递归上色时要跳过（见 _collect_controls）。
 var _skin_page: Control
 
@@ -55,7 +58,9 @@ const PANEL_SIZE := Vector2(820, 520)
 ## 界面缩放档位（与 SettingsManager.ui_scale 一一对应）
 const UI_SCALES := [1.0, 1.25, 1.5]
 const UI_SCALE_LABELS := ["100%", "125%", "150%"]
-const THEME_MODES := ["system", "dark", "light"]
+## 主题下拉的取值表**不再自带副本** —— 见 _build_video_page：直接读 ThemeManager.THEME_IDS。
+## 原 `THEME_MODES := ["system","dark","light"]` 与三行 add_item() 是同一事实的两份副本，
+## 2026-09-29 接入 CozyStyle 五主题时合并为一份（唯一事实源在 ThemeManager）。
 
 
 func _ready() -> void:
@@ -68,6 +73,11 @@ func _build_ui() -> void:
     var top := HBoxContainer.new()
     top.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
     top.offset_top = 12
+    # 左右边距 24 = 本工程的页面基线（rules 图鉴页与对局 HUD 都是 24/24）。
+    # 原先只给 offset_top，左端默认 0 ⇒ 标题「设置」贴着窗口左边缘，而右端的
+    # 「返回」按钮自带 offset_right = -24，同一条顶栏左右边距不对称。
+    top.offset_left = 24
+    top.offset_right = -24
     top.add_theme_constant_override("separation", 16)
     add_child(top)
 
@@ -98,6 +108,7 @@ func _build_ui() -> void:
     center.add_child(_panel)
 
     var tabs := TabContainer.new()
+    _tabs = tabs   # 存引用：_apply_theme 要单独给它刷 stylebox（见 _style_tabs 的说明）
     # 固定面板尺寸（v3.5）：TabContainer 的默认尺寸**由当前页内容决定** —— 玩法页 8 项、
     # 音效页 1 项，切页时面板忽大忽小，外面又是 CenterContainer 居中，于是尺寸连着位置
     # 一起漂移（玩家视角：换个选项卡整个界面就抖一下）。显式钉死尺寸后，切页只换内容、
@@ -130,6 +141,11 @@ func _build_ui() -> void:
     _build_audio_page(audio_page.get_child(0) as VBoxContainer)
     _build_data_page(data_page.get_child(0) as VBoxContainer)
 
+    # 全部页填完之后再统一各页的标签列宽 —— 必须等所有行都在场才能量出"最宽的那条"
+    #（见 _align_label_column：写死宽度的做法在这里必然失配）。
+    for i in tabs.get_tab_count():
+        _align_label_column(tabs.get_child(i))
+
     _apply_theme()
 
 
@@ -153,17 +169,29 @@ func _make_page(page_name: String) -> ScrollContainer:
 # ============================ 画面 ============================
 
 func _build_video_page(page: VBoxContainer) -> void:
-    # 主题模式（跟随系统 / 深色 / 亮色）
+    # 主题模式（跟随系统 / 旧深色 / 旧亮色 / CozyStyle 五主题）
+    #
+    # 【2026-09-29】原先这里硬编码两份副本：`THEME_MODES` 常量 + 三行 add_item("跟随系统"/"深色"/"亮色")。
+    # 接入 CozyStyle 后主题从 3 个变成 8 个，两处都要改、且显示名还散在 if 分支里 —— 典型漂移点。
+    # 现在改成**按 ThemeManager.THEME_IDS 渲染**（唯一事实源），显示名统一走 theme_label()。
+    # 顺序由 THEME_IDS 决定：system 恒在 0 位（test_settings_grouping 的 selected 索引断言依赖这点）。
     var theme_row := HBoxContainer.new()
     theme_row.add_theme_constant_override("separation", 24)
     _add_label(theme_row, "主题模式")
     _theme_opt = OptionButton.new()
-    _theme_opt.add_item("跟随系统")
-    _theme_opt.add_item("深色")
-    _theme_opt.add_item("亮色")
+    var theme_ids: Array = ThemeManager.THEME_IDS
+    for i in theme_ids.size():
+        var tid := str(theme_ids[i])
+        _theme_opt.add_item(ThemeManager.theme_label(tid))
+        # 浅色系（CozyStyle 与旧亮色）在深色下拉弹层里要标明，避免选完才发现是亮的；
+        # 这里只做文案标注，不参与逻辑判定。
+        if tid != "system" and tid != "dark":
+            _theme_opt.set_item_tooltip(i, "浅色系主题")
     _theme_opt.item_selected.connect(func(idx: int):
-        SettingsManager.set_theme_mode(THEME_MODES[idx]))
-    _theme_opt.selected = THEME_MODES.find(SettingsManager.theme_mode)
+        SettingsManager.set_theme_mode(str(theme_ids[idx])))
+    # 存档里的脏 id（手改 settings.cfg / 旧版本遗留）→ 落回 0 位（跟随系统），而不是让下拉停在 -1
+    var sel: int = theme_ids.find(SettingsManager.theme_mode)
+    _theme_opt.selected = sel if sel >= 0 else 0
     theme_row.add_child(_theme_opt)
     page.add_child(theme_row)
 
@@ -450,7 +478,49 @@ func _add_label(parent: Node, text: String) -> void:
     lb.text = text
     lb.custom_minimum_size = Vector2(200, 32)
     lb.add_theme_font_size_override("font_size", 18)
+    # 垂直居中（2026-09-29）：custom_minimum_size.y = 32 比 18px 字的行高（27）高 5px，
+    # 而 Label 的 vertical_alignment 默认是 TOP ⇒ 文字被顶在框顶，和同排 32px 高的
+    # 开关 / 下拉 / 滑条的中心错开 2.5px。字号或 ui_scale 一变，这个偏差同步放大。
+    lb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    # 打标记：供 _align_label_column 收集「行标签」（小节标题走 _add_section_label，不打标记）
+    lb.set_meta("_row_label", true)
     parent.add_child(lb)
+
+
+## 把一页里所有「行标签」的宽度统一到该页最宽的那条（2026-09-29）。
+##
+## 为什么必须**量**而不能写死：原实现给死 200，而最长的一条是
+## 「右键可标问号（标雷 → ？ → 取消）」（18px 下 291px）⇒ 它把那行的开关顶到 291+24 处，
+## 同页其它行的开关留在 224 处，一列控件左右参差。写死值还会随字号 / ui_scale /
+## 文案长度再次失配，所以改成运行时量一遍。
+##
+## 只改宽、不改高：Label 的 horizontal_alignment 是 LEFT（默认），加宽只会让**右侧空白**变多，
+## 文字位置一个像素都不动 —— 那点空白本来就是这个列宽存在的意义（对齐右侧控件）。
+func _align_label_column(scope: Node) -> void:
+    var labels: Array[Label] = []
+    _gather_row_labels(scope, labels)
+    if labels.size() < 2:
+        return
+    var widest := 0.0
+    for lb in labels:
+        var f: Font = lb.get_theme_font("font")
+        if f == null:
+            continue
+        widest = maxf(widest, f.get_string_size(lb.text, HORIZONTAL_ALIGNMENT_LEFT, -1,
+            lb.get_theme_font_size("font_size")).x)
+    if widest <= 0.0:
+        return
+    # 向上取整到 4px：避免不同字号算出 290.5 这类值让整列宽度随平台字体微调而抖
+    var w: float = ceilf(widest / 4.0) * 4.0
+    for lb in labels:
+        lb.custom_minimum_size = Vector2(w, lb.custom_minimum_size.y)
+
+
+func _gather_row_labels(root: Node, out: Array[Label]) -> void:
+    for c in root.get_children():
+        if c is Label and (c as Label).has_meta("_row_label"):
+            out.append(c as Label)
+        _gather_row_labels(c, out)
 
 
 ## 小节标题：次级色 + 略小字号；带 meta 以便 _apply_theme 在换主题时仍用次级色。
@@ -487,6 +557,8 @@ func _apply_theme() -> void:
         sb.bg_color = ThemeManager.card()
         sb.set_corner_radius_all(10)
         _panel.add_theme_stylebox_override("panel", sb)
+    if _tabs != null:
+        _style_tabs()
     for n in _collect_controls(self):
         if n is Label:
             n.add_theme_color_override("font_color",
@@ -494,6 +566,50 @@ func _apply_theme() -> void:
         elif n is Button:
             _style_button(n)
     queue_redraw()
+
+
+## 刷 TabContainer 的**内容区底板 + 页签条**。
+##
+## 为什么必须单独刷（而不是靠 _apply_theme 的递归）：TabContainer 自带一块
+## **不透明的** `panel` 样式盒铺在内容区底下，而递归上色只认 Label / Button ⇒
+## 它一直吃的是 Godot 引擎默认值（StyleBoxFlat，bg_color ≈ Color(0.1,0.1,0.1,0.6)）。
+## 后果：五套浅色 CozyStyle 主题上，那块近黑底把 `text()` 的正文压成**实测 1.67:1**
+## （#444d5b 压 #607174；口径见 _pv/probe_skin_contrast.py）——整页设置项几乎读不出来。
+##
+## 这个缺陷最阴的地方是「不像 bug、像设计」：玩家会以为"设置面板本来就该是深色卡片"，
+## 而静态检查、单元测试、乃至截图肉眼扫一遍都可能放过。
+##
+## 修法：内容区刷成与外层 _panel 同一张底（card）⇒ 正文立刻回到 7.32:1；
+## 页签条的选中/未选中/悬停三态与字色也一并接管 —— 否则页签条仍靠引擎默认，
+## 在浅色底上同样发灰（选中态尤其看不出选的是哪个）。
+func _style_tabs() -> void:
+    var card := ThemeManager.card()
+    var body := StyleBoxFlat.new()
+    body.bg_color = card
+    # 与外层 _panel 同为 10：两层同色同圆角，叠在一起看不出接缝
+    body.set_corner_radius_all(10)
+    _tabs.add_theme_stylebox_override("panel", body)
+
+    _tabs.add_theme_color_override("font_selected_color", ThemeManager.text())
+    _tabs.add_theme_color_override("font_unselected_color", ThemeManager.text_secondary())
+    _tabs.add_theme_color_override("font_hovered_color", ThemeManager.text())
+
+    # 页签条：未选中 = 页面底色（读作"凹进去的标签槽"），选中 = 内容区同色
+    #（读作"这个标签和下面的内容是连着的"）—— 这是标签页最省事的可读性手法。
+    var strip := StyleBoxFlat.new()
+    strip.bg_color = ThemeManager.bg()
+    strip.set_corner_radius_all(8)
+    strip.content_margin_left = 12
+    strip.content_margin_right = 12
+    strip.content_margin_top = 6
+    strip.content_margin_bottom = 6
+    var sel := strip.duplicate() as StyleBoxFlat
+    sel.bg_color = card
+    var hov := strip.duplicate() as StyleBoxFlat
+    hov.bg_color = card.lightened(0.04)
+    _tabs.add_theme_stylebox_override("tab_unselected", strip)
+    _tabs.add_theme_stylebox_override("tab_selected", sel)
+    _tabs.add_theme_stylebox_override("tab_hovered", hov)
 
 
 ## 递归收集 root 下全部控件；越过 _skin_page 子树（皮肤页自管配色）。

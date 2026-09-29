@@ -12,7 +12,18 @@ const SKINS_DIR := "user://skins"
 var skins: Array = []            # [{id, name, author, version, builtin, base, path, preview, json_path}]
 var active_skin_id: String = ""
 
+## 内置主题（永远可用、不可删除、恒在列表最前）。
+##
+## 【2026-09-29】从 2 项（深/亮）扩到 7 项：新增 CozyStyle 五主题。
+## `base` 字段就是 ThemeManager 的主题 id —— 下面 activate() 按它切主题，
+## **不要再回到 if/else 硬编码**（旧版写的是 `"dark" if id != "__builtin_light" else "light"`，
+## 这个三元式在加入第 3 个内置项之后会静默地把五套新主题全当成深色）。
 const BUILTIN := [
+	{"id": "__builtin_cozy_salt", "name": "海盐（CozyStyle）", "author": "内置", "version": "1.0.0", "builtin": true, "base": "cozy_salt"},
+	{"id": "__builtin_cozy_terracotta", "name": "陶土（CozyStyle）", "author": "内置", "version": "1.0.0", "builtin": true, "base": "cozy_terracotta"},
+	{"id": "__builtin_cozy_sage", "name": "鼠尾草（CozyStyle）", "author": "内置", "version": "1.0.0", "builtin": true, "base": "cozy_sage"},
+	{"id": "__builtin_cozy_dusk", "name": "暮紫（CozyStyle）", "author": "内置", "version": "1.0.0", "builtin": true, "base": "cozy_dusk"},
+	{"id": "__builtin_cozy_haze", "name": "雾霭（CozyStyle）", "author": "内置", "version": "1.0.0", "builtin": true, "base": "cozy_haze"},
 	{"id": "__builtin_dark", "name": "深色（内置）", "author": "内置", "version": "1.0.0", "builtin": true, "base": "dark"},
 	{"id": "__builtin_light", "name": "亮色（内置）", "author": "内置", "version": "1.0.0", "builtin": true, "base": "light"},
 ]
@@ -75,7 +86,13 @@ func _read_meta(skin_dir: String) -> Dictionary:
 ## 返回 { ok, reason }。
 func activate(skin_id: String) -> Dictionary:
 	if skin_id == "" or skin_id.begins_with("__builtin"):
-		var base := "dark" if skin_id != "__builtin_light" else "light"
+		# 【2026-09-29】底版一律从条目的 base 字段取，不再用 if/else 猜 —— 旧写法
+		#（"dark" if skin_id != "__builtin_light" else "light"）在加入 CozyStyle 五主题后
+		# 会把它们全部当成深色（皮肤浏览器里点「海盐」却什么都没变，且不报错）。
+		var base := "dark"
+		var entry0 := _find(skin_id)
+		if not entry0.is_empty():
+			base = str(entry0.get("base", "dark"))
 		ThemeManager.clear_skin(base)
 		if SettingsManager != null:
 			SettingsManager.set_theme_mode(base)
@@ -166,6 +183,15 @@ func import_zip(zip_path: String) -> Dictionary:
 	var root := skin_json.get_base_dir()
 	var skin_id := root if (root != "." and root != "") else zip_path.get_file().get_basename()
 	var dest := SKINS_DIR.path_join(skin_id)
+	# 【09-28 审计修复 A9】解压限额：zip-slip 在下面已防，但原先**无条目数/解压总量上限** ⇒
+	# 高压缩比 zip（zip bomb）可把 user:// 写爆。超限即中止并回滚已写文件。
+	var max_files := 50
+	var max_bytes := 5 * 1024 * 1024
+	if files.size() > max_files:
+		zr.close()
+		return {"ok": false, "reason": "zip 条目过多（%d > %d）" % [files.size(), max_files]}
+	var total_bytes := 0
+	var written: Array = []
 	DirAccess.make_dir_recursive_absolute(dest)
 	for p in files:
 		var rel := p
@@ -182,12 +208,22 @@ func import_zip(zip_path: String) -> Dictionary:
 		var bytes := zr.read_file(p)
 		if bytes == null:
 			continue
+		if total_bytes + bytes.size() > max_bytes:
+			zr.close()
+			for w in written:
+				DirAccess.remove_absolute(str(w))
+			# 【09-28 审计修复 A8】int/int 显式化（max_bytes 为 5MB 整数，除数为 1MB）
+			var max_mb := max_bytes / 1048576.0
+			push_warning("皮肤 zip 解压超过 %d MB 上限，已中止并回滚（zip bomb 防护）" % max_mb)
+			return {"ok": false, "reason": "zip 解压超限（>%d MB）" % max_mb}
+		total_bytes += bytes.size()
 		var target := dest.path_join(rel)
 		DirAccess.make_dir_recursive_absolute(target.get_base_dir())
 		var wf := FileAccess.open(target, FileAccess.WRITE)
 		if wf != null:
 			wf.store_buffer(bytes)
 			wf.close()
+			written.append(target)
 	zr.close()
 	refresh()
 	return {"ok": true}

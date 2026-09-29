@@ -263,6 +263,11 @@ func _build_ui() -> void:
 	var title := Label.new()
 	title.text = "选择关卡"
 	title.add_theme_font_size_override("font_size", 28)
+	# 颜色显式写死 + 打 secondary 元标记（由 _apply_theme() 在每次主题广播时刷新）。
+	# 原先两者都没有 ⇒ 落到引擎默认主题的白色字。深色主题下白头正好对，缺陷就此藏了
+	# 很久；换成粉彩浅底后整页大标题直接消失（白字压 #B7C9D4 ≈1.5:1）。
+	title.set_meta("secondary", false)
+	title.add_theme_color_override("font_color", ThemeManager.text())
 	title.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
 	title.offset_top = 14
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1362,7 +1367,10 @@ func _style_icon_button(b: Button, tex: Texture2D = null) -> void:
 	if tex != null:
 		b.icon = tex
 		b.expand_icon = true   # 图标按控件尺寸缩放（默认按原始像素居中，小图标会显得糊成一坨）
-	UiTheme.style_button(b)
+	# 必须走**图标**按钮样式（对称 9px 内边距），不能用文字按钮的 16/8：
+	# 40×40 的按钮套 16/8 后内容区只剩 8×8，expand_icon 就把图标画成 8px 的小方块
+	# （2026-09-29 实测复现）。见 UiTheme.ICON_PAD。
+	UiTheme.style_icon_button(b)
 	var col := ThemeManager.text()
 	for state in ["icon_normal_color", "icon_hover_color", "icon_pressed_color",
 			"icon_focus_color", "icon_disabled_color"]:
@@ -1379,13 +1387,32 @@ func _svg_texture(svg: String) -> Texture2D:
 
 
 ## 齿轮（设置）：evenodd 圆环 + 4 直齿 + 4 斜齿，32×32 视图框。
+##
+## 2026-09-29 造型对齐 CozyStyle：CozySudoku 的齿轮是**厚环 + 圆头短齿**的胖齿轮，
+## 缩到 40×40 按钮上（≈22px）依然认得出是齿轮。旧版齿宽 4、环厚 5 在 22px 下齿会细成
+## 一排毛刺。现取 环厚 5.6（外 9.5 / 孔 3.9）+ 齿 5.4×6.6 / rx 1.8。
+##
+## ⚠️ 齿必须**压进环里** 1.3px（齿根圆心距离 = 9.5 + 3.3 − 1.3 = 11.5）。
+## 旧版齿根正好停在环外沿（y=7 == 16−9），抗锯齿下一圈会有肉眼可见的**接缝**。
 func _svg_gear() -> Texture2D:
-	return _svg_texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><g fill=\"#FFFFFF\"><path fill-rule=\"evenodd\" d=\"M16 7a9 9 0 1 1 0 18 9 9 0 0 1 0-18zm0 5a4 4 0 1 0 0 8 4 4 0 0 0 0-8z\"/><rect x=\"14\" y=\"1\" width=\"4\" height=\"6\" rx=\"1\"/><rect x=\"14\" y=\"25\" width=\"4\" height=\"6\" rx=\"1\"/><rect x=\"1\" y=\"14\" width=\"6\" height=\"4\" rx=\"1\"/><rect x=\"25\" y=\"14\" width=\"6\" height=\"4\" rx=\"1\"/><rect x=\"4\" y=\"4\" width=\"4\" height=\"6\" rx=\"1\" transform=\"rotate(-45 6 7)\"/><rect x=\"24\" y=\"4\" width=\"4\" height=\"6\" rx=\"1\" transform=\"rotate(45 26 7)\"/><rect x=\"4\" y=\"22\" width=\"4\" height=\"6\" rx=\"1\" transform=\"rotate(45 6 25)\"/><rect x=\"24\" y=\"22\" width=\"4\" height=\"6\" rx=\"1\" transform=\"rotate(-45 26 25)\"/></g></svg>")
+	return _svg_texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><g fill=\"#FFFFFF\"><path fill-rule=\"evenodd\" d=\"M16 6.5a9.5 9.5 0 1 1 0 19 9.5 9.5 0 0 1 0-19zm0 5.6a3.9 3.9 0 1 0 0 7.8 3.9 3.9 0 0 0 0-7.8z\"/><rect x=\"13.3\" y=\"1.2\" width=\"5.4\" height=\"6.6\" rx=\"1.8\"/><rect x=\"13.3\" y=\"24.2\" width=\"5.4\" height=\"6.6\" rx=\"1.8\"/><rect x=\"1.2\" y=\"13.3\" width=\"6.6\" height=\"5.4\" rx=\"1.8\"/><rect x=\"24.2\" y=\"13.3\" width=\"6.6\" height=\"5.4\" rx=\"1.8\"/><rect x=\"5.17\" y=\"4.57\" width=\"5.4\" height=\"6.6\" rx=\"1.8\" transform=\"rotate(-45 7.87 7.87)\"/><rect x=\"21.43\" y=\"4.57\" width=\"5.4\" height=\"6.6\" rx=\"1.8\" transform=\"rotate(45 24.13 7.87)\"/><rect x=\"5.17\" y=\"20.83\" width=\"5.4\" height=\"6.6\" rx=\"1.8\" transform=\"rotate(45 7.87 24.13)\"/><rect x=\"21.43\" y=\"20.83\" width=\"5.4\" height=\"6.6\" rx=\"1.8\" transform=\"rotate(-45 24.13 24.13)\"/></g></svg>")
 
 
-## 书本（规则图鉴）：左右两页 + 中缝。
+## 书本（规则图鉴）：**展开的书**——上下各向书脊收腰的单片剪影，32×32 视图框。
+##
+## 2026-09-29 重画，两次迭代：
+##   ① 旧版两页是**贴合**的（左页画到 x=16、右页从 x=16 起，只在上下沿留了个 2px 的弧口），
+##      缩到 22px 时弧口被抗锯齿糊掉 ⇒ 整个图标退化成**一块深色圆角方块**
+##      （放大截图确认：与齿轮并排时就是"方块 + 齿轮"）。
+##   ② 改成"两片留 3px 中缝的独立圆角矩形"后又踩一坑：22px 下读作 **⏸ 暂停**——
+##      两片等高、等宽、竖直平行的方块，与播放器暂停图标是同一个形状。
+##
+## 终版用**单片剪影**：封面两端 (2.8,2.6)/(29.2,2.6) 比书脊 (16,6.6)/(16,29.4) 高，
+## 上下各向中间收 4px 的腰 ⇒ 一眼是"摊开的书"，不可能与暂停混淆；
+## 且只有一条轮廓，小尺寸下没有会被糊掉的内缝。上下对称（y 2.6..29.4，中心 16）——
+## 图标本身偏心的话，正方形按钮里摆正也救不回来。
 func _svg_book() -> Texture2D:
-	return _svg_texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><g fill=\"#FFFFFF\"><path d=\"M5 5h9a2 2 0 0 1 2 2v19a2 2 0 0 0-2-2H5z\"/><path d=\"M27 5h-9a2 2 0 0 0-2 2v19a2 2 0 0 1 2-2h9z\"/></g></svg>")
+	return _svg_texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><path fill=\"#FFFFFF\" d=\"M16 6.6 L2.8 2.6 V26.2 L16 29.4 L29.2 26.2 V2.6 Z\"/></svg>")
 
 
 # ============ 未完成对局提示（2026-09-28 从 main_menu 搬迁） ============
@@ -1783,6 +1810,13 @@ func _build_left(parent: Node) -> void:
 	parent.add_child(_frame)
 
 	# 左：难度列（关卡库模式）｜右：尺寸栏 + 关卡网格——「上方棋盘大小、左侧难度竖列」。
+	#
+	# 两列的**垂直对齐是刻意不同的**（2026-09-29 修）：
+	#   · 左列（难度竖列）**垂直居中** —— 它只有 3 个按钮，而右列（尺寸栏 + 网格）高得多；
+	#     默认的 SIZE_FILL 会把左列拉到与右列同高，于是 VBox 的 ALIGNMENT_BEGIN 把 3 个
+	#     按钮全顶在最上面，下面留一大片空白，看起来像"没排完"。
+	#   · 右列**保持上对齐** —— 尺寸栏必须在最上面、网格紧接其下；居中会让"棋盘大小"
+	#     这一行的位置随盘面档位上下飘。
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 14)
 	_frame.add_child(row)
@@ -1790,10 +1824,17 @@ func _build_left(parent: Node) -> void:
 	_tier_col = VBoxContainer.new()
 	_tier_col.add_theme_constant_override("separation", 8)
 	_tier_col.custom_minimum_size = Vector2(120, 0)
+	# SHRINK_CENTER = 高度收到内容最小高度 + 在可用高度内垂直居中（不要用 alignment 属性：
+	# VBoxContainer.alignment 只在**容器自身比内容高**时才起作用，而这里容器正好被子节点
+	# 尺寸撑住，改 alignment 没有效果 —— 必须从 size_flags 下手）。
+	_tier_col.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(_tier_col)
 
 	var vbox := VBoxContainer.new()
 	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# 显式写 FILL（= 默认值）：右列要撑满行高，让内部的 grid_row 拿到剩余高度；
+	# 顺带把"这里**故意不改**成 SHRINK_CENTER"这件事写成代码，免得后人顺手统一。
+	vbox.size_flags_vertical = Control.SIZE_FILL
 	vbox.add_theme_constant_override("separation", 12)
 	vbox.add_theme_constant_override("margin_right", 16)
 	vbox.add_theme_constant_override("margin_top", 14)
@@ -2588,7 +2629,10 @@ func _style_choice(b: Button, active: bool) -> void:
 	sb.content_margin_top = 8
 	sb.content_margin_bottom = 8
 	b.add_theme_stylebox_override("normal", sb)
-	b.add_theme_color_override("font_color", ThemeManager.text())
+	# 字色随底色走：选中/跳过的底是 accent 系淡化色，未选中的底是 card。
+	# 五套粉彩主题下同一个 darkened() 系数给出的明度差异极大，固定 text() 必糊，
+	# 故交给 ThemeManager.text_on() 按实测对比度挑（该接口详见 theme_manager.gd）。
+	b.add_theme_color_override("font_color", ThemeManager.text_on(sb.bg_color))
 	# 键盘焦点态（2026-09-25 自查补）：页签开了 FOCUS_ALL，但此前只覆盖 normal ⇒
 	# 聚焦时会落到引擎默认焦点框（浅色细线，与深色主题冲突，且与「选中」难以区分）。
 	# 复用同一底色，仅把描边换强调色并加粗 —— 与选中态靠底色区分。
@@ -2631,7 +2675,7 @@ func _style_tile(b: Button, selected: bool, cleared: bool, skipped: bool = false
 	fsb.set_border_width_all(3)
 	fsb.border_color = ThemeManager.accent()
 	b.add_theme_stylebox_override("focus", fsb)
-	b.add_theme_color_override("font_color", ThemeManager.text())
+	b.add_theme_color_override("font_color", ThemeManager.text_on(sb.bg_color))
 	# 禁用态必须用 font_disabled_color（font_color 对 disabled 无效）
 	b.add_theme_color_override("font_disabled_color", ThemeManager.text_secondary().darkened(0.25))
 
