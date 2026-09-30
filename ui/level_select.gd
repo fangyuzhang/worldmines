@@ -341,6 +341,7 @@ func _build_ui() -> void:
 		_tab_btns.append(b)
 		_tab_btn_page.append(int(spec[1]))
 		UiTheme.bind_hover(b, HOVER_SCALE)
+		UiTheme.attach_press_feedback(b)   # 【2026-09-30】页签统一按压回弹
 
 	# 页容器：页签以下的整块区域（滚动由各页自己的 ScrollContainer 负责）
 	_page_host = Control.new()
@@ -2751,8 +2752,13 @@ func _style_frame() -> void:
 
 ## 尺寸选项按钮 / 页签：选中态蓝色高亮。
 func _style_choice(b: Button, active: bool) -> void:
+	# 【2026-09-30 浮动卡片化】页签与全局按钮统一：圆角 12 + 常态软影 + hover 提亮
+	# + pressed 沉底阴影 + 按压回弹（attach_press_feedback）。选中/未选中的底色语义不变。
+	var radius := 12
 	var sb := StyleBoxFlat.new()
-	sb.set_corner_radius_all(6)
+	sb.set_corner_radius_all(radius)
+	sb.corner_detail = clampi(radius + 2, 8, 20)
+	sb.anti_aliasing = true
 	sb.set_border_width_all(2 if active else 1)
 	if active:
 		sb.bg_color = ThemeManager.accent().darkened(0.55)
@@ -2764,7 +2770,26 @@ func _style_choice(b: Button, active: bool) -> void:
 	sb.content_margin_right = 12
 	sb.content_margin_top = 8
 	sb.content_margin_bottom = 8
+	sb.shadow_color = ThemeManager.shadow(ThemeManager.bg())
+	sb.shadow_size = UiTheme.NORMAL_SHADOW_SIZE
+	sb.shadow_offset = UiTheme.NORMAL_SHADOW_OFFSET
 	b.add_theme_stylebox_override("normal", sb)
+	# hover：底色提亮一档 + 影加深（未选中页签才有悬停反馈；选中的页签底色已最深）
+	if not active:
+		var hsb: StyleBoxFlat = sb.duplicate()
+		hsb.bg_color = ThemeManager.card().lightened(0.06)
+		hsb.border_color = ThemeManager.accent()
+		hsb.shadow_color = ThemeManager.shadow(ThemeManager.bg(), ThemeManager.SHADOW_DROP_HOVER)
+		hsb.shadow_size = UiTheme.HOVER_SHADOW_SIZE
+		hsb.shadow_offset = UiTheme.HOVER_SHADOW_OFFSET
+		b.add_theme_stylebox_override("hover", hsb)
+	# pressed：沉底（影收脚边 + 底色加深）
+	var psb: StyleBoxFlat = sb.duplicate()
+	psb.bg_color = sb.bg_color.darkened(0.08)
+	psb.shadow_color = ThemeManager.shadow(ThemeManager.bg(), ThemeManager.SHADOW_DROP_HOVER)
+	psb.shadow_size = UiTheme.PRESSED_SHADOW_SIZE
+	psb.shadow_offset = UiTheme.PRESSED_SHADOW_OFFSET
+	b.add_theme_stylebox_override("pressed", psb)
 	# 字色随底色走：选中/跳过的底是 accent 系淡化色，未选中的底是 card。
 	# 五套粉彩主题下同一个 darkened() 系数给出的明度差异极大，固定 text() 必糊，
 	# 故交给 ThemeManager.text_on() 按实测对比度挑（该接口详见 theme_manager.gd）。

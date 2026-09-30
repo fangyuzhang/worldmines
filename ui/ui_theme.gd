@@ -26,13 +26,20 @@ class_name UiTheme
 ## 阴影的**范围**。深度不在常量里 —— 见 ThemeManager.shadow()。
 ##
 ## 常态：贴着一层浅浅的浮起感，让静止的按钮也不像"贴纸"。
-const NORMAL_SHADOW_OFFSET := Vector2(0, 2)
-const NORMAL_SHADOW_SIZE := 8
+## 【2026-09-30 浮动卡片化】offset/size 双双加深一档（参考 cozy 数独的动作钮：
+## 静止就有"拿起来"的厚度），深度仍由 ThemeManager.shadow() 按主题反解。
+const NORMAL_SHADOW_OFFSET := Vector2(0, 3)
+const NORMAL_SHADOW_SIZE := 10
 
-## 悬停：只比常态深一档、宽一点点。"抬起一档"还由描边换 accent + 底色提亮 + scale
+## 悬停：比常态深一档、宽一点。"抬起一档"还由描边换 accent + 底色提亮 + scale
 ## 1.03 三条一起表达，阴影不需要独立承担整个层次差。
-const HOVER_SHADOW_OFFSET := Vector2(0, 3)
-const HOVER_SHADOW_SIZE := 10
+const HOVER_SHADOW_OFFSET := Vector2(0, 4)
+const HOVER_SHADOW_SIZE := 13
+
+## 按下（2026-09-30 浮动卡片化新增）：影子收到脚边（offset 归零档、size 收窄）
+## = 卡片被按进桌面的"沉底"感；深色用悬停档（比常态深）。
+const PRESSED_SHADOW_OFFSET := Vector2(0, 1)
+const PRESSED_SHADOW_SIZE := 4
 
 ## 圆角半径。**不要**用 StyleBoxFlat.expand_margin 去放大投影范围 —— 那会把整个
 ## stylebox 的绘制矩形撑开，导致相邻控件互相覆盖（已实测踩过）。
@@ -94,6 +101,11 @@ static func style_button(btn: Button, pad_x: int = BTN_PAD_X, pad_y: int = BTN_P
 	_round(pressed, BTN_RADIUS)
 	pressed.set_border_width_all(1)
 	pressed.border_color = ThemeManager.accent()
+	# 【2026-09-30 浮动卡片化】按下 = 卡片沉底：影子收到脚边（offset 归零档、
+	# size 收窄）+ 用更深的影色 —— 与 scale 缩小一起构成"按进桌面"的立体反馈。
+	pressed.shadow_color = ThemeManager.shadow(ThemeManager.bg(), ThemeManager.SHADOW_DROP_HOVER)
+	pressed.shadow_size = PRESSED_SHADOW_SIZE
+	pressed.shadow_offset = PRESSED_SHADOW_OFFSET
 	btn.add_theme_stylebox_override("pressed", pressed)
 	# 按下态背景换成了**实心 accent**，字色就必须跟着换 accent_text。
 	# 原先这里沿用 text()：深色主题下 accent 是深蓝、text 是近白，勉强能看；
@@ -120,6 +132,7 @@ static func style_button(btn: Button, pad_x: int = BTN_PAD_X, pad_y: int = BTN_P
 	btn.add_theme_color_override("font_focus_color", ThemeManager.text())
 
 	bind_hover(btn, 1.03)
+	attach_press_feedback(btn)
 
 
 ## 图标按钮（按钮上只有 icon、没有 text，配 expand_icon）：
@@ -156,6 +169,56 @@ static func style_swatch(sw: Button, color: Color, selected: bool) -> void:
 	sw.add_theme_stylebox_override("pressed", sb)
 	sw.add_theme_stylebox_override("focus", sb)
 	bind_hover(sw, 1.15)
+	attach_press_feedback(sw)   # 【2026-09-30】色标也是可点元素，统一按压回弹
+
+
+## 【2026-09-30 浮动卡片化】按压回弹（所有按钮及可点击元素统一）：
+##   按下 → scale 缩到 0.96（0.06s，快而短 = "按下去"）；
+##   松开 → TRANS_BACK EASE_OUT 回弹到 1.0（0.22s，轻微过冲再落回 = 弹性）。
+## 与 hover 抬起共用同一个 tween 槽（_ui_hover_tween）——两套动画互杀，不会打架。
+## pivot 每次动画开始时取当前 size（换页/改字号后仍绕中心，同 _lift_to 的修正）。
+## 键盘激活（空格/回车）同样触发 button_down/up，键盘用户得到同一份反馈。
+const PRESS_SCALE := 0.96
+const PRESS_DOWN_SEC := 0.06
+const PRESS_RELEASE_SEC := 0.22
+
+static func attach_press_feedback(btn: BaseButton) -> void:
+	if btn.has_meta("_ui_press_fx"):
+		return
+	btn.set_meta("_ui_press_fx", true)
+	btn.button_down.connect(func(): _press_down(btn))
+	btn.button_up.connect(func(): _press_release(btn))
+
+
+static func _press_down(btn: BaseButton) -> void:
+	if not is_instance_valid(btn):
+		return
+	_kill_ui_tween(btn)
+	btn.pivot_offset = btn.size * 0.5
+	var tw := btn.create_tween()
+	tw.set_trans(Tween.TRANS_QUAD)
+	tw.set_ease(Tween.EASE_OUT)
+	tw.tween_property(btn, "scale", Vector2(PRESS_SCALE, PRESS_SCALE), PRESS_DOWN_SEC)
+	btn.set_meta("_ui_hover_tween", tw)
+
+
+static func _press_release(btn: BaseButton) -> void:
+	if not is_instance_valid(btn):
+		return
+	_kill_ui_tween(btn)
+	btn.pivot_offset = btn.size * 0.5
+	var tw := btn.create_tween()
+	tw.set_trans(Tween.TRANS_BACK)   # 过冲回弹：scale 短暂越过 1.0 再落回
+	tw.set_ease(Tween.EASE_OUT)
+	tw.tween_property(btn, "scale", Vector2.ONE, PRESS_RELEASE_SEC)
+	btn.set_meta("_ui_hover_tween", tw)
+
+
+static func _kill_ui_tween(control: Control) -> void:
+	if control.has_meta("_ui_hover_tween"):
+		var old: Tween = control.get_meta("_ui_hover_tween")
+		if old != null and old.is_valid():
+			old.kill()
 
 
 ## 绑定 hover 抬起：进入 scale 到目标，离开回 1.0（0.2s ease-out，不超过 0.3s）。
