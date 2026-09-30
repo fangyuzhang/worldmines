@@ -18,6 +18,8 @@
 extends Control
 
 # 教程覆盖层用 preload 而非 class_name 引用（headless 下新全局类不在 .godot 缓存里，见坑表 #26）
+## 常驻主题切换组件（2026-09-30）：HUD 与选关页共用，单一事实源。
+const ThemePickerScript := preload("res://ui/theme_picker_button.gd")
 const TutorialOverlayScript := preload("res://ui/tutorial_overlay.gd")
 # 图标（书本 / 齿轮）走同一个工厂：对局 HUD 的「教程」入口用的是同一本书
 const Icons := preload("res://ui/ui_icons.gd")
@@ -294,14 +296,21 @@ func _build_ui() -> void:
 	# 不引入外部资源，解析失败只是图标缺失、按钮仍可点）。
 	var corner := HBoxContainer.new()
 	corner.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	# 宽度 = 两个 40px 按钮 + 间距 8 = 88，留 8 余量（原先 -104 只有 80 宽 ⇒ 溢出 8px，
-	# 齿轮被推出容器右缘；见 test_ui_rework_contract 的"不溢出"断言）
-	corner.offset_left = -120
+	# 宽度 = 三个 40px 按钮 + 2×8 间距 = 136，留 8 余量（2026-09-30 加主题切换后 3 枚；
+	# 原先两枚 -120，更早两枚 -104 只有 80 宽 ⇒ 溢出 8px，齿轮被推出容器右缘，
+	# 见 test_ui_rework_contract 的"不溢出"断言）
+	corner.offset_left = -168
 	corner.offset_top = 14
 	corner.offset_right = -24
 	corner.add_theme_constant_override("separation", 8)
 	corner.set_meta("icon_bar", true)   # _apply_theme 据此整批刷图标按钮（见该函数）
 	add_child(corner)
+	# 常驻主题切换（2026-09-30）：与 HUD 共用 ui/theme_picker_button.gd 组件
+	#（按钮 + 弹出面板 + ThemeManager 联动单一事实源）；icon_bar 批刷只重上色不换图标。
+	var skin_btn := ThemePickerScript.new()
+	skin_btn.name = "SkinBtn"
+	skin_btn.set_meta("skin_btn", true)
+	corner.add_child(skin_btn)
 	var codex_btn := _make_icon_button(_svg_book(), "规则图鉴（各算子与变体说明）")
 	codex_btn.set_meta("codex_btn", true)   # 测试 / 调试可据此定位
 	codex_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://ui/codex.tscn"))

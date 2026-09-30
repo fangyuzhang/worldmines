@@ -44,11 +44,10 @@ var _deducible_label: Label
 var _hint_btn: Button
 var _tut_btn: Button
 var _settings_popup: PopupPanel
-## 换肤（2026-09-29）：右上工具簇的调色板按钮 + 下拉主题面板。
+## 换肤（2026-09-29）：右上工具簇的调色板按钮。【2026-09-30 常驻组件化】
+## 按钮 + 主题面板 + ThemeManager 联动整体抽到 ui/theme_picker_button.gd
+##（HUD 与选关页共用同一组件，单一事实源），HUD 只持引用定位。
 var _skin_btn: Button
-var _skin_panel: PopupPanel
-var _skin_sb: StyleBoxFlat          # 面板样式（随主题刷新）
-var _skin_list: VBoxContainer
 
 ## 顶栏按钮排。2026-09-29 起只装**左侧读数组 + 教程入口**（提示已挪到右上工具簇）。
 var _box: HFlowContainer
@@ -148,9 +147,8 @@ func _ready() -> void:
 	add_child(_hint_btn)
 	_place_toolbar_button(_hint_btn, 0)
 
-	# ---------- 右上工具簇：换肤（调色板图标，hint 左侧一列；row1 已被毛笔占用）----------
-	_skin_btn = _add_icon_button(Icons.skin(), "切换主题：以棋盘圆形波浪过渡到新主题",
-		func(): _toggle_skin_panel())
+	# ---------- 右上工具簇：换肤（常驻组件，hint 左侧一列；row1 已被毛笔占用）----------
+	_skin_btn = preload("res://ui/theme_picker_button.gd").new()
 	_skin_btn.name = "SkinBtn"
 	_skin_btn.set_meta("skin_btn", true)
 	add_child(_skin_btn)
@@ -352,91 +350,6 @@ func _open_settings() -> void:
 # 点调色板图标 → 按钮正下方弹出主题列表（当前主题 accent 高亮 + ✓ 前缀）；
 # 点选任意主题：面板收起 → `SettingsManager.set_theme_mode(id)`（持久化）→
 # ThemeManager 分层过渡（几何→材质→配色三段，~0.48s）承担全部换肤动画，
-# 棋盘经 theme_changed 逐帧重绘。【2026-09-30】旧圆形波浪触发已移除。
-# 面板每次打开都重建列表并重刷样式 —— 主题数与配色都以 ThemeManager 实时值为准，
-# 避免第二份显示名/色值漂移。
-func _toggle_skin_panel() -> void:
-	if _skin_panel != null and is_instance_valid(_skin_panel) and _skin_panel.visible:
-		_skin_panel.hide()
-		return
-	_ensure_skin_panel()
-	_style_skin_panel()
-	_rebuild_skin_list()
-	# 面板右缘与按钮右缘对齐、顶在按钮下方 6px（右对齐：面板往左长，不会出屏）。
-	_skin_panel.reset_size()
-	var br := _skin_btn.get_global_rect()
-	_skin_panel.position = Vector2(br.end.x - _skin_panel.size.x, br.end.y + 6.0)
-	_skin_panel.popup()
-
-
-func _ensure_skin_panel() -> void:
-	if _skin_panel != null and is_instance_valid(_skin_panel):
-		return
-	_skin_panel = PopupPanel.new()
-	_skin_sb = StyleBoxFlat.new()
-	_skin_sb.set_corner_radius_all(12)
-	_skin_sb.corner_detail = 16
-	_skin_sb.content_margin_left = 8.0
-	_skin_sb.content_margin_right = 8.0
-	_skin_sb.content_margin_top = 8.0
-	_skin_sb.content_margin_bottom = 8.0
-	_skin_sb.shadow_size = 12
-	_skin_sb.shadow_offset = Vector2(0, 4)
-	_skin_panel.add_theme_stylebox_override("panel", _skin_sb)
-	_skin_list = VBoxContainer.new()
-	_skin_list.add_theme_constant_override("separation", 4)
-	_skin_panel.add_child(_skin_list)
-	_overlay_host().add_child(_skin_panel)
-	_skin_panel.hide()   # Window 默认 visible=true，不显式隐藏会立刻弹出（同 _settings_popup）
-
-
-func _style_skin_panel() -> void:
-	if _skin_sb == null:
-		return
-	_skin_sb.bg_color = ThemeManager.card()
-	_skin_sb.border_color = ThemeManager.grid_line()
-	_skin_sb.set_border_width_all(1)
-	_skin_sb.shadow_color = ThemeManager.shadow(ThemeManager.bg(), ThemeManager.SHADOW_DROP_MAT)
-
-
-func _rebuild_skin_list() -> void:
-	if _skin_list == null:
-		return
-	for c in _skin_list.get_children():
-		_skin_list.remove_child(c)
-		c.queue_free()
-	var cur: String = SettingsManager.theme_mode
-	var head := Label.new()
-	head.text = "切换主题"
-	head.add_theme_font_size_override("font_size", 14)
-	head.add_theme_color_override("font_color", ThemeManager.text_secondary())
-	_skin_list.add_child(head)
-	for id: String in ThemeManager.THEME_IDS:
-		var b := Button.new()
-		b.text = ("✓  " + ThemeManager.theme_label(id)) if id == cur else ThemeManager.theme_label(id)
-		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		b.focus_mode = Control.FOCUS_ALL
-		b.custom_minimum_size = Vector2(168, 34)
-		b.pressed.connect(_on_theme_pick.bind(id))
-		UiTheme.style_button(b)
-		if id == cur:
-			# 当前主题：accent 字色高亮（style_button 的 hover 覆盖仍生效，不冲突）
-			b.add_theme_color_override("font_color", ThemeManager.accent())
-			b.add_theme_color_override("font_hover_color", ThemeManager.accent())
-		_skin_list.add_child(b)
-
-
-## 点选主题：收面板 → 持久化切换。过渡本身由 ThemeManager 的分层过渡
-##（几何→材质→配色三段重叠窗口，~0.48s）承担，棋盘经 theme_changed 逐帧重绘；
-## 【2026-09-30】旧「以按钮为圆心的圆形波浪」已按用户要求移除。
-func _on_theme_pick(id: String) -> void:
-	if _skin_panel != null and is_instance_valid(_skin_panel):
-		_skin_panel.hide()
-	if id == SettingsManager.theme_mode:
-		return
-	SettingsManager.set_theme_mode(id)
-
-
 func _process(_delta: float) -> void:
 	if _mines_label == null:
 		return
