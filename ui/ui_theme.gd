@@ -33,8 +33,10 @@ const NORMAL_SHADOW_SIZE := 10
 
 ## 悬停：比常态深一档、宽一点。"抬起一档"还由描边换 accent + 底色提亮 + scale
 ## 1.03 三条一起表达，阴影不需要独立承担整个层次差。
-const HOVER_SHADOW_OFFSET := Vector2(0, 4)
-const HOVER_SHADOW_SIZE := 13
+## 【2026-09-30 抖动修复】offset 与 normal 同值、size 只 +1：stylebox 切换是**瞬时**
+## 的，跨度大就是"影先跳"（用户反馈的悬停抖感主源之一）。浮起的层次差交给 scale。
+const HOVER_SHADOW_OFFSET := Vector2(0, 3)
+const HOVER_SHADOW_SIZE := 11
 
 ## 按下（2026-09-30 浮动卡片化新增）：影子收到脚边（offset 归零档、size 收窄）
 ## = 卡片被按进桌面的"沉底"感；深色用悬停档（比常态深）。
@@ -200,6 +202,7 @@ static func _press_down(btn: BaseButton) -> void:
 	tw.set_ease(Tween.EASE_OUT)
 	tw.tween_property(btn, "scale", Vector2(PRESS_SCALE, PRESS_SCALE), PRESS_DOWN_SEC)
 	btn.set_meta("_ui_hover_tween", tw)
+	btn.set_meta("_ui_lift_target", PRESS_SCALE)   # 目标记录与去重逻辑保持同步
 
 
 static func _press_release(btn: BaseButton) -> void:
@@ -207,11 +210,17 @@ static func _press_release(btn: BaseButton) -> void:
 		return
 	_kill_ui_tween(btn)
 	btn.pivot_offset = btn.size * 0.5
+	# 【2026-09-30 抖动修复 ③】松开后鼠标仍悬停 → 直接回到抬起高度（不塌回 1.0 再
+	# 等下一次 entered 才抬起——那个"塌了又跳"正是按压后悬停抖感的来源）。
+	var rest: float = 1.0
+	if btn.is_hovered():
+		rest = float(btn.get_meta("_ui_hover_scale", 1.03))
 	var tw := btn.create_tween()
-	tw.set_trans(Tween.TRANS_BACK)   # 过冲回弹：scale 短暂越过 1.0 再落回
+	tw.set_trans(Tween.TRANS_BACK)   # 过冲回弹：scale 短暂越过目标再落回
 	tw.set_ease(Tween.EASE_OUT)
-	tw.tween_property(btn, "scale", Vector2.ONE, PRESS_RELEASE_SEC)
+	tw.tween_property(btn, "scale", Vector2(rest, rest), PRESS_RELEASE_SEC)
 	btn.set_meta("_ui_hover_tween", tw)
+	btn.set_meta("_ui_lift_target", rest)
 
 
 static func _kill_ui_tween(control: Control) -> void:
@@ -226,6 +235,7 @@ static func bind_hover(control: Control, scale_to: float) -> void:
 	if control.has_meta("_ui_hover_lift"):
 		return
 	control.set_meta("_ui_hover_lift", true)
+	control.set_meta("_ui_hover_scale", scale_to)   # 按压释放回弹的目标高度（悬停感知用）
 	control.mouse_entered.connect(func(): _lift_to(control, scale_to))
 	control.mouse_exited.connect(func(): _lift_to(control, 1.0))
 
@@ -238,6 +248,18 @@ static func bind_hover(control: Control, scale_to: float) -> void:
 static func _lift_to(control: Control, scale_to: float) -> void:
 	if not is_instance_valid(control):
 		return
+	# 【2026-09-30 抖动修复 ②】按住期间（含按住时鼠标滑到边缘"出界"）不被拉回——
+	# 按下缩到 0.96 后命中区变小，边缘的鼠标会触发 exited → 抬回 → 又"入界" → 抖动循环。
+	if scale_to > 0.99 and control is BaseButton and (control as BaseButton).button_pressed:
+		return
+	# 【2026-09-30 抖动修复 ①】同目标去重：tween 已经在往同目标走就不杀不重建
+	#（重复 create/kill 是微抖来源；快速滑动相邻按钮时尤其明显）。
+	if control.has_meta("_ui_hover_tween"):
+		var cur: Tween = control.get_meta("_ui_hover_tween")
+		if cur != null and cur.is_valid() and cur.get_meta("_ui_lift_target", -9.9) == scale_to:
+			return
+	# 记录本次目标（同目标去重用）。
+	control.set_meta("_ui_lift_target", scale_to)
 	# get_meta 在键不存在时会打印 ERROR（即使传了 default）→ 先 has_meta 判断，
 	# 否则调试器每次首次悬停都刷一条「no 'meta' values with the key '_ui_hover_tween'」。
 	if control.has_meta("_ui_hover_tween"):
