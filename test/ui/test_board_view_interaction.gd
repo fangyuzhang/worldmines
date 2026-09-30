@@ -171,7 +171,8 @@ func test_b9_hud_tutorial_entry_sits_after_mines() -> void:
 	var box := tut.get_parent()
 	assert_true(box is HFlowContainer or box is HBoxContainer,
 		"教程按钮应在 HUD 的按钮排（_box）里（2026-09-25 起为 HFlowContainer：窄窗自动换行）")
-	assert_eq(tut.get_index(), 1, "应在「雷数」读数组之后（索引 0 = 雷数组）= 左上角")
+	# 【2026-09-30】顶栏排第一项变成了「关卡列表」（左上角主操作）⇒ 教程索引随之 +1。
+	# 断言不再写死字面索引（那正是"前面加一个元素就失效"的脆点），改断言「前一个兄弟是雷数读数组」。
 	var prev: Node = box.get_child(tut.get_index() - 1)
 	assert_true(prev is HBoxContainer,
 		"教程按钮的前一个兄弟应是「雷数」读数组（2026-09-29 起 = 图标 + 数字）")

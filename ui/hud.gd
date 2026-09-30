@@ -43,7 +43,11 @@ var _time_label: Label
 var _deducible_label: Label
 var _hint_btn: Button
 var _tut_btn: Button
+var _pause_btn: Button
+var _pause_icon_shown_paused := false
 var _settings_popup: PopupPanel
+## 右上单排图标簇里的「设置」齿轮（配置类图标，对齐 CozySudoku 顶栏右侧的齿轮位）。
+var _settings_btn: Button
 ## 换肤（2026-09-29）：右上工具簇的调色板按钮。【2026-09-30 常驻组件化】
 ## 按钮 + 主题面板 + ThemeManager 联动整体抽到 ui/theme_picker_button.gd
 ##（HUD 与选关页共用同一组件，单一事实源），HUD 只持引用定位。
@@ -58,9 +62,11 @@ var _mines_icon: TextureRect
 var _time_icon: TextureRect
 ## 右上工具簇里的图标按钮（提示 / —— 毛笔在另一个场景）。统一样式入口。
 var _icon_buttons: Array[Button] = []
-## 左右两列（2026-09-28）：左 = 关卡列表；右 = 暂停 / 撤销 / 设置。
-var _left_col: VBoxContainer
+## 左右两列（2026-09-28）。**2026-09-30 向 CozySudoku 靠拢后左列取消**（「关卡列表」移到左上角），
+## 只保留**右侧对局工具列**（提示 / 撤销 / 暂停）。
 var _right_col: VBoxContainer
+## 左上角主操作：关卡列表（顶栏排第一项，对齐 CozySudoku 的「新游戏」位）。
+var _nav_btn: Button
 ## 侧列全部按钮（主题样式统一入口；容器本身 IGNORE 不吃事件，故样式按按钮收集）。
 var _side_buttons: Array[Button] = []
 ## 侧列空闲透明度：竖列压在棋盘两侧，全不透明会挡视线；鼠标进入任一侧列按钮 → 整列 1.0。
@@ -80,8 +86,9 @@ var _deducible_at_ms: int = -100000
 func _ready() -> void:
 	add_to_group("themed")
 	ThemeManager.theme_changed.connect(_on_theme_changed)
-	# 2026-09-29（形态改造）：顶栏 = ⦿雷数 · 📖教程 · ⏱时间 · 可断定；
-	# 右上工具簇 = 💡提示（+ 另一场景的 🖌毛笔）；左列 = 关卡列表；右列 = 暂停·撤销·设置。
+	# 2026-09-30（向 CozySudoku 靠拢）：顶栏左上角 = 关卡列表（主操作）；
+	# 顶栏 = ⦿雷数 · 📖教程 · ⏱时间 · 可断定；右上**单排图标** = ⚙设置 · 🎨换肤
+	# （+ 另一场景的 🖌毛笔）；右侧 = **对局工具列**（💡提示 · ↩撤销 · ⏸暂停）。
 	# 根节点铺满全屏以承载两列，但 **mouse_filter = IGNORE**：空白处不吃点击，棋盘（下层）
 	# 照常可点；侧列容器同理（IGNORE），只有按钮自己消费点击（棋盘走 _gui_input，
 	# 上层按钮会先消费 —— 不会出现「点按钮同时翻了一格」）。
@@ -101,6 +108,20 @@ func _ready() -> void:
 	_box.add_theme_constant_override("separation", 18)
 	add_child(_box)
 
+	# ---------- 左上角：关卡列表（对齐 CozySudoku「新游戏」的主操作位）----------
+	# CozySudoku 把主操作放**左上角**。本项目对局内的主操作 = 离开 / 换关，故作为顶栏排
+	# 的**第一项**（= 左上角）。2026-09-30 之前它是「左中列」里的一个独立按钮，随
+	# 「向 CozySudoku 靠拢」移到左上角；左中列随之取消（棋盘左侧让位保留，留给分色面板/宠物）。
+	_nav_btn = Button.new()
+	_nav_btn.text = "关卡列表"
+	_nav_btn.tooltip_text = "保存进度并返回关卡选择"
+	_nav_btn.focus_mode = Control.FOCUS_ALL
+	_nav_btn.custom_minimum_size = Vector2(120, 40)
+	_nav_btn.pressed.connect(func():
+		GameSession.save_now()
+		get_tree().change_scene_to_file("res://ui/level_select.tscn"))
+	_box.add_child(_nav_btn)
+
 	# 雷数读数（⦿ + 数字）。语义「剩余 = 总雷数 − 已插旗」挪进 tooltip —— 2026-09-25
 	# 审计曾特意把文案从「雷数」改成「剩余雷数」，那条**语义**没丢，只是不再占一行字。
 	_mines_box = _make_readout(Icons.mine(), 28)
@@ -117,8 +138,8 @@ func _ready() -> void:
 		func(): _open_tutorial())
 	_tut_btn.name = "TutorialBtn"
 	_tut_btn.set_meta("tutorial_btn", true)   # 测试 / 调试可据此定位（图标按钮没有文字可找）
-	# `_add_icon_button` 不进 _box（提示要锚右上角），教程这里手动入列并按「雷数组」的
-	# 相对位置回插（不写死索引 1 的另一层含义：将来雷数前面再加元素时不会漂）。
+	# `_add_icon_button` 只造按钮、不自动入树（设置/教程各自决定挂到哪），教程这里手动入列并
+	# 按「雷数组」的相对位置回插（不写死索引 1 的另一层含义：将来雷数前面再加元素时不会漂）。
 	_box.add_child(_tut_btn)
 	_box.move_child(_tut_btn, _mines_box.get_index() + 1)
 
@@ -137,36 +158,40 @@ func _ready() -> void:
 	_deducible_label.tooltip_text = "当前盘面下仍能被纯逻辑推出的安全格数"
 	_box.add_child(_deducible_label)
 
-	# ---------- 右上工具簇：提示 ----------
-	# 锚到顶栏右上角（与顶栏同一行），与另一场景的「毛笔」上下成簇。
-	# 不再挤在 _box 里：文字按钮和读数混排是这行看起来乱的根源之一。
-	_hint_btn = _add_icon_button(Icons.hint(), "提示（H）：一步直推，每次 1~2 格",
-		func(): GameSession.request_hint())
-	_hint_btn.name = "HintBtn"
-	_hint_btn.set_meta("hint_btn", true)
-	add_child(_hint_btn)
-	_place_toolbar_button(_hint_btn, 0)
+	# ---------- 右上单排图标簇（对齐 CozySudoku 顶栏右侧一排图标）----------
+	# CozySudoku 的顶栏右上角是**一排**图标（信息/音乐/猫/调色板/手柄/显示/语言/设置）。
+	# 本 HUD 现把「配置 / 全局」类图标同样收成一排，从右缘往左排：
+	#   设置(0) · 换肤(1) · 毛笔(2，在 ui/drawing_toolbar.gd，通过同一组 TOOLBAR_* 常量对齐)。
+	# 原先「提示 + 换肤」一行、「毛笔」另起一行，一共两行 —— 与 CozySudoku 单排不一致。
+	_settings_btn = _add_icon_button(Icons.gear(), "设置（完整设置页在弹窗内「完整设置…」）",
+		func(): _open_settings())
+	_settings_btn.name = "SettingsBtn"
+	_settings_btn.set_meta("settings_btn", true)
+	add_child(_settings_btn)
+	_place_toolbar_button(_settings_btn, 0, 0)
 
-	# ---------- 右上工具簇：换肤（常驻组件，hint 左侧一列；row1 已被毛笔占用）----------
 	_skin_btn = preload("res://ui/theme_picker_button.gd").new()
 	_skin_btn.name = "SkinBtn"
 	_skin_btn.set_meta("skin_btn", true)
 	add_child(_skin_btn)
 	_place_toolbar_button(_skin_btn, 0, 1)
 
-	# ---------- 左列：关卡列表 ----------
-	_left_col = _make_side_column(true)
-	_add_col_button(_left_col, "关卡列表", "保存进度并返回关卡选择", func():
-		GameSession.save_now()
-		get_tree().change_scene_to_file("res://ui/level_select.tscn"))
-
-	# ---------- 右列：暂停 · 撤销 · 设置 ----------
+	# ---------- 右列：对局工具列（对齐 CozySudoku 棋盘右侧工具列：图标 + 文字）----------
+	# CozySudoku 把「印章 / 笔记 / 擦除 / 检查 / 撤销」竖排在**棋盘右侧**，图标 + 文字。
+	# 本项目的对局工具 = 提示 / 撤销 / 暂停，同样竖排于此；「设置」是配置项，已移到右上单排图标簇。
 	_right_col = _make_side_column(false)
-	_add_col_button(_right_col, "暂停", "暂停 / 继续（Esc）", func(): _toggle_pause())
-	_add_col_button(_right_col, "撤销", "撤销上一步翻开/插旗（Ctrl+Z），可一路退到开局",
+	_hint_btn = _add_col_icon_button(_right_col, Icons.hint(), "提示",
+		"提示（H）：一步直推（100% 必然结论）· 每次给出 1~2 格，可连续点",
+		func(): GameSession.request_hint())
+	_hint_btn.name = "HintBtn"
+	_hint_btn.set_meta("hint_btn", true)
+	_add_col_icon_button(_right_col, Icons.undo(), "撤销",
+		"撤销上一步翻开/插旗（Ctrl+Z），可一路退到开局",
 		func(): GameSession.undo_move())
-	_add_col_button(_right_col, "设置", "打开设置（完整设置页在弹窗内「完整设置…」）",
-		func(): _open_settings())
+	# 【2026-09-30】暂停仍为 pause/play 双态图标（刷新在 _process 的状态缓存里）。
+	_pause_btn = _add_col_icon_button(_right_col, Icons.pause(), "暂停",
+		"暂停 / 继续（Esc）", func(): _toggle_pause())
+	_pause_btn.name = "PauseBtn"
 	# 2026-09-28 删除「重开」与「主菜单」两个按钮（用户决策）：进行中不再提供重开
 	#（终局重开在结算层 game_over）；主菜单场景已删，「关卡列表」是唯一的离开出口。
 
@@ -273,6 +298,29 @@ func _add_col_button(col: VBoxContainer, text: String, tip: String, on_pressed: 
 	return b
 
 
+## 工具列按钮（**图标 + 文字**）：对齐 CozySudoku 棋盘右侧工具列的形态
+## （印章/笔记/擦除/检查/撤销 都是「图标在上、文字在下」的方块按钮）。
+## 与 _add_col_button 同类（半透明、悬停/焦点显形、键盘可聚焦），差别只在带图标。
+## 图标为白模 SVG，靠 _apply_theme 里的 _style_icon_colors 随主题乘色。
+func _add_col_icon_button(col: VBoxContainer, tex: Texture2D, text: String, tip: String,
+		on_pressed: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	if tex != null:
+		b.icon = tex
+	b.tooltip_text = tip
+	b.focus_mode = Control.FOCUS_ALL
+	b.custom_minimum_size = Vector2(84, 40)
+	b.pressed.connect(on_pressed)
+	b.mouse_entered.connect(func(): col.modulate.a = 1.0)
+	b.mouse_exited.connect(func(): col.modulate.a = SIDE_COL_IDLE_ALPHA)
+	b.focus_entered.connect(func(): col.modulate.a = 1.0)
+	b.focus_exited.connect(func(): col.modulate.a = SIDE_COL_IDLE_ALPHA)
+	col.add_child(b)
+	_side_buttons.append(b)
+	return b
+
+
 func _add_button(text: String, tip: String, on_pressed: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
@@ -353,6 +401,13 @@ func _open_settings() -> void:
 func _process(_delta: float) -> void:
 	if _mines_label == null:
 		return
+	# 【2026-09-30 图标化】暂停/继续图标随 GameSession 状态切换（含 Esc 键路径）。
+	var paused: bool = GameSession.state == GameSession.State.PAUSED
+	if paused != _pause_icon_shown_paused and _pause_btn != null:
+		_pause_icon_shown_paused = paused
+		_pause_btn.icon = Icons.play() if paused else Icons.pause()
+		_pause_btn.text = "继续" if paused else "暂停"   # 图标 + 文字双态（对齐工具列形态）
+		_pause_btn.tooltip_text = "继续（Esc）" if paused else "暂停 / 继续（Esc）"
 	_refresh_hint_button()
 	var board: Board = GameSession.board
 	var total: int = int(GameSession.elapsed)
@@ -469,6 +524,7 @@ func _apply_theme() -> void:
 		for b in _side_buttons:
 			if is_instance_valid(b):
 				UiTheme.style_button(b)
+				_style_icon_colors(b)   # 工具列按钮带图标（提示/撤销/暂停），图标随主题乘色
 	queue_redraw()
 
 
@@ -485,3 +541,5 @@ func _style_icon_colors(b: Button) -> void:
 
 func _on_theme_changed() -> void:
 	_apply_theme()
+	if _pause_btn != null:
+		_style_icon_colors(_pause_btn)   # 【2026-09-30 图标化】暂停图标色随主题走

@@ -101,3 +101,38 @@ static func hint() -> Texture2D:
 ## 三个颜料孔特意**不等距**（颜料本就随手挤）：全等距会读成骰子/音量键。
 static func skin() -> Texture2D:
 	return texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><path fill=\"#FFFFFF\" fill-rule=\"evenodd\" d=\"M16 3.5a12.5 12.5 0 1 1 0 25 12.5 12.5 0 0 1 0-25zM10.5 18.2a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6zM11 8.1a2.1 2.1 0 1 0 0 4.2 2.1 2.1 0 0 0 0-4.2zM16.8 6.1a2.1 2.1 0 1 0 0 4.2 2.1 2.1 0 0 0 0-4.2zM22.2 10.3a2.1 2.1 0 1 0 0 4.2 2.1 2.1 0 0 0 0-4.2z\"/></svg>")
+
+
+## ==================== 【2026-09-30 图标化改造】工具/状态图标（白模 ×6） ====================
+## 服务于「文本按钮 → 图标按钮」改造（绘画工具栏 / HUD 暂停）。造型口径与既有图标
+## 一致：32×32 视图框、#FFFFFF 全填充剪影、圆角处理靠 rx/圆角路径；颜色由按钮的
+## icon 色覆盖乘色（见 UiTheme.style_icon_button 的五态 icon 色），故此处一律白模。
+
+## 暂停：两根圆角竖条（HUD 右列「暂停」按钮；继续态用 play()）。
+static func pause() -> Texture2D:
+	return texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><rect fill=\"#FFFFFF\" x=\"8\" y=\"5\" width=\"6\" height=\"22\" rx=\"2\"/><rect fill=\"#FFFFFF\" x=\"18\" y=\"5\" width=\"6\" height=\"22\" rx=\"2\"/></svg>")
+
+
+## 继续：圆角三角（pause 的配对态）。
+static func play() -> Texture2D:
+	return texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><path fill=\"#FFFFFF\" d=\"M11 6.2v19.6a2 2 0 0 0 3 1.7l16.2-9.8a2 2 0 0 0 0-3.4L14 4.5a2 2 0 0 0-3 1.7z\"/></svg>")
+
+
+## 橡皮：斜置方块 + 地平线（绘画工具栏「橡皮」toggle）。
+static func eraser() -> Texture2D:
+	return texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><path fill=\"#FFFFFF\" d=\"M14.6 4.6a2 2 0 0 1 2.8 0l8 8a2 2 0 0 1 0 2.8L17 23.8H9.4L4.6 19a2 2 0 0 1 0-2.8z\"/><rect fill=\"#FFFFFF\" x=\"5\" y=\"26\" width=\"22\" height=\"2.6\" rx=\"1.3\"/></svg>")
+
+
+## 擦局部：小橡皮 + 三颗渐隐点（擦除模式 toggle 的「局部」态；与 eraser 成对但可区分）。
+static func eraser_partial() -> Texture2D:
+	return texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><path fill=\"#FFFFFF\" d=\"M10.6 3.6a2 2 0 0 1 2.8 0l7 7a2 2 0 0 1 0 2.8L13 21H6.4L3 17.6a2 2 0 0 1 0-2.8z\"/><circle fill=\"#FFFFFF\" cx=\"22\" cy=\"19\" r=\"2\"/><circle fill=\"#FFFFFF\" cx=\"26\" cy=\"24\" r=\"1.6\"/><circle fill=\"#FFFFFF\" cx=\"21\" cy=\"27\" r=\"1.2\"/><rect fill=\"#FFFFFF\" x=\"4\" y=\"26.4\" width=\"13\" height=\"2.2\" rx=\"1.1\"/></svg>")
+
+
+## 撤销：回拐箭头（绘画工具栏「撤回」）。
+static func undo() -> Texture2D:
+	return texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><path fill=\"#FFFFFF\" d=\"M13 3.6 4.6 11a1.6 1.6 0 0 0 0 2.4L13 20.8a1.6 1.6 0 0 0 2.6-1.2v-4.2h7.2a4.4 4.4 0 0 1 0 8.8h-5.2a1.8 1.8 0 0 0 0 3.6h5.2a8 8 0 0 0 0-16h-7.2V4.8A1.6 1.6 0 0 0 13 3.6z\"/></svg>")
+
+
+## 清空（垃圾桶）：盖 + 桶身三条镂空（evenodd）——危险动作的通用符号。
+static func trash() -> Texture2D:
+	return texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><path fill=\"#FFFFFF\" fill-rule=\"evenodd\" d=\"M12 3h8a1.6 1.6 0 0 1 1.6 1.6V6h6a1.4 1.4 0 0 1 0 2.8H4.4A1.4 1.4 0 0 1 4.4 6h6V4.6A1.6 1.6 0 0 1 12 3zM7.6 10.4h16.8l-1.3 16a2.4 2.4 0 0 1-2.4 2.2H11.3a2.4 2.4 0 0 1-2.4-2.2zM12.4 13.4v11.6h2.6V13.4zm4.8 0v11.6h2.6V13.4z\"/></svg>")

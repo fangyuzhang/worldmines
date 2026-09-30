@@ -46,6 +46,17 @@ func _collect_button_texts(node: Node, out: Array[String]) -> void:
 		_collect_button_texts(c, out)
 
 
+## 按文字找按钮（「关卡列表」这类有文字的按钮直接用文字定位）。
+func _find_by_text(root: Node, want: String) -> Button:
+	if root is Button and (root as Button).text == want:
+		return root as Button
+	for c in root.get_children():
+		var r := _find_by_text(c, want)
+		if r != null:
+			return r
+	return null
+
+
 # ---- ① 右上角：书本 + 齿轮 ----
 
 func test_corner_has_codex_and_gear_buttons() -> void:
@@ -106,13 +117,22 @@ func test_hud_two_columns_and_removed_buttons() -> void:
 	add_child_autofree(hud)
 	await get_tree().process_frame
 
-	assert_eq(hud._left_col.get_child_count(), 1, "左列应只有「关卡列表」一个按钮")
-	assert_eq(hud._right_col.get_child_count(), 3, "右列应为 暂停 / 撤销 / 设置 三个按钮")
+	# 【2026-09-30 向 CozySudoku 靠拢】右列从「暂停 / 撤销 / 设置」改为**对局工具列**：
+	# 提示 / 撤销 / 暂停，图标 + 文字（对齐 CozySudoku 棋盘右侧工具列 印章/笔记/…/撤销）；
+	# 「设置」是配置项，已移到右上单排图标簇；「关卡列表」已从左列移到**左上角**。
+	assert_eq(hud._right_col.get_child_count(), 3, "右列应为 提示 / 撤销 / 暂停 三个工具按钮")
 	var col_texts: Array[String] = []
 	for b in hud._right_col.get_children():
 		col_texts.append(str((b as Button).text))
-	assert_eq(col_texts, ["暂停", "撤销", "设置"], "右列按钮顺序应与用户口径一致")
-	assert_eq(str((hud._left_col.get_child(0) as Button).text), "关卡列表", "左列应是「关卡列表」")
+	assert_eq(col_texts, ["提示", "撤销", "暂停"],
+		"右列工具顺序（对齐 CozySudoku 工具列）：提示 · 撤销 · 暂停")
+	for b in hud._right_col.get_children():
+		assert_not_null((b as Button).icon, "工具列按钮应带图标（对齐 CozySudoku 图标+文字工具列）")
+	# 「关卡列表」= 左上角主操作（对齐 CozySudoku 的「新游戏」位）：必须是顶栏排第一项、锚左。
+	var nav := _find_by_text(hud, "关卡列表")
+	assert_not_null(nav, "左上角应有「关卡列表」主操作按钮")
+	if nav != null:
+		assert_eq(nav.get_anchor(SIDE_LEFT), 0.0, "「关卡列表」应锚在左侧（左上角）")
 	# 侧列空闲半透明（悬停显形的基础状态；常量是视觉契约的一部分）
 	assert_almost_eq(hud._right_col.modulate.a, hud.SIDE_COL_IDLE_ALPHA, 0.01,
 		"侧列应处于空闲半透明态")

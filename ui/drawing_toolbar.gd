@@ -3,6 +3,9 @@
 # 缩进：全仓库统一 1 Tab（见交接文档 08 编码规范）。
 extends Control
 
+## 图标工厂（工程纪律：ui_icons 无 class_name，调用方一律 preload，见坑表 #26）。
+const Icons := preload("res://ui/ui_icons.gd")
+
 var _drawing: DrawingLayer
 
 var _paint_btn: Button
@@ -38,13 +41,14 @@ func _build_ui() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE  # 全屏但不拦截鼠标，仅按钮可点
 
-	# 「绘画」按钮：右上角工具簇第二行（第一行是 HUD 的「提示」灯泡），
-	# 毛笔图标，点击展开/收起工具面板（同时切换绘画模式）。
+	# 「绘画」按钮：并入 HUD 顶栏右上角那一排图标（对齐 CozySudoku 顶栏右侧单排图标的做法），
+	# 占 col 2（col0 = 设置、col1 = 换肤，由 ui/hud.gd 放置）；点击展开/收起工具面板（同时切绘画模式）。
 	#
 	# ⚠️ 2026-09-29 之前它悬在 (right-68..right-20, y=150..198) —— 上下都不挨着任何东西，
-	#    是用户点名的"布局很丑"之一。现在与 hud.gd 的右上工具簇共用同一组常量
-	#    （hud.TOOLBAR_EDGE=24 / TOOLBAR_GAP=8 / ICON_BTN_SIZE=40），row 1 = 顶栏正下方。
-	#    两个场景各有一份常量、靠注释互相指着 —— hud.gd 那边改了必须同步这里。
+	#    是用户点名的"布局很丑"之一。2026-09-29 与 hud.gd 共用同一组常量（TOOLBAR_EDGE=24 /
+	#    TOOLBAR_GAP=8 / ICON_BTN_SIZE=40），row 1 = 顶栏正下方；2026-09-30 再并到 **row 0**，
+	#    与设置/换肤同排（原先它在 row 1，右上角成了两行）。两个场景各有一份常量、
+	#    靠注释互相指着 —— hud.gd 那边改了必须同步这里。
 	_paint_btn = Button.new()
 	_paint_btn.text = ""
 	_paint_btn.icon = _brush_icon()
@@ -56,10 +60,10 @@ func _build_ui() -> void:
 	_paint_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	_paint_btn.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_paint_btn.grow_vertical = Control.GROW_DIRECTION_END
-	_paint_btn.offset_left = -(24.0 + 40.0)
-	_paint_btn.offset_right = -24.0
-	_paint_btn.offset_top = 12.0 + (40.0 + 8.0)
-	_paint_btn.offset_bottom = 12.0 + (40.0 + 8.0) + 40.0
+	_paint_btn.offset_left = -(24.0 + 2.0 * (40.0 + 8.0) + 40.0)
+	_paint_btn.offset_right = -(24.0 + 2.0 * (40.0 + 8.0))
+	_paint_btn.offset_top = 12.0
+	_paint_btn.offset_bottom = 12.0 + 40.0
 	_paint_btn.toggled.connect(func(on: bool):
 		if _drawing != null:
 			_drawing.set_paint_mode(on)
@@ -67,7 +71,7 @@ func _build_ui() -> void:
 			_tools_panel.visible = on)
 	add_child(_paint_btn)
 
-	# 绘画工具面板：带底板，在「绘画」按钮正下方展开
+	# 绘画工具面板：带底板，在「绘画」按钮正下方展开（图标行 row0 下方 = row1 的位置）
 	_tools_panel = PanelContainer.new()
 	_tools_panel.visible = false
 	_tools_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
@@ -75,8 +79,8 @@ func _build_ui() -> void:
 	_tools_panel.grow_vertical = Control.GROW_DIRECTION_END
 	_tools_panel.offset_left = -232.0
 	_tools_panel.offset_right = -24.0
-	_tools_panel.offset_top = 12.0 + 2.0 * (40.0 + 8.0)
-	_tools_panel.offset_bottom = 12.0 + 2.0 * (40.0 + 8.0) + 262.0
+	_tools_panel.offset_top = 12.0 + (40.0 + 8.0)
+	_tools_panel.offset_bottom = 12.0 + (40.0 + 8.0) + 262.0
 	add_child(_tools_panel)
 
 	_tools_box = VBoxContainer.new()
@@ -113,8 +117,13 @@ func _build_ui() -> void:
 
 	_tools_box.add_child(_hsep())
 
+	# 【2026-09-30 图标化】文本 → 图标（白模 SVG 由按钮 icon 色乘色）；语义移到 tooltip
+	#（test_drawing_toolbar 的 _find_button 同时匹配 text/tooltip，锚点不丢）。
 	_erase_btn = Button.new()
-	_erase_btn.text = "橡皮"
+	_erase_btn.icon = Icons.eraser()
+	_erase_btn.expand_icon = true
+	_erase_btn.custom_minimum_size = Vector2(0, 40)
+	_erase_btn.tooltip_text = "橡皮"
 	_erase_btn.toggle_mode = true
 	_erase_btn.focus_mode = Control.FOCUS_NONE
 	_erase_btn.toggled.connect(func(on: bool):
@@ -125,6 +134,10 @@ func _build_ui() -> void:
 
 	# 擦除模式：整条（命中即删整笔）/ 局部（只擦覆盖到的片段）
 	_erase_mode_btn = Button.new()
+	_erase_mode_btn.icon = Icons.eraser()
+	_erase_mode_btn.expand_icon = true
+	_erase_mode_btn.custom_minimum_size = Vector2(0, 40)
+	_erase_mode_btn.tooltip_text = "擦整条"
 	_erase_mode_btn.toggle_mode = true
 	_erase_mode_btn.focus_mode = Control.FOCUS_NONE
 	_erase_mode_btn.toggled.connect(func(on: bool):
@@ -135,7 +148,10 @@ func _build_ui() -> void:
 	_tools_box.add_child(_erase_mode_btn)
 
 	_clear_btn = Button.new()
-	_clear_btn.text = "清空绘画"
+	_clear_btn.icon = Icons.trash()
+	_clear_btn.expand_icon = true
+	_clear_btn.custom_minimum_size = Vector2(0, 40)
+	_clear_btn.tooltip_text = "清空绘画"
 	_clear_btn.focus_mode = Control.FOCUS_NONE
 	_clear_btn.pressed.connect(_on_clear)
 	_tools_box.add_child(_clear_btn)
@@ -175,9 +191,10 @@ func refresh() -> void:
 	_erase_btn.set_pressed_no_signal(_drawing.is_erasing)
 	var partial: bool = _drawing.erase_mode == DrawingLayer.EraseMode.PARTIAL
 	_erase_mode_btn.set_pressed_no_signal(partial)
-	_erase_mode_btn.text = "擦局部" if partial else "擦整条"
-	_erase_mode_btn.tooltip_text = (
-			"当前：只擦掉笔迹被覆盖的片段" if partial else "当前：命中即删除整条笔记")
+	# 【2026-09-30 图标化】文案 → 图标（局部 = 带渐隐点的橡皮）+ 短词 tooltip
+	#（test_drawing_toolbar 的 _find_button 靠 text/tooltip 精确匹配）。
+	_erase_mode_btn.icon = Icons.eraser_partial() if partial else Icons.eraser()
+	_erase_mode_btn.tooltip_text = "擦局部" if partial else "擦整条"
 	for i in _swatches.size():
 		_style_swatch(_swatches[i], i)
 	for i in _size_btns.size():

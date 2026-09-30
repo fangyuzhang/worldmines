@@ -46,7 +46,7 @@ func test_t2_erase_mode_toggle_syncs() -> void:
 	btn.set_pressed(true)
 	assert_eq(_layer.erase_mode, DrawingLayer.EraseMode.PARTIAL,
 			"按下后绘画层应切到局部擦除")
-	assert_eq(btn.text, "擦局部", "按钮文案应同步为「擦局部」")
+	assert_eq(btn.tooltip_text, "擦局部", "按钮 tooltip 应同步为「擦局部」（2026-09-30 图标化：文案迁 tooltip）")
 
 
 # T3：绘画层侧改模式 → 经 changed 信号让工具栏同步

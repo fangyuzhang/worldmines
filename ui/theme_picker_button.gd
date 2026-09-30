@@ -98,11 +98,23 @@ func _rebuild_list() -> void:
 		_list.remove_child(c)
 		c.queue_free()
 	var cur: String = SettingsManager.theme_mode
+	# 【2026-09-30 图标化】面板头 = 调色板小图标 + 标题（TextureRect.self_modulate 乘主题次级色）
+	var head_row := HBoxContainer.new()
+	head_row.add_theme_constant_override("separation", 6)
+	head_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	var head_ic := TextureRect.new()
+	head_ic.texture = Icons.skin()
+	head_ic.custom_minimum_size = Vector2(16, 16)
+	head_ic.stretch_mode = TextureRect.STRETCH_SCALE
+	head_ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	head_ic.self_modulate = ThemeManager.text_secondary()
+	head_row.add_child(head_ic)
 	var head := Label.new()
 	head.text = "切换主题"
 	head.add_theme_font_size_override("font_size", 14)
 	head.add_theme_color_override("font_color", ThemeManager.text_secondary())
-	_list.add_child(head)
+	head_row.add_child(head)
+	_list.add_child(head_row)
 	for id: String in ThemeManager.THEME_IDS:
 		var b := Button.new()
 		b.text = ("✓  " + ThemeManager.theme_label(id)) if id == cur else ThemeManager.theme_label(id)
