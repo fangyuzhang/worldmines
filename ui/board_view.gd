@@ -1803,7 +1803,8 @@ func _tile_stylebox(radius: float) -> StyleBoxFlat:
 		var r := clampi(int(roundf(radius)), 2, 40)
 		_tile_sb.set_corner_radius_all(r)
 		# 半径变大后 6 边细分的多边形会被看成一圈多边形而不是圆（同 UiTheme._round 口径）
-		_tile_sb.corner_detail = clampi(r + 4, 8, 24)
+		# 细分提到 40：用户 5.5x 放大复查时 24 段弧有可见棱面（「过渡不够圆滑」）
+		_tile_sb.corner_detail = clampi(r + 10, 12, 40)
 	return _tile_sb
 
 
@@ -1867,24 +1868,28 @@ func _draw_tile(rect: Rect2, col: Color, revealed: bool = false) -> void:
 		var lw := maxf(1.0, float(cell_px) / LINE_REF_CELL)
 		if hrad < 2.0:
 			# 圆角小到可以忽略：退化为顶边直线（与旧行为等价）
-			draw_line(Vector2(hr.position.x, hr.position.y + 0.5),
-				Vector2(hr.position.x + hr.size.x, hr.position.y + 0.5), ins, lw)
+			draw_line(Vector2(hr.position.x, hr.position.y + lw * 0.5),
+				Vector2(hr.position.x + hr.size.x, hr.position.y + lw * 0.5), ins, lw)
 		else:
-			draw_polyline(_tile_top_highlight_points(hr, hrad), ins, lw, true)
+			draw_polyline(_tile_top_highlight_points(hr, hrad, lw * 0.5), ins, lw, true)
 
 
 ## 内顶高光的**圆角路径点**：左边缘 → 左上 90° 弧 → 顶边 → 右上 90° 弧 → 右边缘。
 ## 端点 = 弧线竖直切点（圆心的正左/正右），与 CSS `inset 0 1px 0` 可视带的
 ## 消失位置一致——高光在那里贴合侧边框，不会出现悬空的硬端点。
-func _tile_top_highlight_points(hr: Rect2, hrad: float) -> PackedVector2Array:
+## 【2026-09-30】dy = 半线宽：折线以中心线定位，整条下移半线宽后带体恰好落在
+## padding-box **内侧**（[hr.y, hr.y+lw]）——此前中心线贴着 padding-box 边缘，
+## 半幅溢出到描边环上（圆角段被垫亮成「更粗的一块」）、半幅压进透明 fill
+##（用户截图实锤的「横跨两个图层的白线」）。
+func _tile_top_highlight_points(hr: Rect2, hrad: float, dy: float = 0.0) -> PackedVector2Array:
 	var pts := PackedVector2Array()
 	var steps := 10
-	var cl := Vector2(hr.position.x + hrad, hr.position.y + hrad)    # 左上弧圆心
+	var cl := Vector2(hr.position.x + hrad, hr.position.y + hrad + dy)  # 左上弧圆心（含下移）
 	for i in steps + 1:
 		var a := PI + PI * 0.5 * float(i) / float(steps)             # 180° → 270°
 		pts.append(cl + Vector2(cos(a), sin(a)) * hrad)
-	pts.append(Vector2(hr.position.x + hr.size.x - hrad, hr.position.y))  # 顶边右端
-	var cr := Vector2(hr.position.x + hr.size.x - hrad, hr.position.y + hrad)  # 右上弧圆心
+	pts.append(Vector2(hr.position.x + hr.size.x - hrad, hr.position.y + dy))  # 顶边右端
+	var cr := Vector2(hr.position.x + hr.size.x - hrad, hr.position.y + hrad + dy)  # 右上弧圆心
 	for i in steps + 1:
 		var a := PI * 1.5 + PI * 0.5 * float(i) / float(steps)       # 270° → 360°
 		pts.append(cr + Vector2(cos(a), sin(a)) * hrad)
@@ -1901,7 +1906,7 @@ func _tile_line_stylebox(radius: float, width: int) -> StyleBoxFlat:
 		_tile_line_radius = radius
 		var r := clampi(int(roundf(radius)), 2, 40)
 		_tile_line_sb.set_corner_radius_all(r)
-		_tile_line_sb.corner_detail = clampi(r + 4, 8, 24)
+		_tile_line_sb.corner_detail = clampi(r + 10, 12, 40)
 	var w := maxi(1, width)
 	# 只在真的变了才写：StyleBoxFlat 每次 set_border_width_* 都会 emit changed
 	if _tile_line_sb.border_width_top != w:
