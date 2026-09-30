@@ -1,0 +1,1516 @@
+{
+  "version": 3,
+  "asset_type": "ui-kit",
+  "asset_id": "cozy_toys",
+  "provider": "native",
+  "rendering_medium": "soft hand-painted cozy illustration with rounded pastel shapes, warm mint and cream palette, gentle terracotta accents and smooth drop shadows",
+  "references": [
+    {
+      "role": "canonical",
+      "path": "reference/cozy-sudoku-1920.jpg"
+    }
+  ],
+  "scheme": {
+    "version": 5,
+    "background": {
+      "color": "#FF00FF",
+      "flat": true,
+      "reserved_for_color_key": true,
+      "forbid_in_art": true
+    },
+    "composition": {
+      "separated_components": true,
+      "minimum_gap_px": 24,
+      "reading_order": "row_major",
+      "forbid_canvas_edge_contact": true,
+      "forbid_scene_or_screen_mockup": true,
+      "forbid_text_and_logos": true
+    },
+    "geometry_profiles": {
+      "rounded_surface": {
+        "patch_size": [
+          96,
+          96
+        ],
+        "border": [
+          10,
+          10,
+          10,
+          10
+        ],
+        "content_margin": [
+          16,
+          10,
+          16,
+          10
+        ],
+        "expand_margin": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "axis_stretch": {
+          "horizontal": "stretch",
+          "vertical": "stretch"
+        },
+        "safe_center": [
+          10,
+          10,
+          76,
+          76
+        ],
+        "preview_sizes": [
+          [
+            160,
+            48
+          ],
+          [
+            360,
+            64
+          ]
+        ]
+      },
+      "panel_surface": {
+        "patch_size": [
+          96,
+          96
+        ],
+        "border": [
+          16,
+          16,
+          16,
+          16
+        ],
+        "content_margin": [
+          24,
+          24,
+          24,
+          24
+        ],
+        "expand_margin": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "axis_stretch": {
+          "horizontal": "stretch",
+          "vertical": "stretch"
+        },
+        "safe_center": [
+          16,
+          16,
+          64,
+          64
+        ],
+        "preview_sizes": [
+          [
+            240,
+            160
+          ],
+          [
+            640,
+            400
+          ]
+        ]
+      },
+      "tab_surface": {
+        "patch_size": [
+          96,
+          96
+        ],
+        "border": [
+          8,
+          8,
+          8,
+          8
+        ],
+        "content_margin": [
+          16,
+          8,
+          16,
+          8
+        ],
+        "expand_margin": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "axis_stretch": {
+          "horizontal": "stretch",
+          "vertical": "stretch"
+        },
+        "safe_center": [
+          8,
+          8,
+          80,
+          80
+        ],
+        "preview_sizes": [
+          [
+            120,
+            40
+          ],
+          [
+            280,
+            56
+          ]
+        ]
+      }
+    }
+  },
+  "sheets": [
+    {
+      "id": "surface_patches",
+      "source_name": "surface_patches_source.png",
+      "components": [
+        "button_normal",
+        "button_hover",
+        "button_pressed",
+        "button_disabled",
+        "panel_base",
+        "panel_raised",
+        "tab_selected",
+        "tab_unselected"
+      ],
+      "component_specs": [
+        {
+          "name": "button_normal",
+          "label": "square tintable button surface in its normal state",
+          "target_size": [
+            96,
+            96
+          ],
+          "kind": "surface",
+          "geometry_profile": "rounded_surface",
+          "runtime_styleboxes": [
+            {
+              "output_name": "button_normal",
+              "state": "normal",
+              "tint": "surface_raised"
+            },
+            {
+              "output_name": "primary_normal",
+              "state": "normal",
+              "tint": "primary"
+            },
+            {
+              "output_name": "secondary_normal",
+              "state": "normal",
+              "tint": "secondary"
+            },
+            {
+              "output_name": "danger_normal",
+              "state": "normal",
+              "tint": "danger"
+            }
+          ]
+        },
+        {
+          "name": "button_hover",
+          "label": "square tintable button surface in its highlighted hover state",
+          "target_size": [
+            96,
+            96
+          ],
+          "kind": "surface",
+          "geometry_profile": "rounded_surface",
+          "runtime_styleboxes": [
+            {
+              "output_name": "button_hover",
+              "state": "hover",
+              "tint": "surface_raised"
+            },
+            {
+              "output_name": "primary_hover",
+              "state": "hover",
+              "tint": "primary"
+            },
+            {
+              "output_name": "secondary_hover",
+              "state": "hover",
+              "tint": "secondary"
+            },
+            {
+              "output_name": "danger_hover",
+              "state": "hover",
+              "tint": "danger"
+            }
+          ]
+        },
+        {
+          "name": "button_pressed",
+          "label": "square tintable button surface in its depressed pressed state",
+          "target_size": [
+            96,
+            96
+          ],
+          "kind": "surface",
+          "geometry_profile": "rounded_surface",
+          "runtime_styleboxes": [
+            {
+              "output_name": "button_pressed",
+              "state": "pressed",
+              "tint": "surface_raised"
+            },
+            {
+              "output_name": "primary_pressed",
+              "state": "pressed",
+              "tint": "primary"
+            },
+            {
+              "output_name": "secondary_pressed",
+              "state": "pressed",
+              "tint": "secondary"
+            },
+            {
+              "output_name": "danger_pressed",
+              "state": "pressed",
+              "tint": "danger"
+            }
+          ]
+        },
+        {
+          "name": "button_disabled",
+          "label": "square tintable button surface in its muted disabled state",
+          "target_size": [
+            96,
+            96
+          ],
+          "kind": "surface",
+          "geometry_profile": "rounded_surface",
+          "runtime_styleboxes": [
+            {
+              "output_name": "button_disabled",
+              "state": "disabled",
+              "tint": "surface_raised"
+            },
+            {
+              "output_name": "primary_disabled",
+              "state": "disabled",
+              "tint": "primary"
+            },
+            {
+              "output_name": "secondary_disabled",
+              "state": "disabled",
+              "tint": "secondary"
+            },
+            {
+              "output_name": "danger_disabled",
+              "state": "disabled",
+              "tint": "danger"
+            }
+          ]
+        },
+        {
+          "name": "panel_base",
+          "label": "square reusable base panel frame with a continuous undecorated center",
+          "target_size": [
+            96,
+            96
+          ],
+          "kind": "surface",
+          "geometry_profile": "panel_surface",
+          "runtime_styleboxes": [
+            {
+              "output_name": "panel_base",
+              "state": "normal",
+              "tint": "surface"
+            },
+            {
+              "output_name": "popup_menu_panel",
+              "state": "normal",
+              "tint": "surface"
+            },
+            {
+              "output_name": "tooltip_panel",
+              "state": "normal",
+              "tint": "surface_raised"
+            }
+          ]
+        },
+        {
+          "name": "panel_raised",
+          "label": "square reusable raised panel frame with a continuous undecorated center",
+          "target_size": [
+            96,
+            96
+          ],
+          "kind": "surface",
+          "geometry_profile": "panel_surface",
+          "runtime_styleboxes": [
+            {
+              "output_name": "panel_raised",
+              "state": "normal",
+              "tint": "surface_raised"
+            }
+          ]
+        },
+        {
+          "name": "tab_selected",
+          "label": "square tintable selected tab surface with an undecorated stretchable center",
+          "target_size": [
+            96,
+            96
+          ],
+          "kind": "surface",
+          "geometry_profile": "tab_surface",
+          "runtime_styleboxes": [
+            {
+              "output_name": "tab_selected",
+              "state": "pressed",
+              "tint": "primary"
+            },
+            {
+              "output_name": "tab_hovered",
+              "state": "hover",
+              "tint": "primary"
+            }
+          ]
+        },
+        {
+          "name": "tab_unselected",
+          "label": "square tintable unselected tab surface with an undecorated stretchable center",
+          "target_size": [
+            96,
+            96
+          ],
+          "kind": "surface",
+          "geometry_profile": "tab_surface",
+          "runtime_styleboxes": [
+            {
+              "output_name": "tab_unselected",
+              "state": "normal",
+              "tint": "surface"
+            }
+          ]
+        }
+      ],
+      "component_labels": [
+        "square tintable button surface in its normal state",
+        "square tintable button surface in its highlighted hover state",
+        "square tintable button surface in its depressed pressed state",
+        "square tintable button surface in its muted disabled state",
+        "square reusable base panel frame with a continuous undecorated center",
+        "square reusable raised panel frame with a continuous undecorated center",
+        "square tintable selected tab surface with an undecorated stretchable center",
+        "square tintable unselected tab surface with an undecorated stretchable center"
+      ],
+      "provider_grid": {
+        "columns": 4,
+        "rows": 2
+      },
+      "atlas": {
+        "source_name": "surface_patches_atlas.png",
+        "metadata_name": "surface_patches_atlas.json",
+        "max_width": 464,
+        "gutter": 16,
+        "width": 464,
+        "height": 240
+      },
+      "slots": [
+        {
+          "index": 0,
+          "name": "button_normal",
+          "label": "square tintable button surface in its normal state",
+          "kind": "surface",
+          "target_size": [
+            96,
+            96
+          ],
+          "rect": [
+            16,
+            16,
+            96,
+            96
+          ],
+          "geometry_profile": "rounded_surface",
+          "runtime_styleboxes": [
+            {
+              "output_name": "button_normal",
+              "state": "normal",
+              "tint": "surface_raised"
+            },
+            {
+              "output_name": "primary_normal",
+              "state": "normal",
+              "tint": "primary"
+            },
+            {
+              "output_name": "secondary_normal",
+              "state": "normal",
+              "tint": "secondary"
+            },
+            {
+              "output_name": "danger_normal",
+              "state": "normal",
+              "tint": "danger"
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "name": "button_hover",
+          "label": "square tintable button surface in its highlighted hover state",
+          "kind": "surface",
+          "target_size": [
+            96,
+            96
+          ],
+          "rect": [
+            128,
+            16,
+            96,
+            96
+          ],
+          "geometry_profile": "rounded_surface",
+          "runtime_styleboxes": [
+            {
+              "output_name": "button_hover",
+              "state": "hover",
+              "tint": "surface_raised"
+            },
+            {
+              "output_name": "primary_hover",
+              "state": "hover",
+              "tint": "primary"
+            },
+            {
+              "output_name": "secondary_hover",
+              "state": "hover",
+              "tint": "secondary"
+            },
+            {
+              "output_name": "danger_hover",
+              "state": "hover",
+              "tint": "danger"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "name": "button_pressed",
+          "label": "square tintable button surface in its depressed pressed state",
+          "kind": "surface",
+          "target_size": [
+            96,
+            96
+          ],
+          "rect": [
+            240,
+            16,
+            96,
+            96
+          ],
+          "geometry_profile": "rounded_surface",
+          "runtime_styleboxes": [
+            {
+              "output_name": "button_pressed",
+              "state": "pressed",
+              "tint": "surface_raised"
+            },
+            {
+              "output_name": "primary_pressed",
+              "state": "pressed",
+              "tint": "primary"
+            },
+            {
+              "output_name": "secondary_pressed",
+              "state": "pressed",
+              "tint": "secondary"
+            },
+            {
+              "output_name": "danger_pressed",
+              "state": "pressed",
+              "tint": "danger"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "name": "button_disabled",
+          "label": "square tintable button surface in its muted disabled state",
+          "kind": "surface",
+          "target_size": [
+            96,
+            96
+          ],
+          "rect": [
+            352,
+            16,
+            96,
+            96
+          ],
+          "geometry_profile": "rounded_surface",
+          "runtime_styleboxes": [
+            {
+              "output_name": "button_disabled",
+              "state": "disabled",
+              "tint": "surface_raised"
+            },
+            {
+              "output_name": "primary_disabled",
+              "state": "disabled",
+              "tint": "primary"
+            },
+            {
+              "output_name": "secondary_disabled",
+              "state": "disabled",
+              "tint": "secondary"
+            },
+            {
+              "output_name": "danger_disabled",
+              "state": "disabled",
+              "tint": "danger"
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "name": "panel_base",
+          "label": "square reusable base panel frame with a continuous undecorated center",
+          "kind": "surface",
+          "target_size": [
+            96,
+            96
+          ],
+          "rect": [
+            16,
+            128,
+            96,
+            96
+          ],
+          "geometry_profile": "panel_surface",
+          "runtime_styleboxes": [
+            {
+              "output_name": "panel_base",
+              "state": "normal",
+              "tint": "surface"
+            },
+            {
+              "output_name": "popup_menu_panel",
+              "state": "normal",
+              "tint": "surface"
+            },
+            {
+              "output_name": "tooltip_panel",
+              "state": "normal",
+              "tint": "surface_raised"
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "name": "panel_raised",
+          "label": "square reusable raised panel frame with a continuous undecorated center",
+          "kind": "surface",
+          "target_size": [
+            96,
+            96
+          ],
+          "rect": [
+            128,
+            128,
+            96,
+            96
+          ],
+          "geometry_profile": "panel_surface",
+          "runtime_styleboxes": [
+            {
+              "output_name": "panel_raised",
+              "state": "normal",
+              "tint": "surface_raised"
+            }
+          ]
+        },
+        {
+          "index": 6,
+          "name": "tab_selected",
+          "label": "square tintable selected tab surface with an undecorated stretchable center",
+          "kind": "surface",
+          "target_size": [
+            96,
+            96
+          ],
+          "rect": [
+            240,
+            128,
+            96,
+            96
+          ],
+          "geometry_profile": "tab_surface",
+          "runtime_styleboxes": [
+            {
+              "output_name": "tab_selected",
+              "state": "pressed",
+              "tint": "primary"
+            },
+            {
+              "output_name": "tab_hovered",
+              "state": "hover",
+              "tint": "primary"
+            }
+          ]
+        },
+        {
+          "index": 7,
+          "name": "tab_unselected",
+          "label": "square tintable unselected tab surface with an undecorated stretchable center",
+          "kind": "surface",
+          "target_size": [
+            96,
+            96
+          ],
+          "rect": [
+            352,
+            128,
+            96,
+            96
+          ],
+          "geometry_profile": "tab_surface",
+          "runtime_styleboxes": [
+            {
+              "output_name": "tab_unselected",
+              "state": "normal",
+              "tint": "surface"
+            }
+          ]
+        }
+      ],
+      "prompt": "Create reusable soft hand-painted cozy illustration with rounded pastel shapes, warm mint and cream palette, gentle terracotta accents and smooth drop shadows game UI source art. Match the supplied style reference's palette, shape language, outlines, shadows, and material treatment. Visual direction: Soft hand-painted cozy puzzle game UI in a warm mint and cream palette. Rounded pill buttons in muted terracotta with thin white line icons, olive-cream raised panels with soft warm drop shadows, cream-yellow input tiles, olive number chips with warm-black digits, generous corner rounding, flat matte paper-clay material, no hard outlines. A single warm amber accent is reserved for selection and focus highlights. Use a perfectly flat, solid #FF00FF canvas background only. Reserve exact #FF00FF exclusively for the color-key background; do not use it in the artwork. Keep every component fully separated by at least 24 pixels of visible #FF00FF and away from every canvas edge. Create isolated reusable UI elements only: no characters, scenes, full screen mockups, readable text, numbers, logos, or branding. Render every component as the same-size square surface patch. Use light neutral tintable fills while preserving the reference material, contour, outline, highlight, and shadow language. Carry all corners, outlines, highlights, shadows, and ornament inside the declared outer border band. Keep the declared safe center continuous and free of text, icons, emblems, focal decoration, seams, or directional lighting. Geometry profiles: rounded_surface: 96 by 96 square patch, border [10, 10, 10, 10], safe center [10, 10, 76, 76]; panel_surface: 96 by 96 square patch, border [16, 16, 16, 16], safe center [16, 16, 64, 64]; tab_surface: 96 by 96 square patch, border [8, 8, 8, 8], safe center [8, 8, 80, 80]. Arrange exactly 8 visual components in a 4-column by 2-row layout, ordered left to right and then top to bottom; leave unused trailing cells empty. Render each listed component as one isolated reusable element. Do not render component labels. Components in order: square tintable button surface in its normal state; square tintable button surface in its highlighted hover state; square tintable button surface in its depressed pressed state; square tintable button surface in its muted disabled state; square reusable base panel frame with a continuous undecorated center; square reusable raised panel frame with a continuous undecorated center; square tintable selected tab surface with an undecorated stretchable center; square tintable unselected tab surface with an undecorated stretchable center."
+    },
+    {
+      "id": "icons",
+      "source_name": "icons_source.png",
+      "components": [
+        "arrow_left",
+        "arrow_right",
+        "arrow_up",
+        "arrow_down",
+        "back",
+        "close",
+        "confirm",
+        "warning",
+        "information",
+        "settings",
+        "add",
+        "remove",
+        "lock",
+        "unlock",
+        "checkbox_checked",
+        "checkbox_unchecked",
+        "radio_selected",
+        "radio_unselected",
+        "status",
+        "check_button_checked",
+        "check_button_unchecked",
+        "slider_grabber",
+        "slider_grabber_highlight",
+        "slider_grabber_disabled"
+      ],
+      "component_specs": [
+        {
+          "name": "arrow_left",
+          "label": "left arrow",
+          "target_size": [
+            32,
+            32
+          ],
+          "kind": "icon",
+          "runtime_names": [
+            "icon_left_arrow"
+          ]
+        },
+        {
+          "name": "arrow_right",
+          "label": "right arrow",
+          "target_size": [
+            32,
+            32
+          ],
+          "kind": "icon",
+          "runtime_names": [
+            "icon_right_arrow",
+            "icon_submenu",
+            "form_submenu_arrow"
+          ]
+        },
+        {
+          "name": "arrow_up",
+          "label": "up arrow",
+          "target_size": [
+            32,
+            32
+          ],
+          "kind": "icon",
+          "runtime_names": [
+            "icon_up_arrow"
+          ]
+        },
+        {
+          "name": "arrow_down",
+          "label": "down arrow",
+          "target_size": [
+            32,
+            32
+          ],
+          "kind": "icon",
+          "runtime_names": [
+            "icon_down_arrow"
+          ]
+        },
+        {
+          "name": "back",
+          "label": "back action",
+          "target_size": [
+            128,
+            128
+          ],
+          "kind": "icon",
+          "runtime_names": [
+            "icon_back"
+          ]
+        },
+        {
+          "name": "close",
+          "label": "close action",
+          "target_size": [
+            128,
+            128
+          ],
+          "kind": "icon",
+          "runtime_names": [
+            "icon_close"
+          ]
+        },
+        {
+          "name": "confirm",
+          "label": "confirm action",
+          "target_size": [
+            128,
+            128
+          ],
+          "kind": "icon",
+          "runtime_names": [
+            "icon_confirm"
+          ]
+        },
+        {
+          "name": "warning",
+          "label": "warning status",
+          "target_size": [
+            128,
+            128
+          ],
+          "kind": "icon",
+          "runtime_names": [
+            "icon_warning"
+          ]
+        },
+        {
+          "name": "information",
+          "label": "information status",
+          "target_size": [
+            128,
+            128
+          ],
+          "kind": "icon",
+          "runtime_names": [
+            "icon_information"
+          ]
+        },
+        {
+          "name": "settings",
+          "label": "settings action",
+          "target_size": [
+            128,
+            128
+          ],
+          "kind": "icon",
+          "runtime_names": [
+            "icon_settings"
+          ]
+        },
+        {
+          "name": "add",
+          "label": "add action",
+          "target_size": [
+            128,
+            128
+          ],
+          "kind": "icon",
+          "runtime_names": [
+            "icon_add"
+          ]
+        },
+        {
+          "name": "remove",
+          "label": "remove action",
+          "target_size": [
+            128,
+            128
+          ],
+          "kind": "icon",
+          "runtime_names": [
+            "icon_remove"
+          ]
+        },
+        {
+          "name": "lock",
+          "label": "locked state",
+          "target_size": [
+            128,
+            128
+          ],
+          "kind": "icon",
+          "runtime_names": [
+            "icon_lock"
+          ]
+        },
+        {
+          "name": "unlock",
+          "label": "unlocked state",
+          "target_size": [
+            128,
+            128
+          ],
+          "kind": "icon",
+          "runtime_names": [
+            "icon_unlock"
+          ]
+        },
+        {
+          "name": "checkbox_checked",
+          "label": "checked checkbox",
+          "target_size": [
+            40,
+            40
+          ],
+          "kind": "icon",
+          "runtime_names": [
+            "icon_checkbox_checked",
+            "checkbox_checked"
+          ]
+        },
+        {
+          "name": "checkbox_unchecked",
+          "label": "unchecked checkbox",
+          "target_size": [
+            40,
+            40
+          ],
+          "kind": "icon",
+          "runtime_names": [
+            "icon_checkbox_unchecked",
+            "checkbox_unchecked"
+          ]
+        },
+        {
+          "name": "radio_selected",
+          "label": "selected radio control",
+          "target_size": [
+            40,
+            40
+          ],
+          "kind": "icon",
+          "runtime_names": [
+            "icon_radio_selected"
+          ]
+        },
+        {
+          "name": "radio_unselected",
+          "label": "unselected radio control",
+          "target_size": [
+            40,
+            40
+          ],
+          "kind": "icon",
+          "runtime_names": [
+            "icon_radio_unselected"
+          ]
+        },
+        {
+          "name": "status",
+          "label": "general status indicator",
+          "target_size": [
+            128,
+            128
+          ],
+          "kind": "icon",
+          "runtime_names": [
+            "icon_status"
+          ]
+        },
+        {
+          "name": "check_button_checked",
+          "label": "checked toggle control",
+          "target_size": [
+            40,
+            40
+          ],
+          "kind": "icon",
+          "runtime_names": [
+            "check_button_checked"
+          ]
+        },
+        {
+          "name": "check_button_unchecked",
+          "label": "unchecked toggle control",
+          "target_size": [
+            40,
+            40
+          ],
+          "kind": "icon",
+          "runtime_names": [
+            "check_button_unchecked"
+          ]
+        },
+        {
+          "name": "slider_grabber",
+          "label": "slider grabber",
+          "target_size": [
+            48,
+            48
+          ],
+          "kind": "icon",
+          "runtime_names": [
+            "hslider_grabber",
+            "vslider_grabber"
+          ]
+        },
+        {
+          "name": "slider_grabber_highlight",
+          "label": "highlighted slider grabber",
+          "target_size": [
+            48,
+            48
+          ],
+          "kind": "icon",
+          "runtime_names": [
+            "hslider_grabber_highlight",
+            "vslider_grabber_highlight"
+          ]
+        },
+        {
+          "name": "slider_grabber_disabled",
+          "label": "disabled slider grabber",
+          "target_size": [
+            48,
+            48
+          ],
+          "kind": "icon",
+          "runtime_names": [
+            "hslider_grabber_disabled",
+            "vslider_grabber_disabled"
+          ]
+        }
+      ],
+      "component_labels": [
+        "left arrow",
+        "right arrow",
+        "up arrow",
+        "down arrow",
+        "back action",
+        "close action",
+        "confirm action",
+        "warning status",
+        "information status",
+        "settings action",
+        "add action",
+        "remove action",
+        "locked state",
+        "unlocked state",
+        "checked checkbox",
+        "unchecked checkbox",
+        "selected radio control",
+        "unselected radio control",
+        "general status indicator",
+        "checked toggle control",
+        "unchecked toggle control",
+        "slider grabber",
+        "highlighted slider grabber",
+        "disabled slider grabber"
+      ],
+      "provider_grid": {
+        "columns": 6,
+        "rows": 4
+      },
+      "atlas": {
+        "source_name": "icons_atlas.png",
+        "metadata_name": "icons_atlas.json",
+        "max_width": 880,
+        "gutter": 16,
+        "width": 880,
+        "height": 448
+      },
+      "slots": [
+        {
+          "index": 0,
+          "name": "arrow_left",
+          "label": "left arrow",
+          "kind": "icon",
+          "target_size": [
+            32,
+            32
+          ],
+          "rect": [
+            16,
+            16,
+            32,
+            32
+          ],
+          "runtime_names": [
+            "icon_left_arrow"
+          ]
+        },
+        {
+          "index": 1,
+          "name": "arrow_right",
+          "label": "right arrow",
+          "kind": "icon",
+          "target_size": [
+            32,
+            32
+          ],
+          "rect": [
+            64,
+            16,
+            32,
+            32
+          ],
+          "runtime_names": [
+            "icon_right_arrow",
+            "icon_submenu",
+            "form_submenu_arrow"
+          ]
+        },
+        {
+          "index": 2,
+          "name": "arrow_up",
+          "label": "up arrow",
+          "kind": "icon",
+          "target_size": [
+            32,
+            32
+          ],
+          "rect": [
+            112,
+            16,
+            32,
+            32
+          ],
+          "runtime_names": [
+            "icon_up_arrow"
+          ]
+        },
+        {
+          "index": 3,
+          "name": "arrow_down",
+          "label": "down arrow",
+          "kind": "icon",
+          "target_size": [
+            32,
+            32
+          ],
+          "rect": [
+            160,
+            16,
+            32,
+            32
+          ],
+          "runtime_names": [
+            "icon_down_arrow"
+          ]
+        },
+        {
+          "index": 4,
+          "name": "back",
+          "label": "back action",
+          "kind": "icon",
+          "target_size": [
+            128,
+            128
+          ],
+          "rect": [
+            208,
+            16,
+            128,
+            128
+          ],
+          "runtime_names": [
+            "icon_back"
+          ]
+        },
+        {
+          "index": 5,
+          "name": "close",
+          "label": "close action",
+          "kind": "icon",
+          "target_size": [
+            128,
+            128
+          ],
+          "rect": [
+            352,
+            16,
+            128,
+            128
+          ],
+          "runtime_names": [
+            "icon_close"
+          ]
+        },
+        {
+          "index": 6,
+          "name": "confirm",
+          "label": "confirm action",
+          "kind": "icon",
+          "target_size": [
+            128,
+            128
+          ],
+          "rect": [
+            496,
+            16,
+            128,
+            128
+          ],
+          "runtime_names": [
+            "icon_confirm"
+          ]
+        },
+        {
+          "index": 7,
+          "name": "warning",
+          "label": "warning status",
+          "kind": "icon",
+          "target_size": [
+            128,
+            128
+          ],
+          "rect": [
+            640,
+            16,
+            128,
+            128
+          ],
+          "runtime_names": [
+            "icon_warning"
+          ]
+        },
+        {
+          "index": 8,
+          "name": "information",
+          "label": "information status",
+          "kind": "icon",
+          "target_size": [
+            128,
+            128
+          ],
+          "rect": [
+            16,
+            160,
+            128,
+            128
+          ],
+          "runtime_names": [
+            "icon_information"
+          ]
+        },
+        {
+          "index": 9,
+          "name": "settings",
+          "label": "settings action",
+          "kind": "icon",
+          "target_size": [
+            128,
+            128
+          ],
+          "rect": [
+            160,
+            160,
+            128,
+            128
+          ],
+          "runtime_names": [
+            "icon_settings"
+          ]
+        },
+        {
+          "index": 10,
+          "name": "add",
+          "label": "add action",
+          "kind": "icon",
+          "target_size": [
+            128,
+            128
+          ],
+          "rect": [
+            304,
+            160,
+            128,
+            128
+          ],
+          "runtime_names": [
+            "icon_add"
+          ]
+        },
+        {
+          "index": 11,
+          "name": "remove",
+          "label": "remove action",
+          "kind": "icon",
+          "target_size": [
+            128,
+            128
+          ],
+          "rect": [
+            448,
+            160,
+            128,
+            128
+          ],
+          "runtime_names": [
+            "icon_remove"
+          ]
+        },
+        {
+          "index": 12,
+          "name": "lock",
+          "label": "locked state",
+          "kind": "icon",
+          "target_size": [
+            128,
+            128
+          ],
+          "rect": [
+            592,
+            160,
+            128,
+            128
+          ],
+          "runtime_names": [
+            "icon_lock"
+          ]
+        },
+        {
+          "index": 13,
+          "name": "unlock",
+          "label": "unlocked state",
+          "kind": "icon",
+          "target_size": [
+            128,
+            128
+          ],
+          "rect": [
+            736,
+            160,
+            128,
+            128
+          ],
+          "runtime_names": [
+            "icon_unlock"
+          ]
+        },
+        {
+          "index": 14,
+          "name": "checkbox_checked",
+          "label": "checked checkbox",
+          "kind": "icon",
+          "target_size": [
+            40,
+            40
+          ],
+          "rect": [
+            16,
+            304,
+            40,
+            40
+          ],
+          "runtime_names": [
+            "icon_checkbox_checked",
+            "checkbox_checked"
+          ]
+        },
+        {
+          "index": 15,
+          "name": "checkbox_unchecked",
+          "label": "unchecked checkbox",
+          "kind": "icon",
+          "target_size": [
+            40,
+            40
+          ],
+          "rect": [
+            72,
+            304,
+            40,
+            40
+          ],
+          "runtime_names": [
+            "icon_checkbox_unchecked",
+            "checkbox_unchecked"
+          ]
+        },
+        {
+          "index": 16,
+          "name": "radio_selected",
+          "label": "selected radio control",
+          "kind": "icon",
+          "target_size": [
+            40,
+            40
+          ],
+          "rect": [
+            128,
+            304,
+            40,
+            40
+          ],
+          "runtime_names": [
+            "icon_radio_selected"
+          ]
+        },
+        {
+          "index": 17,
+          "name": "radio_unselected",
+          "label": "unselected radio control",
+          "kind": "icon",
+          "target_size": [
+            40,
+            40
+          ],
+          "rect": [
+            184,
+            304,
+            40,
+            40
+          ],
+          "runtime_names": [
+            "icon_radio_unselected"
+          ]
+        },
+        {
+          "index": 18,
+          "name": "status",
+          "label": "general status indicator",
+          "kind": "icon",
+          "target_size": [
+            128,
+            128
+          ],
+          "rect": [
+            240,
+            304,
+            128,
+            128
+          ],
+          "runtime_names": [
+            "icon_status"
+          ]
+        },
+        {
+          "index": 19,
+          "name": "check_button_checked",
+          "label": "checked toggle control",
+          "kind": "icon",
+          "target_size": [
+            40,
+            40
+          ],
+          "rect": [
+            384,
+            304,
+            40,
+            40
+          ],
+          "runtime_names": [
+            "check_button_checked"
+          ]
+        },
+        {
+          "index": 20,
+          "name": "check_button_unchecked",
+          "label": "unchecked toggle control",
+          "kind": "icon",
+          "target_size": [
+            40,
+            40
+          ],
+          "rect": [
+            440,
+            304,
+            40,
+            40
+          ],
+          "runtime_names": [
+            "check_button_unchecked"
+          ]
+        },
+        {
+          "index": 21,
+          "name": "slider_grabber",
+          "label": "slider grabber",
+          "kind": "icon",
+          "target_size": [
+            48,
+            48
+          ],
+          "rect": [
+            496,
+            304,
+            48,
+            48
+          ],
+          "runtime_names": [
+            "hslider_grabber",
+            "vslider_grabber"
+          ]
+        },
+        {
+          "index": 22,
+          "name": "slider_grabber_highlight",
+          "label": "highlighted slider grabber",
+          "kind": "icon",
+          "target_size": [
+            48,
+            48
+          ],
+          "rect": [
+            560,
+            304,
+            48,
+            48
+          ],
+          "runtime_names": [
+            "hslider_grabber_highlight",
+            "vslider_grabber_highlight"
+          ]
+        },
+        {
+          "index": 23,
+          "name": "slider_grabber_disabled",
+          "label": "disabled slider grabber",
+          "kind": "icon",
+          "target_size": [
+            48,
+            48
+          ],
+          "rect": [
+            624,
+            304,
+            48,
+            48
+          ],
+          "runtime_names": [
+            "hslider_grabber_disabled",
+            "vslider_grabber_disabled"
+          ]
+        }
+      ],
+      "prompt": "Create reusable soft hand-painted cozy illustration with rounded pastel shapes, warm mint and cream palette, gentle terracotta accents and smooth drop shadows game UI source art. Match the supplied style reference's palette, shape language, outlines, shadows, and material treatment. Visual direction: Soft hand-painted cozy puzzle game UI in a warm mint and cream palette. Rounded pill buttons in muted terracotta with thin white line icons, olive-cream raised panels with soft warm drop shadows, cream-yellow input tiles, olive number chips with warm-black digits, generous corner rounding, flat matte paper-clay material, no hard outlines. A single warm amber accent is reserved for selection and focus highlights. Use a perfectly flat, solid #FF00FF canvas background only. Reserve exact #FF00FF exclusively for the color-key background; do not use it in the artwork. Keep every component fully separated by at least 24 pixels of visible #FF00FF and away from every canvas edge. Create isolated reusable UI elements only: no characters, scenes, full screen mockups, readable text, numbers, logos, or branding. Arrange exactly 24 visual components in a 6-column by 4-row layout, ordered left to right and then top to bottom; leave unused trailing cells empty. Render each listed component as one isolated reusable element. Do not render component labels. Components in order: left arrow; right arrow; up arrow; down arrow; back action; close action; confirm action; warning status; information status; settings action; add action; remove action; locked state; unlocked state; checked checkbox; unchecked checkbox; selected radio control; unselected radio control; general status indicator; checked toggle control; unchecked toggle control; slider grabber; highlighted slider grabber; disabled slider grabber."
+    }
+  ]
+}

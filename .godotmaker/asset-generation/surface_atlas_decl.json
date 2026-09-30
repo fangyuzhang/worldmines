@@ -1,0 +1,121 @@
+{
+ "version": 1,
+ "atlas": {
+  "width": 464,
+  "height": 240
+ },
+ "slots": [
+  {
+   "name": "button_disabled",
+   "rect": [
+    352,
+    16,
+    96,
+    96
+   ],
+   "source": ".godotmaker/asset-generation/normalized/button_disabled.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "button_hover",
+   "rect": [
+    128,
+    16,
+    96,
+    96
+   ],
+   "source": ".godotmaker/asset-generation/normalized/button_hover.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "button_normal",
+   "rect": [
+    16,
+    16,
+    96,
+    96
+   ],
+   "source": ".godotmaker/asset-generation/normalized/button_normal.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "button_pressed",
+   "rect": [
+    240,
+    16,
+    96,
+    96
+   ],
+   "source": ".godotmaker/asset-generation/normalized/button_pressed.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "panel_base",
+   "rect": [
+    16,
+    128,
+    96,
+    96
+   ],
+   "source": ".godotmaker/asset-generation/normalized/panel_base.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "panel_raised",
+   "rect": [
+    128,
+    128,
+    96,
+    96
+   ],
+   "source": ".godotmaker/asset-generation/normalized/panel_raised.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "tab_selected",
+   "rect": [
+    240,
+    128,
+    96,
+    96
+   ],
+   "source": ".godotmaker/asset-generation/normalized/tab_selected.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "tab_unselected",
+   "rect": [
+    352,
+    128,
+    96,
+    96
+   ],
+   "source": ".godotmaker/asset-generation/normalized/tab_unselected.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  }
+ ]
+}

@@ -1,0 +1,709 @@
+{
+  "version": 1,
+  "ok": true,
+  "asset_id": "cozy_toys",
+  "tag": "surface_patches",
+  "source": ".godotmaker\\asset-generation\\surface_patches_final_src.png",
+  "source_path": ".godotmaker\\asset-generation\\surface_patches_final_src.png",
+  "strategy": "transparent_autoslice",
+  "status": "candidate_extracted",
+  "background": "transparent",
+  "cleanup": {
+    "background": "transparent",
+    "algorithm": null,
+    "strict_background_pixels": 0,
+    "unknown_band_pixels": 0,
+    "matted_pixels": 0,
+    "transparent_pixels": 525765
+  },
+  "snap_mode": "autoslice",
+  "component_mode": "all",
+  "component_padding": 0,
+  "min_component_area": 2000,
+  "trim_border": 0,
+  "edge_clean_depth": 0,
+  "edge_touch_margin": 0,
+  "preserve_cell_bounds": false,
+  "grid": null,
+  "cell_size": null,
+  "cell_bounds": null,
+  "expected_region_count": 8,
+  "detected_region_count": 8,
+  "detected_regions": [
+    {
+      "bbox": [
+        44,
+        178,
+        261,
+        439
+      ],
+      "alpha_area": 54498
+    },
+    {
+      "bbox": [
+        285,
+        178,
+        501,
+        439
+      ],
+      "alpha_area": 54549
+    },
+    {
+      "bbox": [
+        525,
+        178,
+        741,
+        439
+      ],
+      "alpha_area": 54423
+    },
+    {
+      "bbox": [
+        766,
+        178,
+        982,
+        439
+      ],
+      "alpha_area": 54410
+    },
+    {
+      "bbox": [
+        44,
+        533,
+        270,
+        890
+      ],
+      "alpha_area": 78136
+    },
+    {
+      "bbox": [
+        535,
+        533,
+        748,
+        890
+      ],
+      "alpha_area": 73627
+    },
+    {
+      "bbox": [
+        291,
+        534,
+        514,
+        890
+      ],
+      "alpha_area": 77350
+    },
+    {
+      "bbox": [
+        769,
+        534,
+        982,
+        890
+      ],
+      "alpha_area": 73938
+    }
+  ],
+  "discarded_regions": [
+    {
+      "bbox": [
+        943,
+        963,
+        974,
+        996
+      ],
+      "alpha_area": 549,
+      "reason": "below_min_component_area"
+    },
+    {
+      "bbox": [
+        976,
+        963,
+        1008,
+        997
+      ],
+      "alpha_area": 643,
+      "reason": "below_min_component_area"
+    },
+    {
+      "bbox": [
+        903,
+        966,
+        931,
+        995
+      ],
+      "alpha_area": 353,
+      "reason": "below_min_component_area"
+    },
+    {
+      "bbox": [
+        903,
+        1001,
+        946,
+        1014
+      ],
+      "alpha_area": 335,
+      "reason": "below_min_component_area"
+    }
+  ],
+  "candidates": [
+    {
+      "candidate_id": "cozy_toys.button_normal",
+      "name": "button_normal",
+      "path": ".godotmaker\\asset-generation\\surface_patches_components\\button_normal.png",
+      "state": "candidate",
+      "bbox": [
+        44,
+        178,
+        261,
+        439
+      ],
+      "crop_bbox": [
+        44,
+        178,
+        261,
+        439
+      ],
+      "component_count": 1,
+      "selected_component_bbox": [
+        44,
+        178,
+        261,
+        439
+      ],
+      "selected_component_area": 54498,
+      "role": "",
+      "final_path": null
+    },
+    {
+      "candidate_id": "cozy_toys.button_hover",
+      "name": "button_hover",
+      "path": ".godotmaker\\asset-generation\\surface_patches_components\\button_hover.png",
+      "state": "candidate",
+      "bbox": [
+        285,
+        178,
+        501,
+        439
+      ],
+      "crop_bbox": [
+        285,
+        178,
+        501,
+        439
+      ],
+      "component_count": 1,
+      "selected_component_bbox": [
+        285,
+        178,
+        501,
+        439
+      ],
+      "selected_component_area": 54549,
+      "role": "",
+      "final_path": null
+    },
+    {
+      "candidate_id": "cozy_toys.button_pressed",
+      "name": "button_pressed",
+      "path": ".godotmaker\\asset-generation\\surface_patches_components\\button_pressed.png",
+      "state": "candidate",
+      "bbox": [
+        525,
+        178,
+        741,
+        439
+      ],
+      "crop_bbox": [
+        525,
+        178,
+        741,
+        439
+      ],
+      "component_count": 1,
+      "selected_component_bbox": [
+        525,
+        178,
+        741,
+        439
+      ],
+      "selected_component_area": 54423,
+      "role": "",
+      "final_path": null
+    },
+    {
+      "candidate_id": "cozy_toys.button_disabled",
+      "name": "button_disabled",
+      "path": ".godotmaker\\asset-generation\\surface_patches_components\\button_disabled.png",
+      "state": "candidate",
+      "bbox": [
+        766,
+        178,
+        982,
+        439
+      ],
+      "crop_bbox": [
+        766,
+        178,
+        982,
+        439
+      ],
+      "component_count": 1,
+      "selected_component_bbox": [
+        766,
+        178,
+        982,
+        439
+      ],
+      "selected_component_area": 54410,
+      "role": "",
+      "final_path": null
+    },
+    {
+      "candidate_id": "cozy_toys.panel_base",
+      "name": "panel_base",
+      "path": ".godotmaker\\asset-generation\\surface_patches_components\\panel_base.png",
+      "state": "candidate",
+      "bbox": [
+        44,
+        533,
+        270,
+        890
+      ],
+      "crop_bbox": [
+        44,
+        533,
+        270,
+        890
+      ],
+      "component_count": 1,
+      "selected_component_bbox": [
+        44,
+        533,
+        270,
+        890
+      ],
+      "selected_component_area": 78136,
+      "role": "",
+      "final_path": null
+    },
+    {
+      "candidate_id": "cozy_toys.panel_raised",
+      "name": "panel_raised",
+      "path": ".godotmaker\\asset-generation\\surface_patches_components\\panel_raised.png",
+      "state": "candidate",
+      "bbox": [
+        535,
+        533,
+        748,
+        890
+      ],
+      "crop_bbox": [
+        535,
+        533,
+        748,
+        890
+      ],
+      "component_count": 1,
+      "selected_component_bbox": [
+        535,
+        533,
+        748,
+        890
+      ],
+      "selected_component_area": 73627,
+      "role": "",
+      "final_path": null
+    },
+    {
+      "candidate_id": "cozy_toys.tab_selected",
+      "name": "tab_selected",
+      "path": ".godotmaker\\asset-generation\\surface_patches_components\\tab_selected.png",
+      "state": "candidate",
+      "bbox": [
+        291,
+        534,
+        514,
+        890
+      ],
+      "crop_bbox": [
+        291,
+        534,
+        514,
+        890
+      ],
+      "component_count": 1,
+      "selected_component_bbox": [
+        291,
+        534,
+        514,
+        890
+      ],
+      "selected_component_area": 77350,
+      "role": "",
+      "final_path": null
+    },
+    {
+      "candidate_id": "cozy_toys.tab_unselected",
+      "name": "tab_unselected",
+      "path": ".godotmaker\\asset-generation\\surface_patches_components\\tab_unselected.png",
+      "state": "candidate",
+      "bbox": [
+        769,
+        534,
+        982,
+        890
+      ],
+      "crop_bbox": [
+        769,
+        534,
+        982,
+        890
+      ],
+      "component_count": 1,
+      "selected_component_bbox": [
+        769,
+        534,
+        982,
+        890
+      ],
+      "selected_component_area": 73938,
+      "role": "",
+      "final_path": null
+    }
+  ],
+  "accepted": [
+    {
+      "name": "button_normal",
+      "candidate_id": "cozy_toys.button_normal",
+      "state": "candidate",
+      "index": 0,
+      "grid": null,
+      "source_box": [
+        44,
+        178,
+        261,
+        439
+      ],
+      "component_mode": "all",
+      "component_count": 1,
+      "selected_component_area": 54498,
+      "selected_component_bbox": [
+        44,
+        178,
+        261,
+        439
+      ],
+      "path": ".godotmaker\\asset-generation\\surface_patches_components\\button_normal.png",
+      "crop_bbox": [
+        44,
+        178,
+        261,
+        439
+      ],
+      "padded_crop_bbox": [
+        44,
+        178,
+        261,
+        439
+      ],
+      "edge_touch": false,
+      "trim_border": 0,
+      "edge_clean_depth": 0,
+      "edge_touch_margin": 0,
+      "width": 217,
+      "height": 261
+    },
+    {
+      "name": "button_hover",
+      "candidate_id": "cozy_toys.button_hover",
+      "state": "candidate",
+      "index": 1,
+      "grid": null,
+      "source_box": [
+        285,
+        178,
+        501,
+        439
+      ],
+      "component_mode": "all",
+      "component_count": 1,
+      "selected_component_area": 54549,
+      "selected_component_bbox": [
+        285,
+        178,
+        501,
+        439
+      ],
+      "path": ".godotmaker\\asset-generation\\surface_patches_components\\button_hover.png",
+      "crop_bbox": [
+        285,
+        178,
+        501,
+        439
+      ],
+      "padded_crop_bbox": [
+        285,
+        178,
+        501,
+        439
+      ],
+      "edge_touch": false,
+      "trim_border": 0,
+      "edge_clean_depth": 0,
+      "edge_touch_margin": 0,
+      "width": 216,
+      "height": 261
+    },
+    {
+      "name": "button_pressed",
+      "candidate_id": "cozy_toys.button_pressed",
+      "state": "candidate",
+      "index": 2,
+      "grid": null,
+      "source_box": [
+        525,
+        178,
+        741,
+        439
+      ],
+      "component_mode": "all",
+      "component_count": 1,
+      "selected_component_area": 54423,
+      "selected_component_bbox": [
+        525,
+        178,
+        741,
+        439
+      ],
+      "path": ".godotmaker\\asset-generation\\surface_patches_components\\button_pressed.png",
+      "crop_bbox": [
+        525,
+        178,
+        741,
+        439
+      ],
+      "padded_crop_bbox": [
+        525,
+        178,
+        741,
+        439
+      ],
+      "edge_touch": false,
+      "trim_border": 0,
+      "edge_clean_depth": 0,
+      "edge_touch_margin": 0,
+      "width": 216,
+      "height": 261
+    },
+    {
+      "name": "button_disabled",
+      "candidate_id": "cozy_toys.button_disabled",
+      "state": "candidate",
+      "index": 3,
+      "grid": null,
+      "source_box": [
+        766,
+        178,
+        982,
+        439
+      ],
+      "component_mode": "all",
+      "component_count": 1,
+      "selected_component_area": 54410,
+      "selected_component_bbox": [
+        766,
+        178,
+        982,
+        439
+      ],
+      "path": ".godotmaker\\asset-generation\\surface_patches_components\\button_disabled.png",
+      "crop_bbox": [
+        766,
+        178,
+        982,
+        439
+      ],
+      "padded_crop_bbox": [
+        766,
+        178,
+        982,
+        439
+      ],
+      "edge_touch": false,
+      "trim_border": 0,
+      "edge_clean_depth": 0,
+      "edge_touch_margin": 0,
+      "width": 216,
+      "height": 261
+    },
+    {
+      "name": "panel_base",
+      "candidate_id": "cozy_toys.panel_base",
+      "state": "candidate",
+      "index": 4,
+      "grid": null,
+      "source_box": [
+        44,
+        533,
+        270,
+        890
+      ],
+      "component_mode": "all",
+      "component_count": 1,
+      "selected_component_area": 78136,
+      "selected_component_bbox": [
+        44,
+        533,
+        270,
+        890
+      ],
+      "path": ".godotmaker\\asset-generation\\surface_patches_components\\panel_base.png",
+      "crop_bbox": [
+        44,
+        533,
+        270,
+        890
+      ],
+      "padded_crop_bbox": [
+        44,
+        533,
+        270,
+        890
+      ],
+      "edge_touch": false,
+      "trim_border": 0,
+      "edge_clean_depth": 0,
+      "edge_touch_margin": 0,
+      "width": 226,
+      "height": 357
+    },
+    {
+      "name": "panel_raised",
+      "candidate_id": "cozy_toys.panel_raised",
+      "state": "candidate",
+      "index": 5,
+      "grid": null,
+      "source_box": [
+        535,
+        533,
+        748,
+        890
+      ],
+      "component_mode": "all",
+      "component_count": 1,
+      "selected_component_area": 73627,
+      "selected_component_bbox": [
+        535,
+        533,
+        748,
+        890
+      ],
+      "path": ".godotmaker\\asset-generation\\surface_patches_components\\panel_raised.png",
+      "crop_bbox": [
+        535,
+        533,
+        748,
+        890
+      ],
+      "padded_crop_bbox": [
+        535,
+        533,
+        748,
+        890
+      ],
+      "edge_touch": false,
+      "trim_border": 0,
+      "edge_clean_depth": 0,
+      "edge_touch_margin": 0,
+      "width": 213,
+      "height": 357
+    },
+    {
+      "name": "tab_selected",
+      "candidate_id": "cozy_toys.tab_selected",
+      "state": "candidate",
+      "index": 6,
+      "grid": null,
+      "source_box": [
+        291,
+        534,
+        514,
+        890
+      ],
+      "component_mode": "all",
+      "component_count": 1,
+      "selected_component_area": 77350,
+      "selected_component_bbox": [
+        291,
+        534,
+        514,
+        890
+      ],
+      "path": ".godotmaker\\asset-generation\\surface_patches_components\\tab_selected.png",
+      "crop_bbox": [
+        291,
+        534,
+        514,
+        890
+      ],
+      "padded_crop_bbox": [
+        291,
+        534,
+        514,
+        890
+      ],
+      "edge_touch": false,
+      "trim_border": 0,
+      "edge_clean_depth": 0,
+      "edge_touch_margin": 0,
+      "width": 223,
+      "height": 356
+    },
+    {
+      "name": "tab_unselected",
+      "candidate_id": "cozy_toys.tab_unselected",
+      "state": "candidate",
+      "index": 7,
+      "grid": null,
+      "source_box": [
+        769,
+        534,
+        982,
+        890
+      ],
+      "component_mode": "all",
+      "component_count": 1,
+      "selected_component_area": 73938,
+      "selected_component_bbox": [
+        769,
+        534,
+        982,
+        890
+      ],
+      "path": ".godotmaker\\asset-generation\\surface_patches_components\\tab_unselected.png",
+      "crop_bbox": [
+        769,
+        534,
+        982,
+        890
+      ],
+      "padded_crop_bbox": [
+        769,
+        534,
+        982,
+        890
+      ],
+      "edge_touch": false,
+      "trim_border": 0,
+      "edge_clean_depth": 0,
+      "edge_touch_margin": 0,
+      "width": 213,
+      "height": 356
+    }
+  ],
+  "rejected": [],
+  "accepted_count": 8,
+  "rejected_count": 0,
+  "edge_touch_candidates": [],
+  "processed_path": null
+}

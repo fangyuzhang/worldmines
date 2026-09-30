@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "atlas_path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png",
+  "regions": [
+    {
+      "name": "button_disabled",
+      "rect": [
+        288,
+        0,
+        96,
+        96
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "button_hover",
+      "rect": [
+        96,
+        0,
+        96,
+        96
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "button_normal",
+      "rect": [
+        0,
+        0,
+        96,
+        96
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "button_pressed",
+      "rect": [
+        192,
+        0,
+        96,
+        96
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "panel_base",
+      "rect": [
+        384,
+        0,
+        96,
+        96
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "panel_raised",
+      "rect": [
+        480,
+        0,
+        96,
+        96
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "tab_selected",
+      "rect": [
+        576,
+        0,
+        96,
+        96
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "tab_unselected",
+      "rect": [
+        672,
+        0,
+        96,
+        96
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    }
+  ]
+}

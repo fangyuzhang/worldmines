@@ -1,0 +1,47 @@
+{
+ "asset_type": "ui-kit",
+ "rendering_medium": "soft hand-painted cozy illustration with rounded pastel shapes, warm mint and cream palette, gentle terracotta accents and smooth drop shadows",
+ "tokens": {
+  "text": "#3F312F",
+  "text_muted": "#8D8B6A",
+  "text_outline": "#F3F4E2",
+  "surface": "#B4C897",
+  "surface_raised": "#CCDEAA",
+  "input": "#ECF2B4",
+  "primary": "#C98C6D",
+  "secondary": "#CBD6B6",
+  "danger": "#C4553B",
+  "success": "#96AB82",
+  "border": "#F3F4E2",
+  "focus": "#E7AE47",
+  "selection": "#F5EFA8",
+  "shadow": "#3F312F"
+ },
+ "geometry": {
+  "corner_radius_small": 8,
+  "corner_radius_medium": 14,
+  "corner_radius_large": 22,
+  "border_width": 1,
+  "content_margin": 12,
+  "shadow_size": 10,
+  "shadow_offset": [
+   0,
+   3
+  ],
+  "font_size": 20
+ },
+ "observations": {
+  "palette": "warm mint page (#B4C897) under an olive-cream board panel (#CCDEAA), cream-yellow input tiles (#ECF2B4), muted terracotta action buttons (#C98C6D) with white line icons, olive number chips (#CBD6B6) with warm-black digits (#3F312F), single warm amber accent (#E7AE47) reserved for highlights",
+  "contrast": "warm-black text on cream/mint passes AA at body sizes; white icons on terracotta read at 3:1 for large glyph shapes",
+  "shape": "fully rounded geometry, corner radius scales with element size, no hard strokes - separation comes from tonal steps and soft shadows, not outlines",
+  "outline": "essentially outline-free; the lightest 1px cream inner rim may appear on raised panels only",
+  "shadow": "single soft warm shadow per elevated element, small offset (0,3), low opacity",
+  "material": "flat matte paper-clay feel; iconography is uniform white line work on tinted rounded squares, high-frequency actions carry a small text label under the icon",
+  "references": [
+   {
+    "role": "style_binding",
+    "path": "reference/cozy-sudoku-1920.jpg"
+   }
+  ]
+ }
+}

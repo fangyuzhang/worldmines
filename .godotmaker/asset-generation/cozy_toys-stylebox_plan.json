@@ -1,0 +1,1231 @@
+{
+  "version": 2,
+  "asset_id": "cozy_toys",
+  "inspected_atlases": [
+    {
+      "sheet_id": "surface_patches",
+      "path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png"
+    }
+  ],
+  "styleboxes": [
+    {
+      "output_name": "button_disabled",
+      "source_component": "button_disabled",
+      "state": "disabled",
+      "source_path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png",
+      "layout": "region_atlas",
+      "texture_region": [
+        352,
+        16,
+        96,
+        96
+      ],
+      "border": [
+        10,
+        10,
+        10,
+        10
+      ],
+      "content_margin": [
+        16,
+        10,
+        16,
+        10
+      ],
+      "expand_margin": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "axis_stretch": {
+        "horizontal": "stretch",
+        "vertical": "stretch"
+      },
+      "modulate_color": "#AAB49794",
+      "geometry_profile": "rounded_surface",
+      "safe_center": [
+        10,
+        10,
+        76,
+        76
+      ],
+      "preview_sizes": [
+        [
+          160,
+          48
+        ],
+        [
+          360,
+          64
+        ]
+      ]
+    },
+    {
+      "output_name": "button_hover",
+      "source_component": "button_hover",
+      "state": "hover",
+      "source_path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png",
+      "layout": "region_atlas",
+      "texture_region": [
+        128,
+        16,
+        96,
+        96
+      ],
+      "border": [
+        10,
+        10,
+        10,
+        10
+      ],
+      "content_margin": [
+        16,
+        10,
+        16,
+        10
+      ],
+      "expand_margin": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "axis_stretch": {
+        "horizontal": "stretch",
+        "vertical": "stretch"
+      },
+      "modulate_color": "#D3E3B6FF",
+      "geometry_profile": "rounded_surface",
+      "safe_center": [
+        10,
+        10,
+        76,
+        76
+      ],
+      "preview_sizes": [
+        [
+          160,
+          48
+        ],
+        [
+          360,
+          64
+        ]
+      ]
+    },
+    {
+      "output_name": "button_normal",
+      "source_component": "button_normal",
+      "state": "normal",
+      "source_path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png",
+      "layout": "region_atlas",
+      "texture_region": [
+        16,
+        16,
+        96,
+        96
+      ],
+      "border": [
+        10,
+        10,
+        10,
+        10
+      ],
+      "content_margin": [
+        16,
+        10,
+        16,
+        10
+      ],
+      "expand_margin": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "axis_stretch": {
+        "horizontal": "stretch",
+        "vertical": "stretch"
+      },
+      "modulate_color": "#CCDEAA",
+      "geometry_profile": "rounded_surface",
+      "safe_center": [
+        10,
+        10,
+        76,
+        76
+      ],
+      "preview_sizes": [
+        [
+          160,
+          48
+        ],
+        [
+          360,
+          64
+        ]
+      ]
+    },
+    {
+      "output_name": "button_pressed",
+      "source_component": "button_pressed",
+      "state": "pressed",
+      "source_path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png",
+      "layout": "region_atlas",
+      "texture_region": [
+        240,
+        16,
+        96,
+        96
+      ],
+      "border": [
+        10,
+        10,
+        10,
+        10
+      ],
+      "content_margin": [
+        16,
+        10,
+        16,
+        10
+      ],
+      "expand_margin": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "axis_stretch": {
+        "horizontal": "stretch",
+        "vertical": "stretch"
+      },
+      "modulate_color": "#A7B68BFF",
+      "geometry_profile": "rounded_surface",
+      "safe_center": [
+        10,
+        10,
+        76,
+        76
+      ],
+      "preview_sizes": [
+        [
+          160,
+          48
+        ],
+        [
+          360,
+          64
+        ]
+      ]
+    },
+    {
+      "output_name": "danger_disabled",
+      "source_component": "button_disabled",
+      "state": "disabled",
+      "source_path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png",
+      "layout": "region_atlas",
+      "texture_region": [
+        352,
+        16,
+        96,
+        96
+      ],
+      "border": [
+        10,
+        10,
+        10,
+        10
+      ],
+      "content_margin": [
+        16,
+        10,
+        16,
+        10
+      ],
+      "expand_margin": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "axis_stretch": {
+        "horizontal": "stretch",
+        "vertical": "stretch"
+      },
+      "modulate_color": "#A5685A94",
+      "geometry_profile": "rounded_surface",
+      "safe_center": [
+        10,
+        10,
+        76,
+        76
+      ],
+      "preview_sizes": [
+        [
+          160,
+          48
+        ],
+        [
+          360,
+          64
+        ]
+      ]
+    },
+    {
+      "output_name": "danger_hover",
+      "source_component": "button_hover",
+      "state": "hover",
+      "source_path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png",
+      "layout": "region_atlas",
+      "texture_region": [
+        128,
+        16,
+        96,
+        96
+      ],
+      "border": [
+        10,
+        10,
+        10,
+        10
+      ],
+      "content_margin": [
+        16,
+        10,
+        16,
+        10
+      ],
+      "expand_margin": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "axis_stretch": {
+        "horizontal": "stretch",
+        "vertical": "stretch"
+      },
+      "modulate_color": "#CC6D56FF",
+      "geometry_profile": "rounded_surface",
+      "safe_center": [
+        10,
+        10,
+        76,
+        76
+      ],
+      "preview_sizes": [
+        [
+          160,
+          48
+        ],
+        [
+          360,
+          64
+        ]
+      ]
+    },
+    {
+      "output_name": "danger_normal",
+      "source_component": "button_normal",
+      "state": "normal",
+      "source_path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png",
+      "layout": "region_atlas",
+      "texture_region": [
+        16,
+        16,
+        96,
+        96
+      ],
+      "border": [
+        10,
+        10,
+        10,
+        10
+      ],
+      "content_margin": [
+        16,
+        10,
+        16,
+        10
+      ],
+      "expand_margin": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "axis_stretch": {
+        "horizontal": "stretch",
+        "vertical": "stretch"
+      },
+      "modulate_color": "#C4553B",
+      "geometry_profile": "rounded_surface",
+      "safe_center": [
+        10,
+        10,
+        76,
+        76
+      ],
+      "preview_sizes": [
+        [
+          160,
+          48
+        ],
+        [
+          360,
+          64
+        ]
+      ]
+    },
+    {
+      "output_name": "danger_pressed",
+      "source_component": "button_pressed",
+      "state": "pressed",
+      "source_path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png",
+      "layout": "region_atlas",
+      "texture_region": [
+        240,
+        16,
+        96,
+        96
+      ],
+      "border": [
+        10,
+        10,
+        10,
+        10
+      ],
+      "content_margin": [
+        16,
+        10,
+        16,
+        10
+      ],
+      "expand_margin": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "axis_stretch": {
+        "horizontal": "stretch",
+        "vertical": "stretch"
+      },
+      "modulate_color": "#A14630FF",
+      "geometry_profile": "rounded_surface",
+      "safe_center": [
+        10,
+        10,
+        76,
+        76
+      ],
+      "preview_sizes": [
+        [
+          160,
+          48
+        ],
+        [
+          360,
+          64
+        ]
+      ]
+    },
+    {
+      "output_name": "panel_base",
+      "source_component": "panel_base",
+      "state": "normal",
+      "source_path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png",
+      "layout": "region_atlas",
+      "texture_region": [
+        16,
+        128,
+        96,
+        96
+      ],
+      "border": [
+        16,
+        16,
+        16,
+        16
+      ],
+      "content_margin": [
+        24,
+        24,
+        24,
+        24
+      ],
+      "expand_margin": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "axis_stretch": {
+        "horizontal": "stretch",
+        "vertical": "stretch"
+      },
+      "modulate_color": "#B4C897",
+      "geometry_profile": "panel_surface",
+      "safe_center": [
+        16,
+        16,
+        64,
+        64
+      ],
+      "preview_sizes": [
+        [
+          240,
+          160
+        ],
+        [
+          640,
+          400
+        ]
+      ]
+    },
+    {
+      "output_name": "panel_raised",
+      "source_component": "panel_raised",
+      "state": "normal",
+      "source_path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png",
+      "layout": "region_atlas",
+      "texture_region": [
+        128,
+        128,
+        96,
+        96
+      ],
+      "border": [
+        16,
+        16,
+        16,
+        16
+      ],
+      "content_margin": [
+        24,
+        24,
+        24,
+        24
+      ],
+      "expand_margin": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "axis_stretch": {
+        "horizontal": "stretch",
+        "vertical": "stretch"
+      },
+      "modulate_color": "#CCDEAA",
+      "geometry_profile": "panel_surface",
+      "safe_center": [
+        16,
+        16,
+        64,
+        64
+      ],
+      "preview_sizes": [
+        [
+          240,
+          160
+        ],
+        [
+          640,
+          400
+        ]
+      ]
+    },
+    {
+      "output_name": "popup_menu_panel",
+      "source_component": "panel_base",
+      "state": "normal",
+      "source_path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png",
+      "layout": "region_atlas",
+      "texture_region": [
+        16,
+        128,
+        96,
+        96
+      ],
+      "border": [
+        16,
+        16,
+        16,
+        16
+      ],
+      "content_margin": [
+        24,
+        24,
+        24,
+        24
+      ],
+      "expand_margin": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "axis_stretch": {
+        "horizontal": "stretch",
+        "vertical": "stretch"
+      },
+      "modulate_color": "#B4C897",
+      "geometry_profile": "panel_surface",
+      "safe_center": [
+        16,
+        16,
+        64,
+        64
+      ],
+      "preview_sizes": [
+        [
+          240,
+          160
+        ],
+        [
+          640,
+          400
+        ]
+      ]
+    },
+    {
+      "output_name": "primary_disabled",
+      "source_component": "button_disabled",
+      "state": "disabled",
+      "source_path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png",
+      "layout": "region_atlas",
+      "texture_region": [
+        352,
+        16,
+        96,
+        96
+      ],
+      "border": [
+        10,
+        10,
+        10,
+        10
+      ],
+      "content_margin": [
+        16,
+        10,
+        16,
+        10
+      ],
+      "expand_margin": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "axis_stretch": {
+        "horizontal": "stretch",
+        "vertical": "stretch"
+      },
+      "modulate_color": "#A8877694",
+      "geometry_profile": "rounded_surface",
+      "safe_center": [
+        10,
+        10,
+        76,
+        76
+      ],
+      "preview_sizes": [
+        [
+          160,
+          48
+        ],
+        [
+          360,
+          64
+        ]
+      ]
+    },
+    {
+      "output_name": "primary_hover",
+      "source_component": "button_hover",
+      "state": "hover",
+      "source_path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png",
+      "layout": "region_atlas",
+      "texture_region": [
+        128,
+        16,
+        96,
+        96
+      ],
+      "border": [
+        10,
+        10,
+        10,
+        10
+      ],
+      "content_margin": [
+        16,
+        10,
+        16,
+        10
+      ],
+      "expand_margin": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "axis_stretch": {
+        "horizontal": "stretch",
+        "vertical": "stretch"
+      },
+      "modulate_color": "#D19C81FF",
+      "geometry_profile": "rounded_surface",
+      "safe_center": [
+        10,
+        10,
+        76,
+        76
+      ],
+      "preview_sizes": [
+        [
+          160,
+          48
+        ],
+        [
+          360,
+          64
+        ]
+      ]
+    },
+    {
+      "output_name": "primary_normal",
+      "source_component": "button_normal",
+      "state": "normal",
+      "source_path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png",
+      "layout": "region_atlas",
+      "texture_region": [
+        16,
+        16,
+        96,
+        96
+      ],
+      "border": [
+        10,
+        10,
+        10,
+        10
+      ],
+      "content_margin": [
+        16,
+        10,
+        16,
+        10
+      ],
+      "expand_margin": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "axis_stretch": {
+        "horizontal": "stretch",
+        "vertical": "stretch"
+      },
+      "modulate_color": "#C98C6D",
+      "geometry_profile": "rounded_surface",
+      "safe_center": [
+        10,
+        10,
+        76,
+        76
+      ],
+      "preview_sizes": [
+        [
+          160,
+          48
+        ],
+        [
+          360,
+          64
+        ]
+      ]
+    },
+    {
+      "output_name": "primary_pressed",
+      "source_component": "button_pressed",
+      "state": "pressed",
+      "source_path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png",
+      "layout": "region_atlas",
+      "texture_region": [
+        240,
+        16,
+        96,
+        96
+      ],
+      "border": [
+        10,
+        10,
+        10,
+        10
+      ],
+      "content_margin": [
+        16,
+        10,
+        16,
+        10
+      ],
+      "expand_margin": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "axis_stretch": {
+        "horizontal": "stretch",
+        "vertical": "stretch"
+      },
+      "modulate_color": "#A57359FF",
+      "geometry_profile": "rounded_surface",
+      "safe_center": [
+        10,
+        10,
+        76,
+        76
+      ],
+      "preview_sizes": [
+        [
+          160,
+          48
+        ],
+        [
+          360,
+          64
+        ]
+      ]
+    },
+    {
+      "output_name": "secondary_disabled",
+      "source_component": "button_disabled",
+      "state": "disabled",
+      "source_path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png",
+      "layout": "region_atlas",
+      "texture_region": [
+        352,
+        16,
+        96,
+        96
+      ],
+      "border": [
+        10,
+        10,
+        10,
+        10
+      ],
+      "content_margin": [
+        16,
+        10,
+        16,
+        10
+      ],
+      "expand_margin": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "axis_stretch": {
+        "horizontal": "stretch",
+        "vertical": "stretch"
+      },
+      "modulate_color": "#A9AF9E94",
+      "geometry_profile": "rounded_surface",
+      "safe_center": [
+        10,
+        10,
+        76,
+        76
+      ],
+      "preview_sizes": [
+        [
+          160,
+          48
+        ],
+        [
+          360,
+          64
+        ]
+      ]
+    },
+    {
+      "output_name": "secondary_hover",
+      "source_component": "button_hover",
+      "state": "hover",
+      "source_path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png",
+      "layout": "region_atlas",
+      "texture_region": [
+        128,
+        16,
+        96,
+        96
+      ],
+      "border": [
+        10,
+        10,
+        10,
+        10
+      ],
+      "content_margin": [
+        16,
+        10,
+        16,
+        10
+      ],
+      "expand_margin": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "axis_stretch": {
+        "horizontal": "stretch",
+        "vertical": "stretch"
+      },
+      "modulate_color": "#D2DCC0FF",
+      "geometry_profile": "rounded_surface",
+      "safe_center": [
+        10,
+        10,
+        76,
+        76
+      ],
+      "preview_sizes": [
+        [
+          160,
+          48
+        ],
+        [
+          360,
+          64
+        ]
+      ]
+    },
+    {
+      "output_name": "secondary_normal",
+      "source_component": "button_normal",
+      "state": "normal",
+      "source_path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png",
+      "layout": "region_atlas",
+      "texture_region": [
+        16,
+        16,
+        96,
+        96
+      ],
+      "border": [
+        10,
+        10,
+        10,
+        10
+      ],
+      "content_margin": [
+        16,
+        10,
+        16,
+        10
+      ],
+      "expand_margin": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "axis_stretch": {
+        "horizontal": "stretch",
+        "vertical": "stretch"
+      },
+      "modulate_color": "#CBD6B6",
+      "geometry_profile": "rounded_surface",
+      "safe_center": [
+        10,
+        10,
+        76,
+        76
+      ],
+      "preview_sizes": [
+        [
+          160,
+          48
+        ],
+        [
+          360,
+          64
+        ]
+      ]
+    },
+    {
+      "output_name": "secondary_pressed",
+      "source_component": "button_pressed",
+      "state": "pressed",
+      "source_path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png",
+      "layout": "region_atlas",
+      "texture_region": [
+        240,
+        16,
+        96,
+        96
+      ],
+      "border": [
+        10,
+        10,
+        10,
+        10
+      ],
+      "content_margin": [
+        16,
+        10,
+        16,
+        10
+      ],
+      "expand_margin": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "axis_stretch": {
+        "horizontal": "stretch",
+        "vertical": "stretch"
+      },
+      "modulate_color": "#A6AF95FF",
+      "geometry_profile": "rounded_surface",
+      "safe_center": [
+        10,
+        10,
+        76,
+        76
+      ],
+      "preview_sizes": [
+        [
+          160,
+          48
+        ],
+        [
+          360,
+          64
+        ]
+      ]
+    },
+    {
+      "output_name": "tab_hovered",
+      "source_component": "tab_selected",
+      "state": "hover",
+      "source_path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png",
+      "layout": "region_atlas",
+      "texture_region": [
+        240,
+        128,
+        96,
+        96
+      ],
+      "border": [
+        8,
+        8,
+        8,
+        8
+      ],
+      "content_margin": [
+        16,
+        8,
+        16,
+        8
+      ],
+      "expand_margin": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "axis_stretch": {
+        "horizontal": "stretch",
+        "vertical": "stretch"
+      },
+      "modulate_color": "#D19C81FF",
+      "geometry_profile": "tab_surface",
+      "safe_center": [
+        8,
+        8,
+        80,
+        80
+      ],
+      "preview_sizes": [
+        [
+          120,
+          40
+        ],
+        [
+          280,
+          56
+        ]
+      ]
+    },
+    {
+      "output_name": "tab_selected",
+      "source_component": "tab_selected",
+      "state": "pressed",
+      "source_path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png",
+      "layout": "region_atlas",
+      "texture_region": [
+        240,
+        128,
+        96,
+        96
+      ],
+      "border": [
+        8,
+        8,
+        8,
+        8
+      ],
+      "content_margin": [
+        16,
+        8,
+        16,
+        8
+      ],
+      "expand_margin": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "axis_stretch": {
+        "horizontal": "stretch",
+        "vertical": "stretch"
+      },
+      "modulate_color": "#A57359FF",
+      "geometry_profile": "tab_surface",
+      "safe_center": [
+        8,
+        8,
+        80,
+        80
+      ],
+      "preview_sizes": [
+        [
+          120,
+          40
+        ],
+        [
+          280,
+          56
+        ]
+      ]
+    },
+    {
+      "output_name": "tab_unselected",
+      "source_component": "tab_unselected",
+      "state": "normal",
+      "source_path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png",
+      "layout": "region_atlas",
+      "texture_region": [
+        352,
+        128,
+        96,
+        96
+      ],
+      "border": [
+        8,
+        8,
+        8,
+        8
+      ],
+      "content_margin": [
+        16,
+        8,
+        16,
+        8
+      ],
+      "expand_margin": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "axis_stretch": {
+        "horizontal": "stretch",
+        "vertical": "stretch"
+      },
+      "modulate_color": "#B4C897",
+      "geometry_profile": "tab_surface",
+      "safe_center": [
+        8,
+        8,
+        80,
+        80
+      ],
+      "preview_sizes": [
+        [
+          120,
+          40
+        ],
+        [
+          280,
+          56
+        ]
+      ]
+    },
+    {
+      "output_name": "tooltip_panel",
+      "source_component": "panel_base",
+      "state": "normal",
+      "source_path": "res://assets/generated/ui-kit/cozy_toys/surface_patches_atlas.png",
+      "layout": "region_atlas",
+      "texture_region": [
+        16,
+        128,
+        96,
+        96
+      ],
+      "border": [
+        16,
+        16,
+        16,
+        16
+      ],
+      "content_margin": [
+        24,
+        24,
+        24,
+        24
+      ],
+      "expand_margin": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "axis_stretch": {
+        "horizontal": "stretch",
+        "vertical": "stretch"
+      },
+      "modulate_color": "#CCDEAA",
+      "geometry_profile": "panel_surface",
+      "safe_center": [
+        16,
+        16,
+        64,
+        64
+      ],
+      "preview_sizes": [
+        [
+          240,
+          160
+        ],
+        [
+          640,
+          400
+        ]
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1404 @@
+{
+  "version": 1,
+  "colors": [
+    {
+      "type": "Button",
+      "name": "font_color",
+      "value": "#3F312F"
+    },
+    {
+      "type": "Button",
+      "name": "font_outline_color",
+      "value": "#F3F4E2"
+    },
+    {
+      "type": "CheckBox",
+      "name": "font_color",
+      "value": "#3F312F"
+    },
+    {
+      "type": "CheckBox",
+      "name": "font_outline_color",
+      "value": "#F3F4E2"
+    },
+    {
+      "type": "CheckButton",
+      "name": "font_color",
+      "value": "#3F312F"
+    },
+    {
+      "type": "CheckButton",
+      "name": "font_outline_color",
+      "value": "#F3F4E2"
+    },
+    {
+      "type": "OptionButton",
+      "name": "font_color",
+      "value": "#3F312F"
+    },
+    {
+      "type": "OptionButton",
+      "name": "font_outline_color",
+      "value": "#F3F4E2"
+    },
+    {
+      "type": "Label",
+      "name": "font_color",
+      "value": "#3F312F"
+    },
+    {
+      "type": "Label",
+      "name": "font_outline_color",
+      "value": "#F3F4E2"
+    },
+    {
+      "type": "LineEdit",
+      "name": "font_color",
+      "value": "#3F312F"
+    },
+    {
+      "type": "LineEdit",
+      "name": "font_outline_color",
+      "value": "#F3F4E2"
+    },
+    {
+      "type": "TextEdit",
+      "name": "font_color",
+      "value": "#3F312F"
+    },
+    {
+      "type": "TextEdit",
+      "name": "font_outline_color",
+      "value": "#F3F4E2"
+    },
+    {
+      "type": "ProgressBar",
+      "name": "font_color",
+      "value": "#3F312F"
+    },
+    {
+      "type": "ProgressBar",
+      "name": "font_outline_color",
+      "value": "#F3F4E2"
+    },
+    {
+      "type": "RichTextLabel",
+      "name": "font_color",
+      "value": "#3F312F"
+    },
+    {
+      "type": "RichTextLabel",
+      "name": "font_outline_color",
+      "value": "#F3F4E2"
+    },
+    {
+      "type": "TabBar",
+      "name": "font_color",
+      "value": "#3F312F"
+    },
+    {
+      "type": "TabBar",
+      "name": "font_outline_color",
+      "value": "#F3F4E2"
+    },
+    {
+      "type": "TooltipLabel",
+      "name": "font_color",
+      "value": "#3F312F"
+    },
+    {
+      "type": "TooltipLabel",
+      "name": "font_outline_color",
+      "value": "#F3F4E2"
+    },
+    {
+      "type": "Button",
+      "name": "font_hover_color",
+      "value": "#5A4E4CFF"
+    },
+    {
+      "type": "Button",
+      "name": "font_pressed_color",
+      "value": "#342827FF"
+    },
+    {
+      "type": "Button",
+      "name": "font_disabled_color",
+      "value": "#87867494"
+    },
+    {
+      "type": "Button",
+      "name": "font_focus_color",
+      "value": "#E7AE47"
+    },
+    {
+      "type": "CheckBox",
+      "name": "font_hover_color",
+      "value": "#5A4E4CFF"
+    },
+    {
+      "type": "CheckBox",
+      "name": "font_pressed_color",
+      "value": "#342827FF"
+    },
+    {
+      "type": "CheckBox",
+      "name": "font_disabled_color",
+      "value": "#87867494"
+    },
+    {
+      "type": "CheckBox",
+      "name": "font_focus_color",
+      "value": "#E7AE47"
+    },
+    {
+      "type": "CheckButton",
+      "name": "font_hover_color",
+      "value": "#5A4E4CFF"
+    },
+    {
+      "type": "CheckButton",
+      "name": "font_pressed_color",
+      "value": "#342827FF"
+    },
+    {
+      "type": "CheckButton",
+      "name": "font_disabled_color",
+      "value": "#87867494"
+    },
+    {
+      "type": "CheckButton",
+      "name": "font_focus_color",
+      "value": "#E7AE47"
+    },
+    {
+      "type": "OptionButton",
+      "name": "font_hover_color",
+      "value": "#5A4E4CFF"
+    },
+    {
+      "type": "OptionButton",
+      "name": "font_pressed_color",
+      "value": "#342827FF"
+    },
+    {
+      "type": "OptionButton",
+      "name": "font_disabled_color",
+      "value": "#87867494"
+    },
+    {
+      "type": "OptionButton",
+      "name": "font_focus_color",
+      "value": "#E7AE47"
+    },
+    {
+      "type": "LineEdit",
+      "name": "font_placeholder_color",
+      "value": "#8D8B6A"
+    },
+    {
+      "type": "LineEdit",
+      "name": "selection_color",
+      "value": "#F5EFA8"
+    },
+    {
+      "type": "TextEdit",
+      "name": "selection_color",
+      "value": "#F5EFA8"
+    }
+  ],
+  "font_sizes": [
+    {
+      "type": "Button",
+      "name": "font_size",
+      "value": 20
+    },
+    {
+      "type": "CheckBox",
+      "name": "font_size",
+      "value": 20
+    },
+    {
+      "type": "CheckButton",
+      "name": "font_size",
+      "value": 20
+    },
+    {
+      "type": "OptionButton",
+      "name": "font_size",
+      "value": 20
+    },
+    {
+      "type": "Label",
+      "name": "font_size",
+      "value": 20
+    },
+    {
+      "type": "LineEdit",
+      "name": "font_size",
+      "value": 20
+    },
+    {
+      "type": "TextEdit",
+      "name": "font_size",
+      "value": 20
+    },
+    {
+      "type": "ProgressBar",
+      "name": "font_size",
+      "value": 20
+    },
+    {
+      "type": "RichTextLabel",
+      "name": "font_size",
+      "value": 20
+    },
+    {
+      "type": "TabBar",
+      "name": "font_size",
+      "value": 20
+    },
+    {
+      "type": "TooltipLabel",
+      "name": "font_size",
+      "value": 20
+    }
+  ],
+  "constants": [
+    {
+      "type": "Button",
+      "name": "outline_size",
+      "value": 1
+    },
+    {
+      "type": "CheckBox",
+      "name": "outline_size",
+      "value": 1
+    },
+    {
+      "type": "CheckButton",
+      "name": "outline_size",
+      "value": 1
+    },
+    {
+      "type": "OptionButton",
+      "name": "outline_size",
+      "value": 1
+    },
+    {
+      "type": "Label",
+      "name": "outline_size",
+      "value": 1
+    },
+    {
+      "type": "LineEdit",
+      "name": "outline_size",
+      "value": 1
+    },
+    {
+      "type": "TextEdit",
+      "name": "outline_size",
+      "value": 1
+    },
+    {
+      "type": "ProgressBar",
+      "name": "outline_size",
+      "value": 1
+    },
+    {
+      "type": "RichTextLabel",
+      "name": "outline_size",
+      "value": 1
+    },
+    {
+      "type": "TabBar",
+      "name": "outline_size",
+      "value": 1
+    },
+    {
+      "type": "TooltipLabel",
+      "name": "outline_size",
+      "value": 1
+    },
+    {
+      "type": "Button",
+      "name": "h_separation",
+      "value": 6
+    },
+    {
+      "type": "CheckBox",
+      "name": "h_separation",
+      "value": 6
+    },
+    {
+      "type": "CheckButton",
+      "name": "h_separation",
+      "value": 6
+    },
+    {
+      "type": "OptionButton",
+      "name": "h_separation",
+      "value": 6
+    }
+  ],
+  "fonts": [],
+  "icons": [
+    {
+      "type": "CheckBox",
+      "name": "checked",
+      "value": {
+        "type": "AtlasTexture",
+        "path": "res://assets/generated/ui-kit/cozy_toys/checkbox_checked.tres"
+      }
+    },
+    {
+      "type": "CheckBox",
+      "name": "unchecked",
+      "value": {
+        "type": "AtlasTexture",
+        "path": "res://assets/generated/ui-kit/cozy_toys/checkbox_unchecked.tres"
+      }
+    },
+    {
+      "type": "CheckButton",
+      "name": "checked",
+      "value": {
+        "type": "AtlasTexture",
+        "path": "res://assets/generated/ui-kit/cozy_toys/check_button_checked.tres"
+      }
+    },
+    {
+      "type": "CheckButton",
+      "name": "unchecked",
+      "value": {
+        "type": "AtlasTexture",
+        "path": "res://assets/generated/ui-kit/cozy_toys/check_button_unchecked.tres"
+      }
+    },
+    {
+      "type": "HSlider",
+      "name": "grabber",
+      "value": {
+        "type": "AtlasTexture",
+        "path": "res://assets/generated/ui-kit/cozy_toys/hslider_grabber.tres"
+      }
+    },
+    {
+      "type": "HSlider",
+      "name": "grabber_highlight",
+      "value": {
+        "type": "AtlasTexture",
+        "path": "res://assets/generated/ui-kit/cozy_toys/hslider_grabber_highlight.tres"
+      }
+    },
+    {
+      "type": "HSlider",
+      "name": "grabber_disabled",
+      "value": {
+        "type": "AtlasTexture",
+        "path": "res://assets/generated/ui-kit/cozy_toys/hslider_grabber_disabled.tres"
+      }
+    },
+    {
+      "type": "VSlider",
+      "name": "grabber",
+      "value": {
+        "type": "AtlasTexture",
+        "path": "res://assets/generated/ui-kit/cozy_toys/vslider_grabber.tres"
+      }
+    },
+    {
+      "type": "VSlider",
+      "name": "grabber_highlight",
+      "value": {
+        "type": "AtlasTexture",
+        "path": "res://assets/generated/ui-kit/cozy_toys/vslider_grabber_highlight.tres"
+      }
+    },
+    {
+      "type": "VSlider",
+      "name": "grabber_disabled",
+      "value": {
+        "type": "AtlasTexture",
+        "path": "res://assets/generated/ui-kit/cozy_toys/vslider_grabber_disabled.tres"
+      }
+    },
+    {
+      "type": "OptionButton",
+      "name": "arrow",
+      "value": {
+        "type": "AtlasTexture",
+        "path": "res://assets/generated/ui-kit/cozy_toys/form_submenu_arrow.tres"
+      }
+    },
+    {
+      "type": "TabBar",
+      "name": "increment",
+      "value": {
+        "type": "AtlasTexture",
+        "path": "res://assets/generated/ui-kit/cozy_toys/icon_right_arrow.tres"
+      }
+    },
+    {
+      "type": "TabBar",
+      "name": "decrement",
+      "value": {
+        "type": "AtlasTexture",
+        "path": "res://assets/generated/ui-kit/cozy_toys/icon_left_arrow.tres"
+      }
+    },
+    {
+      "type": "PopupMenu",
+      "name": "checked",
+      "value": {
+        "type": "AtlasTexture",
+        "path": "res://assets/generated/ui-kit/cozy_toys/icon_checkbox_checked.tres"
+      }
+    },
+    {
+      "type": "PopupMenu",
+      "name": "unchecked",
+      "value": {
+        "type": "AtlasTexture",
+        "path": "res://assets/generated/ui-kit/cozy_toys/icon_checkbox_unchecked.tres"
+      }
+    },
+    {
+      "type": "PopupMenu",
+      "name": "radio_checked",
+      "value": {
+        "type": "AtlasTexture",
+        "path": "res://assets/generated/ui-kit/cozy_toys/icon_radio_selected.tres"
+      }
+    },
+    {
+      "type": "PopupMenu",
+      "name": "radio_unchecked",
+      "value": {
+        "type": "AtlasTexture",
+        "path": "res://assets/generated/ui-kit/cozy_toys/icon_radio_unselected.tres"
+      }
+    },
+    {
+      "type": "PopupMenu",
+      "name": "submenu",
+      "value": {
+        "type": "AtlasTexture",
+        "path": "res://assets/generated/ui-kit/cozy_toys/form_submenu_arrow.tres"
+      }
+    },
+    {
+      "type": "PopupMenu",
+      "name": "submenu_mirrored",
+      "value": {
+        "type": "AtlasTexture",
+        "path": "res://assets/generated/ui-kit/cozy_toys/form_submenu_arrow.tres"
+      }
+    }
+  ],
+  "styleboxes": {
+    "empty_control": {
+      "type": "StyleBoxEmpty",
+      "properties": {
+        "content_margin": 0
+      }
+    },
+    "focus_outline": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#00000000",
+        "border_color": "#E7AE47",
+        "border_width": 2,
+        "corner_radius": 14,
+        "content_margin": 2,
+        "anti_aliasing": true
+      }
+    },
+    "line_normal": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#ECF2B4",
+        "border_color": "#F3F4E2",
+        "border_width": 1,
+        "corner_radius": 14,
+        "content_margin": 12,
+        "anti_aliasing": true
+      }
+    },
+    "line_focus": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#ECF2B4",
+        "border_color": "#E7AE47",
+        "border_width": 1,
+        "corner_radius": 14,
+        "content_margin": 12,
+        "anti_aliasing": true,
+        "shadow_color": "#3F312F",
+        "shadow_size": 10,
+        "shadow_offset": [
+          0,
+          3
+        ]
+      }
+    },
+    "line_disabled": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#BBBF9D94",
+        "border_color": "#BFC0B694",
+        "border_width": 1,
+        "corner_radius": 14,
+        "content_margin": 12,
+        "anti_aliasing": true
+      }
+    },
+    "text_normal": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#ECF2B4",
+        "border_color": "#F3F4E2",
+        "border_width": 1,
+        "corner_radius": 22,
+        "content_margin": 12,
+        "anti_aliasing": true
+      }
+    },
+    "text_focus": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#ECF2B4",
+        "border_color": "#E7AE47",
+        "border_width": 1,
+        "corner_radius": 22,
+        "content_margin": 12,
+        "anti_aliasing": true,
+        "shadow_color": "#3F312F",
+        "shadow_size": 10,
+        "shadow_offset": [
+          0,
+          3
+        ]
+      }
+    },
+    "text_disabled": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#BBBF9D94",
+        "border_color": "#BFC0B694",
+        "border_width": 1,
+        "corner_radius": 22,
+        "content_margin": 12,
+        "anti_aliasing": true
+      }
+    },
+    "progress_background": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#B4C897",
+        "border_color": "#F3F4E2",
+        "border_width": 1,
+        "corner_radius": 8,
+        "content_margin": 0,
+        "anti_aliasing": true
+      }
+    },
+    "progress_fill": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#96AB82",
+        "border_color": "#96AB82",
+        "border_width": 1,
+        "corner_radius": 8,
+        "content_margin": 0,
+        "anti_aliasing": true
+      }
+    },
+    "popup_menu_hover": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#D19C81FF",
+        "border_color": "#E7AE47",
+        "border_width": 1,
+        "corner_radius": 14,
+        "content_margin": 6,
+        "anti_aliasing": true
+      }
+    },
+    "popup_menu_disabled": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#9DA88D94",
+        "border_color": "#BFC0B694",
+        "border_width": 1,
+        "corner_radius": 22,
+        "content_margin": 12,
+        "anti_aliasing": true
+      }
+    },
+    "popup_menu_separator": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#F3F4E2",
+        "border_color": "#F3F4E2",
+        "border_width": 1,
+        "corner_radius": 8,
+        "content_margin": 2,
+        "anti_aliasing": true
+      }
+    },
+    "hslider_track": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#ECF2B4",
+        "border_color": "#F3F4E2",
+        "border_width": 1,
+        "corner_radius": 8,
+        "content_margin": 6,
+        "anti_aliasing": true
+      }
+    },
+    "hslider_fill": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#C98C6D",
+        "border_color": "#C98C6D",
+        "border_width": 1,
+        "corner_radius": 8,
+        "content_margin": 6,
+        "anti_aliasing": true
+      }
+    },
+    "hslider_fill_highlight": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#D19C81FF",
+        "border_color": "#E7AE47",
+        "border_width": 1,
+        "corner_radius": 8,
+        "content_margin": 6,
+        "anti_aliasing": true
+      }
+    },
+    "vslider_track": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#ECF2B4",
+        "border_color": "#F3F4E2",
+        "border_width": 1,
+        "corner_radius": 8,
+        "content_margin": 6,
+        "anti_aliasing": true
+      }
+    },
+    "vslider_fill": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#C98C6D",
+        "border_color": "#C98C6D",
+        "border_width": 1,
+        "corner_radius": 8,
+        "content_margin": 6,
+        "anti_aliasing": true
+      }
+    },
+    "vslider_fill_highlight": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#D19C81FF",
+        "border_color": "#E7AE47",
+        "border_width": 1,
+        "corner_radius": 8,
+        "content_margin": 6,
+        "anti_aliasing": true
+      }
+    },
+    "hscrollbar_track": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#B4C897",
+        "border_color": "#F3F4E2",
+        "border_width": 1,
+        "corner_radius": 8,
+        "content_margin": 0,
+        "anti_aliasing": true
+      }
+    },
+    "hscrollbar_grabber": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#CBD6B6",
+        "border_color": "#F3F4E2",
+        "border_width": 1,
+        "corner_radius": 8,
+        "content_margin": 0,
+        "anti_aliasing": true
+      }
+    },
+    "hscrollbar_grabber_highlight": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#D2DCC0FF",
+        "border_color": "#E7AE47",
+        "border_width": 1,
+        "corner_radius": 8,
+        "content_margin": 0,
+        "anti_aliasing": true
+      }
+    },
+    "hscrollbar_grabber_pressed": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#A6AF95FF",
+        "border_color": "#F3F4E2",
+        "border_width": 1,
+        "corner_radius": 8,
+        "content_margin": 0,
+        "anti_aliasing": true
+      }
+    },
+    "vscrollbar_track": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#B4C897",
+        "border_color": "#F3F4E2",
+        "border_width": 1,
+        "corner_radius": 8,
+        "content_margin": 0,
+        "anti_aliasing": true
+      }
+    },
+    "vscrollbar_grabber": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#CBD6B6",
+        "border_color": "#F3F4E2",
+        "border_width": 1,
+        "corner_radius": 8,
+        "content_margin": 0,
+        "anti_aliasing": true
+      }
+    },
+    "vscrollbar_grabber_highlight": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#D2DCC0FF",
+        "border_color": "#E7AE47",
+        "border_width": 1,
+        "corner_radius": 8,
+        "content_margin": 0,
+        "anti_aliasing": true
+      }
+    },
+    "vscrollbar_grabber_pressed": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#A6AF95FF",
+        "border_color": "#F3F4E2",
+        "border_width": 1,
+        "corner_radius": 8,
+        "content_margin": 0,
+        "anti_aliasing": true
+      }
+    },
+    "option_button_normal": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#CCDEAA",
+        "border_color": "#F3F4E2",
+        "border_width": 1,
+        "corner_radius": 14,
+        "content_margin": 12,
+        "anti_aliasing": true,
+        "shadow_color": "#3F312F",
+        "shadow_size": 10,
+        "shadow_offset": [
+          0,
+          3
+        ]
+      }
+    },
+    "option_button_hover": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#D3E3B6FF",
+        "border_color": "#F5F6E6FF",
+        "border_width": 1,
+        "corner_radius": 14,
+        "content_margin": 12,
+        "anti_aliasing": true,
+        "shadow_color": "#3F312F",
+        "shadow_size": 10,
+        "shadow_offset": [
+          0,
+          3
+        ]
+      }
+    },
+    "option_button_pressed": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#A7B68BFF",
+        "border_color": "#C7C8B9FF",
+        "border_width": 1,
+        "corner_radius": 14,
+        "content_margin": 12,
+        "anti_aliasing": true
+      }
+    },
+    "option_button_disabled": {
+      "type": "StyleBoxFlat",
+      "properties": {
+        "bg_color": "#AAB49794",
+        "border_color": "#BFC0B694",
+        "border_width": 1,
+        "corner_radius": 14,
+        "content_margin": 12,
+        "anti_aliasing": true
+      }
+    },
+    "button_normal": {
+      "type": "StyleBoxTexture",
+      "properties": {
+        "path": "res://assets/generated/ui-kit/cozy_toys/button_normal.tres"
+      }
+    },
+    "button_hover": {
+      "type": "StyleBoxTexture",
+      "properties": {
+        "path": "res://assets/generated/ui-kit/cozy_toys/button_hover.tres"
+      }
+    },
+    "button_pressed": {
+      "type": "StyleBoxTexture",
+      "properties": {
+        "path": "res://assets/generated/ui-kit/cozy_toys/button_pressed.tres"
+      }
+    },
+    "button_disabled": {
+      "type": "StyleBoxTexture",
+      "properties": {
+        "path": "res://assets/generated/ui-kit/cozy_toys/button_disabled.tres"
+      }
+    },
+    "primary_normal": {
+      "type": "StyleBoxTexture",
+      "properties": {
+        "path": "res://assets/generated/ui-kit/cozy_toys/primary_normal.tres"
+      }
+    },
+    "primary_hover": {
+      "type": "StyleBoxTexture",
+      "properties": {
+        "path": "res://assets/generated/ui-kit/cozy_toys/primary_hover.tres"
+      }
+    },
+    "primary_pressed": {
+      "type": "StyleBoxTexture",
+      "properties": {
+        "path": "res://assets/generated/ui-kit/cozy_toys/primary_pressed.tres"
+      }
+    },
+    "primary_disabled": {
+      "type": "StyleBoxTexture",
+      "properties": {
+        "path": "res://assets/generated/ui-kit/cozy_toys/primary_disabled.tres"
+      }
+    },
+    "secondary_normal": {
+      "type": "StyleBoxTexture",
+      "properties": {
+        "path": "res://assets/generated/ui-kit/cozy_toys/secondary_normal.tres"
+      }
+    },
+    "secondary_hover": {
+      "type": "StyleBoxTexture",
+      "properties": {
+        "path": "res://assets/generated/ui-kit/cozy_toys/secondary_hover.tres"
+      }
+    },
+    "secondary_pressed": {
+      "type": "StyleBoxTexture",
+      "properties": {
+        "path": "res://assets/generated/ui-kit/cozy_toys/secondary_pressed.tres"
+      }
+    },
+    "secondary_disabled": {
+      "type": "StyleBoxTexture",
+      "properties": {
+        "path": "res://assets/generated/ui-kit/cozy_toys/secondary_disabled.tres"
+      }
+    },
+    "danger_normal": {
+      "type": "StyleBoxTexture",
+      "properties": {
+        "path": "res://assets/generated/ui-kit/cozy_toys/danger_normal.tres"
+      }
+    },
+    "danger_hover": {
+      "type": "StyleBoxTexture",
+      "properties": {
+        "path": "res://assets/generated/ui-kit/cozy_toys/danger_hover.tres"
+      }
+    },
+    "danger_pressed": {
+      "type": "StyleBoxTexture",
+      "properties": {
+        "path": "res://assets/generated/ui-kit/cozy_toys/danger_pressed.tres"
+      }
+    },
+    "danger_disabled": {
+      "type": "StyleBoxTexture",
+      "properties": {
+        "path": "res://assets/generated/ui-kit/cozy_toys/danger_disabled.tres"
+      }
+    },
+    "panel_base": {
+      "type": "StyleBoxTexture",
+      "properties": {
+        "path": "res://assets/generated/ui-kit/cozy_toys/panel_base.tres"
+      }
+    },
+    "panel_raised": {
+      "type": "StyleBoxTexture",
+      "properties": {
+        "path": "res://assets/generated/ui-kit/cozy_toys/panel_raised.tres"
+      }
+    },
+    "tab_selected": {
+      "type": "StyleBoxTexture",
+      "properties": {
+        "path": "res://assets/generated/ui-kit/cozy_toys/tab_selected.tres"
+      }
+    },
+    "tab_hovered": {
+      "type": "StyleBoxTexture",
+      "properties": {
+        "path": "res://assets/generated/ui-kit/cozy_toys/tab_hovered.tres"
+      }
+    },
+    "tab_unselected": {
+      "type": "StyleBoxTexture",
+      "properties": {
+        "path": "res://assets/generated/ui-kit/cozy_toys/tab_unselected.tres"
+      }
+    },
+    "tooltip_panel": {
+      "type": "StyleBoxTexture",
+      "properties": {
+        "path": "res://assets/generated/ui-kit/cozy_toys/tooltip_panel.tres"
+      }
+    },
+    "popup_menu_panel": {
+      "type": "StyleBoxTexture",
+      "properties": {
+        "path": "res://assets/generated/ui-kit/cozy_toys/popup_menu_panel.tres"
+      }
+    }
+  },
+  "styles": [
+    {
+      "type": "Button",
+      "name": "normal",
+      "stylebox": "button_normal"
+    },
+    {
+      "type": "Button",
+      "name": "hover",
+      "stylebox": "button_hover"
+    },
+    {
+      "type": "Button",
+      "name": "pressed",
+      "stylebox": "button_pressed"
+    },
+    {
+      "type": "Button",
+      "name": "disabled",
+      "stylebox": "button_disabled"
+    },
+    {
+      "type": "Button",
+      "name": "focus",
+      "stylebox": "focus_outline"
+    },
+    {
+      "type": "PrimaryButton",
+      "name": "normal",
+      "stylebox": "primary_normal"
+    },
+    {
+      "type": "PrimaryButton",
+      "name": "hover",
+      "stylebox": "primary_hover"
+    },
+    {
+      "type": "PrimaryButton",
+      "name": "pressed",
+      "stylebox": "primary_pressed"
+    },
+    {
+      "type": "PrimaryButton",
+      "name": "disabled",
+      "stylebox": "primary_disabled"
+    },
+    {
+      "type": "PrimaryButton",
+      "name": "focus",
+      "stylebox": "focus_outline"
+    },
+    {
+      "type": "SecondaryButton",
+      "name": "normal",
+      "stylebox": "secondary_normal"
+    },
+    {
+      "type": "SecondaryButton",
+      "name": "hover",
+      "stylebox": "secondary_hover"
+    },
+    {
+      "type": "SecondaryButton",
+      "name": "pressed",
+      "stylebox": "secondary_pressed"
+    },
+    {
+      "type": "SecondaryButton",
+      "name": "disabled",
+      "stylebox": "secondary_disabled"
+    },
+    {
+      "type": "SecondaryButton",
+      "name": "focus",
+      "stylebox": "focus_outline"
+    },
+    {
+      "type": "DangerButton",
+      "name": "normal",
+      "stylebox": "danger_normal"
+    },
+    {
+      "type": "DangerButton",
+      "name": "hover",
+      "stylebox": "danger_hover"
+    },
+    {
+      "type": "DangerButton",
+      "name": "pressed",
+      "stylebox": "danger_pressed"
+    },
+    {
+      "type": "DangerButton",
+      "name": "disabled",
+      "stylebox": "danger_disabled"
+    },
+    {
+      "type": "DangerButton",
+      "name": "focus",
+      "stylebox": "focus_outline"
+    },
+    {
+      "type": "Panel",
+      "name": "panel",
+      "stylebox": "panel_base"
+    },
+    {
+      "type": "PanelContainer",
+      "name": "panel",
+      "stylebox": "panel_raised"
+    },
+    {
+      "type": "TooltipSurface",
+      "name": "panel",
+      "stylebox": "tooltip_panel"
+    },
+    {
+      "type": "LineEdit",
+      "name": "normal",
+      "stylebox": "line_normal"
+    },
+    {
+      "type": "LineEdit",
+      "name": "focus",
+      "stylebox": "line_focus"
+    },
+    {
+      "type": "LineEdit",
+      "name": "disabled",
+      "stylebox": "line_disabled"
+    },
+    {
+      "type": "LineEdit",
+      "name": "read_only",
+      "stylebox": "line_disabled"
+    },
+    {
+      "type": "TextEdit",
+      "name": "normal",
+      "stylebox": "text_normal"
+    },
+    {
+      "type": "TextEdit",
+      "name": "focus",
+      "stylebox": "text_focus"
+    },
+    {
+      "type": "TextEdit",
+      "name": "disabled",
+      "stylebox": "text_disabled"
+    },
+    {
+      "type": "TextEdit",
+      "name": "read_only",
+      "stylebox": "text_disabled"
+    },
+    {
+      "type": "ProgressBar",
+      "name": "background",
+      "stylebox": "progress_background"
+    },
+    {
+      "type": "ProgressBar",
+      "name": "fill",
+      "stylebox": "progress_fill"
+    },
+    {
+      "type": "TabBar",
+      "name": "tab_selected",
+      "stylebox": "tab_selected"
+    },
+    {
+      "type": "TabBar",
+      "name": "tab_hovered",
+      "stylebox": "tab_hovered"
+    },
+    {
+      "type": "TabBar",
+      "name": "tab_unselected",
+      "stylebox": "tab_unselected"
+    },
+    {
+      "type": "TabBar",
+      "name": "tab_focus",
+      "stylebox": "focus_outline"
+    },
+    {
+      "type": "TabContainer",
+      "name": "tab_selected",
+      "stylebox": "tab_selected"
+    },
+    {
+      "type": "TabContainer",
+      "name": "tab_hovered",
+      "stylebox": "tab_hovered"
+    },
+    {
+      "type": "TabContainer",
+      "name": "tab_unselected",
+      "stylebox": "tab_unselected"
+    },
+    {
+      "type": "TabContainer",
+      "name": "tab_focus",
+      "stylebox": "focus_outline"
+    },
+    {
+      "type": "TabContainer",
+      "name": "panel",
+      "stylebox": "panel_base"
+    },
+    {
+      "type": "CheckBox",
+      "name": "normal",
+      "stylebox": "empty_control"
+    },
+    {
+      "type": "CheckBox",
+      "name": "hover",
+      "stylebox": "empty_control"
+    },
+    {
+      "type": "CheckBox",
+      "name": "pressed",
+      "stylebox": "empty_control"
+    },
+    {
+      "type": "CheckBox",
+      "name": "disabled",
+      "stylebox": "empty_control"
+    },
+    {
+      "type": "CheckBox",
+      "name": "focus",
+      "stylebox": "focus_outline"
+    },
+    {
+      "type": "CheckButton",
+      "name": "normal",
+      "stylebox": "empty_control"
+    },
+    {
+      "type": "CheckButton",
+      "name": "hover",
+      "stylebox": "empty_control"
+    },
+    {
+      "type": "CheckButton",
+      "name": "pressed",
+      "stylebox": "empty_control"
+    },
+    {
+      "type": "CheckButton",
+      "name": "disabled",
+      "stylebox": "empty_control"
+    },
+    {
+      "type": "CheckButton",
+      "name": "focus",
+      "stylebox": "focus_outline"
+    },
+    {
+      "type": "OptionButton",
+      "name": "normal",
+      "stylebox": "option_button_normal"
+    },
+    {
+      "type": "OptionButton",
+      "name": "hover",
+      "stylebox": "option_button_hover"
+    },
+    {
+      "type": "OptionButton",
+      "name": "pressed",
+      "stylebox": "option_button_pressed"
+    },
+    {
+      "type": "OptionButton",
+      "name": "disabled",
+      "stylebox": "option_button_disabled"
+    },
+    {
+      "type": "OptionButton",
+      "name": "focus",
+      "stylebox": "focus_outline"
+    },
+    {
+      "type": "HSlider",
+      "name": "slider",
+      "stylebox": "hslider_track"
+    },
+    {
+      "type": "HSlider",
+      "name": "grabber_area",
+      "stylebox": "hslider_fill"
+    },
+    {
+      "type": "HSlider",
+      "name": "grabber_area_highlight",
+      "stylebox": "hslider_fill_highlight"
+    },
+    {
+      "type": "VSlider",
+      "name": "slider",
+      "stylebox": "vslider_track"
+    },
+    {
+      "type": "VSlider",
+      "name": "grabber_area",
+      "stylebox": "vslider_fill"
+    },
+    {
+      "type": "VSlider",
+      "name": "grabber_area_highlight",
+      "stylebox": "vslider_fill_highlight"
+    },
+    {
+      "type": "HScrollBar",
+      "name": "scroll",
+      "stylebox": "hscrollbar_track"
+    },
+    {
+      "type": "HScrollBar",
+      "name": "scroll_focus",
+      "stylebox": "hscrollbar_track"
+    },
+    {
+      "type": "HScrollBar",
+      "name": "grabber",
+      "stylebox": "hscrollbar_grabber"
+    },
+    {
+      "type": "HScrollBar",
+      "name": "grabber_highlight",
+      "stylebox": "hscrollbar_grabber_highlight"
+    },
+    {
+      "type": "HScrollBar",
+      "name": "grabber_pressed",
+      "stylebox": "hscrollbar_grabber_pressed"
+    },
+    {
+      "type": "VScrollBar",
+      "name": "scroll",
+      "stylebox": "vscrollbar_track"
+    },
+    {
+      "type": "VScrollBar",
+      "name": "scroll_focus",
+      "stylebox": "vscrollbar_track"
+    },
+    {
+      "type": "VScrollBar",
+      "name": "grabber",
+      "stylebox": "vscrollbar_grabber"
+    },
+    {
+      "type": "VScrollBar",
+      "name": "grabber_highlight",
+      "stylebox": "vscrollbar_grabber_highlight"
+    },
+    {
+      "type": "VScrollBar",
+      "name": "grabber_pressed",
+      "stylebox": "vscrollbar_grabber_pressed"
+    },
+    {
+      "type": "PopupMenu",
+      "name": "panel",
+      "stylebox": "popup_menu_panel"
+    },
+    {
+      "type": "PopupMenu",
+      "name": "panel_disabled",
+      "stylebox": "popup_menu_disabled"
+    },
+    {
+      "type": "PopupMenu",
+      "name": "hover",
+      "stylebox": "popup_menu_hover"
+    },
+    {
+      "type": "PopupMenu",
+      "name": "separator",
+      "stylebox": "popup_menu_separator"
+    }
+  ],
+  "variations": [
+    {
+      "name": "PrimaryButton",
+      "base_type": "Button"
+    },
+    {
+      "name": "SecondaryButton",
+      "base_type": "Button"
+    },
+    {
+      "name": "DangerButton",
+      "base_type": "Button"
+    },
+    {
+      "name": "TooltipSurface",
+      "base_type": "Panel"
+    }
+  ]
+}

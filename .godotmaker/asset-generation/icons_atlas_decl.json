@@ -1,0 +1,345 @@
+{
+ "version": 1,
+ "atlas": {
+  "width": 880,
+  "height": 448
+ },
+ "slots": [
+  {
+   "name": "arrow_left",
+   "rect": [
+    16,
+    16,
+    32,
+    32
+   ],
+   "source": ".godotmaker/asset-generation/normalized/arrow_left.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "arrow_right",
+   "rect": [
+    64,
+    16,
+    32,
+    32
+   ],
+   "source": ".godotmaker/asset-generation/normalized/arrow_right.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "arrow_up",
+   "rect": [
+    112,
+    16,
+    32,
+    32
+   ],
+   "source": ".godotmaker/asset-generation/normalized/arrow_up.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "arrow_down",
+   "rect": [
+    160,
+    16,
+    32,
+    32
+   ],
+   "source": ".godotmaker/asset-generation/normalized/arrow_down.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "back",
+   "rect": [
+    208,
+    16,
+    128,
+    128
+   ],
+   "source": ".godotmaker/asset-generation/normalized/back.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "close",
+   "rect": [
+    352,
+    16,
+    128,
+    128
+   ],
+   "source": ".godotmaker/asset-generation/normalized/close.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "confirm",
+   "rect": [
+    496,
+    16,
+    128,
+    128
+   ],
+   "source": ".godotmaker/asset-generation/normalized/confirm.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "warning",
+   "rect": [
+    640,
+    16,
+    128,
+    128
+   ],
+   "source": ".godotmaker/asset-generation/normalized/warning.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "information",
+   "rect": [
+    16,
+    160,
+    128,
+    128
+   ],
+   "source": ".godotmaker/asset-generation/normalized/information.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "settings",
+   "rect": [
+    160,
+    160,
+    128,
+    128
+   ],
+   "source": ".godotmaker/asset-generation/normalized/settings.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "add",
+   "rect": [
+    304,
+    160,
+    128,
+    128
+   ],
+   "source": ".godotmaker/asset-generation/normalized/add.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "remove",
+   "rect": [
+    448,
+    160,
+    128,
+    128
+   ],
+   "source": ".godotmaker/asset-generation/normalized/remove.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "lock",
+   "rect": [
+    592,
+    160,
+    128,
+    128
+   ],
+   "source": ".godotmaker/asset-generation/normalized/lock.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "unlock",
+   "rect": [
+    736,
+    160,
+    128,
+    128
+   ],
+   "source": ".godotmaker/asset-generation/normalized/unlock.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "checkbox_checked",
+   "rect": [
+    16,
+    304,
+    40,
+    40
+   ],
+   "source": ".godotmaker/asset-generation/normalized/checkbox_checked.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "checkbox_unchecked",
+   "rect": [
+    72,
+    304,
+    40,
+    40
+   ],
+   "source": ".godotmaker/asset-generation/normalized/checkbox_unchecked.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "radio_selected",
+   "rect": [
+    128,
+    304,
+    40,
+    40
+   ],
+   "source": ".godotmaker/asset-generation/normalized/radio_selected.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "radio_unselected",
+   "rect": [
+    184,
+    304,
+    40,
+    40
+   ],
+   "source": ".godotmaker/asset-generation/normalized/radio_unselected.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "status",
+   "rect": [
+    240,
+    304,
+    128,
+    128
+   ],
+   "source": ".godotmaker/asset-generation/normalized/status.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "check_button_checked",
+   "rect": [
+    384,
+    304,
+    40,
+    40
+   ],
+   "source": ".godotmaker/asset-generation/normalized/check_button_checked.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "check_button_unchecked",
+   "rect": [
+    440,
+    304,
+    40,
+    40
+   ],
+   "source": ".godotmaker/asset-generation/normalized/check_button_unchecked.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "slider_grabber",
+   "rect": [
+    496,
+    304,
+    48,
+    48
+   ],
+   "source": ".godotmaker/asset-generation/normalized/slider_grabber.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "slider_grabber_highlight",
+   "rect": [
+    560,
+    304,
+    48,
+    48
+   ],
+   "source": ".godotmaker/asset-generation/normalized/slider_grabber_highlight.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "name": "slider_grabber_disabled",
+   "rect": [
+    624,
+    304,
+    48,
+    48
+   ],
+   "source": ".godotmaker/asset-generation/normalized/slider_grabber_disabled.png",
+   "pivot": [
+    0.5,
+    0.5
+   ]
+  }
+ ]
+}

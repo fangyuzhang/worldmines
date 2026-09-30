@@ -1,0 +1,40 @@
+[
+ {
+  "sheet_id": "surface_patches_source",
+  "attempt": 1,
+  "prompt": "Create reusable soft hand-painted cozy illustration with rounded pastel shapes, warm mint and cream palette, gentle terracotta accents and smooth drop shadows game UI source art. Match the supplied style reference's palette, shape language, outlines, shadows, and material treatment. Visual direction: Soft hand-painted cozy puzzle game UI in a warm mint and cream palette. Rounded pill buttons in muted terracotta with thin white line icons, olive-cream raised panels with soft warm drop shadows, cream-yellow input tiles, olive number chips with warm-black digits, generous corner rounding, flat matte paper-clay material, no hard outlines. A single warm amber accent is reserved for selection and focus highlights. Use a perfectly flat, solid #FF00FF canvas background only. Reserve exact #FF00FF exclusively for the color-key background; do not use it in the artwork. Keep every component fully separated by at least 24 pixels of visible #FF00FF and away from every canvas edge. Create isolated reusable UI elements only: no characters, scenes, full screen mockups, readable text, numbers, logos, or branding. Render every component as the same-size square surface patch. Use light neutral tintable fills while preserving the reference material, contour, outline, highlight, and shadow language. Carry all corners, outlines, highlights, shadows, and ornament inside the declared outer border band. Keep the declared safe center continuous and free of text, icons, emblems, focal decoration, seams, or directional lighting. Geometry profiles: rounded_surface: 96 by 96 square patch, border [10, 10, 10, 10], safe center [10, 10, 76, 76]; panel_surface: 96 by 96 square patch, border [16, 16, 16, 16], safe center [16, 16, 64, 64]; tab_surface: 96 by 96 square patch, border [8, 8, 8, 8], safe center [8, 8, 80, 80]. Arrange exactly 8 visual components in a 4-column by 2-row layout, ordered left to right and then top to bottom; leave unused trailing cells empty. Render each listed component as one isolated reusable element. Do not render component labels. Components in order: square tintable button surface in its normal state; square tintable button surface in its highlighted hover state; square tintable button surface in its depressed pressed state; square tintable button surface in its muted disabled state; square reusable base panel frame with a continuous undecorated center; square reusable raised panel frame with a continuous undecorated center; square tintable selected tab surface with an undecorated stretchable center; square tintable unselected tab surface with an undecorated stretchable center.",
+  "provider": "native",
+  "image_model": "workbuddy-imagegen",
+  "coding_model": "glm-5.3-flash",
+  "reasoning": "pinned native route; reference attached as image1",
+  "tool_call_id": "imagegen-1",
+  "attached_references": [
+   {
+    "role": "canonical",
+    "path": "reference/cozy-sudoku-1920.jpg",
+    "mechanism": "image1",
+    "count": 1
+   }
+  ],
+  "raw_source_path": ".godotmaker/asset-generation/raw/Create_reusable_soft_hand_pain_2026-09-30T03-33-05.png"
+ },
+ {
+  "sheet_id": "icons_source",
+  "attempt": 1,
+  "prompt": "Create reusable soft hand-painted cozy illustration with rounded pastel shapes, warm mint and cream palette, gentle terracotta accents and smooth drop shadows game UI source art. Match the supplied style reference's palette, shape language, outlines, shadows, and material treatment. Visual direction: Soft hand-painted cozy puzzle game UI in a warm mint and cream palette. Rounded pill buttons in muted terracotta with thin white line icons, olive-cream raised panels with soft warm drop shadows, cream-yellow input tiles, olive number chips with warm-black digits, generous corner rounding, flat matte paper-clay material, no hard outlines. A single warm amber accent is reserved for selection and focus highlights. Use a perfectly flat, solid #FF00FF canvas background only. Reserve exact #FF00FF exclusively for the color-key background; do not use it in the artwork. Keep every component fully separated by at least 24 pixels of visible #FF00FF and away from every canvas edge. Create isolated reusable UI elements only: no characters, scenes, full screen mockups, readable text, numbers, logos, or branding. Arrange exactly 24 visual components in a 6-column by 4-row layout, ordered left to right and then top to bottom; leave unused trailing cells empty. Render each listed component as one isolated reusable element. Do not render component labels. Components in order: left arrow; right arrow; up arrow; down arrow; back action; close action; confirm action; warning status; information status; settings action; add action; remove action; locked state; unlocked state; checked checkbox; unchecked checkbox; selected radio control; unselected radio control; general status indicator; checked toggle control; unchecked toggle control; slider grabber; highlighted slider grabber; disabled slider grabber.",
+  "provider": "native",
+  "image_model": "workbuddy-imagegen",
+  "coding_model": "glm-5.3-flash",
+  "reasoning": "pinned native route; reference attached as image1",
+  "tool_call_id": "imagegen-2",
+  "attached_references": [
+   {
+    "role": "canonical",
+    "path": "reference/cozy-sudoku-1920.jpg",
+    "mechanism": "image1",
+    "count": 1
+   }
+  ],
+  "raw_source_path": ".godotmaker/asset-generation/raw/Create_reusable_soft_hand_pain_2026-09-30T03-33-35.png"
+ }
+]

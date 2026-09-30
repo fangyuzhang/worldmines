@@ -1,0 +1,342 @@
+{
+  "version": 1,
+  "atlas_path": "res://assets/generated/ui-kit/cozy_toys/icons_atlas.png",
+  "regions": [
+    {
+      "name": "add",
+      "rect": [
+        304,
+        160,
+        128,
+        128
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "arrow_down",
+      "rect": [
+        160,
+        16,
+        32,
+        32
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "arrow_left",
+      "rect": [
+        16,
+        16,
+        32,
+        32
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "arrow_right",
+      "rect": [
+        64,
+        16,
+        32,
+        32
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "arrow_up",
+      "rect": [
+        112,
+        16,
+        32,
+        32
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "back",
+      "rect": [
+        208,
+        16,
+        128,
+        128
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "check_button_checked",
+      "rect": [
+        384,
+        304,
+        40,
+        40
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "check_button_unchecked",
+      "rect": [
+        440,
+        304,
+        40,
+        40
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "checkbox_checked",
+      "rect": [
+        16,
+        304,
+        40,
+        40
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "checkbox_unchecked",
+      "rect": [
+        72,
+        304,
+        40,
+        40
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "close",
+      "rect": [
+        352,
+        16,
+        128,
+        128
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "confirm",
+      "rect": [
+        496,
+        16,
+        128,
+        128
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "information",
+      "rect": [
+        16,
+        160,
+        128,
+        128
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "lock",
+      "rect": [
+        592,
+        160,
+        128,
+        128
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "radio_selected",
+      "rect": [
+        128,
+        304,
+        40,
+        40
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "radio_unselected",
+      "rect": [
+        184,
+        304,
+        40,
+        40
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "remove",
+      "rect": [
+        448,
+        160,
+        128,
+        128
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "settings",
+      "rect": [
+        160,
+        160,
+        128,
+        128
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "slider_grabber",
+      "rect": [
+        496,
+        304,
+        48,
+        48
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "slider_grabber_disabled",
+      "rect": [
+        624,
+        304,
+        48,
+        48
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "slider_grabber_highlight",
+      "rect": [
+        560,
+        304,
+        48,
+        48
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "status",
+      "rect": [
+        240,
+        304,
+        128,
+        128
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "unlock",
+      "rect": [
+        736,
+        160,
+        128,
+        128
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    },
+    {
+      "name": "warning",
+      "rect": [
+        640,
+        16,
+        128,
+        128
+      ],
+      "pivot": [
+        0.5,
+        0.5
+      ],
+      "nine_slice": null
+    }
+  ]
+}
