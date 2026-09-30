@@ -1864,36 +1864,45 @@ func _draw_tile(rect: Rect2, col: Color, revealed: bool = false) -> void:
 		var bw_px := float(_scaled_line_w(ThemeManager.tile_border_width()))
 		var hr: Rect2 = r.grow(-bw_px)
 		var hrad: float = minf(maxf(1.0, rad - bw_px), minf(hr.size.x, hr.size.y) * 0.5)
-		# 高光线宽随格边长等比缩放（与描边同口径，64px 基准 1px）
+		# 高光带高随格边长等比缩放（与描边同口径，64px 基准 1px）
 		var lw := maxf(1.0, float(cell_px) / LINE_REF_CELL)
-		if hrad < 2.0:
-			# 圆角小到可以忽略：退化为顶边直线（与旧行为等价）
-			draw_line(Vector2(hr.position.x, hr.position.y + lw * 0.5),
-				Vector2(hr.position.x + hr.size.x, hr.position.y + lw * 0.5), ins, lw)
-		else:
-			draw_polyline(_tile_top_highlight_points(hr, hrad, lw * 0.5), ins, lw, true)
+		_draw_top_highlight(hr, hrad, lw, ins)
 
 
-## 内顶高光的**圆角路径点**：左边缘 → 左上 90° 弧 → 顶边 → 右上 90° 弧 → 右边缘。
-## 端点 = 弧线竖直切点（圆心的正左/正右），与 CSS `inset 0 1px 0` 可视带的
-## 消失位置一致——高光在那里贴合侧边框，不会出现悬空的硬端点。
-## 【2026-09-30】dy = 半线宽：折线以中心线定位，整条下移半线宽后带体恰好落在
-## padding-box **内侧**（[hr.y, hr.y+lw]）——此前中心线贴着 padding-box 边缘，
-## 半幅溢出到描边环上（圆角段被垫亮成「更粗的一块」）、半幅压进透明 fill
-##（用户截图实锤的「横跨两个图层的白线」）。
-func _tile_top_highlight_points(hr: Rect2, hrad: float, dy: float = 0.0) -> PackedVector2Array:
+## 内顶高光（**实心新月形矢量多边形**，2026-09-30 第四版）：
+## 形状 = CSS `inset 0 lw 0` 的精确可视区 = **padding-box 减去其下移 lw 的拷贝**——
+## 顶边直段高 lw，两角沿圆弧锥形收细、在切点处宽度趋零没入侧描边。
+##
+## 为什么是多边形：① 恒宽折线复刻不了「趋零」新月（端头怼在竖边描边上，用户两轮
+## 截图圈出的过渡突兀 / 白线跨层 / 分离不对齐）；② Godot 的 antialiased 折线/线段
+## 对半透明色会在每个接头 AA 叠加成虚线点（第三版实测）——逐段方案在引擎层不可行。
+## 多边形 + 项目开启 `msaa_2d=2`（本次一并设置）→ 边缘获硬件抗锯齿，无点、无棱面。
+func _draw_top_highlight(hr: Rect2, hrad: float, lw: float, ins: Color) -> void:
+	if hrad < 2.0:
+		# 圆角小到可以忽略：退化为顶边矩形带（带体仍在 padding-box 内）
+		draw_rect(Rect2(hr.position.x, hr.position.y, hr.size.x, lw), ins)
+		return
+	var cl := Vector2(hr.position.x + hrad, hr.position.y + hrad)   # 左上弧圆心
+	var cr := Vector2(hr.position.x + hr.size.x - hrad, hr.position.y + hrad)  # 右上弧圆心
+	var n := 24   # 每弧 24 段（3.75°/段）——MSAA 下弦差 ≤ 0.02px，平滑
 	var pts := PackedVector2Array()
-	var steps := 10
-	var cl := Vector2(hr.position.x + hrad, hr.position.y + hrad + dy)  # 左上弧圆心（含下移）
-	for i in steps + 1:
-		var a := PI + PI * 0.5 * float(i) / float(steps)             # 180° → 270°
-		pts.append(cl + Vector2(cos(a), sin(a)) * hrad)
-	pts.append(Vector2(hr.position.x + hr.size.x - hrad, hr.position.y + dy))  # 顶边右端
-	var cr := Vector2(hr.position.x + hr.size.x - hrad, hr.position.y + hrad + dy)  # 右上弧圆心
-	for i in steps + 1:
-		var a := PI * 1.5 + PI * 0.5 * float(i) / float(steps)       # 270° → 360°
-		pts.append(cr + Vector2(cos(a), sin(a)) * hrad)
-	return pts
+	# 外沿：padding-box 顶部边界（左切点 → 左上弧 → 顶边 → 右上弧 → 右切点）
+	pts.append(Vector2(hr.position.x, cl.y))
+	for k in n + 1:
+		var th: float = deg_to_rad(-90.0 + 90.0 * float(k) / float(n))
+		pts.append(cl + Vector2(sin(th), -cos(th)) * hrad)
+	for k in n + 1:
+		var th: float = deg_to_rad(90.0 * float(k) / float(n))
+		pts.append(cr + Vector2(sin(th), -cos(th)) * hrad)
+	# 内沿：同形边界**下移 lw**，反向回走（右切点 → 右上弧 → 顶边 → 左上弧 → 左切点）
+	var off := Vector2(0.0, lw)
+	for k in n + 1:
+		var th: float = deg_to_rad(90.0 - 90.0 * float(k) / float(n))
+		pts.append(cr + off + Vector2(sin(th), -cos(th)) * hrad)
+	for k in n + 1:
+		var th: float = deg_to_rad(-90.0 * float(k) / float(n))
+		pts.append(cl + off + Vector2(sin(th), -cos(th)) * hrad)
+	draw_colored_polygon(pts, ins)
 
 
 ## 瓦片**描边**样式（缓存单例，与填充样式分开 —— 同一个实例既填又描会让边框宽度## 残留到下一次填充上）。`draw_center = false` ⇒ 只画边框，不铺底。
