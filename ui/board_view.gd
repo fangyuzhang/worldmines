@@ -1762,7 +1762,6 @@ const TILE_RADIUS_FRAC := 0.106
 
 var _tile_sb: StyleBoxFlat = null
 var _tile_sb_radius := -1.0
-var _tile_sb_bw := -1          # 缓存的描边宽（棱镜玻璃用，其余主题恒 0）
 var _tile_line_sb: StyleBoxFlat = null
 var _tile_line_radius := -1.0
 
@@ -1772,30 +1771,39 @@ func _cozy_tiles() -> bool:
 	return ThemeManager.board_mat().a > 0.0
 
 
-## 瓦片样式（缓存单例）。`_draw()` 每帧都跑、且**每格调用一次**，逐格 new StyleBoxFlat
-## 会在波浪动效期间变成每秒上百个对象（同 `_mat_stylebox` 的教训）。
-## 复用同一个实例是安全的：`draw_style_box` 在调用当帧就把绘制指令记进 canvas item，
-## 之后再改 `bg_color` 不会回头影响已经发出的那一条。
+## 线稿密度基准（2026-09-30 网页复刻校准）：chain-lab.html 的线稿（格描边 1px、
+## 内顶高光 1px）是按**格边长 ≈64px** 的浏览器渲染设计的。本项目格边长随盘面
+## scale-to-fit（24~108px+），固定 1px 在大格子上相对只有网页六成粗——实测左/下
+## 边缘对比度只有 +12/255（网页同位 +33），用户观感「只有顶上一条线、四周没描」。
+## 故所有瓦片线稿按 cell_px/64 等比缩放（下限 1px），小格子回落到 1px 不受影响。
+const LINE_REF_CELL := 64.0
+
+
+## 线稿有效宽度：palette 声明值（按 64px 基准格）× 格边长/64，下限 1px。
+## base=0（非玻璃主题无描边）恒返回 0，旧主题零回归。
+func _scaled_line_w(base: int) -> int:
+	if base <= 0:
+		return 0
+	return maxi(1, roundi(float(base) * float(cell_px) / LINE_REF_CELL))
+
+
+## 瓦片**填充**样式（缓存单例，fill-only——描边环由 `_tile_line_stylebox` 单独承担）。
+## 【2026-09-30 background-clip 对齐】StyleBoxFlat 的 fill 会内缩到描边之下：一体式
+## 「fill+border」stylebox 的描边实际压在**裸垫板**上（实测 60+0.18×195=95.1，与截图
+## 逐位吻合），对比度只有网页的一半——CSS 的 background 默认 `background-clip:
+## border-box`，fill 铺满到描边外缘、描边压在合成色上。故拆两笔：fill 满铺整瓦片
+## （含描边区），描边环叠上。`_draw()` 每帧每格调用，复用同一实例（同旧注释理由）。
 func _tile_stylebox(radius: float) -> StyleBoxFlat:
 	if _tile_sb == null:
 		_tile_sb = StyleBoxFlat.new()
 		_tile_sb.anti_aliasing = true
-	# 描边（玻璃边缘）：仅棱镜等玻璃主题 width>0；其余主题恒 0 ⇒ 与旧版一致（无描边）。
-	var bw := ThemeManager.tile_border_width()
-	var bcol := ThemeManager.tile_border()
-	# 半径与描边宽变化才重建几何；**颜色独立更新** —— 旧版把 border_color 塞在半径分支里，
-	# 主题过渡期间（半径/宽度不变、颜色在 lerp）边色会卡在旧值不动。
+	# 半径变化才重建几何
 	if not is_equal_approx(_tile_sb_radius, radius):
 		_tile_sb_radius = radius
 		var r := clampi(int(roundf(radius)), 2, 40)
 		_tile_sb.set_corner_radius_all(r)
 		# 半径变大后 6 边细分的多边形会被看成一圈多边形而不是圆（同 UiTheme._round 口径）
 		_tile_sb.corner_detail = clampi(r + 4, 8, 24)
-	if _tile_sb_bw != bw:
-		_tile_sb_bw = bw
-		_tile_sb.set_border_width_all(bw)
-	if bw > 0 and _tile_sb.border_color != bcol:
-		_tile_sb.border_color = bcol
 	return _tile_sb
 
 
@@ -1820,11 +1828,27 @@ func _draw_tile(rect: Rect2, col: Color, revealed: bool = false) -> void:
 		draw_rect(rect, col)
 		return
 	var r := _tile_rect(rect)
+	# 【2026-09-30 描边锐化】间隙内缩会产生 .78 这类小数边，1~2px 描边跨在两个
+	# 像素上被 AA 摊薄（实测左右边缘对比度腰斩：+32 预期 → +16 实测）——用户观感
+	# 「只有顶上一条线、四周没描」。浏览器渲染 border 同样做设备像素对齐，故绘制
+	# 用**整数对齐**的瓦片矩形；_tile_rect 的原始几何仍供命中/轮廓使用（契约测试钉它）。
+	r = Rect2(r.position.round(), r.size.round())
 	# 半径按**格边长**取，不按内缩后的瓦片边长 ——
 	# TILE_RADIUS_FRAC 的定义就是「半径 / 格边长」（对齐实测口径）。
-	var sb := _tile_stylebox(maxf(2.0, rect.size.x * ThemeManager.tile_radius_frac()))
+	var radius := maxf(2.0, rect.size.x * ThemeManager.tile_radius_frac())
+	# ① 填充：铺满整瓦片（含描边区）—— CSS `background-clip: border-box` 语义
+	var sb := _tile_stylebox(radius)
 	sb.bg_color = col
 	draw_style_box(sb, r)
+	# ② 描边环（draw_center=false）：压在 fill 合成色上，对比度对齐网页。
+	#    颜色按状态取：未翻开 tile_border(.18) / 已翻开 tile_border_open(.09)，
+	#    宽度按格边长等比缩放（LINE_REF_CELL 基准）。
+	var bw := _scaled_line_w(ThemeManager.tile_border_width())
+	var bcol := ThemeManager.tile_border_open() if revealed else ThemeManager.tile_border()
+	if bw > 0 and bcol.a > 0.0:
+		var sbd := _tile_line_stylebox(radius, bw)
+		sbd.border_color = bcol
+		draw_style_box(sbd, r)
 	# 玻璃内顶高光（近似 CSS inset 0 1px 0）：原生无 inset 阴影，故只画顶边。
 	# 【2026-09-29 二次修正】CSS 的这条高光带会**沿圆角弧线包住上两角**、在弧线切线
 	# 变竖直处自然消失（可视带 = 圆角矩形与其下移 1px 拷贝之间的区域），且画在 border
@@ -1836,15 +1860,17 @@ func _draw_tile(rect: Rect2, col: Color, revealed: bool = false) -> void:
 	var ins := ThemeManager.tile_inset_open() if revealed else ThemeManager.tile_inset()
 	if ins.a > 0.0 and r.size.y > 4.0:
 		var rad: float = maxf(2.0, rect.size.x * ThemeManager.tile_radius_frac())
-		var bw_px := float(ThemeManager.tile_border_width())
+		var bw_px := float(_scaled_line_w(ThemeManager.tile_border_width()))
 		var hr: Rect2 = r.grow(-bw_px)
 		var hrad: float = minf(maxf(1.0, rad - bw_px), minf(hr.size.x, hr.size.y) * 0.5)
+		# 高光线宽随格边长等比缩放（与描边同口径，64px 基准 1px）
+		var lw := maxf(1.0, float(cell_px) / LINE_REF_CELL)
 		if hrad < 2.0:
 			# 圆角小到可以忽略：退化为顶边直线（与旧行为等价）
 			draw_line(Vector2(hr.position.x, hr.position.y + 0.5),
-				Vector2(hr.position.x + hr.size.x, hr.position.y + 0.5), ins, 1.0)
+				Vector2(hr.position.x + hr.size.x, hr.position.y + 0.5), ins, lw)
 		else:
-			draw_polyline(_tile_top_highlight_points(hr, hrad), ins, 1.0, true)
+			draw_polyline(_tile_top_highlight_points(hr, hrad), ins, lw, true)
 
 
 ## 内顶高光的**圆角路径点**：左边缘 → 左上 90° 弧 → 顶边 → 右上 90° 弧 → 右边缘。
