@@ -34,8 +34,13 @@ func _init() -> void:
 
 
 func _ready() -> void:
-	# 与 HUD/_add_icon_button、level_select/_style_icon_button 同一条样式口径：
-	# 图标按钮专用对称内边距 + 图标色随主题文字色（白模 SVG 被它乘色）。
+	# 与 HUD/_add_icon_button、level_select/_make_icon_button 同一条尺寸口径：
+	# 40×40 最小尺寸 —— **容器布局下必须显式声明**：expand_icon=true 时图标不计入
+	# 最小尺寸，HBox 会把按钮压到只剩内边距（18px 宽 ⇒ 内容区 0 ⇒ 图标不可见，
+	# 2026-09-30 选关页实测）。HUD 不在容器里所以没暴露。
+	custom_minimum_size = Vector2(40, 40)
+	# 与两者同一条样式口径：图标按钮专用对称内边距 + 图标色随主题文字色
+	#（白模 SVG 被它乘色）。
 	UiTheme.style_icon_button(self)
 	for state in ["icon_normal_color", "icon_hover_color", "icon_pressed_color",
 			"icon_focus_color", "icon_disabled_color"]:

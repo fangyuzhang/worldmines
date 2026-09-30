@@ -276,19 +276,8 @@ func _is_skipped(key: String) -> bool:
 # ==================== 主界面：网状节点图 ====================
 
 func _build_ui() -> void:
-	# 顶部标题
-	var title := Label.new()
-	title.text = "选择关卡"
-	title.add_theme_font_size_override("font_size", 28)
-	# 颜色显式写死 + 打 secondary 元标记（由 _apply_theme() 在每次主题广播时刷新）。
-	# 原先两者都没有 ⇒ 落到引擎默认主题的白色字。深色主题下白头正好对，缺陷就此藏了
-	# 很久；换成粉彩浅底后整页大标题直接消失（白字压 #B7C9D4 ≈1.5:1）。
-	title.set_meta("secondary", false)
-	title.add_theme_color_override("font_color", ThemeManager.text())
-	title.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	title.offset_top = 14
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	add_child(title)
+	# 【2026-09-30】「选择关卡」大标题已按用户要求移除（页面本身自明）。
+	# 右上角工具区（图鉴/主题/设置）与页签栏不变。
 
 	# 右上角：图鉴 + 设置（2026-09-28 用户决策）。原「返回」按钮随主菜单一并移除——
 	# 选关页现在是**启动页**，没有"上一级"可返回；图鉴/设置的入口从主菜单搬到这里。
