@@ -66,16 +66,36 @@ func test_corner_has_codex_and_gear_buttons() -> void:
 	assert_not_null(gear, "选关页右上角应有设置齿轮按钮（meta: settings_btn）")
 	if book != null:
 		assert_not_null(book.icon, "书本图标必须解析成功（SVG 解析失败会静默降级为空图标）")
-		assert_ne(str(book.tooltip_text), "", "图鉴按钮应有 tooltip（纯图标控件的可读名称）")
+		assert_eq(str(book.tooltip_text), "", "选关页已删除悬浮提示（2026-10-01 用户口径）")
 	if gear != null:
 		assert_not_null(gear.icon, "齿轮图标必须解析成功（SVG 解析失败会静默降级为空图标）")
-		assert_ne(str(gear.tooltip_text), "", "齿轮按钮应有 tooltip")
+		assert_eq(str(gear.tooltip_text), "", "选关页已删除悬浮提示（2026-10-01 用户口径）")
 	# 容器宽度必须容得下两个按钮（原先 80 < 88 ⇒ 齿轮被推出右缘；实测踩过）
 	var bar: Control = gear.get_parent() as Control
 	if bar != null:
 		assert_gte(bar.size.x + 0.5, bar.get_combined_minimum_size().x,
 			"右上角工具区宽度必须容得下两个图标按钮（实得 %.0f < 需要 %.0f）" % [
 				bar.size.x, bar.get_combined_minimum_size().x])
+
+
+# ---- ①b 选关页整页无悬浮提示（2026-10-01 用户口径）----
+#
+# 用户口径：「鼠标悬浮停留会有详细小窗口弹出，移动消失。把这个功能删除」。
+# 本用例把「整页任何控件都不挂 tooltip_text」钉成红灯条件——防以后有人顺手加回来。
+# 说明：对局 HUD 的图标按钮（教程/提示）另有契约要求（见 test_board_view_interaction），
+# 不在选关页范围内，不受本条约束。
+func test_no_tooltips_anywhere_on_page() -> void:
+	var offenders: Array[String] = []
+	_collect_tooltips(_view, offenders)
+	assert_eq(offenders.size(), 0,
+		"选关页不应有任何悬浮提示（实得 %d 个：%s）" % [offenders.size(), ", ".join(offenders)])
+
+
+func _collect_tooltips(n: Node, out: Array[String]) -> void:
+	if n is Control and str((n as Control).tooltip_text) != "":
+		out.append("%s=%s" % [n.name, str((n as Control).tooltip_text).substr(0, 16)])
+	for c in n.get_children():
+		_collect_tooltips(c, out)
 
 
 # ---- ② 齿轮 → 设置弹窗（含整页设置入口）----

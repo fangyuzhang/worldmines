@@ -299,12 +299,16 @@ func _build_ui() -> void:
 	var skin_btn := ThemePickerScript.new()
 	skin_btn.name = "SkinBtn"
 	skin_btn.set_meta("skin_btn", true)
+	# 选关页统一无悬浮提示（2026-10-01 用户口径：删除「悬浮停留弹详细小窗」功能）。
+	# 组件默认带「切换主题」tooltip，这里清掉；对局 HUD 复用同款组件但**不受影响**
+	#（那边不在本次口径范围内，其可读名保留）。
+	skin_btn.tooltip_text = ""
 	corner.add_child(skin_btn)
-	var codex_btn := _make_icon_button(_svg_book(), "规则图鉴（各算子与变体说明）")
+	var codex_btn := _make_icon_button(_svg_book())
 	codex_btn.set_meta("codex_btn", true)   # 测试 / 调试可据此定位
 	codex_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://ui/codex.tscn"))
 	corner.add_child(codex_btn)
-	var gear_btn := _make_icon_button(_svg_gear(), "设置")
+	var gear_btn := _make_icon_button(_svg_gear())
 	gear_btn.set_meta("settings_btn", true)   # 测试 / 调试可据此定位
 	gear_btn.pressed.connect(_open_settings_popup)
 	corner.add_child(gear_btn)
@@ -527,7 +531,6 @@ func _make_card(mode_idx: int, m: Dictionary) -> Button:
 	var btn := Button.new()
 	btn.custom_minimum_size = Vector2(CARD_W, _card_h)
 	btn.focus_mode = Control.FOCUS_ALL
-	btn.tooltip_text = _card_tooltip(m)
 	btn.set_meta("card_btn", true)
 	btn.pressed.connect(_open_popup.bind(mode_idx))
 	_style_card(btn)
@@ -569,17 +572,6 @@ func _make_card(mode_idx: int, m: Dictionary) -> Button:
 	UiTheme.bind_hover(btn, HOVER_SCALE)
 	_attach_progress(btn, str(m["id"]))
 	return btn
-
-
-func _card_tooltip(m: Dictionary) -> String:
-	var lines: Array[String] = ["%s（%s）" % [str(m["name"]), str(m["tip"])]]
-	var text := VariantCatalog.rule_text(str(m["id"]))
-	if not text.is_empty():
-		lines.append(text)
-	if str(m.get("source", "builtin")) == "mod":
-		lines.append("来自已加载的 Mod，可在主菜单「模组」页管理 / 卸载")
-	lines.append("已通关 %d / %d" % [_cleared_total(str(m["id"])), SIZES.size() * LEVELS_PER_SET])
-	return "\n".join(lines)
 
 
 # ---------- 页二：混合档（线索 × 全局约束 交叉表） ----------
@@ -803,13 +795,12 @@ func _matrix_note(text: String) -> Label:
 	return note
 
 
-## 表头（行首 / 列头）：编号 + 名称，悬停显示规则全文。
+## 表头（行首 / 列头）：编号 + 名称。
 ## code 由调用方按轴序给出（不在表头里反查目录：那会为每个表头重建一次注册表清单）。
 func _matrix_head(code: String, rule_id: String, is_row: bool) -> Control:
 	var lb := Label.new()
 	lb.text = ("%s %s" % [code, VariantCatalog.display_name(rule_id)])
 	lb.add_theme_font_size_override("font_size", 13)
-	lb.tooltip_text = VariantCatalog.display_name(rule_id) + "\n" + VariantCatalog.rule_text(rule_id)
 	lb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	if is_row:
 		lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -820,7 +811,7 @@ func _matrix_head(code: String, rule_id: String, is_row: bool) -> Control:
 	return lb
 
 
-## 组合格（三张混合档表共用）：按 mode_id 从目录取信息，tooltip / 进度全自动。
+## 组合格（三张混合档表共用）：按 mode_id 从目录取信息，点击开弹窗 / 进度全自动。
 ## label 由调用方按轴拼（表里已知轴，不必反查目录）。
 func _combo_cell(mode_id: String, label: String) -> Button:
 	var btn := Button.new()
@@ -839,31 +830,7 @@ func _combo_cell(mode_id: String, label: String) -> Button:
 		# 该组合此刻不产生：算子未加载（无头环境 / Mod 未装）或判 forbid（逻辑冗余）。
 		# 占位置灰而不是省略——省略会让行列错位，也看不出「这里本该有一格」。
 		btn.disabled = true
-		btn.tooltip_text = "%s\n该组合当前不可用（算子未加载，或叠加后逻辑冗余）" % label
 		return btn
-	var m: Dictionary = MODES[mi]
-	var lines: Array[String] = ["%s（%s）" % [str(m["name"]), str(m["tip"])]]
-	for rid in (m["globals"] as Array):
-		lines.append(VariantCatalog.rule_text(str(rid)))
-	if str(m["clue"]) != "classic":
-		lines.append(VariantCatalog.rule_text(str(m["clue"])))
-	# 判据理由由签名表**实时两两推导**（R1~R5），不再写死泛化文案：补入官方 22 席签名后，
-	# 这里能给出具体依据（如 R2「同一作用域叠加」/ R3「对称群交集为空」），
-	# 且随签名表更新自动跟上（改了签名不必回来改文案）。
-	var ids: Array = [str(m["clue"])]
-	ids.append_array(m["globals"])
-	var why := ""
-	for i in ids.size():
-		for j in range(i + 1, ids.size()):
-			var v := RuleSignature.compat(str(ids[i]), str(ids[j]), _cur_size(),
-					LevelSequence.mine_count(SIZES[_size_idx]))
-			if str(v["verdict"]) == RuleSignature.WARN and why == "":
-				why = str(v["reason"])
-	if why != "":
-		lines.append("⚠ %s" % why)
-		lines.append("部分尺寸可能无解——弹窗内的尺寸按钮会自动禁用并切到最近可行尺寸")
-	lines.append("已通关 %d / %d" % [_cleared_total(mode_id), SIZES.size() * LEVELS_PER_SET])
-	btn.tooltip_text = "\n".join(lines)
 	btn.pressed.connect(_open_popup.bind(mi))
 	UiTheme.bind_hover(btn, HOVER_SCALE)
 	_attach_progress(btn, mode_id)
@@ -898,7 +865,6 @@ func _build_mod_page() -> Control:
 	manage_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	var manage_btn := Button.new()
 	manage_btn.text = "模组管理"
-	manage_btn.tooltip_text = "安装 / 加载 / 卸载 Mod，导入文件夹，生成关卡"
 	manage_btn.focus_mode = Control.FOCUS_ALL
 	manage_btn.custom_minimum_size = Vector2(160, 40)
 	manage_btn.set_meta("mod_manage_btn", true)   # 测试 / 调试可据此定位
@@ -1042,7 +1008,6 @@ func _mod_level_buttons(mod_id: String) -> Control:
 		b.text = str(p.get_file().get_basename())
 		b.custom_minimum_size = Vector2(140, 40)
 		b.focus_mode = Control.FOCUS_ALL
-		b.tooltip_text = "直接开始这一关\n%s" % p
 		b.set_meta("mod_level_btn", true)
 		_style_card(b)
 		b.pressed.connect(_open_mod_level.bind(p))
@@ -1262,14 +1227,10 @@ func _shape_variants() -> Array[Dictionary]:
 		var vid := str(info["variant"])
 		if not by.has(vid):
 			by[vid] = {"id": vid, "name": str(info["variant_name"]),
-					"text": str(info["variant_text"]), "levels": 0, "cleared": 0, "tiers": {}}
+					"text": str(info["variant_text"]), "levels": 0, "cleared": 0}
 		by[vid]["levels"] = int(by[vid]["levels"]) + 1
 		if _is_cleared(str(info["path"])):
 			by[vid]["cleared"] = int(by[vid]["cleared"]) + 1
-		# 档位计数（第一级卡片 tooltip 的难度分布；与第二级分组标题同一事实的不同粒度）
-		var td: Dictionary = by[vid]["tiers"]
-		var t := str(info.get("tier", ""))
-		td[t] = int(td.get(t, 0)) + 1
 	var order: Array = ["classic"] + VariantAxes.STRUCT + VariantAxes.CONSERVE
 	var out: Array[Dictionary] = []
 	for vid in order:
@@ -1284,21 +1245,6 @@ func _shape_variants() -> Array[Dictionary]:
 ## 第二级的档位分组顺序（v4.1 峰值窗口口径）。"" = 未分档——判不出档的关**不藏**
 ## （它们是既有内容），单独一段如实标注。顺序由易到难：玩家从上往下读就是难度曲线。
 const SHAPE_TIER_ORDER: Array = ["easy", "normal", "hard", ""]
-
-
-## 第一级卡片的难度分布摘要（如「普通 3 · 困难 2 · 噩梦 1」；未分档非零时附末尾）。
-## 数据 = _shape_variants 聚合的 tiers 计数。玩家 hover 就能看出该变体的难度覆盖，
-## 不必点进去数（与第二级的分组标题是同一事实的两个粒度）。
-## 标签走 Difficulty.tier_short（同源于 PEAK_WINDOWS），不手写档位名。
-func _tier_summary(v: Dictionary) -> String:
-	var tiers: Dictionary = v.get("tiers", {})
-	var parts: Array = []
-	for t in SHAPE_TIER_ORDER:
-		var n := int(tiers.get(t, 0))
-		if n <= 0:
-			continue
-		parts.append("未分档 %d" % n if str(t) == "" else "%s %d" % [Difficulty.tier_short(str(t)), n])
-	return " · ".join(parts) if not parts.is_empty() else "（无）"
 
 
 ## 重建内容区（切级 / 主题刷新时调用）：只换卡片墙，保住滚动容器本身。
@@ -1346,8 +1292,6 @@ func _make_variant_card(v: Dictionary) -> Button:
 	btn.set_meta("variant_id", str(v["id"]))       # 测试 / 调试可据此定位变体
 	var total := int(v["levels"])
 	var cleared := int(v["cleared"])
-	btn.tooltip_text = "%s\n%s\n该变体有 %d 个异形棋盘（已通关 %d）\n难度分布：%s\n点击查看全部棋盘" % [
-		str(v["name"]), str(v["text"]), total, cleared, _tier_summary(v)]
 	btn.pressed.connect(_open_shape_popup.bind(str(v["id"])))
 	_style_card(btn)
 
@@ -1405,9 +1349,8 @@ func _open_settings_popup() -> void:
 
 ## 图标按钮（右上角工具区）：40×40 方形，图标走内联 SVG（见 _svg_texture）。
 ## 样式统一交给 _style_icon_button（_apply_theme 也调它，保证主题切换时图标着色一起刷新）。
-func _make_icon_button(tex: Texture2D, tip: String) -> Button:
+func _make_icon_button(tex: Texture2D) -> Button:
 	var b := Button.new()
-	b.tooltip_text = tip
 	b.focus_mode = Control.FOCUS_ALL
 	b.custom_minimum_size = Vector2(40, 40)
 	b.set_meta("std_btn", true)
@@ -1575,10 +1518,6 @@ func _make_shape_card(info: Dictionary) -> Button:
 	btn.focus_mode = Control.FOCUS_ALL
 	btn.set_meta("card_btn", true)
 	btn.set_meta("shape_path", str(info["path"]))   # 测试 / 调试可据此定位关卡
-	var desc_txt := str(info["desc"])
-	btn.tooltip_text = "%s\n%s · %d 格 · %d 雷%s" % [
-		str(info["title"]), str(info["kind"]), int(info["cells"]), int(info["mines"]),
-		("\n" + desc_txt) if desc_txt != "" else ""]
 	btn.pressed.connect(_open_shape_level.bind(str(info["path"])))
 	_style_card(btn)
 
@@ -1689,8 +1628,7 @@ func _attach_progress(btn: Button, mode_id: String) -> void:
 ## 该变体在各尺寸（含正式关卡库的全部档）下的已通关总数。
 ##
 ## 【2026-09-29 主题切换卡顿修复】加**版本号缓存**。动机：库模式的一次计算要对关卡库
-## 逐键循环（库量产上千关 ⇒ GDScript 里 3-4ms），而一张卡片要算**两遍**
-## （_card_tooltip 一遍 + _attach_progress 一遍），整页 16 张卡 ⇒ ~100ms——
+## 逐键循环（库量产上千关 ⇒ GDScript 里 3-4ms），整页 16 张卡各算一遍 ⇒ ~100ms——
 ## 这正是「主题切换收口时卡一下」的大头（theme_settled → _rebuild_pages 实测 137ms）。
 ## 缓存失效键 = ProgressStore.rev()（进度写入即 +1）⊕ _mock_cleared 哈希（测试/演示直写
 ## 内存字典不走 rev，用内容哈希兜底）。
@@ -1937,7 +1875,7 @@ func _build_left(parent: Node) -> void:
 ## 难度列：三档竖排（关卡库模式）。每格 = 档名 + 该档关数；无内容的档置灰。
 ## 整个（变体 × 尺寸）库内无内容 → 整列隐藏，回退「按种子生成 3 关」的老流程。
 ## 不放「难度」小标题（2026-09-29 用户口径）：档名本身就是难度（普通/困难/噩梦），
-## 标题与选项排在同一列里读起来像多出第四个选项；每个按钮的 tooltip 里有完整档位说明。
+## 标题与选项排在同一列里读起来像多出第四个选项。
 func _build_tier_col() -> void:
 	for t in LevelLibrary.TIER_ORDER:
 		var b := Button.new()
@@ -1965,9 +1903,8 @@ func _refresh_tier_buttons() -> void:
 		var n := int(c.get(t, 0))
 		# 档名用**短标签**（普通 / 困难 / 噩梦）+ 关数两行：tier_text 的窗口后缀
 		# 「普通（2–3 条线索）」塞进 120px 竖列会折成三行、括号拦腰断开
-		#（2026-09-29 用户反馈「这几个字有些突兀」）；完整窗口说明挪到 tooltip。
+		#（2026-09-29 用户反馈「这几个字有些突兀」）。
 		_tier_btns[i].text = "%s\n%d 关" % [Difficulty.tier_short(t), n]
-		_tier_btns[i].tooltip_text = _tier_text(t)
 		_tier_btns[i].disabled = n <= 0
 		_style_choice(_tier_btns[i], t == _tier)
 
@@ -2035,7 +1972,6 @@ func _build_right(parent: Node) -> void:
 	var book := Button.new()
 	book.focus_mode = Control.FOCUS_ALL
 	book.custom_minimum_size = Vector2(40, 40)
-	book.tooltip_text = "查看当前变体的详细教程（棋盘图解）"
 	book.set_meta("icon_btn", true)
 	book.set_meta("popup_tutorial", _popup_tutorial_id)   # 测试 / 调试可据此定位教程入口
 	book.pressed.connect(func():
@@ -2159,21 +2095,10 @@ func _refresh_popup() -> void:
 				break
 	# 标题栏已移除（2026-09-29）：变体名 · 尺寸不再上墙，尺寸选择本身就是这行的语义。
 
-	# 尺寸按钮高亮 + 禁用（不可选组合置灰 + tooltip 说明原因，点不了）
-	var is_shape := str(m.get("kind", "")) == "shape"
+	# 尺寸按钮高亮 + 禁用（不可选组合置灰，点不了）
 	for i in _size_btns.size():
 		_style_choice(_size_btns[i], i == _size_idx)
-		var ok := _size_available(m, SIZES[i])
-		_size_btns[i].disabled = not ok
-		if ok:
-			_size_btns[i].tooltip_text = ""
-		elif is_shape:
-			# RM2：形状档缺库内容 ≠ 数学无解——文案必须区分（否则玩家以为是规则问题）
-			_size_btns[i].tooltip_text = "该尺寸暂无形状关卡（量产入库后可选）"
-		else:
-			_size_btns[i].tooltip_text = \
-				"该变体在 %d×%d（%d 雷）下数学上无解——请换尺寸或换变体" % [
-						SIZES[i], SIZES[i], LevelSequence.mine_count(SIZES[i])]
+		_size_btns[i].disabled = not _size_available(m, SIZES[i])
 	_style_frame()
 
 	# ---- 关卡库开关（2026-09-17）：本（变体 × 尺寸）有正式关卡 → 走库（难度列生效）；
@@ -2242,12 +2167,6 @@ func _make_tile(idx: int) -> Button:
 		btn.text = LevelLibrary.level_label(str(m["id"]), SIZES[_size_idx], _tier, idx)
 		if cleared:
 			btn.text += " ✓"
-		# dif = 紧凑度画像（difficulty_profile.difficulty，Σ1/批量），**不是档位判据**——
-		# v4.0 档位由峰值（max_complexity）落窗决定，故文案叫「紧凑度」而不叫「难度」。
-		var dif := LevelLibrary.level_difficulty(str(m["id"]), SIZES[_size_idx], _tier, idx)
-		btn.tooltip_text = "%s · %d×%d · %s 档第 %d 关\n（紧凑度 %.2f；正式量产关卡）" % [
-				str(m["name"]), SIZES[_size_idx], SIZES[_size_idx],
-				_tier_text(_tier), idx + 1, dif]
 	else:
 		btn.text = str(idx + 1)
 		if cleared:
@@ -2285,11 +2204,10 @@ func _refresh_stat() -> void:
 		if _is_cleared(_level_key(i)):
 			cleared += 1
 	if _lib_mode:
-		# 短档名 + tooltip 全称：tier_text 直接嵌进括号会出现
+		# 短档名：tier_text 直接嵌进括号会出现
 		# 「（普通（2–3 条线索） 档）」的嵌套括号（2026-09-29 截图实证）。
 		_stat_label.text = "已通关 %d / %d\n难度：%s" % [cleared, _set_count(),
 				Difficulty.tier_short(_tier)]
-		_stat_label.tooltip_text = _tier_text(_tier)
 	else:
 		_stat_label.text = "已通关 %d / %d" % [cleared, _set_count()]
 	# 按钮：选中最新解锁关卡 → 继续游戏；手选其他 → 开始游戏；未开放变体 → 禁用

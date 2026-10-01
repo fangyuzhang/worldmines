@@ -368,7 +368,7 @@ func test_ls14_generated_mod_levels_are_listed() -> void:
 	assert_not_null(btn, "已生成的 Mod 关卡应列在 Mod 页（否则玩家得回模组页找成品）")
 	if btn != null:
 		assert_true(btn.has_meta("mod_level_btn"), "应标记为 Mod 关卡入口")
-		assert_true(str(btn.tooltip_text).contains("直接开始"), "tooltip 应说明点击即开局")
+		assert_eq(str(btn.tooltip_text), "", "选关页已删除悬浮提示（2026-10-01 用户口径）")
 
 
 # LS11：混合档三张表的轴与结构契约（T3 C 类 / T3 F 类 / T4）+ 可行性真值贯通
@@ -684,8 +684,8 @@ func test_ls15_popup_shell_surface_and_tier_labels() -> void:
 	if bool(_view.get("_lib_mode")):
 		for tb: Button in _view.get("_tier_btns"):
 			assert_false(tb.text.contains("（"),
-				"难度按钮文字应是短档名（普通/困难/噩梦），窗口后缀只进 tooltip，实得：%s" % tb.text)
-			assert_true(tb.tooltip_text.length() > 0, "完整档位说明应在 tooltip 里")
+				"难度按钮文字应是短档名（普通/困难/噩梦），实得：%s" % tb.text)
+			assert_eq(tb.tooltip_text, "", "难度按钮不再挂悬浮提示（2026-10-01：选关页删除该功能）")
 		var stat: Label = _view.get("_stat_label")
 		assert_false(stat.text.contains("（（"), "统计文案不得出现嵌套括号")
 
