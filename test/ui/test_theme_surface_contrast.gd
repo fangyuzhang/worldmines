@@ -383,6 +383,16 @@ func test_button_hover_and_focus_share_one_shadow() -> void:
 	var pressed_sb := b.get_theme_stylebox("pressed") as StyleBoxFlat
 	assert_not_null(normal_sb, "normal 态应是 StyleBoxFlat")
 	assert_not_null(pressed_sb, "pressed 态应是 StyleBoxFlat")
+	# 【2026-10-01 抖动修复 ④（根因）】normal / hover / pressed 必须是**同一个实例**：
+	# 换 stylebox 是**瞬时**的（Godot 主题项整体替换、没有过渡），而 scale 在 0.2s 平滑播放
+	# ——两者不同步就是实机反馈的「上升过程中抖」。决定性线索是用户那句「所有按钮都抖，
+	# 唯独棋盘格子不抖」：棋盘格子正是全项目唯一三态共份的控件（level_select._style_tile）。
+	assert_eq(b.get_theme_stylebox("hover"), normal_sb,
+		"hover 必须与 normal 是**同一份** stylebox（切态不得换样式，否则与缩放不同步 → 抖）")
+	assert_eq(b.get_theme_stylebox("pressed"), normal_sb,
+		"pressed 必须与 normal 是**同一份** stylebox（同上）")
+	assert_true(b.has_meta(UiTheme.META_STATE_COLORS),
+		"三态共份后，状态差异必须登记为颜色（UiTheme.bind_state_colors），否则悬停毫无反馈")
 	if normal_sb != null and pressed_sb != null:
 		for pair: Array in [["hover", hover_sb], ["pressed", pressed_sb], ["focus", focus_sb]]:
 			var st := str(pair[0])

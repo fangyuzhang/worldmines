@@ -207,19 +207,25 @@ func _style_swatch(sw: Button, i: int) -> void:
 
 func _style_size_btn(b: Button, i: int) -> void:
 	var active: bool = _drawing.current_size == i
+	var base_bg: Color = ThemeManager.accent() if active else ThemeManager.card()
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = ThemeManager.accent() if active else ThemeManager.card()
+	sb.bg_color = base_bg
 	sb.set_corner_radius_all(6)
-	b.add_theme_stylebox_override("normal", sb)
+	# 【2026-10-01 抖动修复 ④】normal / hover / pressed 共用这一份（原实现 hover 换整份
+	# stylebox、还连带把字色也换掉 —— 换样式是瞬时的，与 0.2s 缩放不同步 ⇒ 抖动；
+	# 根因说明见 UiTheme.META_STATE_COLORS）。现悬停只把底色提亮一档：色相不变 ⇒
+	# 字色无需跟着换，零瞬变。
+	for state in ["normal", "hover", "pressed"]:
+		b.add_theme_stylebox_override(state, sb)
+	UiTheme.bind_state_colors(b, {
+		"bg": [base_bg, base_bg.lightened(0.08), base_bg.darkened(0.10)],
+	})
 	# 选中态的底是**实心 accent**，字色必须是配套的 accent_text；
 	# 未选中态底是 card，才用 text。原先两种状态共用 text()，
 	# 在浅色系主题下（accent #2D7BB0 vs text #232323 ≈ 1.9:1）会糊成一片。
 	var font := ThemeManager.accent_text() if active else ThemeManager.text()
 	b.add_theme_color_override("font_color", font)
-	var sbh := sb.duplicate()
-	sbh.bg_color = ThemeManager.accent()
-	b.add_theme_stylebox_override("hover", sbh)
-	b.add_theme_color_override("font_hover_color", ThemeManager.accent_text())
+	b.add_theme_color_override("font_hover_color", font)
 	UiTheme.bind_hover(b, 1.03)
 
 

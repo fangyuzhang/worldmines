@@ -78,52 +78,40 @@ static func _round(sb: StyleBoxFlat, radius: int) -> void:
 ## 统一按钮样式 + 悬停浮动（scale 1.03 ≈ 2px 抬起感）。
 ## pad_x / pad_y 可覆盖：图标按钮走 style_icon_button（见该函数与 ICON_PAD 的说明）。
 static func style_button(btn: Button, pad_x: int = BTN_PAD_X, pad_y: int = BTN_PAD_Y) -> void:
-	var normal := StyleBoxFlat.new()
-	_set_pad(normal, pad_x, pad_y)
-	normal.bg_color = ThemeManager.card()
-	_round(normal, BTN_RADIUS)
-	normal.set_border_width_all(1)
-	normal.border_color = ThemeManager.grid_line()
-	normal.shadow_color = ThemeManager.shadow(ThemeManager.bg())
-	normal.shadow_size = NORMAL_SHADOW_SIZE
-	normal.shadow_offset = NORMAL_SHADOW_OFFSET
-	btn.add_theme_stylebox_override("normal", normal)
+	# 【2026-10-01 抖动修复 ④（根因）】normal / hover / pressed **共用这一份** stylebox。
+	# 换 stylebox 是瞬时的（Godot 主题项整体替换），与 0.2s 的缩放不同步 ⇒ 实机读成抖动；
+	# 状态差异改由 bind_state_colors 登记的**颜色渐变**表达（见 META_STATE_COLORS 的说明）。
+	var sb := StyleBoxFlat.new()
+	_set_pad(sb, pad_x, pad_y)
+	_round(sb, BTN_RADIUS)
+	sb.set_border_width_all(1)
+	sb.bg_color = ThemeManager.card()
+	sb.border_color = ThemeManager.grid_line()
+	sb.shadow_color = ThemeManager.shadow(ThemeManager.bg())
+	sb.shadow_size = NORMAL_SHADOW_SIZE
+	sb.shadow_offset = NORMAL_SHADOW_OFFSET
+	for state in ["normal", "hover", "pressed"]:
+		btn.add_theme_stylebox_override(state, sb)
+	# 三档颜色（下标 = PHASE_*）：底色提亮 / 加深、描边换 accent、影色深一档——全部**渐变**。
+	bind_state_colors(btn, {
+		"bg": [ThemeManager.card(),
+				ThemeManager.card().lightened(0.06),
+				ThemeManager.card().darkened(0.10)],
+		"border": [ThemeManager.grid_line(), ThemeManager.accent(), ThemeManager.accent()],
+		"shadow": [ThemeManager.shadow(ThemeManager.bg()),
+				ThemeManager.shadow(ThemeManager.bg(), ThemeManager.SHADOW_DROP_HOVER),
+				ThemeManager.shadow(ThemeManager.bg(), ThemeManager.SHADOW_DROP_HOVER)],
+	})
+	# 字色三态同值：按下不再换实心 accent 底（那会连字体色一起瞬变），故无需随态变色。
+	# 【历史】原 pressed 是实心 accent + font_pressed_color=accent_text()，为修一处无障碍缺陷
+	#（浅色主题 accent×text 仅 1.9:1）。现在按下底色是 card 深一档、字始终是 text()，问题不复存在。
 	btn.add_theme_color_override("font_color", ThemeManager.text())
-
-	var hover := StyleBoxFlat.new()
-	_set_pad(hover, pad_x, pad_y)
-	hover.bg_color = ThemeManager.card().lightened(0.06)
-	_round(hover, BTN_RADIUS)
-	hover.set_border_width_all(1)
-	hover.border_color = ThemeManager.accent()
-	hover.shadow_color = ThemeManager.shadow(ThemeManager.bg(), ThemeManager.SHADOW_DROP_HOVER)
-	hover.shadow_size = HOVER_SHADOW_SIZE
-	hover.shadow_offset = HOVER_SHADOW_OFFSET
-	btn.add_theme_stylebox_override("hover", hover)
 	btn.add_theme_color_override("font_hover_color", ThemeManager.text())
+	btn.add_theme_color_override("font_pressed_color", ThemeManager.text())
+	btn.add_theme_color_override("font_focus_color", ThemeManager.text())
 
-	var pressed := StyleBoxFlat.new()
-	_set_pad(pressed, pad_x, pad_y)
-	pressed.bg_color = ThemeManager.accent()
-	_round(pressed, BTN_RADIUS)
-	pressed.set_border_width_all(1)
-	pressed.border_color = ThemeManager.accent()
-	# 【2026-10-01 抖动修复 ③】按下不再改阴影几何（原先收到 (0,1)/4）：几何差异是瞬时的，
-	# "沉底感"改由 scale 0.96 + 实心 accent 底色表达；影色仍取更深一档（纯颜色变化）。
-	pressed.shadow_color = ThemeManager.shadow(ThemeManager.bg(), ThemeManager.SHADOW_DROP_HOVER)
-	pressed.shadow_size = PRESSED_SHADOW_SIZE
-	pressed.shadow_offset = PRESSED_SHADOW_OFFSET
-	btn.add_theme_stylebox_override("pressed", pressed)
-	# 按下态背景换成了**实心 accent**，字色就必须跟着换 accent_text。
-	# 原先这里沿用 text()：深色主题下 accent 是深蓝、text 是近白，勉强能看；
-	# 但浅色主题 accent=#2D7BB0 配 text=#232323 只有 1.9:1 —— 一个从旧版就存在、
-	# 一直没人发现的无障碍缺陷（深色主题把它盖住了）。CozyStyle 五套粉彩全是浅底，
-	# 再不改就是五个主题一起踩。accent_text 是成对算出来的（每个主题都 ≥4.5:1）。
-	btn.add_theme_color_override("font_pressed_color", ThemeManager.accent_text())
-
-	# 键盘焦点样式（2026-09-25 无障碍审计）：与 hover 同款但描边**更粗** —— 焦点必须
-	# 比悬停更显眼（键盘用户全靠它定位）。此前没有 focus 样式 ⇒ 聚焦时会落到引擎默认
-	# 焦点框（浅色细线，与项目深色主题格格不入）。
+	# 键盘焦点样式（2026-09-25 无障碍审计）：单独一份、描边**更粗** —— 焦点必须比悬停更显眼
+	#（键盘用户全靠它定位）。它不参与鼠标悬停路径，故不受抖动修复影响，可保留独立样式。
 	var focus_sb := StyleBoxFlat.new()
 	_set_pad(focus_sb, pad_x, pad_y)
 	focus_sb.bg_color = ThemeManager.card().lightened(0.06)
@@ -131,12 +119,14 @@ static func style_button(btn: Button, pad_x: int = BTN_PAD_X, pad_y: int = BTN_P
 	focus_sb.set_border_width_all(2)
 	focus_sb.border_color = ThemeManager.accent()
 	# 【2026-09-29 补】focus 以前**没有阴影**，而 hover 有 —— 于是用 Tab 把焦点移到
-	# 某个按钮上，阴影会"啪"地出现/消失，同一个悬停语义两种观感。与 hover 取同一档。
-	focus_sb.shadow_color = ThemeManager.shadow(ThemeManager.bg(), ThemeManager.SHADOW_DROP_HOVER)
+	# 某个按钮上，阴影会"啪"地出现/消失，同一个悬停语义两种观感。与常态取同一档。
+	# 【2026-10-01 修正】影色不再取"悬停加深档"：三态共份后静态基准是**常态档**
+	#（悬停/按下的加深由 tween 动态给出），focus 若用加深档就会在 Tab 聚焦瞬间突变。
+	# 焦点的显眼度由「底亮 12% + 2px 描边」承担，足够了。
+	focus_sb.shadow_color = ThemeManager.shadow(ThemeManager.bg())
 	focus_sb.shadow_size = NORMAL_SHADOW_SIZE
 	focus_sb.shadow_offset = NORMAL_SHADOW_OFFSET
 	btn.add_theme_stylebox_override("focus", focus_sb)
-	btn.add_theme_color_override("font_focus_color", ThemeManager.text())
 
 	bind_hover(btn, 1.03)
 	attach_press_feedback(btn)
@@ -209,6 +199,7 @@ static func _press_down(btn: BaseButton) -> void:
 	tw.set_trans(Tween.TRANS_QUAD)
 	tw.set_ease(Tween.EASE_OUT)
 	tw.tween_property(btn, "scale", Vector2(PRESS_SCALE, PRESS_SCALE), PRESS_DOWN_SEC)
+	_tween_state_colors(btn, tw, PHASE_PRESS, PRESS_DOWN_SEC)   # 按下档颜色（渐变，见修复 ④）
 	btn.set_meta("_ui_hover_tween", tw)
 	btn.set_meta("_ui_lift_target", PRESS_SCALE)   # 目标记录与去重逻辑保持同步
 
@@ -229,6 +220,8 @@ static func _press_release(btn: BaseButton) -> void:
 	tw.set_trans(Tween.TRANS_QUAD)
 	tw.set_ease(Tween.EASE_OUT)
 	tw.tween_property(btn, "scale", Vector2(rest, rest), PRESS_RELEASE_SEC)
+	# 颜色随缩放一起回弹到「悬停档」（鼠标仍在上）或「常态档」，同一时间轴（修复 ④）
+	_tween_state_colors(btn, tw, PHASE_HOVER if btn.is_hovered() else PHASE_BASE, PRESS_RELEASE_SEC)
 	btn.set_meta("_ui_hover_tween", tw)
 	btn.set_meta("_ui_lift_target", rest)
 
@@ -238,6 +231,46 @@ static func _kill_ui_tween(control: Control) -> void:
 		var old: Tween = control.get_meta("_ui_hover_tween")
 		if old != null and old.is_valid():
 			old.kill()
+
+
+## 【2026-10-01 抖动修复 ④（根因）】状态**不换 stylebox**：normal / hover / pressed 共用同一份，
+## 状态差异全部改成**颜色 tween**（与缩放在同一根时间轴上，节奏天然同步）。
+##
+## 为什么这是根因 —— 实机线索是「所有按钮都抖，唯独棋盘格子不抖」，而棋盘格子恰好是全项目
+## 唯一「normal/hover/pressed 共用一份 stylebox」的控件（level_select._style_tile）。
+## 换 stylebox 是**瞬时**的（Godot 主题项整体替换、没有过渡）：悬停那一刻颜色 / 描边 / 影色
+## 一起跳，而 scale 还在 0.2s 平滑放大——两者不同步，实机读感就是「上升过程中抖」。
+## 2026-09-30 与 2026-10-01 前两轮只收敛了阴影**几何**（size/offset），没动"换 stylebox"这个
+## 动作本身，所以抖动仍在。
+##
+## focus 仍然单独一份：键盘聚焦不在鼠标悬停路径上，且需要更粗的描边（无障碍），互不影响。
+const META_STATE_COLORS := "_ui_state_colors"
+const PHASE_BASE := 0
+const PHASE_HOVER := 1
+const PHASE_PRESS := 2
+
+
+## 登记三档颜色（配合「多态共用一份 stylebox」）。colors 的键：
+##   bg / border / shadow → [常态, 悬停, 按下]；数组短于 3 时末位色向后沿用（如卡片无影）。
+static func bind_state_colors(btn: Button, colors: Dictionary) -> void:
+	btn.set_meta(META_STATE_COLORS, colors)
+
+
+## 把按钮 stylebox 的颜色 tween 到目标档，**挂在调用方的 tween 上**（共享时间轴）。
+## 取 stylebox 的入口固定是 "normal" 槽——normal/hover/pressed 共用同一份，它就是"当前那份"。
+static func _tween_state_colors(control: Control, tw: Tween, phase: int, sec: float) -> void:
+	if not control.has_meta(META_STATE_COLORS):
+		return
+	var sb := control.get_theme_stylebox("normal") as StyleBoxFlat
+	if sb == null:
+		return
+	var colors: Dictionary = control.get_meta(META_STATE_COLORS)
+	for key: String in ["bg", "border", "shadow"]:
+		var arr: Array = colors.get(key, [])
+		if arr.is_empty():
+			continue
+		var target: Color = arr[mini(phase, arr.size() - 1)]
+		tw.parallel().tween_property(sb, "%s_color" % key, target, sec)
 
 
 ## 绑定 hover 抬起：进入 scale 到目标，离开回 1.0（0.2s ease-out，不超过 0.3s）。
@@ -285,4 +318,6 @@ static func _lift_to(control: Control, scale_to: float) -> void:
 	tw.set_trans(Tween.TRANS_QUAD)
 	tw.set_ease(Tween.EASE_OUT)
 	tw.tween_property(control, "scale", Vector2(scale_to, scale_to), 0.2)
+	# 颜色与缩放**同一根时间轴**（抖动修复 ④：状态差异全靠渐变，不再换 stylebox）
+	_tween_state_colors(control, tw, PHASE_HOVER if scale_to > 0.99 else PHASE_BASE, 0.2)
 	control.set_meta("_ui_hover_tween", tw)

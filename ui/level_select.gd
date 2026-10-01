@@ -1580,30 +1580,39 @@ func _open_shape_level(path: String) -> void:
 
 
 func _style_card(btn: Button) -> void:
-	for state in ["normal", "hover", "pressed", "focus"]:
-		var sb := StyleBoxFlat.new()
-		sb.set_corner_radius_all(6)
-		sb.set_border_width_all(1)
-		sb.content_margin_left = 8
-		sb.content_margin_right = 8
-		sb.content_margin_top = 6
-		sb.content_margin_bottom = 8   # 给底部进度条留位置
-		match state:
-			"hover":
-				sb.bg_color = ThemeManager.card().lightened(0.06)
-				sb.border_color = ThemeManager.accent()
-			"focus":
-				# 方向键走到哪一格必须一眼看出来：底色再亮一档 + 2px 边框
-				sb.bg_color = ThemeManager.card().lightened(0.12)
-				sb.border_color = ThemeManager.accent()
-				sb.set_border_width_all(2)
-			"pressed":
-				sb.bg_color = ThemeManager.accent().darkened(0.35)
-				sb.border_color = ThemeManager.accent()
-			_:
-				sb.bg_color = ThemeManager.card()
-				sb.border_color = ThemeManager.grid_line()
+	# 【2026-10-01 抖动修复 ④（根因）】normal / hover / pressed **共用同一份** stylebox：
+	# 换 stylebox 是瞬时的（Godot 主题项整体替换、没有过渡），与 0.2s 的缩放不同步 ⇒
+	# 实机读成「悬停/点击时抖」。状态差异改由 UiTheme.bind_state_colors 登记的
+	# 颜色**渐变**表达（与缩放同一时间轴）。详见 UiTheme.META_STATE_COLORS 的根因说明。
+	var sb := StyleBoxFlat.new()
+	sb.set_corner_radius_all(6)
+	sb.set_border_width_all(1)
+	sb.content_margin_left = 8
+	sb.content_margin_right = 8
+	sb.content_margin_top = 6
+	sb.content_margin_bottom = 8   # 给底部进度条留位置
+	sb.bg_color = ThemeManager.card()
+	sb.border_color = ThemeManager.grid_line()
+	for state in ["normal", "hover", "pressed"]:
 		btn.add_theme_stylebox_override(state, sb)
+	UiTheme.bind_state_colors(btn, {
+		"bg": [ThemeManager.card(),
+				ThemeManager.card().lightened(0.06),
+				ThemeManager.accent().darkened(0.35)],
+		"border": [ThemeManager.grid_line(), ThemeManager.accent(), ThemeManager.accent()],
+	})
+	# focus 独立一份：方向键走到哪一格必须一眼看出来（底色再亮一档 + 2px 描边）。
+	# 键盘聚焦不在鼠标悬停路径上，故不受抖动修复影响。
+	var fsb := StyleBoxFlat.new()
+	fsb.set_corner_radius_all(6)
+	fsb.set_border_width_all(2)
+	fsb.content_margin_left = 8
+	fsb.content_margin_right = 8
+	fsb.content_margin_top = 6
+	fsb.content_margin_bottom = 8
+	fsb.bg_color = ThemeManager.card().lightened(0.12)
+	fsb.border_color = ThemeManager.accent()
+	btn.add_theme_stylebox_override("focus", fsb)
 	btn.add_theme_color_override("font_color", ThemeManager.text())
 	btn.add_theme_color_override("font_disabled_color", ThemeManager.text_secondary().darkened(0.3))
 
@@ -2662,48 +2671,40 @@ func _style_choice(b: Button, active: bool) -> void:
 	# 【2026-09-30 浮动卡片化】页签与全局按钮统一：圆角 12 + 常态软影 + hover 提亮
 	# + pressed 沉底阴影 + 按压回弹（attach_press_feedback）。选中/未选中的底色语义不变。
 	var radius := 12
+	var base_bg: Color = ThemeManager.accent().darkened(0.55) if active else ThemeManager.card()
+	var base_bd: Color = ThemeManager.accent() if active else ThemeManager.grid_line()
 	var sb := StyleBoxFlat.new()
 	sb.set_corner_radius_all(radius)
 	sb.corner_detail = clampi(radius + 2, 8, 20)
 	sb.anti_aliasing = true
 	sb.set_border_width_all(2 if active else 1)
-	if active:
-		sb.bg_color = ThemeManager.accent().darkened(0.55)
-		sb.border_color = ThemeManager.accent()
-	else:
-		sb.bg_color = ThemeManager.card()
-		sb.border_color = ThemeManager.grid_line()
 	sb.content_margin_left = 12
 	sb.content_margin_right = 12
 	sb.content_margin_top = 8
 	sb.content_margin_bottom = 8
+	sb.bg_color = base_bg
+	sb.border_color = base_bd
 	sb.shadow_color = ThemeManager.shadow(ThemeManager.bg())
 	sb.shadow_size = UiTheme.NORMAL_SHADOW_SIZE
 	sb.shadow_offset = UiTheme.NORMAL_SHADOW_OFFSET
-	b.add_theme_stylebox_override("normal", sb)
-	# hover：底色提亮一档 + 影加深（未选中页签才有悬停反馈；选中的页签底色已最深）
-	if not active:
-		var hsb: StyleBoxFlat = sb.duplicate()
-		hsb.bg_color = ThemeManager.card().lightened(0.06)
-		hsb.border_color = ThemeManager.accent()
-		hsb.shadow_color = ThemeManager.shadow(ThemeManager.bg(), ThemeManager.SHADOW_DROP_HOVER)
-		hsb.shadow_size = UiTheme.HOVER_SHADOW_SIZE
-		hsb.shadow_offset = UiTheme.HOVER_SHADOW_OFFSET
-		b.add_theme_stylebox_override("hover", hsb)
-	# pressed：沉底（影收脚边 + 底色加深）
-	var psb: StyleBoxFlat = sb.duplicate()
-	psb.bg_color = sb.bg_color.darkened(0.08)
-	psb.shadow_color = ThemeManager.shadow(ThemeManager.bg(), ThemeManager.SHADOW_DROP_HOVER)
-	psb.shadow_size = UiTheme.PRESSED_SHADOW_SIZE
-	psb.shadow_offset = UiTheme.PRESSED_SHADOW_OFFSET
-	b.add_theme_stylebox_override("pressed", psb)
+	# 【2026-10-01 抖动修复 ④】normal / hover / pressed 共用这一份（原先三份 duplicate，
+	# 切态瞬时跳样式 ⇒ 抖动；根因说明见 UiTheme.META_STATE_COLORS），差异走颜色渐变。
+	# 选中/未选中的底色语义不变；选中态此前没有悬停反馈，现在统一为一档提亮（交互一致）。
+	for state in ["normal", "hover", "pressed"]:
+		b.add_theme_stylebox_override(state, sb)
+	UiTheme.bind_state_colors(b, {
+		"bg": [base_bg, base_bg.lightened(0.06), base_bg.darkened(0.08)],
+		"border": [base_bd, ThemeManager.accent(), ThemeManager.accent()],
+		"shadow": [ThemeManager.shadow(ThemeManager.bg()),
+				ThemeManager.shadow(ThemeManager.bg(), ThemeManager.SHADOW_DROP_HOVER),
+				ThemeManager.shadow(ThemeManager.bg(), ThemeManager.SHADOW_DROP_HOVER)],
+	})
 	# 字色随底色走：选中/跳过的底是 accent 系淡化色，未选中的底是 card。
 	# 五套粉彩主题下同一个 darkened() 系数给出的明度差异极大，固定 text() 必糊，
 	# 故交给 ThemeManager.text_on() 按实测对比度挑（该接口详见 theme_manager.gd）。
-	b.add_theme_color_override("font_color", ThemeManager.text_on(sb.bg_color))
-	# 键盘焦点态（2026-09-25 自查补）：页签开了 FOCUS_ALL，但此前只覆盖 normal ⇒
-	# 聚焦时会落到引擎默认焦点框（浅色细线，与深色主题冲突，且与「选中」难以区分）。
-	# 复用同一底色，仅把描边换强调色并加粗 —— 与选中态靠底色区分。
+	b.add_theme_color_override("font_color", ThemeManager.text_on(base_bg))
+	# 键盘焦点态（2026-09-25 自查补）：独立一份、描边 2px——键盘聚焦不在悬停路径上，
+	# 且需要与「选中」靠描边区分（选中是 2px 时，焦点靠更亮的 accent 描边仍可辨）。
 	var fsb: StyleBoxFlat = sb.duplicate()
 	fsb.set_border_width_all(2)
 	fsb.border_color = ThemeManager.accent()
