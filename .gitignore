@@ -88,3 +88,25 @@ tools/_archive/
 /sast_*.json
 /mirror_*.tar.gz
 /mirror_*.zip
+
+# ── 素材目录防误提交（2026-10-01 单独恢复）─────────────────────────────────
+# ⚠️ 这一段是**防误提交护栏**，不是素材改动本身：回滚把 UI 素材工作撤掉后，
+# `assets/ui/` 与 `assets/fonts/crayon/` 下仍留有**未跟踪**的大体积文件
+#（`_downloads/` 466MB 第三方纹理库、`_review/` 评审图、`_src/` 中间产物、文楷 24MB），
+# 且它们已不再被忽略 —— 此时一条 `git add -A` 就会把 466MB 灌进仓库历史（不可逆）。
+# 故单独恢复这段规则。**与回滚掉的素材改动无关，可独立保留或删除。**
+#
+# 为什么 `_downloads/` 必须排除（两条独立理由，任一条都足够）：
+#   ① 合规：Resource Boy 许可禁止「单独再分发文件本身」，入库即违约；
+#   ② 体积：466MB 写进 git 历史不可逆，且随时可重新下载。
+/assets/ui/_downloads/*
+!/assets/ui/_downloads/.gdignore
+/assets/ui/_review/*
+!/assets/ui/_review/.gdignore
+/assets/ui/**/_src/*
+!/assets/ui/**/_src/.gdignore
+/assets/ui/**/svg/*
+!/assets/ui/**/svg/.gdignore
+/assets/fonts/crayon/LXGWWenKai-Regular.ttf
+/assets/fonts/crayon/LXGWWenKai-Regular.ttf.import
+
