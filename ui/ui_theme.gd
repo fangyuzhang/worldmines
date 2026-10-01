@@ -31,17 +31,22 @@ class_name UiTheme
 const NORMAL_SHADOW_OFFSET := Vector2(0, 3)
 const NORMAL_SHADOW_SIZE := 10
 
-## 悬停：比常态深一档、宽一点。"抬起一档"还由描边换 accent + 底色提亮 + scale
-## 1.03 三条一起表达，阴影不需要独立承担整个层次差。
-## 【2026-09-30 抖动修复】offset 与 normal 同值、size 只 +1：stylebox 切换是**瞬时**
-## 的，跨度大就是"影先跳"（用户反馈的悬停抖感主源之一）。浮起的层次差交给 scale。
-const HOVER_SHADOW_OFFSET := Vector2(0, 3)
-const HOVER_SHADOW_SIZE := 11
-
-## 按下（2026-09-30 浮动卡片化新增）：影子收到脚边（offset 归零档、size 收窄）
-## = 卡片被按进桌面的"沉底"感；深色用悬停档（比常态深）。
-const PRESSED_SHADOW_OFFSET := Vector2(0, 1)
-const PRESSED_SHADOW_SIZE := 4
+## 【2026-10-01 抖动修复 ③】阴影几何（offset / size）**四态共用同一组值**，不再逐态调整。
+##
+## 为什么必须相同：stylebox 的切换是**瞬时**的——Godot 的 `theme_override_styles` 是整体
+## 替换，没有过渡（想平滑只能逐帧 tween StyleBoxFlat 的属性，代价与复杂度都不合适）。
+## 于是"悬停时影子宽 1px / 按下时影子收到脚边"这类**几何**差异，都会在切态那一帧
+## "啪"地跳一下；而同一时刻 scale 正在 0.2s 平滑播放 —— 两者不同步，人眼就读成抖动
+##（2026-09-30 已把跨度从 (0,3)/10 → (0,1)/4 缩过一轮，仍不足以消除）。
+##
+## 现在层次差全部交给**不会瞬变或瞬变也自然**的手段：
+##   · scale（连续动画）
+##   · 底色提亮 / 描边换 accent（纯颜色切换，读起来是"变色"而非"抖"）
+##   · 影色深浅（同上，颜色不同、几何相同）
+const HOVER_SHADOW_OFFSET := NORMAL_SHADOW_OFFSET
+const HOVER_SHADOW_SIZE := NORMAL_SHADOW_SIZE
+const PRESSED_SHADOW_OFFSET := NORMAL_SHADOW_OFFSET
+const PRESSED_SHADOW_SIZE := NORMAL_SHADOW_SIZE
 
 ## 圆角半径。**不要**用 StyleBoxFlat.expand_margin 去放大投影范围 —— 那会把整个
 ## stylebox 的绘制矩形撑开，导致相邻控件互相覆盖（已实测踩过）。
@@ -103,8 +108,8 @@ static func style_button(btn: Button, pad_x: int = BTN_PAD_X, pad_y: int = BTN_P
 	_round(pressed, BTN_RADIUS)
 	pressed.set_border_width_all(1)
 	pressed.border_color = ThemeManager.accent()
-	# 【2026-09-30 浮动卡片化】按下 = 卡片沉底：影子收到脚边（offset 归零档、
-	# size 收窄）+ 用更深的影色 —— 与 scale 缩小一起构成"按进桌面"的立体反馈。
+	# 【2026-10-01 抖动修复 ③】按下不再改阴影几何（原先收到 (0,1)/4）：几何差异是瞬时的，
+	# "沉底感"改由 scale 0.96 + 实心 accent 底色表达；影色仍取更深一档（纯颜色变化）。
 	pressed.shadow_color = ThemeManager.shadow(ThemeManager.bg(), ThemeManager.SHADOW_DROP_HOVER)
 	pressed.shadow_size = PRESSED_SHADOW_SIZE
 	pressed.shadow_offset = PRESSED_SHADOW_OFFSET
@@ -128,8 +133,8 @@ static func style_button(btn: Button, pad_x: int = BTN_PAD_X, pad_y: int = BTN_P
 	# 【2026-09-29 补】focus 以前**没有阴影**，而 hover 有 —— 于是用 Tab 把焦点移到
 	# 某个按钮上，阴影会"啪"地出现/消失，同一个悬停语义两种观感。与 hover 取同一档。
 	focus_sb.shadow_color = ThemeManager.shadow(ThemeManager.bg(), ThemeManager.SHADOW_DROP_HOVER)
-	focus_sb.shadow_size = HOVER_SHADOW_SIZE
-	focus_sb.shadow_offset = HOVER_SHADOW_OFFSET
+	focus_sb.shadow_size = NORMAL_SHADOW_SIZE
+	focus_sb.shadow_offset = NORMAL_SHADOW_OFFSET
 	btn.add_theme_stylebox_override("focus", focus_sb)
 	btn.add_theme_color_override("font_focus_color", ThemeManager.text())
 
@@ -176,7 +181,10 @@ static func style_swatch(sw: Button, color: Color, selected: bool) -> void:
 
 ## 【2026-09-30 浮动卡片化】按压回弹（所有按钮及可点击元素统一）：
 ##   按下 → scale 缩到 0.96（0.06s，快而短 = "按下去"）；
-##   松开 → TRANS_BACK EASE_OUT 回弹到 1.0（0.22s，轻微过冲再落回 = 弹性）。
+##   松开 → 回弹到悬停高度（0.22s）。
+## 【2026-10-01 抖动修复 ②】松开原先用 TRANS_BACK（"越过目标再落回"的过冲），实机被
+##   感知为抖动——鼠标仍悬停时目标是 1.03 而不是 1.0，距离翻倍、过冲更明显。
+##   现改为与其它动画一致的 QUAD EASE_OUT：单调靠近目标，无过冲。
 ## 与 hover 抬起共用同一个 tween 槽（_ui_hover_tween）——两套动画互杀，不会打架。
 ## pivot 每次动画开始时取当前 size（换页/改字号后仍绕中心，同 _lift_to 的修正）。
 ## 键盘激活（空格/回车）同样触发 button_down/up，键盘用户得到同一份反馈。
@@ -216,7 +224,9 @@ static func _press_release(btn: BaseButton) -> void:
 	if btn.is_hovered():
 		rest = float(btn.get_meta("_ui_hover_scale", 1.03))
 	var tw := btn.create_tween()
-	tw.set_trans(Tween.TRANS_BACK)   # 过冲回弹：scale 短暂越过目标再落回
+	# 【2026-10-01 抖动修复 ②】不用 TRANS_BACK：过冲（越过目标再落回）被实机反馈为抖动，
+	# 且鼠标仍悬停时 rest=1.03 使过冲量更大。QUAD EASE_OUT 单调靠近目标，与 hover 一致。
+	tw.set_trans(Tween.TRANS_QUAD)
 	tw.set_ease(Tween.EASE_OUT)
 	tw.tween_property(btn, "scale", Vector2(rest, rest), PRESS_RELEASE_SEC)
 	btn.set_meta("_ui_hover_tween", tw)
@@ -254,9 +264,13 @@ static func _lift_to(control: Control, scale_to: float) -> void:
 		return
 	# 【2026-09-30 抖动修复 ①】同目标去重：tween 已经在往同目标走就不杀不重建
 	#（重复 create/kill 是微抖来源；快速滑动相邻按钮时尤其明显）。
+	# 【2026-10-01 修正】原实现读的是 **tween 上**的 `_ui_lift_target`，而下面写入的是
+	# **控件上**的 —— 两者不是一个对象，`get_meta` 每次都回落到默认值，于是去重**从未
+	# 生效**（注释写了、逻辑没跑）。改为从控件读目标值。
 	if control.has_meta("_ui_hover_tween"):
 		var cur: Tween = control.get_meta("_ui_hover_tween")
-		if cur != null and cur.is_valid() and cur.get_meta("_ui_lift_target", -9.9) == scale_to:
+		var cur_target: float = float(control.get_meta("_ui_lift_target", -9.9))
+		if cur != null and cur.is_valid() and cur_target == scale_to:
 			return
 	# 记录本次目标（同目标去重用）。
 	control.set_meta("_ui_lift_target", scale_to)

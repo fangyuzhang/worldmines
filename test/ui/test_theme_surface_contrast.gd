@@ -370,7 +370,44 @@ func test_button_hover_and_focus_share_one_shadow() -> void:
 	assert_eq(focus_sb.shadow_color, hover_sb.shadow_color,
 		"focus 与 hover 的阴影必须同档（否则 Tab 移焦点时阴影会突然出现/消失）")
 	assert_eq(focus_sb.shadow_size, hover_sb.shadow_size, "focus 与 hover 的影范围必须同档")
-	# normal 与 hover 的**范围**跨度也要收敛：瞬时换 stylebox，跨度大就是跳变
-	assert_lte(UiTheme.HOVER_SHADOW_SIZE - UiTheme.NORMAL_SHADOW_SIZE, 4,
-		"常态→悬停的阴影模糊半径跨度应 ≤4px（实得 %d）"
-		% (UiTheme.HOVER_SHADOW_SIZE - UiTheme.NORMAL_SHADOW_SIZE))
+	# 【2026-10-01 抖动修复 ③】四态阴影**几何**必须完全一致。
+	# 原先 hover 比常态宽 1px、pressed 收成 (0,1)/4 —— 换 stylebox 是**瞬时**的（Godot
+	# 主题项没有过渡），几何差异会在切态那一帧跳一下，而同一时刻 scale 正在 0.2s 平滑
+	# 播放；两者不同步，实机读感就是"悬停/按下时抖"。层次差现全部交给 scale（连续）+
+	# 底色 / 描边 / 影色（纯颜色变化）。
+	# 常量层与实例层都钉：常量保证语义，实例保证 style_button 真的照办。
+	assert_eq(UiTheme.HOVER_SHADOW_SIZE, UiTheme.NORMAL_SHADOW_SIZE, "常量层：hover 与 normal 影范围同值")
+	assert_eq(UiTheme.PRESSED_SHADOW_SIZE, UiTheme.NORMAL_SHADOW_SIZE, "常量层：pressed 与 normal 影范围同值")
+	assert_eq(UiTheme.PRESSED_SHADOW_OFFSET, UiTheme.NORMAL_SHADOW_OFFSET, "常量层：pressed 与 normal 影偏移同值")
+	var normal_sb := b.get_theme_stylebox("normal") as StyleBoxFlat
+	var pressed_sb := b.get_theme_stylebox("pressed") as StyleBoxFlat
+	assert_not_null(normal_sb, "normal 态应是 StyleBoxFlat")
+	assert_not_null(pressed_sb, "pressed 态应是 StyleBoxFlat")
+	if normal_sb != null and pressed_sb != null:
+		for pair: Array in [["hover", hover_sb], ["pressed", pressed_sb], ["focus", focus_sb]]:
+			var st := str(pair[0])
+			var sb: StyleBoxFlat = pair[1]
+			assert_eq(sb.shadow_size, normal_sb.shadow_size,
+				"%s 与 normal 的影范围必须一致（几何瞬变会读成抖动）" % st)
+			assert_eq(sb.shadow_offset, normal_sb.shadow_offset,
+				"%s 与 normal 的影偏移必须一致（同上）" % st)
+
+
+func test_hover_tween_is_not_recreated_for_same_target() -> void:
+	## 【2026-10-01 抖动修复 ①】同目标去重必须真的生效。
+	## 原实现读的是 **tween 上**的 `_ui_lift_target`（`cur.get_meta(...)`），而写入的是
+	## **控件上**的（`control.set_meta(...)`）—— 两者不是一个对象，`get_meta` 每次都回落到
+	## 默认值，于是去重从未生效：每次鼠标进出都 create/kill 一遍 tween（快速划过相邻按钮
+	## 时反复重建就是微抖来源）。本用例把"同目标不重建、换目标才重建"钉住。
+	var b := Button.new()
+	add_child_autofree(b)
+	UiTheme.bind_hover(b, 1.04)
+	b.mouse_entered.emit()
+	var first: Tween = b.get_meta("_ui_hover_tween", null)
+	assert_not_null(first, "首次进入应创建 tween")
+	b.mouse_entered.emit()   # 同目标（1.04）重复进入
+	var second: Tween = b.get_meta("_ui_hover_tween", null)
+	assert_eq(second, first, "同目标重复进入不得重建 tween（去重必须生效）")
+	b.mouse_exited.emit()    # 换了目标（回落 1.0）→ 必须重建
+	var third: Tween = b.get_meta("_ui_hover_tween", null)
+	assert_ne(third, first, "目标变化（回落 1.0）应重建 tween")
