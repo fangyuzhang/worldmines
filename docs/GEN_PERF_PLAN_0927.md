@@ -927,9 +927,141 @@ S1 只优化"生成之后别丢"；**推论 (i)**（§16.5）优化"生成本身
 
 **终验（本批）**：`tools/ci_check.ps1` → **`CI GREEN`**：`dotnet build` **0 警告 / 0 错误**、GUT **130 脚本 / 764 用例 / 764 通过**（43038 断言）、导出预设体检通过；改动文件 lint **0 错**。
 
+### 24.8 第六批（10-01）：r5 清单 **C2 / C3 / C4 / C5** + **D2** 全部落地
+**总原则：每一个开关的默认值都=现状行为**，新能力一律按"先落地能力、默认不改行为、服务器 A/B 后才改默认"的方式接。
+
+| 项 | 落地内容 | 默认 | 本地验证 | 服务器待验 |
+|---|---|---|---|---|
+| **C2 逐候选心跳** | `tools/batch_all_variants.gd`：seed 循环开头**覆盖写** `<issues 同目录>/heartbeat.txt`（combo/side/seed/timeout/各档计数）。移植自 `tools/probe_peak_window.gd:119-127`（那边实测抓到过 o4@9 单候选 679s 的案例） | 恒开（纯观测） | parse + GUT | 挂死时能直接读到"卡在哪个 seed" |
+| **C2 看门狗** | `tools/prod_watchdog.sh`：① `STALL_MIN` **120→15 分钟**（前提=进度粒度从单元降到候选）；② 进度文件集加入 `heartbeat.txt`；③ **自监控心跳** `$EVID_DIR/watchdog_heartbeat.txt`（每轮写） | 恒开 | 人工审查（本机无 bash） | `bash -n` + `kill -STOP` 注入演练：须在 ≤15min+宽容期内取证并 KILL |
+| **C2 计划侧自检** | `tools/thin_cells.py` 脚本体新增 `wd_check`：**每轮开始**检查看门狗心跳新鲜度（>900s 大声告警，但**不中止**计划） | 恒开 | `py_compile` ✓ | 同上 |
+| **C3/S2 ProofLog 计时** | `batch_all_variants.gd`：`ProofLog.build` 耗时累计进 `unit_done.proof_ms`（原先**完全不可见**，实测占批产墙钟 13.4–18.5%） | 恒开（纯观测） | parse + GUT | 跑一轮取 `proof_ms` 分布 ⇒ 定抽样比例 |
+| **C3/S2 金丝雀抽样** | 第 18 参 `proof_canary`：缺省空 = **全量复核（行为不变）**；`"sample"` 或逗号名单 ⇒ 名单内恒全量 + 名单外每 5 个候选抽 1 个（`u_tried % 5` 确定性判据）+ `proof_skipped` 落 unit_done | **默认关** | parse + GUT | 按 §13.1（检出率 0.0010%）启用后须核对 `proof_fail` 仍为 0、库内无失真 |
+| **C4 `build_spec` IR 缓存** | `core/rule_oracle.gd`：新增 `_pkg_at/_shift_aux_i`；`build_spec` 改为**复用** `clue_pkg/interval_pkg` 缓存（base=0 构建）并把 aux 编号整体平移到本 spec 区间（IR 的 aux 引用是 `{"t":"aux","i":id}` 紧凑节点 ⇒ 只改 `i`） | 恒开 | **黄金网逐字节对拍（本批）** + GUT | 黄金网 0 差异 ⇒ 首轮即省 ~5.8% |
+| **C5 双 shard** | `tools/thin_cells.py`：`SHARDS=2` 时相邻两轮**并行**（`&` + `wait`）；各轮产物目录本就不同（`user://cmp_*` / `user://thinfill_*`）⇒ 不互相覆盖；`wait_core` 已以 `nproc` 为上限（2 核放行 2 个） | **默认 1（串行不变）** | `py_compile` ✓ | ① 双进程跑两轮，检查 `.godot` 导入缓存有无争用报错（§12.2 待验项）；② 两轮 `unit_done` 与串行一致；③ `load` 接近核数 ⇒ 才改默认 |
+| **D2 判停改步数** | `core/rule_oracle.gd` 新增 `deterministic_steps`（>0 时下发 `spec["max_deterministic_time"]`）。**C# 侧无需改**：`Params()` 早已支持该键（`solver/RuleSolver.cs:791-805`）⇒ 把"判停点"从**墙钟**换成**步数**（同 seed 同参数必停在同一处 ⇒ 修 R8 波动） | **默认 0 = 现状**（墙钟为主 + det 2× 兜底） | 黄金网（默认 0 ⇒ 应逐字节不变） | A/B 协议：峰值直方图对照 + 同 seed 两次重跑**逐字节一致** + 黄金网 ⇒ 才可改默认 |
+
+**本批验证结论**：见下方"六批终验"。脚本侧 `py_compile` ✓、`import os` ✓；本机**无 bash** ⇒ `prod_watchdog.sh`/脚本体只能人工审查，`bash -n` 与 `kill -STOP` 演练留服务器。
+
+### 24.9 第六批的验证实录：**黄金网在 9 分钟内抓到两个缺陷**（含一个真不等价）
+**证据链（全部在盘，可复核）**：
+| 轮次 | 产物 | 结果 | 结论 |
+|---|---|---|---|
+| ① C4 开（首发） | `tools/_golden_c4.log` | **全 9 档 `hit 0/5, avg 0.01s`** | 我在 `core/rule_oracle.gd:_shift_aux_i` 写了 `var is_domain := x.has("i") and x.has("kink")`（`x` 是 Variant ⇒ **无法推断类型**）⇒ `Parse Error` ⇒ `rule_oracle.gd` 整个编译失败 ⇒ 生成器**全线早退**（0.01s 空返回）。**是黄金网的"0/5 + 0.01s"形态在 9 分钟内把它抓出来的**。修法：显式标注 `: bool`（`--check-only` 复验两脚本均 exit 0）。 |
+| ② C4 开（修后） | `tools/_golden_post_c4.jsonl`（35 行） | `o4@6` **5/5** / `o4@8` **4/5** / `classic+s3@7,@8` 0/5 | 独立 diff 对 `_golden_post_p0.jsonl`：**`o4@6` seed1（max_complexity）、seed4（difficulty/profile/revealed/clue_count）、`o4@8` seed1 均变化** ⇒ **C4 不是逐字节等价**（真实回归）。 |
+| ③ **C4 关（默认）** | `tools/_golden_post_c4b.jsonl`（36 行） | `o4@6`/`o4@8`/`o5x@7`/`o5x@8`/`classic+s1@8`/`o4+s1@8`/`o5x+s1@7` 全 5/5 | 独立 diff：**`__VERDICT__ OK`** —— 变化档**无**、**7 档逐字节一致**（含 ② 里变化的 `o4@6`/`o4@8`）⇒ **恢复确证**。唯一"pre 有 post 无"的档是 `classic+s3@7`（§18.1 墙钟临界档）。 |
+
+**处置**：C4 按 ①`prune_probe_whitelist` 的同一模式落地 —— **实现与证据保留、默认关、标 ⛔ 禁止启用**（`core/rule_oracle.gd` 的 `var _spec_clue_cache := false` 与上方 15 行注释写明两个怀疑点：**① 缓存包用 `total_mines=-1` 构建而原路径用 `_total_mines`；② aux 前进量用 `pkg["aux"].size()` 代替 `b.next_aux_index()`**）＋复活判据（对齐后重跑黄金网全档 0 差异）⇒ 后人不必重做同一实验。
+**顺带修**：`tools/_golden_diff.py` 在 post 缺行时会 `KeyError` 直接崩（连 `__VERDICT__` 都打不出）——本轮实测踩到，已加缺失行守卫并说明两种缺失原因（未跑完 / 墙钟临界档被 90s 截断）。
+
+**我在这批里犯的错（如实记账）**：**第 3 次并发违规** —— ②轮尚未收尾（仍在 `classic+s3@7`）我就起了 ③轮 ⇒ 两轮并发跑同一台机 ⇒ 两轮的 `classic+s3@7`/`@8` **都** 0/5（§18.1 已文档化的墙钟临界档，被并发推过 90s 上限）。**纪律再钉一次**：启动任何 Godot 前，先确认 `tasklist | findstr Godot` 为 **0**；不要凭"上一轮看起来快结束了"下判断。
+
 ### 21.4 ② 断言数浮动结案（不是断言丢失）
 三次观测（同套测试、全部 130 脚本 / 764 用例 / 764 通过 / `All tests passed`）：
 **43039**（P0 时）/ **43037**（S1 时）/ **43038**（本次）。
 ⇒ 断言数存在 **±1~2 的运行间浮动**（有测试的断言数依赖运行期分支/数据），**用例数与结果恒定** ⇒ 不构成"某断言分支变空"的隐患。若将来要精确定位，需 diff 两次 GUT 的**逐脚本**汇总（本次尝试解析 `_gut_p0.log` 未命中其输出格式）。
+
+### 24.10 第七批（10-01）：用户自建变体 + 自建异形棋盘的自助校验链路
+
+**要解决的问题**（用户点名，三件同源）：
+
+| # | 现象 | 根因 |
+|---|---|---|
+| 1 | 异形盘可用、变体可用，组合却被判「不可行」 | 判据层按**矩形模型**算（中轴整除 / 骨牌数 / D4 对称），异形盘上必然误判 |
+| 2 | 异形盘上的变体被**强制 classic** | 生成期对「异形拓扑 + 非 classic 线索」一律降级，连"只依赖邻域"的计数型也被一并降级 |
+| 3 | 判据**没有几何维度** | `RuleFeasibility` 的缓存键只有尺寸（不同棋盘串结论）；`RuleSignature` 不认识"存活格数 ≠ 包围盒面积" |
+
+**方案要点**：
+
+- **判据与生成期共用同一份"带拓扑的 spec"**：新增 `RuleFeasibility.query_topo / resolve_mines_topo`
+  （`core/rule_feasibility.gd:58-107`）与 `RuleOracle` 的 `topology` 透传；不变量
+  **「生成期判可行 ⇒ 判据不许说不可行」**由 `test/unit/test_topology_matrix.gd` 的 I1 逐格断言。
+- **棋盘指纹进缓存**：`RuleFeasibility.board_key(topo)`（`core/rule_feasibility.gd:115-134`，格数 +
+  邻接表稳定哈希，FNV-1a 自实现）拼进缓存键；`null`（矩形）用稳定占位串 `rect:null`，
+  矩形盘另拼 `rect:WxH`。
+- **WARN 不 FORBID**：`RuleSignature.compat_all(ids, size, mines, cells)` 新增 `cells` 维
+  （`core/rule_signature.gd:202-241`）——异形盘（存活格 ≠ 包围盒面积）上几何依赖项降级 WARN
+  并写明原因「异形盘不适用」，**绝不 FORBID**；不传 `cells` 时逐例与改动前一致（兼容铁律）。
+- **能力声明不静默降级**：`RulePlugin.geometry_kind()`（`core/rule_plugin.gd:47-58`）默认
+  `GEO_RECT_ONLY` = 今天的行为；生成期改按 `supports_topology()` 门控，不满足时
+  **回退 classic 并大声告警**（`core/puzzle_generator.gd:431-444`），禁止静默降级。
+- **用户侧自助链路（本批新增）**：
+  - `core/adjacency_builder.gd`：多边形 → 邻接（共边判据 + 统计 + `audit()`），
+    参数化镶嵌 `rect/hex/tri/mixed_hex_tri`；输出坐标非负 / 对称 / 无自环。
+  - `tools/board_validate.gd`：board.json 体检（度分布 / 连通分量 / 多边形退化与重叠 / bbox），
+    结论行 `__BOARD_VERDICT__`。
+  - `tools/spec_check.gd`：spec 自检（可表达性 → 几何适配 → 逐尺寸可行性 → 难度可达性），
+    结论行 `__SPEC_VERDICT__`；几何不适用只报「不适用（原因）」，**不打印「不可行」**。
+  - `test/unit/test_topology_matrix.gd`：3 类棋盘 × 4 类算子 = 12 格，每格只允许
+    「可用」或「不适用(原因)」，把"两边可行、组合被判不可行"变成会红的断言；
+    第 ③④ 类算子在非矩形盘上**只允许**「不适用(原因)」，且第 ③ 类在**未标注边类型**的盘上
+    也必须判「不适用」（原因=棋盘未提供方向语义标注）。
+    `compat_all` 不得 FORBID 这条断言已按 impl-topo 口径**收窄**：只在「异形盘 + CP-SAT 可用 +
+    非 R0/R4 + 签名无与几何无关的整除项（`Div.MOD_EQ` / `Div.EVEN`，如 `4c`）」时断言。
+    精确不变量（已抄进测试注释与 §13.4）：异形盘上 FORBID 只可能来自 **R0（同算子/重复 id）、
+    R4（蕴含冗余，如 `mx`→`ep`）、非几何整除 R5**；几何依赖（`MOD_EQ_MINUS_C` / `EXACT_HALF`）
+    与 D4 对称 R3 一律 WARN（`core/rule_signature.gd:46-52`、`:202-247`）。
+    配套修（impl-topo）：`compat_all` 的 FORBID 分支不再把**文案**塞进 `rules`，改为透传
+    **结构化判据码**（`["R0"]`/`["R4"]`/`["R5"]`；降级 WARN 时 `rules == []`），
+    门禁测试 `test_topology_judging.gd::test_t7_forbid_carries_structured_rule_codes`；
+    矩阵的 `_allow_forbid_on_irregular` 随之删掉文案匹配，改纯按码判定。
+  - 补一条**组合**不变量（矩阵单算子格与 T3/T7 都覆盖不到）：
+    `test_topology_matrix.gd::test_geometry_dependent_pair_on_irregular_is_warn_not_forbid`
+    —— `["dt","qd"]`（两个几何依赖整除）在 hex / mixed 上必须 **WARN**、reason 含「异形盘不适用」、
+    `compat_all.rules` 为空，且 `compat()` 逐对也不 FORBID。钉的正是「两边各自可行、组合被判不可行」。
+  - **`refs="topo"` 的邻居索引键——已裁定并落地：选项 (a) 规范化字典序排序**（主代理裁定；
+    等价表述：按偏移 `(dy,dx)` 字典序 ⇔ 按位置 `(y,x)` 升序）。理由：落盘只存边表、载入按边表序
+    重建邻接 ⇒ 原「插入序」在往返后漂移，索引型 ref 会静默指向别的邻居（生成期验证过的关在玩家侧
+    可能不可解）。实现 = `SpecRulePlugin._sorted_neighbors`（`compute_clue_topo`/
+    `build_clue_constraints`/`build_interval_constraints` 三处同序）+ 门禁
+    `test_spec_end_to_end.gd::test_topo_refs_stable_under_adjacency_reorder`
+    （同一盘、邻接项整体反转 ⇒ 逐格值必须不变）。§12.3 已同步为定稿文案（不再有「待裁定」小注）。
+  - **边类型标注（结构标注）**：`board.json` 的 adjacency 条目可带 `"kind":"ortho|diag|ring|ray|other"`；
+    `AdjacencyBuilder.audit()` 输出 `edge_kind_hist / typed_edges / untyped_edges`，
+    `from_tiling("rect")` 按 Moore 偏移自动标 ortho/diag；`board_validate` 打印直方图并在
+    未标注时发 **WARN**（理由：异形盘上平台只保证邻接表这一层语义，缺 `kind` 时方向/对角/环序类
+    算子无法求值 ⇒ **不适用，不是不可行**）。
+  - **闭环产出**：`tools/spec_check.gd --generate[=N]`（自动注册 → 逐尺寸生成 → 落盘
+    `user://spec_gen/<spec_id>/` → 打印 mines/revealed/clues/peak/档位 → `__SPEC_GEN__ OK n/m [档位分布]`），
+    只调生成器、不写随机重试/枚举（禁暴力条款）。
+  - 文档：`变体规则编写规范.md` §12（spec v1 表达力边界 + AI 提示词）/ §13（自建异形棋盘 +
+    边类型标注 + 三类几何适配表 + 禁暴力条款）。
+
+**本批验证结论**（主代理终验，2026-10-01）
+
+- `read_lints`：全部新增/改动文件 **0 错**（`core/spec_schema.gd`/`core/spec_rule_plugin.gd`/`core/adjacency_builder.gd`/`core/rule_plugin.gd`/`core/rule_feasibility.gd`/`core/rule_signature.gd`/`core/puzzle_generator.gd`/`core/board.gd`/`tools/spec_check.gd`/`tools/board_validate.gd`/`tools/verify_batch.gd`/`ui/board_view.gd`）。
+- **新增 `class_name` 脚本的必要步骤（本轮踩坑，务必记住）**：headless `-s`（GUT/工具）**不会**重扫全局类缓存 ⇒
+  新类会报 `Identifier "SpecSchema"/"SpecRulePlugin"/"AdjacencyBuilder" not declared in the current scope`
+  （并连带 `Failed to load script` 与一批 `Cannot infer the type of ...`）。必须先跑一次
+  `--headless --editor --quit-after 400` 让编辑器登记脚本（实测随后 `.godot/global_script_class_cache.cfg`
+  里出现这三个类）⇒ `-s` 才可用。**以后凡是新增 class_name，CI/本地第一件事就是这一次重扫。**
+- GUT 全量：**138 脚本 / 878 用例 / 878 通过 / 46664 断言 / 0 failing / 0 pending**（`All tests passed`）✓
+- 黄金网子集（`--cases=o4@6,o5x@7,classic+s1@8`，与 `_golden_post_p0.jsonl` 独立 diff）：
+  3 档各 **5/5** 且声明变化的档位**为空**、3 档**逐字节一致** ⇒ **`__VERDICT__ OK`**（生成侧行为零改变）。
+  同机空闲下 `o4@6` 仅 **2.87s/seed**（此前 6–7s）⇒ 反证此前"机器变慢"确实全是并发所致。CI 已内置该门禁（`GOLDEN_CASES`）。
+- `board_validate.gd` 冒烟（从已入库 `res://levels/hex_02.json` 抽出的棋盘）：37 格 / 90 边 /
+  度分布 3:6、4:12、6:19 / 连通 1 分量 / 自环 0 / 不对称 0 / 重复邻接 0 / 坐标非负 ✓ ⇒
+  `__BOARD_VERDICT__ WARN`，且**明确打印「不可用（不是不可行，是不适用）」**并给出解锁办法（边加 `kind`）✓
+- `spec_check.gd` 冒烟（违规 spec）：一次给出 5 条可行动错误（hidden_state 不支持 / id 前缀 / 缺 title /
+  refs↔geometry 冲突 / ref 索引越界）⇒ `__SPEC_VERDICT__ FAIL 该规格超出 spec v1 表达力（见上方原因）——请改用 entry.gd 手写 RulePlugin` ✓
+- `spec_check.gd --generate=2`（拓扑 spec × 蜂窝盘，`resolve_mines_topo` 给 mines=15 并写明口径）：
+  **2/2 出关** —— `peak=1 ⇒ 不进档`、`peak=5 ⇒ normal`，落盘
+  `user://spec_gen_demo/spec_demo_topocount/spec_7_0{1,2}.json` ⇒ **"写 spec → 直接出关卡"闭环成立** ✓
+- `AdjacencyBuilder` + 矩阵测试：3 盘（rect 6×6 / hex size7 / mixed_hex_tri）全部通过契约审计
+  （连通/对称/无自环/度分布），`audit()` 给出边类型直方图（rect 自动标 ortho/diag；hex/mixed 全部未标注
+  ⇒ 方向类算子判「**不适用**」而非「不可行」）✓
+
+**主代理在终验中修掉的三处问题（每处都有判据钉住）**
+1. **topo refs 的跨序列化不稳定（静默不可解类）**：原实现把 `ref i` 绑定邻接表**插入序**，而落盘只存边表、
+   载入按边表序重建 `_adj` ⇒ 同格邻居序会漂 ⇒ 载入侧 `ref i` 指向别的邻居（生成期验证过的关可能不可解）。
+   修法：`SpecRulePlugin._sorted_neighbors` 固定为 **(y,x) 升序**，`compute_clue_topo`/`build_clue_constraints`/
+   `build_interval_constraints` 三处统一走它；新增
+   `test_spec_end_to_end.gd::test_topo_refs_stable_under_adjacency_reorder`（同一盘、邻接项整体反转 ⇒ 逐格值必须不变）钉住。
+2. **加载/验收侧未接 `compute_clue_topo`（"生成对、装载错"类）**：`core/board.gd:_compute_clues` 与
+   `tools/verify_batch.gd` 现**优先问规则**的拓扑求值（未声明者仍走原硬编码 ⇒ classic 逐位不变）；
+   原 impl-spec 的 `pending` 测试已转成真断言
+   `test_spec_end_to_end.gd::test_board_load_side_uses_rule_topo_clue_values`（替身规则返回 777 ⇒ 旧硬编码必红）。
+3. **CI 的 GUT 判据过严**：原要求字面 `All tests passed`，遇**合法 pending** 会假红 ⇒ 改为按汇总里
+   `Failing Tests` 计数判定（0 = 通过；无汇总行时才退回文案判据）。
 
 

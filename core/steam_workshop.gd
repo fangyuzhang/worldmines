@@ -109,3 +109,28 @@ func poll_subscriptions(api: Object) -> Dictionary:
 ## 该本地 Mod 目录名是否来自工坊订阅（UI 标记来源用）。
 static func is_workshop_mod(dir_name: String) -> bool:
 	return dir_name.begins_with(WORKSHOP_PREFIX)
+
+
+## 创意工坊上传提示语（产品要求：未集成时明确告知，别让用户以为已经发布）。
+const UPLOAD_HINT := "已生成本地 workshop 包，请手动上传。"
+
+
+## 【预留接口】把本地 workshop 包发布到创意工坊。
+##
+## 当前**不实际联网、不集成 Steamworks**（产品硬要求），因此本函数**永远返回 ok=false**：
+##   * 插件不在（编辑器里没经 Steam 启动 / 无 appid / 无客户端）⇒ code = "no_steam"；
+##   * 插件在 ⇒ code = "not_implemented"。
+## 为什么"插件在"也必须返回失败：**假成功比没功能更坏**——用户会以为东西已经发出去了，
+## 而失败信息至少告诉他要手动上传。
+## 为什么入参直接是 zip 路径：将来接 Steamworks 时只改本函数，编辑器侧（生成包的地方）不用动。
+static func publish_pack(zip_path: String, title: String = "", description: String = "") -> Dictionary:
+	var present := plugin_present()
+	return {
+		"ok": false,
+		"code": "not_implemented" if present else "no_steam",
+		"reason": UPLOAD_HINT,
+		"path": zip_path,
+		"title": title,
+		"description": description,
+		"plugin_present": present,
+	}

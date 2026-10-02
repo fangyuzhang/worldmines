@@ -81,6 +81,20 @@ func _ready() -> void:
         get_tree().change_scene_to_file("res://ui/level_select.tscn"))
     vbox.add_child(_back_btn)
 
+    # 试玩回程（2026-10-02）：从编辑器点进来的试玩，结算后最自然的下一步是**回去接着编辑**；
+    # 原来唯一的出口是「返回菜单」→ 选关页，用户就找不到自己作品的入口了。
+    if str(GameSession.playtest_return) != "":
+        var _back_ed := Button.new()
+        _back_ed.text = "回编辑器"
+        _back_ed.focus_mode = Control.FOCUS_ALL
+        _back_ed.custom_minimum_size = Vector2(240, 44)
+        var _target := str(GameSession.playtest_return)
+        _back_ed.pressed.connect(func():
+            SaveCoordinator.clear()
+            GameSession.playtest_return = ""
+            get_tree().change_scene_to_file(_target))
+        vbox.add_child(_back_ed)
+
     GameSession.game_ended.connect(_on_game_ended)
     # 重新开始 / 撤回后隐藏终局覆盖层（否则遮住新棋盘 → 「再来一次没反应」）
     if not GameSession.session_started.is_connected(_on_hide):

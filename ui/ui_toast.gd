@@ -37,6 +37,15 @@ static func popup(parent: Node, msg: String, danger: bool = false, ttl: float = 
 	lb.offset_left = 32
 	lb.offset_right = -32
 	lb.custom_minimum_size = Vector2(0, 32)
+	# 【同屏只留最新一条】实测（2026-10-02 用户报告）：连点多个按钮时，每条提示都新建一个底部
+	# Label 且从不清旧的 ⇒ 全落在**同一个锚点**上互相重叠，糊成一团（"文字重叠在一起"）。
+	# 提示的语义是"当前状态"，堆叠没有意义、只会互相遮挡 ⇒ 新建前先把旧的立刻移出场景树
+	#（先 remove_child 再 queue_free：queue_free 要到帧末才生效，同帧内仍会画出来重叠）。
+	lb.set_meta("ui_toast", true)
+	for c in parent.get_children():
+		if c.has_meta("ui_toast") and is_instance_valid(c):
+			parent.remove_child(c)
+			c.queue_free()
 	parent.add_child(lb)
 	if ThemeManager != null:
 		# 文字用 danger_text()（提亮版，对比 ≈6:1 达 WCAG AA）；图形填充才用 danger()

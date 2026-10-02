@@ -1,0 +1,22 @@
+{
+  "spec_version": 1,
+  "id": "spec_demo_topocount",
+  "title": "演示：拓扑邻域计数（任意棋盘可用）",
+  "clue": {
+    "refs": "topo",
+    "expr": {
+      "t": "sum",
+      "xs": [
+        {"t": "ref", "i": 0},
+        {"t": "ref", "i": 1},
+        {"t": "ref", "i": 2},
+        {"t": "ref", "i": 3},
+        {"t": "ref", "i": 4},
+        {"t": "ref", "i": 5}
+      ]
+    },
+    "max": 6,
+    "empty_value": 0
+  },
+  "geometry": "adj_generic"
+}

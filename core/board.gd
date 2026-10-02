@@ -273,7 +273,18 @@ func _compute_clues() -> void:
                 if cell == null or cell.is_mine:
                         continue
                 if is_adj:
-                        cell.value = _count_adj_mines(mine_set, grid.get_neighbors(pos))
+                        # 【2026-10-01 组合缺口修复】拓扑盘上的线索值**优先交给规则自己**（新契约
+                        # `compute_clue_topo`，基类默认实现 = 拓扑邻域雷数 ⇒ 内置 classic 逐位不变）。
+                        # 为什么必须问规则：生成期已按规则的语义求值（`puzzle_generator.gd` 同一契约），
+                        # 载入侧若仍硬编码"邻域计数"，加权/压缩值域的规则（如声明式规格的 wsum）
+                        # 就会出现「生成对、装载错」——玩家看到的数字与提示推导不一致，
+                        # 正是"棋盘可用 + 变体可用 ⇒ 组合出问题"的那一类。
+                        var v_adj: Variant
+                        if rule != null and rule.has_method("compute_clue_topo"):
+                                v_adj = rule.call("compute_clue_topo", mine_set, pos, grid, size)
+                        else:
+                                v_adj = _count_adj_mines(mine_set, grid.get_neighbors(pos))
+                        cell.value = v_adj
                         continue
                 # 规则可声明「本规则不适用于该格」（applies_to）：生成器据此把该格排除在线索集外。
                 # 加载侧必须同样排除，否则出现「生成时不算线索、显示时却有数字」的分叉。
@@ -463,6 +474,19 @@ func _flood_neighbors(pos: Vector2i) -> Array[Vector2i]:
         # (±1,±1) 方向 ⇒ 0 值格会"免费翻开"非拓扑邻域的格（越过线索保证范围、与提示结论
         # 不一致、实际难度低于生成画像）。原顺序下本分支对带 rule_clue_id 的形状关是死代码。
         if grid is AdjacencyGrid:
+                # 【2026-10-02 补齐"值接了、扩散没接"】拓扑盘上**先问规则**的拓扑扩散契约
+                # （`RulePlugin.zero_safe_neighbors_topo`）：
+                # 基类默认实现 = 0 值 ⇒ 拓扑邻格（＝下面这行硬编码原样搬过去，classic 逐位不变）；
+                # 加权/压缩型规格应覆写为空（"值是 0"只保证被引用的邻居安全，不代表邻格都安全）。
+                # 顺序纪律不变：本分支仍然**优先于**矩形规则分支（见下方审计修复的注释）。
+                if rule_clue_id != "":
+                        var topo_rule: Object = RuleRegistry.default().resolve(StringName(rule_clue_id))
+                        if topo_rule != null and topo_rule.has_method("zero_safe_neighbors_topo"):
+                                # 鸭子类型返回可能是无类型 Array ⇒ 显式转成 Array[Vector2i] 再返回
+                                #（直接 return Variant 会在强类型返回处抛 "same element type" 错）
+                                var flood: Array[Vector2i] = []
+                                flood.assign(topo_rule.call("zero_safe_neighbors_topo", pos, grid, cell.value))
+                                return flood
                 if cell.is_zero_clue():
                         return grid.get_neighbors(pos)
                 return []

@@ -17,6 +17,11 @@ extends RefCounted
 
 const DT_RESAMPLE := 5
 
+## 异形盘雷数口径（v4.x）：异形棋盘没有 CANDIDATES 的明确档位，按密度基准取整。
+## 为什么是 0.40：与生成侧形状关设计密度（DENSITY_CAP=0.35）同量级且略高，留出 ±2 的试探余量。
+const TOPO_DENSITY := 0.40
+const TOPO_TOLERANCE := 2
+
 static var _cache: Dictionary = {}
 
 ## ==== 候选雷数列表（v3.0，GDD 终版 §8.1）====
@@ -50,15 +55,56 @@ static func resolve_mines(clue_id: String, global_ids: Array, size: int) -> Dict
 	return {"mines": -1, "standard": false}
 
 
-## 查询 (clue_id, global_ids, size, mines) 是否数学可行（带缓存）。
+## 异形盘雷数解析（v4.x）。雷数口径必须可解释，故写进 reason：
+##   按存活格数 cells 取 round(cells * 0.40) 为基准，再在 [m-2, m+2] 内逐值试（基准优先、± 交替）。
+## 返回 {"mines": int(-1 = 不可行), "standard": bool, "reason": String}。
+static func resolve_mines_topo(clue_id: String, global_ids: Array, topo: GridInterface) -> Dictionary:
+	if topo == null:
+		return {"mines": -1, "standard": false, "reason": "topology 为空：异形盘雷数口径不适用"}
+	var cells: int = topo.cell_count()
+	if cells <= 1:
+		return {"mines": -1, "standard": false, "reason": "棋盘格数 %d 过小，无可用雷数" % cells}
+	var base: int = int(round(float(cells) * TOPO_DENSITY))
+	var tried: Array = []
+	for d in [0, -1, 1, -TOPO_TOLERANCE, TOPO_TOLERANCE]:
+		var m: int = base + int(d)
+		if m < 1 or m > cells - 1:
+			continue
+		tried.append(m)
+		if query_topo(clue_id, global_ids, topo, m):
+			return {"mines": m, "standard": int(d) == 0,
+				"reason": "异形盘雷数口径：round(存活格 %d × %.2f) = %d 为基准，[%d,%d] 内逐值试，命中 %d（已试 %s）" % [
+					cells, TOPO_DENSITY, base, base - TOPO_TOLERANCE, base + TOPO_TOLERANCE, m, str(tried)]}
+	return {"mines": -1, "standard": false,
+		"reason": "异形盘雷数口径：round(存活格 %d × %.2f) = %d 为基准，[%d,%d] 内（%s）均不可行" % [
+			cells, TOPO_DENSITY, base, base - TOPO_TOLERANCE, base + TOPO_TOLERANCE, str(tried)]}
+
+
+## 查询 (clue_id, global_ids, size, mines) 是否数学可行（带缓存）。size 为正方形边长。
 static func query(clue_id: String, global_ids: Array, size: int, mines: int) -> bool:
+	return _query(clue_id, global_ids, Vector2i(size, size), mines, null)
+
+
+## 异形棋盘的可行性查询（v4.x）：topo 的包围盒即 CP-SAT 索引范围，邻域由邻接表定义。
+## 内部与生成期共用同一口径（RuleOracle 传 topology + build_spec），保证不变量
+## 「生成期判可行 ⇒ 判据不许说不可行」。
+## topo == null 时退化为无拓扑的矩形求值（与旧 query 共享同一条 _evaluate 路径，行为等价）。
+static func query_topo(clue_id: String, global_ids: Array, topo: GridInterface, mines: int) -> bool:
+	var size := Vector2i.ZERO
+	if topo != null:
+		size = topo.size()
+	return _query(clue_id, global_ids, size, mines, topo)
+
+
+static func _query(clue_id: String, global_ids: Array, size: Vector2i, mines: int, topo: GridInterface) -> bool:
 	var gids: Array = []
 	for g in global_ids:
 		gids.append(str(g))
-	var key := "%s|%s|%d|%d" % [clue_id, ",".join(gids), size, mines]
+	# 缓存键必须含棋盘指纹：结论依赖棋盘几何（洞格/邻接），旧键只有尺寸 ⇒ 不同棋盘会串结论。
+	var key := "%s|%s|%s|%d" % [clue_id, ",".join(gids), _board_segment(topo, size), mines]
 	if _cache.has(key):
 		return bool(_cache[key])
-	var result := _evaluate(clue_id, gids, size, mines)
+	var result := _evaluate(clue_id, gids, size, mines, topo)
 	_cache[key] = result
 	return result
 
@@ -68,7 +114,54 @@ static func clear_cache() -> void:
 	_cache.clear()
 
 
-static func _evaluate(clue_id: String, gids: Array, size: int, mines: int) -> bool:
+## 棋盘指纹：格数 + 邻接边的稳定哈希。
+## 为什么必须进缓存键：query 的结论依赖棋盘几何（洞格/邻接），旧键 "%s|%s|%d|%d" 只有尺寸
+## ⇒ 同一变体在不同棋盘上复用同一个（可能错误的）结论 —— 本函数修复的正是这条。
+## null（矩形盘无拓扑对象）返回 "rect:null"；矩形盘的尺寸段由 _board_segment 另拼 "rect:WxH"。
+static func board_key(topo: GridInterface) -> String:
+	if topo == null:
+		return "rect:null"
+	if topo is RectGrid:
+		var s := topo.size()
+		return "rect:%dx%d" % [s.x, s.y]
+	# 异形：格数 + 邻接表稳定哈希。排序后再 join，跨运行稳定（不依赖字典遍历序）。
+	var lines: Array[String] = []
+	for p in topo.all_positions():
+		var nbs: Array[String] = []
+		for n in topo.get_neighbors(p):
+			nbs.append("%d,%d" % [n.x, n.y])
+		nbs.sort()
+		lines.append("%d,%d>%s" % [p.x, p.y, ",".join(nbs)])
+	lines.sort()
+	return "topo:%d:%d" % [topo.cell_count(), _stable_hash(",".join(lines))]
+
+
+## 缓存键的棋盘段：拓扑优先；矩形（topo == null）用尺寸拼稳定串 "rect:WxH"。
+static func _board_segment(topo: GridInterface, size: Vector2i) -> String:
+	if topo != null:
+		# 【2026-10-01 复审加固】显式并入 size：`_evaluate` 会用 size 做 dt 骨牌平铺
+		#（`dt_rule.place_mines(rng, size.x, size.y, mines)`），而 `board_key` 只覆盖「cells + 邻接」
+		# ⇒ 若「同 cells 但声明 size 不同」的两个盘共存，缓存键会相同而结论可能不同（静默串结论）。
+		# 今天 `AdjacencyGrid.size()` 是由 cells 反推的包围盒 ⇒ 该情形不可达；此处只是把这条
+		# 推理负担从"每个读代码的人"移到键里（成本 = 键变长几个字符）。
+		return "%s:%dx%d" % [board_key(topo), size.x, size.y]
+	return "rect:%dx%d" % [size.x, size.y]
+
+
+## FNV-1a 64 位（自实现，不依赖引擎 hash() 的跨版本稳定性）。
+## 【2026-10-01 复审加固】原为 32 位截断（`&= 0xFFFFFFFF`）：本函数的产物进**正确性缓存键**
+##（`_query` 的 key），碰撞 = 把 A 盘的结论误用于 B 盘（静默误判，正是本函数注释里说要修的那类）。
+## 32 位在"每会话几十个盘"下实际不可达，但升到 64 位成本近乎为零。
+## 末位掩码到 0x7FFF…：GDScript int 是 64 位**有符号**，掩码后恒为正，键串不会带负号。
+static func _stable_hash(s: String) -> int:
+	var h: int = 1469598103934665603
+	for i in s.length():
+		h = (h ^ s.unicode_at(i)) * 1099511628211
+		h &= 0x7FFFFFFFFFFFFFFF
+	return h
+
+
+static func _evaluate(clue_id: String, gids: Array, size: Vector2i, mines: int, topo: GridInterface) -> bool:
 	var reg := RuleRegistry.default()
 	var clue_rule: Object = reg.resolve(StringName(clue_id))
 	if clue_rule == null:
@@ -101,8 +194,9 @@ static func _evaluate(clue_id: String, gids: Array, size: int, mines: int) -> bo
 				saved_dominoes = g.get_dominoes()
 	for _i in tries:
 		if has_dt and dt_rule != null:
-			dt_rule.place_mines(rng, size, size, mines)
-		var oracle := RuleOracle.new(clue_rule, gs, Vector2i(size, size), mines, null)
+			# dt 骨牌划分沿用生成期口径（按包围盒行列平铺，与 _place_mines_rules_raw 一致）。
+			dt_rule.place_mines(rng, size.x, size.y, mines)
+		var oracle := RuleOracle.new(clue_rule, gs, size, mines, topo)
 		if RuleCpSat.is_feasible(oracle.build_spec({}, [], {})):
 			if dt_rule != null:
 				dt_rule.set_dominoes(saved_dominoes)

@@ -28,9 +28,18 @@
 #   · 其它：只取证不杀（避免误伤跑了数天的长批次）。
 #
 # 用法（服务器）：nohup bash tools/prod_watchdog.sh > /dev/null 2>&1 &
-#   STALL_MIN（默认 120 分钟）/ POLL_S（默认 300 秒）/ KILL_TAGS / EVID_DIR / KILL_GRACE_S（默认 20）
+#   STALL_MIN（**默认 15 分钟**，2026-10-01 C2 起；旧默认 120 只因当时只有单元级进度可见）
+#   POLL_S（默认 300 秒）/ KILL_TAGS / EVID_DIR / KILL_GRACE_S（默认 20）
+#   自监控：每轮写 $EVID_DIR/watchdog_heartbeat.txt；计划侧每轮开始检查其新鲜度（>900s 告警）
 set -u
-STALL_MIN="${STALL_MIN:-120}"
+# 【2026-10-01 C2】STALL_MIN 默认 **120 → 15 分钟**。
+# 为什么现在才敢下调：原判据只能看到**单元级**进度（issues*.jsonl 只在单元结束写），
+# 一个单元合法可跑数十分钟 ⇒ 阈值不得不设 120。`batch_all_variants.gd` 现已**逐候选**写
+# `<out>/heartbeat.txt`（覆盖写，含 combo/side/seed/耗时上限），本脚本把它纳入进度文件集 ⇒
+# 「零产出」粒度从单元降到**单个候选**，15 分钟足以覆盖最慢的合法候选，
+# 中招的计划锁死从 ≤2h 降到 ≤15min（6–8×）。
+# 仍可用 `STALL_MIN=... nohup ...` 覆盖（旧值 120 仅作兼容参考）。
+STALL_MIN="${STALL_MIN:-15}"
 POLL_S="${POLL_S:-300}"
 KILL_TAGS="${KILL_TAGS:-thinfill|cmp_}"
 EVID_DIR="${EVID_DIR:-/root/hang_evidence}"
@@ -44,6 +53,10 @@ log() { echo "[$(date '+%F %H:%M:%S')] $*" >> "$EVID_DIR/watchdog.log"; }
 log "看门狗启动（09-27 判据重构版）：STALL_MIN=${STALL_MIN}min POLL_S=${POLL_S}s KILL_TAGS=$KILL_TAGS GRACE=${KILL_GRACE_S}s"
 
 while true; do
+  # 【2026-10-01 C2 自监控】看门狗自己死了没人知道（"兜底组件失效"是 §12.2 列明的风险）。
+  # 每轮落一个心跳文件；计划侧（thin_cells.py 生成的脚本体）在**每轮开始前**检查它的新鲜度，
+  # 超过 900s 未更新就大声告警（POLL_S=300 时正常应 <600s）。
+  echo "$(date '+%s') pid=$$ stall_min=$STALL_MIN" > "$EVID_DIR/watchdog_heartbeat.txt" 2>/dev/null || true
   sleep "$POLL_S"
   now=$(date '+%s')
   for p in $(pgrep -f 'Godot' 2>/dev/null); do
@@ -57,8 +70,11 @@ while true; do
     et=$(ps -o etimes= -p "$p" 2>/dev/null | tr -d ' ')
     et=${et:-0}
     start=$(( now - et ))
-    # 只统计**本进程启动之后**写入的进度文件（覆盖 .json 与 .jsonl——进度事件在 issues*.jsonl）
-    last=$(find "$dir" \( -name '*.json' -o -name '*.jsonl' \) -newermt "@$start" \
+    # 只统计**本进程启动之后**写入的进度文件（覆盖 .json、.jsonl 与 heartbeat.txt）：
+    #   · 进度事件在 issues*.jsonl（单元级）
+    #   · 【2026-10-01 C2】heartbeat.txt = batch_all_variants.gd 的**逐候选**心跳（覆盖写）
+    #     ⇒ 有了它才能把 STALL_MIN 降到 15min（否则只能按单元粒度保守设 120min）
+    last=$(find "$dir" \( -name '*.json' -o -name '*.jsonl' -o -name 'heartbeat.txt' \) -newermt "@$start" \
              -printf '%T@\n' 2>/dev/null | sort -n | tail -1 | cut -d. -f1)
     if [ -n "$last" ]; then
       idle_min=$(( (now - last) / 60 ))

@@ -1,0 +1,34 @@
+{
+  "spec_version": 1,
+  "id": "spec_demo_diagweight",
+  "title": "演示：对角双倍加权（8 邻，权 1/2，仅矩形盘）",
+  "clue": {
+    "refs": [
+      {"dx": 0, "dy": -1},
+      {"dx": 1, "dy": 0},
+      {"dx": 0, "dy": 1},
+      {"dx": -1, "dy": 0},
+      {"dx": 1, "dy": -1},
+      {"dx": 1, "dy": 1},
+      {"dx": -1, "dy": 1},
+      {"dx": -1, "dy": -1}
+    ],
+    "expr": {
+      "t": "wsum",
+      "ws": [1, 1, 1, 1, 2, 2, 2, 2],
+      "xs": [
+        {"t": "ref", "i": 0},
+        {"t": "ref", "i": 1},
+        {"t": "ref", "i": 2},
+        {"t": "ref", "i": 3},
+        {"t": "ref", "i": 4},
+        {"t": "ref", "i": 5},
+        {"t": "ref", "i": 6},
+        {"t": "ref", "i": 7}
+      ]
+    },
+    "max": 12,
+    "empty_value": 0
+  },
+  "geometry": "rect_only"
+}

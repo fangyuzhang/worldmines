@@ -355,6 +355,19 @@ func _build_ui() -> void:
 	add_child(mounts)
 	UiMounts.append(mounts, UiMounts.SLOT_LEVEL_SELECT, self)
 
+	# 变体编辑器入口（2026-10-02）：编辑器是**普通场景**（`res://ui/level_editor.tscn`），
+	# 选关页只是把它挂出来；放在左下角避免与居中底部的 Mod 挂载点抢位置。
+	var editor_btn := Button.new()
+	editor_btn.text = "变体编辑器"
+	editor_btn.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	editor_btn.offset_left = 16
+	editor_btn.offset_top = -46
+	editor_btn.offset_right = 148
+	editor_btn.offset_bottom = -14
+	editor_btn.pressed.connect(func() -> void:
+		get_tree().change_scene_to_file("res://ui/level_editor.tscn"))
+	add_child(editor_btn)
+
 	_rebuild_pages()
 	_apply_theme()
 
@@ -976,44 +989,85 @@ func _mod_def_label(defs: Array) -> Control:
 	return lb
 
 
-## 该 Mod 已生成的关卡（模组页生成器的成品）。无则返回 null，调用方不加空块。
+## 该 Mod 自带的关卡（模组页生成器 / 工坊包的成品）：**按「棋盘大小 × 难度」分组**（P6）。
+##
+## 【为什么不能继续平铺】用户原话："不要生成后就是一堆关卡放在那，没有分类。"
+## 批量做 100 关之后，平铺的按钮名是 `forge_z1_5_easy_07` 这种：玩家既看不出哪关难，
+## 也找不到想玩的大小。现在分类由 `LevelSets.collect` 从**关卡自带的 `difficulty_profile`
+## 实算**（与官方关卡库同一口径 `Difficulty.tier_of_profile`），并兼容两种布局：
+## 集文件 `<大小>/<档位>.json`（批量产出）与老的单关平铺（`ui/mod_select.gd` 的成品）。
 func _mod_level_buttons(mod_id: String) -> Control:
-	var dir_path := "user://mods/%s/levels" % mod_id
-	var d := DirAccess.open(dir_path)
-	if d == null:
+	var got := LevelSets.collect("user://mods/%s/levels" % mod_id)
+	if not bool(got["ok"]) or int(got["count"]) <= 0:
 		return null
-	var files: Array[String] = []
-	for f in d.get_files():
-		if str(f).ends_with(".json"):
-			files.append("%s/%s" % [dir_path, str(f)])
-	if files.is_empty():
-		return null
-	files.sort()
-
 	var wrap := VBoxContainer.new()
 	wrap.add_theme_constant_override("separation", 6)
 	var head := Label.new()
-	head.text = "已生成关卡 %d 个（点击直接开玩）" % files.size()
+	head.text = "自带关卡 %d 个（按大小 × 难度分组，点击直接开玩）" % int(got["count"])
 	head.add_theme_font_size_override("font_size", 13)
 	head.set_meta("secondary", true)
 	wrap.add_child(head)
+	# 小白看不懂「普通 / 困难 / 噩梦」和块上的「深度N」是什么意思 ⇒ **写在界面上**。
+	# 为什么不用 tooltip：不悬停就看不到，对第一次玩的玩家等于不存在（本轮同类问题已犯过一次）。
+	var tier_help := Label.new()
+	tier_help.text = "难度看「深度」：深度 = 解开这一步要同时把握几条线索。普通 2~3，困难 4~5，噩梦 6 以上。"
+	tier_help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	tier_help.add_theme_font_size_override("font_size", 12)
+	tier_help.set_meta("secondary", true)
+	wrap.add_child(tier_help)
 
-	var flow := HFlowContainer.new()
-	flow.add_theme_constant_override("h_separation", 10)
-	flow.add_theme_constant_override("v_separation", 10)
-	flow.alignment = FlowContainer.ALIGNMENT_CENTER
-	wrap.add_child(flow)
-	for p in files:
-		var b := Button.new()
-		b.text = str(p.get_file().get_basename())
-		b.custom_minimum_size = Vector2(140, 40)
-		b.focus_mode = Control.FOCUS_ALL
-		b.set_meta("mod_level_btn", true)
-		_style_card(b)
-		b.pressed.connect(_open_mod_level.bind(p))
-		UiTheme.bind_hover(b, HOVER_SCALE)
-		flow.add_child(b)
+	var tier_axes: Array = LevelSets.TIER_ORDER.duplicate()
+	tier_axes.append("unknown")     # 老关卡没有难度画像、文件名也认不出来时，单列但**不丢**
+	for size in (got["sizes"] as Array):
+		var by_tier: Dictionary = got["groups"][str(size)]
+		var size_head := Label.new()
+		size_head.text = "%d×%d" % [int(size), int(size)]
+		size_head.add_theme_font_size_override("font_size", 14)
+		wrap.add_child(size_head)
+		for tier in tier_axes:
+			if not by_tier.has(tier):
+				continue
+			var levels: Array = by_tier[tier]
+			var lbl := Label.new()
+			lbl.text = "　%s · %d 关" % [Difficulty.tier_short(str(tier)) if str(tier) != "unknown" else "未分档",
+				levels.size()]
+			lbl.add_theme_font_size_override("font_size", 13)
+			lbl.set_meta("secondary", true)
+			wrap.add_child(lbl)
+			var flow := HFlowContainer.new()
+			flow.add_theme_constant_override("h_separation", 10)
+			flow.add_theme_constant_override("v_separation", 10)
+			flow.alignment = FlowContainer.ALIGNMENT_CENTER
+			wrap.add_child(flow)
+			for i in levels.size():
+				var lv: Dictionary = levels[i]
+				var b := Button.new()
+				b.text = _mod_level_label(lv, i)
+				b.custom_minimum_size = Vector2(120, 40)
+				b.focus_mode = Control.FOCUS_ALL
+				b.set_meta("mod_level_btn", true)
+				_style_card(b)
+				b.pressed.connect(_open_mod_level_entry.bind(mod_id, lv, int(size), str(tier), i))
+				UiTheme.bind_hover(b, HOVER_SCALE)
+				flow.add_child(b)
 	return wrap
+
+
+## 关卡按钮文字：序号 + 深度峰值（与官方库 tile 同口径：峰值 = 要同时把握几条线索）。
+func _mod_level_label(lv: Dictionary, idx: int) -> String:
+	var peak := int((lv.get("difficulty_profile", {}) as Dictionary).get("max_complexity", -1))
+	if peak < 0:
+		return "%d" % (idx + 1)
+	return "%d\n深度%d" % [idx + 1, peak]
+
+
+## 集文件里的关卡没有独立路径 ⇒ 开玩前先物化成单文件（对玩家不可见的实现细节）。
+func _open_mod_level_entry(mod_id: String, lv: Dictionary, size: int, tier: String, idx: int) -> void:
+	var path := LevelSets.materialize(lv, "%s_%d_%s_%02d" % [mod_id, size, tier, idx])
+	if path == "":
+		UiToast.popup(self, "关卡准备失败（磁盘写不进去？）", true)
+		return
+	_open_mod_level(path)
 
 
 ## 直接开玩 Mod 关卡（Def / wasm 生成器的成品）。

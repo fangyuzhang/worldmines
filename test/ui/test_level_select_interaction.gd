@@ -364,7 +364,10 @@ func test_ls14_generated_mod_levels_are_listed() -> void:
 		return
 	var v2 = load("res://ui/level_select.tscn").instantiate()
 	add_child_autofree(v2)
-	var btn := _find_button(v2._pages[v2.PAGE_MOD], "LsDir4N_01")
+	# 【2026-10-02 修（E2E 抓到）】按钮文案自 10-01 起是「序号 + 深度N」（`level_select._mod_level_label`），
+	# **不再显示关卡文件名** ⇒ 按文件名精确查找永远找不到（实测单独跑也红：功能是好的，断言过期了）。
+	# 改成按 `mod_level_btn` 元数据查找 —— 意图不变：生成的 Mod 关卡必须列在 Mod 页。
+	var btn := _find_by_meta(v2._pages[v2.PAGE_MOD], "mod_level_btn")
 	assert_not_null(btn, "已生成的 Mod 关卡应列在 Mod 页（否则玩家得回模组页找成品）")
 	if btn != null:
 		assert_true(btn.has_meta("mod_level_btn"), "应标记为 Mod 关卡入口")

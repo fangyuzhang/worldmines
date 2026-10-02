@@ -36,6 +36,28 @@ func get_kind() -> String:
 	return KIND_CLUE
 
 
+# ==== 棋盘几何声明（v4.x：把「异形盘 × 变体」的门控从平台硬编码改为规则自述）====
+#
+# 为什么需要：生成期原先把「异形拓扑 + 非 classic 线索」一律强制 classic
+#（core/puzzle_generator.gd:431），方向型线索在邻接表上语义矛盾没错，但「只依赖邻域」的
+# 计数型变体被**一并**降级——这正是用户点名的「异形盘可用、变体可用、组合却被误判不可行」。
+# 改为规则显式声明几何依赖，平台据 supports_topology() 决定是否原样使用。
+#
+# 兼容铁律：默认值必须 = 今天的行为（未声明的规则一律保守判「仅矩形」）。
+const GEO_ADJ_GENERIC := 0   # 只依赖邻域/邻接表 ⇒ 任意棋盘可用
+const GEO_RECT_ONLY := 1     # 依赖行列/方向/中轴/象限/对称/骨牌划分 ⇒ 仅矩形盘
+
+
+## 规则声明的棋盘几何种类。默认 GEO_RECT_ONLY = 今天的行为（第三方 mod 不声明时零变化）。
+func geometry_kind() -> int:
+	return GEO_RECT_ONLY
+
+
+## 是否支持任意拓扑棋盘（异形/邻接表）。生成期门控唯一判据。
+func supports_topology() -> bool:
+	return geometry_kind() == GEO_ADJ_GENERIC
+
+
 ## 规则说明（自动进规则图鉴）。子类可选覆盖。
 func describe() -> Dictionary:
 	return {"name": String(get_rule_id()), "rule_text": ""}
@@ -95,6 +117,27 @@ func zero_safe_neighbors(_pos: Vector2i, _grid_size: Vector2i, _value: Variant =
 	return []
 
 
+## 拓扑盘（邻接表）上的「0 值安全邻格」（v4.x，可选覆写）。
+##
+## 【为什么必须有这条契约（2026-10-02 补齐"值接了、扩散没接"）】
+## `zero_safe_neighbors` 吃的是**矩形 grid_size + 规则自己的偏移**，在异形盘上要么数不到
+##（偏移越界）要么数错（矩形对角在蜂窝上根本不是邻居）；于是 `core/board.gd:_flood_neighbors`
+## 原先只能在拓扑分支**硬编码**"0 值 ⇒ 全部拓扑邻格"。对计数型规则（classic）那是对的，
+## 对加权/压缩型的声明式规格则是"把不在线索保证范围内的格免费翻开"——
+## 难度低于生成画像、与提示结论不一致（本项目反复出现的同一类分叉）。
+##
+## 默认实现 = 把那段硬编码**搬进契约**（计数语义逐位不变）；声明拓扑能力的规则应当按自己的
+## 0 值语义覆写：加权型应返回空（不扩散），只覆盖部分邻居的应返回空。
+## 非整数线索值（双值/射线型）一律不扩散——与 `zero_safe_neighbors` 的口径一致。
+func zero_safe_neighbors_topo(pos: Vector2i, topo: GridInterface, value: Variant = null) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	if topo == null or not (value is int):
+		return out
+	if int(value) == 0:
+		out.assign(topo.get_neighbors(pos))
+	return out
+
+
 # ==== 全局规则契约 ====
 
 ## 棋盘级约束（可读 b.rows / b.cols / b.total_mines）。
@@ -105,6 +148,34 @@ func build_global_constraints(_b: RuleBuilder) -> void:
 ## 构造式布雷（镜像/骨牌等结构性布局）。返回空数组 = 交给生成器随机。
 func place_mines(_rng: RandomNumberGenerator, _cols: int, _rows: int, _count: int) -> Array[Vector2i]:
 	return []
+
+
+## 拓扑构造式布雷（异形/邻接表棋盘，v4.x）。默认空数组 = 「本规则不提供构造式」，
+## 交回生成器既有路径（CP-SAT / 随机）——**默认返回空 ⇒ 今天的行为逐位不变**。
+## 语义纪律：空 = 不提供，**不是**「再试一次」；本接口禁暴力重试（与 place_mines 同纪律）。
+## 契约：返回非空时必须恰为 count 颗、且全部落在 topo 的存活格内（生成器会硬校验雷数）。
+func place_mines_topo(_rng: RandomNumberGenerator, _topo: GridInterface, _count: int) -> Array[Vector2i]:
+	return []
+
+
+## 异形/邻接表棋盘上的线索值（v4.x，可选覆写）。
+##
+## 为什么必须有这个契约：生成期在异形盘上**不调用** compute_clue（它按矩形 grid_size 与 dirs 偏移
+## 求值），历史上直接硬编码「拓扑邻域雷数」（core/puzzle_generator.gd:505-506）。若只放开
+## supports_topology() 门控而不改这里，加权/压缩/奇偶型规则会拿到「无权重计数」的值，而其
+## build_clue_constraints 按自己的语义建约束 ⇒ 值与模型自相矛盾（用户点名的「组合出问题」）。
+##
+## 默认实现 = 数 topo.get_neighbors(pos) 中的雷格数 —— 与今天异形盘的硬编码口径**逐位同义**，
+## 故 classic（不覆写）零变化。声明 supports_topology() == true 的规则**应当**覆写本方法；
+## 若不覆写，其线索值就必须恰为邻域雷数（生成期不再替它猜语义）。
+func compute_clue_topo(mine_set: Dictionary, pos: Vector2i, topo: GridInterface, _grid_size: Vector2i) -> Variant:
+	if topo == null:
+		return 0
+	var n := 0
+	for p in topo.get_neighbors(pos):
+		if mine_set.has(p):
+			n += 1
+	return n
 
 
 ## 隐藏态初始化（P0，2026-09-27）：**只**为「当前盘面」采样本规则的隐藏态，不产出雷。

@@ -29,6 +29,9 @@ const TAG_WRONG := "wrong"
 ##     "error": String }                  # "" = 解析成功
 static func parse(src: String) -> Dictionary:
 	var rows: Array = []
+	# 【2026-10-02 用户口径 B2：一页多盘】`boards` = 本页的**全部**盘；`rows`/`cols` 仍是**第一张盘**
+	# ⇒ 老消费方（与既有断言"盘面行数 = DEMO_SIDE"）一行都不用改。
+	var boards: Array = []
 	var text_lines: Array = []
 	var in_text := false
 	var has_empty := false
@@ -47,6 +50,14 @@ static func parse(src: String) -> Dictionary:
 			in_text = true
 			text_lines.append(line.substr(1))
 			continue
+		# 【2026-10-02 用户口径 B2】单独一行 `--` = **盘面分隔符**：本行之前与之后各是一张盘。
+		# 为什么必须显式分隔：两张盘列数不同会被判"不矩形"，列数相同则会被**悄悄拼成一张大盘**（实测）。
+		if line.strip_edges() == "--":
+			if not rows.is_empty():
+				boards.append({"rows": rows, "cols": maxi(cols, 0)})
+			rows = []
+			cols = -1
+			continue
 		if line.strip_edges() == "":
 			continue  # 空行（文件尾部/排版用）不算盘面行
 		var cells: Array = []
@@ -61,13 +72,54 @@ static func parse(src: String) -> Dictionary:
 			error = "Problem is not rectangular"
 		rows.append(cells)
 
+	if not rows.is_empty():
+		boards.append({"rows": rows, "cols": maxi(cols, 0)})
+	var first: Dictionary = boards[0] if not boards.is_empty() else {"rows": [], "cols": 0}
 	return {
-		"rows": rows,
-		"cols": maxi(cols, 0),
+		"rows": first["rows"],        # 兼容：老消费方读这一份 = 第一张盘
+		"cols": first["cols"],
+		"boards": boards,             # B2：本页的全部盘（≥1；单盘时只有一张）
 		"has_empty": has_empty,
 		"text": "\n".join(text_lines).strip_edges(),
 		"error": error,
 	}
+
+
+## 【2026-10-02 真机截图修：教程"只有文字、没有棋盘网格"】把**生成器风格的页字典**归一成绘制端要的形状。
+## 生成器（`core/rule_legend.gd`）给的页是
+## `{"id", "title", "text": 整份原文（含盘面行）, "layout", "kind"}`，
+## 而绘制端读的是 `rows` / `cols` / 纯人话的 `text` ⇒ 后果正如用户截图：
+## **左边一个格子都画不出来，右边把 `{@!}F{@clue}0…` 这些盘面行当正文打印**。
+## 归一规则：缺 `rows` 且 `text` 非空 ⇒ 就地按教程格式解析一遍；标题优先用生成器的 `title`。
+static func normalize_page(page: Dictionary) -> Dictionary:
+	var out := page
+	var raw := str(out.get("text", ""))
+	# 只有**确实带盘面**的原文才值得重解析（生成器把 `q\n? 说明` 这种整份原文塞在 `text` 里）。
+	# 纯人话（既没有制表符、也没有 `?` 行）**不许**当盘面解析：否则会凭空多出一个 1×1 棋盘、
+	# 正文还会被吃掉（实测踩过：`{"text": "只有人话"}` 被解析成一行一格）。
+	var looks_like_doc := raw.contains("\t") or raw.contains("\n?") or raw.begins_with("?")
+	if (out.get("rows", []) as Array).is_empty() and looks_like_doc:
+		var reparsed := parse(raw)
+		reparsed["id"] = str(out.get("id", reparsed.get("id", "")))
+		if out.has("title"):
+			reparsed["title"] = str(out["title"])
+		out = reparsed
+	return out
+
+
+## 教程文档里的**占位字母** → 视觉语义（纯函数，便于单测）。
+## 【2026-10-02 用户反馈修：教程界面"乱码、没有棋盘"】文档用单字母表示特殊格：
+##   · `q` = 未知/未翻开（应画成"盖着的瓦片"）
+##   · `F` = 雷（**画成雷，不是旗**：[2026-10-02 用户口径] 雷更直观）
+## 而绘制端原来把这些字母**当文字直接画** ⇒ 满屏 q/F 字母，看着就是乱码、也不像棋盘。
+## 返回："covered" / "mine" / "text"（数字等仍按文字画）。
+static func cell_visual(value: String) -> String:
+	var v := value.strip_edges().to_lower()
+	if v == "q":
+		return "covered"
+	if v == "f":
+		return "mine"
+	return "text"
 
 
 ## 单元格解析：剥掉前导的一个或多个 `{注解}`，余下为取值。
@@ -129,29 +181,55 @@ static func _normalize(a: Variant) -> String:
 # ============ 目录与加载 ============
 
 const DIR := "res://levels/tutorial"
+## 额外搜索目录（P6）：Mod / 工坊包自带的图例落在 `user://mods/<id>/tutorial/`。
+## 没有这层搜索，自创变体的图文图例就**只存在于包里**——玩家进关卡点书本图标看不到，
+## 而且不会报错（静默缺失，正是本仓最忌讳的那种失败）。
+const MODS_DIR := "user://mods"
+
+
+## 全部搜索目录：官方在前、Mod 在后（同名页官方优先）。
+static func search_dirs() -> Array[String]:
+	var out: Array[String] = [DIR]
+	var d := DirAccess.open(MODS_DIR)
+	if d == null:
+		return out
+	for sub in d.get_directories():
+		var p := "%s/%s/tutorial" % [MODS_DIR, str(sub)]
+		if DirAccess.dir_exists_absolute(p):
+			out.append(p)
+	return out
 
 
 ## 列出全部教程页 id（形如 `tutorial_[1B]_0`），按名称排序保证顺序稳定。
 static func list_ids() -> Array[String]:
 	var out: Array[String] = []
-	var dir := DirAccess.open(DIR)
-	if dir == null:
-		return out
-	dir.list_dir_begin()
-	var name := dir.get_next()
-	while name != "":
-		if not dir.current_is_dir() and name.ends_with(".txt"):
-			out.append(name.substr(0, name.length() - 4))
-		name = dir.get_next()
-	dir.list_dir_end()
+	var seen := {}
+	for root in search_dirs():
+		var dir := DirAccess.open(root)
+		if dir == null:
+			continue
+		for f in dir.get_files():
+			var n := str(f)
+			if not n.ends_with(".txt"):
+				continue
+			var id := n.substr(0, n.length() - 4)
+			if seen.has(id):
+				continue
+			seen[id] = true
+			out.append(id)
 	out.sort()
 	return out
 
 
 ## 加载一页教程。不存在或解析失败返回 {"error": ...}。
 static func load_page(id: String) -> Dictionary:
-	var path := "%s/%s.txt" % [DIR, id]
-	if not FileAccess.file_exists(path):
+	var path := ""
+	for root in search_dirs():
+		var p := "%s/%s.txt" % [root, id]
+		if FileAccess.file_exists(p):
+			path = p
+			break
+	if path == "":
 		return {"rows": [], "cols": 0, "has_empty": false, "text": "", "error": "not found: %s" % id}
 	var f := FileAccess.open(path, FileAccess.READ)
 	if f == null:

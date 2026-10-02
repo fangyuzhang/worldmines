@@ -168,6 +168,12 @@ class ClassicRule:
 	func describe() -> Dictionary:
 		return {"name": "经典", "rule_text": "数字 = 周围 8 格雷数"}
 
+	## 几何：仅依赖邻域计数 —— build_clue_constraints 走 b.neighbors(pos, ring_dirs)
+	##（core/rule_registry.gd:174-176），而拓扑非空时 RuleBuilder.neighbors 直接返回邻接表
+	##（core/rule_builder.gd:77-85）⇒ 异形盘上语义天然成立（= 拓扑邻域雷数）。
+	func geometry_kind() -> int:
+		return GEO_ADJ_GENERIC
+
 	func compute_clue(mine_set: Dictionary, pos: Vector2i, grid_size: Vector2i) -> Variant:
 		return RulePlugin.count_dirs(mine_set, pos, grid_size, ClueEngine.ring_dirs())
 
@@ -201,6 +207,11 @@ class MxRule:
 
 	func describe() -> Dictionary:
 		return {"name": "镜像", "rule_text": "雷区左右镜像对称"}
+
+	## 几何：左右镜像按列号配对（c ↔ cols-1-c）——依赖矩形列。
+	## 证据：build_global_constraints core/rule_registry.gd:205-208。
+	func geometry_kind() -> int:
+		return GEO_RECT_ONLY
 
 	func build_global_constraints(b: RuleBuilder) -> void:
 		for r in b.rows:
@@ -272,6 +283,11 @@ class PfRule:
 
 	func describe() -> Dictionary:
 		return {"name": "禁形", "rule_text": "任意 2×2 方块至多 2 雷"}
+
+	## 几何：2×2 窗口按行列枚举 —— 依赖矩形行列。
+	## 证据：build_global_constraints core/rule_registry.gd:276-283。
+	func geometry_kind() -> int:
+		return GEO_RECT_ONLY
 
 	func build_global_constraints(b: RuleBuilder) -> void:
 		for r in b.rows - 1:
@@ -462,6 +478,12 @@ class TotalMinesRule:
 	func describe() -> Dictionary:
 		return {"name": "总雷数", "rule_text": "全盘雷数等于给定值"}
 
+	## 几何：全盘计数 —— 对包围盒求和，拓扑下盘外格 cell_var 恒为 const 0
+	##（core/rule_builder.gd:49-59）⇒ 等价于「存活格雷数 = N」，任意棋盘可用。
+	## 证据：build_global_constraints core/rule_registry.gd:465-472。
+	func geometry_kind() -> int:
+		return GEO_ADJ_GENERIC
+
 	func build_global_constraints(b: RuleBuilder) -> void:
 		if b.total_mines < 0:
 			return
@@ -484,6 +506,11 @@ class ClockRule:
 
 	func describe() -> Dictionary:
 		return {"name": "钟点", "rule_text": "数字 = 顺时针第一颗雷的方位（1~8），无雷 = 0"}
+
+	## 几何：钟点值 = ring_dirs 的**索引**（方位编号），依赖 8 邻的固定环序
+	## ⇒ 邻接表无方向语义。证据：build_clue_constraints core/rule_registry.gd:491-510。
+	func geometry_kind() -> int:
+		return GEO_RECT_ONLY
 
 	func compute_clue(mine_set: Dictionary, pos: Vector2i, grid_size: Vector2i) -> Variant:
 		return ClueEngine._clock_value(mine_set, pos, grid_size)
@@ -527,6 +554,11 @@ class LoopRunsRule:
 
 	func describe() -> Dictionary:
 		return {"name": "环游程", "rule_text": "数字 = 周围连续雷段数（环序首尾相接）"}
+
+	## 几何：游程按固定环序首尾相接（prev = cells[(i-1+n)%n]）——依赖 8 邻环序。
+	## 证据：build_clue_constraints core/rule_registry.gd:534-571。
+	func geometry_kind() -> int:
+		return GEO_RECT_ONLY
 
 	func compute_clue(mine_set: Dictionary, pos: Vector2i, grid_size: Vector2i) -> Variant:
 		return ClueEngine._loop_runs_value(mine_set, pos, grid_size)
@@ -588,6 +620,11 @@ class RlRule:
 
 	func describe() -> Dictionary:
 		return {"name": "相邻行锁", "rule_text": "相邻两行的雷数差为 1"}
+
+	## 几何：行 profile（相邻行雷数差 = 1）——依赖矩形行。
+	## 证据：build_global_constraints core/rule_registry.gd:592-608。
+	func geometry_kind() -> int:
+		return GEO_RECT_ONLY
 
 	func build_global_constraints(b: RuleBuilder) -> void:
 		for r in b.rows - 1:
@@ -667,6 +704,11 @@ class QdRule:
 	func describe() -> Dictionary:
 		return {"name": "四象", "rule_text": "四象限雷数相等（中央行列除外）"}
 
+	## 几何：四象限由中央行/列划分（ConstraintEngine.quadrant_of）——依赖矩形中轴。
+	## 证据：build_global_constraints core/rule_registry.gd:670-679。
+	func geometry_kind() -> int:
+		return GEO_RECT_ONLY
+
 	func build_global_constraints(b: RuleBuilder) -> void:
 		var q: Array = [[], [], [], []]
 		for r in b.rows:
@@ -736,6 +778,11 @@ class DtRule:
 
 	func describe() -> Dictionary:
 		return {"name": "骨牌边界", "rule_text": "每块 2×1 骨牌恰 1 雷"}
+
+	## 几何：2×1 骨牌划分（矩形多米诺平铺，place_mines 按 r/c 扫描生成）——依赖矩形行列。
+	## 证据：build_global_constraints / place_mines core/rule_registry.gd:749-787。
+	func geometry_kind() -> int:
+		return GEO_RECT_ONLY
 
 	## 底座化：骨牌划分（采样骨牌）的读写。
 	## 生成时由 place_mines 设置；加载关卡时由 Board 把 JSON 的 dominoes 字段同步进来，

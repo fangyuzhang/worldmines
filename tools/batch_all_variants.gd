@@ -124,6 +124,22 @@ var _per_tier := 0             # 第 11 参数：>0 = 每档独立上限（GDD �
 var _timeout_coef := 3000      # 第 12 参数：单关超时系数（超时 = side² × 系数 ms；重编码算子如 O2/8×8 需上调）
 var _tiered_target := false    # 第 13 参数："tiered" = 方案 B 动态目标（按未满档传 target_difficulty）
 var _stall_max := 60           # 第 14 参数：停滞阈值覆盖（默认 60；调小 = 满档后更早停单元）
+## 【C3/S2 2026-10-01】ProofLog 金丝雀抽样（第 18 参）。默认 **off = 每个候选全量复核**（与历史一致）。
+## 打开后：名单内恒全量（金丝雀），名单外每 PROOF_SAMPLE_EVERY 个候选抽 1 个全量（确定性取模）。
+## 金丝雀名单应优先含：带隐藏态的规则、**首次放开的复合档**、任何 drill 到落盘字段的用例——
+## 这些正是"落盘态与生成态不一致"唯一能被抓到的地方（r5 建议，已采纳）。
+var _proof_sample := false
+var _proof_canary: PackedStringArray = PackedStringArray()
+const PROOF_SAMPLE_EVERY := 5
+
+
+## 本候选是否走完整 ProofLog.build。判据必须**确定性**（按 u_tried 取模）⇒ 同 seed 可复现。
+func _proof_needed(combo_id: String, tier: String, tried: int) -> bool:
+	if not _proof_sample:
+		return true                       # 默认：全量（行为与历史完全一致）
+	if _proof_canary.has(combo_id) or _proof_canary.has("%s@%s" % [combo_id, tier]):
+		return true                       # 金丝雀：恒全量
+	return tried % PROOF_SAMPLE_EVERY == 0
 var _k_public := -1            # 第 15 参数：k 旋钮（0=不公开 / 1=公开；缺省 -1=不设置，保持规则默认）
 var _peak_window := Vector2i(-1, -1)  # 第 16 参数：峰值窗口 "lo-hi"（如 "9-20"）；缺省 -1 = 不限（旧行为）
 ## 第 17 参（S1 跨档路由，2026-09-27，见 docs/GEN_PERF_PLAN_0927.md §17）：默认 on。
@@ -574,6 +590,19 @@ func _initialize() -> void:
 	# 第 17 参（S1 跨档路由）：显式 `off` = 关闭（旧行为，A/B 对拍/回滚用）；缺省或其它值 = 开启。
 	if args.size() >= 17 and str(args[16]) == "off":
 		_route_peak = false
+	# 第 18 参（C3/S2 ProofLog 金丝雀）：缺省/空 = **全量复核（现状不变）**；
+	# "sample" = 名单外按抽样（每 PROOF_SAMPLE_EVERY 个候选 1 个全量）；逗号名单 = 名单内恒全量 + 名单外抽样。
+	# 依据：全量聚合实测检出率 0.0010%（1/100751，§13.1）⇒ 对已知组合近似纯成本；
+	# 但按 r4 N4 红线**不得取消**复核 ⇒ 保留金丝雀恒全量，并把 proof_ms/proof_skipped 落进 unit_done 供核算。
+	if args.size() >= 18 and str(args[17]) != "":
+		var pc := str(args[17])
+		if pc != "sample":
+			for kv in pc.split(",", false):
+				if str(kv) != "":
+					_proof_canary.append(str(kv))
+		_proof_sample = true
+	print("[口径] ProofLog 金丝雀(第18参)=%s（名单 %d 条，抽样每 %d 个 1 次）" % [
+		("off=全量" if not _proof_sample else "on"), _proof_canary.size(), PROOF_SAMPLE_EVERY])
 	# 【09-28 深查修正】缺省即 on，而 `tools/run_window_production.sh` 与旧计划生成器只传 **16 参**
 	# ⇒ 计划侧"以为没开路由"、实际开着（实测服务器在跑的那轮就是此状态）。
 	# 这里**把生效口径打进日志**，杜绝下次再靠推理判断（不改变行为；要旧行为必须显式传 `off`）。
@@ -724,6 +753,8 @@ func _initialize() -> void:
 			var u_empty := 0
 			var u_tier := 0
 			var u_proof := 0
+			var u_proof_ms := 0      # 【C3/S2】本单元 ProofLog 累计耗时（原先完全不可见，占墙钟 13.4–18.5%）
+			var u_proof_skip := 0    # 【C3/S2】金丝雀抽样下被跳过的候选数（用于核算复核覆盖率）
 			var u_dup := 0
 			var u_sim := 0
 			var u_full_stall := 0  # per_tier 模式：连续撞「已满档」计数（达 STALL_MAX 停单元）
@@ -766,6 +797,20 @@ func _initialize() -> void:
 					unit_lines.append(_ev({"t": "diff_unreachable", "combo": combo["id"], "side": side,
 						"max_diff": max_diff_seen, "tried": u_tried}))
 					break
+				# 【2026-10-01 C2 逐候选心跳（覆盖写）】挂死时唯一能拿到「卡在哪个 seed」的线索：
+				# stdout 是块缓冲的，进程被挂死/OOM 杀掉时未必落盘；文件心跳不依赖缓冲。
+				# 为什么必须有它：看门狗的「零产出时长」判据原先只能看到**单元级**进度
+				#（issues 只在单元结束写），所以 STALL_MIN 不得不留在 120min；有了候选级心跳
+				# 才能把它降到 15min（§24.7）。实现移植自 tools/probe_peak_window.gd:119-127
+				#（那里实测抓到过 o4@9 单候选烧 679s CPU 的案例）。
+				# 路径放在 issues 同目录：看门狗是 `find <user://目录> -name ...` 递归扫描，
+				# 因此 heartbeat.txt 必须在它扫描范围内（已在 prod_watchdog.sh 的 -name 列表里）。
+				var hb := FileAccess.open("%s/heartbeat.txt" % _issues_path.get_base_dir(), FileAccess.WRITE)
+				if hb != null:
+					hb.store_string("combo=%s side=%d seed=%d timeout_ms=%d by_tier=%s t=%s\n" % [
+						combo["id"], side, seed, _timeout_for(side), str(made_by_tier),
+						Time.get_datetime_string_from_system()])
+					hb.close()
 				var t_seed := Time.get_ticks_msec()
 				# 方案 B：动态目标——tiered 模式下按「下一个未满档」定向传 target_difficulty。
 				var t_target := _target_difficulty
@@ -864,8 +909,17 @@ func _initialize() -> void:
 				if not routed:
 					u_full_stall = 0
 				# 生成后复核：可加载 + 序贯可解（与 verify_batch 同口径，杜绝废品入库）
-				var log: Dictionary = ProofLog.build(level)
-				if not bool(log.get("solved", false)):
+				# 【C3/S2 2026-10-01】① proof 耗时原先完全不可见（实测占批产墙钟 13.4–18.5%）⇒ 累计入 unit_done；
+				# ② 支持金丝雀抽样（第 18 参，默认关 ⇒ 行为不变）。被抽样跳过时 log 留空 = 该候选不做落盘复核，
+				#    由 `proof_skipped` 计数如实记账（覆盖率可随时核算）。
+				var log: Dictionary = {}
+				if _proof_needed(str(combo["id"]), tier, u_tried):
+					var _t_proof := Time.get_ticks_msec()
+					log = ProofLog.build(level)
+					u_proof_ms += Time.get_ticks_msec() - _t_proof
+				else:
+					u_proof_skip += 1
+				if not log.is_empty() and not bool(log.get("solved", false)):
 					u_proof += 1
 					unit_lines.append(_ev({"t": "proof_fail", "combo": combo["id"], "side": side,
 						"seed": seed, "reason": str(log.get("reason", "")), "cost_s": cost_ms / 1000.0}))
@@ -922,6 +976,7 @@ func _initialize() -> void:
 				"per_tier": _per_tier, "by_tier": made_by_tier, "full_stall": u_full_stall,
 				"peak_miss": u_peak_miss, "peak_hist": peak_hist,
 				"peak_window": ("off" if _peak_window.x < 0 else "%d-%d" % [_peak_window.x, _peak_window.y]),
+				"proof_ms": u_proof_ms, "proof_skipped": u_proof_skip,   # C3/S2：复核耗时与抽样覆盖率
 				"cost_s": (Time.get_ticks_msec() - u_t0) / 1000.0}))
 			if mines_fallback:
 				stats["mines_fallback"] = int(stats.get("mines_fallback", 0)) + 1

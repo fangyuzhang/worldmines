@@ -140,8 +140,11 @@ static func _with_official(t: Dictionary) -> Dictionary:
 
 
 ## 兼容判决。size = Vector2i(cols, rows)，mines = 总雷数 N。
+## cells（v4.x，默认 -1 = 旧行为）：真实存活格数。非 -1 且 ≠ size 包围盒面积 = 异形盘，
+## 此时几何依赖的判据（中轴整除 / 骨牌划分 / D4 对称群）不可按矩形模型判定 —— 一律降级，
+## **绝不 FORBID**（用户点名缺陷：异形盘上的组合被矩形模型误判为不可行）。
 ## 返回 {verdict: String, reason: String, rules: Array[String]}。
-static func compat(a: String, b: String, size: Vector2i, mines: int) -> Dictionary:
+static func compat(a: String, b: String, size: Vector2i, mines: int, cells: int = -1) -> Dictionary:
 	var t := table()
 	if not t.has(a) or not t.has(b):
 		return {"verdict": WARN, "reason": "未知算子签名，回退为 warn", "rules": ["R0"]}
@@ -150,6 +153,8 @@ static func compat(a: String, b: String, size: Vector2i, mines: int) -> Dictiona
 	var sa: Dictionary = t[a]
 	var sb: Dictionary = t[b]
 	var why: Array[String] = []
+	var geom_cells: int = cells if cells >= 0 else size.x * size.y
+	var irregular: bool = geom_cells != size.x * size.y
 
 	# R4 蕴含：一方逻辑蕴含另一方 -> 后者完全冗余
 	if (sa["implies"] as Array).has(b):
@@ -157,11 +162,13 @@ static func compat(a: String, b: String, size: Vector2i, mines: int) -> Dictiona
 	if (sb["implies"] as Array).has(a):
 		return {"verdict": FORBID, "reason": "%s 逻辑蕴含 %s，后者完全冗余" % [b, a], "rules": ["R4"]}
 
-	# R5 整除约束：合并后需有解
+	# R5 整除约束：合并后需有解。异形盘上几何依赖项跳过（不可按矩形 cells 判定 ⇒ 不得 FORBID）。
 	var merged: Array = (sa["div"] as Array) + (sb["div"] as Array)
 	for d in merged:
 		var kind: int = (d as Array)[0]
 		var arg: int = (d as Array)[1]
+		if irregular and _is_geometric_div(kind):
+			continue
 		if not _div_ok(kind, arg, size, mines):
 			why.append("R5")
 			return {"verdict": FORBID, "reason": "总雷数 %d 不满足整除约束 kind=%d mod=%d" % [mines, kind, arg],
@@ -177,6 +184,9 @@ static func compat(a: String, b: String, size: Vector2i, mines: int) -> Dictiona
 	var inter: int = (sa["sym"] as int) & (sb["sym"] as int)
 	if inter == SYM_NONE:
 		why.append("R3")
+		if irregular:
+			return {"verdict": WARN, "reason": "异形盘不适用：棋盘无矩形对称结构，R3 对称群判据不可靠",
+				"rules": why}
 		return {"verdict": WARN, "reason": "对称群无交集，可行域可能急剧塌缩", "rules": why}
 
 	# R2 同轴：作用域相同或嵌套 -> 可能互相锁定，交由生成器时取样接受率低下
@@ -190,9 +200,16 @@ static func compat(a: String, b: String, size: Vector2i, mines: int) -> Dictiona
 
 
 ## 一组算子是否整体兼容（两两判定 + 合并整除约束）。
-static func compat_all(ids: Array[String], size: Vector2i, mines: int) -> Dictionary:
+## cells（v4.x，默认 -1）：真实存活格数。-1 ⇒ 用 size.x*size.y（旧行为，逐例一致）；
+## 传入不同值时视为异形盘：几何依赖项（中轴/骨牌/D4 对称）返回 WARN + reason 含「异形盘不适用」，
+## **绝不返回 FORBID**。FORBID 时 `rules` 为**结构化判据码**（R0 同算子 / R4 蕴含 / R5 整除），
+## 供调用方判「该 FORBID 是否与棋盘几何无关」；降级 WARN 时 `rules` 为空数组。
+static func compat_all(ids: Array[String], size: Vector2i, mines: int, cells: int = -1) -> Dictionary:
 	var worst := OK
 	var notes: Array[String] = []
+	var geom_cells: int = cells if cells >= 0 else size.x * size.y
+	var irregular: bool = geom_cells != size.x * size.y
+	var geom_note := ""
 	# 合并全部整除约束后再验一次（两两通过不代表三个一起通过）
 	var merged: Array = []
 	for i in ids.size():
@@ -202,23 +219,43 @@ static func compat_all(ids: Array[String], size: Vector2i, mines: int) -> Dictio
 	for d in merged:
 		var kind: int = (d as Array)[0]
 		var arg: int = (d as Array)[1]
+		# 异形盘：几何依赖项按矩形 cells 判定会误报 FORBID ⇒ 降级 WARN 并说明（不得 FORBID）。
+		if irregular and _is_geometric_div(kind):
+			worst = WARN
+			if geom_note == "":
+				geom_note = "异形盘不适用：几何依赖约束（kind=%d）不能按矩形模型判定（存活格 %d ≠ 包围盒面积 %d）" % [
+					kind, geom_cells, size.x * size.y]
+			continue
 		if not _div_ok(kind, arg, size, mines):
 			return {"verdict": FORBID,
 				"reason": "合并整除约束无解（N=%d）" % mines, "rules": ["R5"]}
 	for i in ids.size():
 		for j in range(i + 1, ids.size()):
-			var r := compat(ids[i], ids[j], size, mines)
+			var r := compat(ids[i], ids[j], size, mines, geom_cells)
 			notes.append("%s+%s -> %s" % [ids[i], ids[j], r["verdict"]])
 			if r["verdict"] == FORBID:
-				return {"verdict": FORBID, "reason": r["reason"], "rules": [r["reason"]], "notes": notes}
+				# 结构化判据码（v4.x 修正）：此前误把**文案**塞进 rules（调用方只能做字符串匹配，
+				# 脆弱）。改为透传 compat() 的判据码（R0 同算子 / R4 蕴含 / R5 整除），
+				# 与合并整除分支的 ["R5"] 口径统一；reason 仍保留人类可读文案。
+				var rcode: Array = (r["rules"] as Array).duplicate()
+				return {"verdict": FORBID, "reason": r["reason"],
+					"rules": rcode if not rcode.is_empty() else ["R0"], "notes": notes}
 			if r["verdict"] == WARN:
 				worst = WARN
-	return {"verdict": worst, "reason": "", "rules": [], "notes": notes}
+				if geom_note == "" and str(r["reason"]).contains("异形盘不适用"):
+					geom_note = str(r["reason"])
+	return {"verdict": worst, "reason": geom_note, "rules": [], "notes": notes}
 
 
-## 整除约束求值。
-static func _div_ok(kind: int, arg: int, size: Vector2i, mines: int) -> bool:
-	var cells: int = size.x * size.y
+## 几何依赖的整除种类：判定用到「中轴格数」（MOD_EQ_MINUS_C）或「骨牌数」（EXACT_HALF），
+## 均以矩形 cells / 中轴为前提 ⇒ 异形盘上不可靠（必须降级而非 FORBID）。
+static func _is_geometric_div(kind: int) -> bool:
+	return kind == Div.MOD_EQ_MINUS_C or kind == Div.EXACT_HALF
+
+
+## 整除约束求值。cells（默认 -1）= 真实存活格数；-1 用包围盒面积（旧行为逐位一致）。
+static func _div_ok(kind: int, arg: int, size: Vector2i, mines: int, cells: int = -1) -> bool:
+	var n_cells: int = cells if cells >= 0 else size.x * size.y
 	match kind:
 		Div.NONE:
 			return true
@@ -242,12 +279,12 @@ static func _div_ok(kind: int, arg: int, size: Vector2i, mines: int) -> bool:
 			return false
 		Div.EXACT_HALF:
 			# 完全覆盖时骨牌数 = floor(R*C/2)，每骨牌恰 1 雷 -> N 必须精确等于它
-			var dominoes: int = cells / arg
+			var dominoes: int = n_cells / arg
 			if mines == dominoes:
 				return true
 			# 部分覆盖：划分 k 个骨牌后，剩余自由格补足 -> 只需 k <= N <= k + (cells - 2k)
-			var max_k: int = mini(cells / arg, mines)
-			return max_k >= 0 and mines <= cells - max_k
+			var max_k: int = mini(n_cells / arg, mines)
+			return max_k >= 0 and mines <= n_cells - max_k
 		_:
 			return true
 

@@ -5,6 +5,98 @@ extends GutTest
 ## `{注解}` 前缀、`?` 行终止盘面、空单元格做视觉留白（分组分隔）。
 
 
+
+
+
+func test_clue_page_shows_varied_numbers_not_only_zeros() -> void:
+	# 【2026-10-02 用户反馈："像热度的教程格子数字只有 0"】示例盘必须能看到 0 以外的数字，
+	# 否则"数字怎么读"这一页等于没讲（一页多盘那版实现需要先改既有契约，见 rule_legend 顶部待办）。
+	var built: Dictionary = RuleLegend.build_pages_for_ids("o5x", "o5x", [])
+	assert_true(bool(built["ok"]), "应能生成页：%s" % str(built.get("reason", "")))
+	var page := Tutorial.parse(str(((built["pages"] as Array)[0] as Dictionary)["text"]))
+	assert_eq(str(page["error"]), "", "示例页要能解析：%s" % str(page["error"]))
+	var values := {}
+	for row in (page["rows"] as Array):
+		for cd in (row as Array):
+			values[str((cd as Dictionary)["value"])] = true
+	var non_zero := false
+	for v in values:
+		if v != "" and v != "q" and v != "F" and v != "0":
+			non_zero = true
+	assert_true(non_zero, "示例盘上必须出现 0 以外的数字（否则用户只能看到一片 0）：%s" % str(values.keys()))
+
+
+func test_generated_page_dict_is_normalized_for_drawing() -> void:
+	# 【2026-10-02 真机截图：教程"只有文字、没有棋盘网格"】生成器页把**整份原文**放 `text`、盘面放
+	# `layout`，而绘制端读 `rows`/`cols` ⇒ 左边无盘、右边把盘面行当正文。归一函数必须纠回来。
+	var gen := {"id": "tutorial_o5x_0", "title": "数字怎么读",
+		"text": "q\tq\tq\nq\t{@!}2\tq\n? 斜脉：数字 = 穿过它的斜线。", "layout": [], "kind": "clue"}
+	var p := Tutorial.normalize_page(gen)
+	assert_eq((p["rows"] as Array).size(), 2, "缺 rows 时应从 text 解析出盘面：%s" % str(p))
+	assert_eq(int(p["cols"]), 3, "列数应为 3")
+	assert_eq(str(p.get("title", "")), "数字怎么读", "标题应优先用生成器给的 title")
+	assert_false(str(p["text"]).find("{@") != -1, "正文里不许再残留盘面注解：%s" % str(p["text"]))
+	assert_true(str(p["text"]).find("斜脉") != -1, "正文要保留人话部分：%s" % str(p["text"]))
+	var plain := {"id": "x", "text": "只有人话，没有盘面行"}
+	var q := Tutorial.normalize_page(plain)
+	assert_eq((q.get("rows", []) as Array).size(), 0, "没有盘面原文时不该凭空造格子")
+	assert_eq(str(q.get("text", "")), "只有人话，没有盘面行", "正文应原样保留")
+
+
+func test_parse_supports_multiple_boards_in_one_page() -> void:
+	# 【2026-10-02 用户口径 B2：一页多盘】`--` 单独一行 = 盘面分隔符；`rows`/`cols` 仍是**第一张盘**
+	#（这样"盘面行数 = DEMO_SIDE"等既有契约一行都不用改）。
+	var p := Tutorial.parse("q\tF\n{@clue}1\tq\n--\n{@clue}2\tq\nq\t{@!}F\n? 三张盘一起看")
+	assert_eq(str(p["error"]), "", "多盘页必须能解析")
+	assert_eq((p["boards"] as Array).size(), 2, "应解析出两张盘")
+	assert_eq((p["rows"] as Array).size(), 2, "兼容字段 rows 仍= 第一张盘")
+	assert_eq(int(p["cols"]), 2, "列数取第一张盘")
+	var b2: Dictionary = (p["boards"] as Array)[1]
+	var r2: Array = b2["rows"]
+	assert_eq(str(((r2[0] as Array)[0] as Dictionary)["value"]), "2", "第二张盘的内容要能读出来")
+	assert_eq(str(p["text"]), "三张盘一起看", "`?` 之后仍是正文")
+	var one := Tutorial.parse("q\tq\n? 单盘")
+	assert_eq((one["boards"] as Array).size(), 1, "没有分隔符时仍只有一张盘（老文件不受影响）")
+
+
+func test_clue_page_has_three_boards_with_varied_numbers() -> void:
+	# 【2026-10-02 用户口径 B2】「数字怎么读」**一页三盘**（雷散/雷挤/贴边），且必须出现 0 以外的数字
+	#（用户原话："像热度的教程格子数字只有 0，多放几个其他情况"）。
+	var built: Dictionary = RuleLegend.build_pages_for_ids("o5x", "o5x", [])
+	assert_true(bool(built["ok"]), "应能生成页：%s" % str(built.get("reason", "")))
+	assert_eq((built["pages"] as Array).size(), 1, "页数契约不变（多盘在同一页里，不新增页）")
+	var page := Tutorial.parse(str(((built["pages"] as Array)[0] as Dictionary)["text"]))
+	assert_eq(str(page["error"]), "", "多盘页要能解析：%s" % str(page["error"]))
+	assert_eq((page["boards"] as Array).size(), 3, "应是三张盘（雷散/雷挤/贴边）")
+	var values := {}
+	for board in (page["boards"] as Array):
+		for row in ((board as Dictionary)["rows"] as Array):
+			for cd in (row as Array):
+				values[str((cd as Dictionary)["value"])] = true
+	var non_zero := false
+	for v in values:
+		if v != "" and v != "q" and v != "F" and v != "0":
+			non_zero = true
+	assert_true(non_zero, "三张盘里必须出现 0 以外的数字（否则用户只能看到一片 0）：%s" % str(values.keys()))
+
+
+func test_placeholder_letters_have_visual_meaning() -> void:
+	# 【2026-10-02 用户反馈：游玩中点教程"乱码、没有棋盘"】根因是绘制端把文档占位字母**当文字画**
+	# （`tutorial_overlay.DemoGrid._draw` 里原来是 `draw_string(value)`）⇒ 满屏 q/F 字母。
+	# 这里把语义钉死，防止哪天又被改回"一律 draw_string"。
+	var src := "q\tF\tq\n{@clue}1\t{@!}q\tq\n"
+	var p := Tutorial.parse(src)
+	var row: Array = (p["rows"] as Array)[0]
+	assert_eq(Tutorial.cell_visual(str((row[0] as Dictionary)["value"])), "covered",
+		"q（未知/未翻开）必须画成盖着的格，不能当文字画")
+	assert_eq(Tutorial.cell_visual(str((row[1] as Dictionary)["value"])), "mine",
+		"F（雷）必须画成雷的图形，不能当文字画（也不用旗帜：用户口径「雷更直观」）")
+	var row2: Array = (p["rows"] as Array)[1]
+	assert_eq(Tutorial.cell_visual(str((row2[0] as Dictionary)["value"])), "text", "数字仍按文字画")
+	assert_eq(Tutorial.cell_visual("x"), "text", "没约定的字母走文字路径（不静默吞掉内容）")
+	assert_eq(Tutorial.cell_visual(" Q "), "covered", "前后空格/大小写也要认（文件里手写难免）")
+
+
 func test_parse_basic_grid_and_annotations() -> void:
 	var src := "q\tF\tq\n{@clue}1\t{@!}q\tq\n"
 	var p := Tutorial.parse(src)
@@ -134,6 +226,30 @@ func test_overlay_handles_missing_page() -> void:
 	assert_eq(title.text, "tutorial_不存在_99", "应显示页 id")
 	var text: RichTextLabel = ov.get("_text")
 	assert_true(text.text.find("解析失败") >= 0, "应提示解析失败而不是崩溃")
+
+
+## 用户反馈（2026-10-02）："进入教程界面后背景全部高斯模糊，文字重叠看不清"。
+## 根因：本覆盖层是全仓**唯一没有面板底板**的模态（只有一层 72% 黑遮罩），而各主题的页面背景是
+## **烘焙好的毛玻璃**，下层文字透上来与教程文字叠在一起。修法：照 `settings_popup.gd` 的约定，
+## 用 `PanelContainer` 承载主题面板样式当底板。这条钉住"控件确实落在底板之内"。
+func test_overlay_content_sits_on_a_panel() -> void:
+	var script: Variant = load("res://ui/tutorial_overlay.gd")
+	if script == null:
+		pending("覆盖层脚本不可用")
+		return
+	var ov: Control = script.new()
+	add_child_autofree(ov)
+	ov.call("open")
+	var panel: PanelContainer = null
+	for n in ov.find_children("*", "PanelContainer", true, false):
+		panel = n
+		break
+	assert_not_null(panel, "教程内容应有面板底板（否则下层毛玻璃背景会透上来，文字看不清）")
+	for key in ["_title", "_grid", "_text", "_prev_btn", "_next_btn"]:
+		var node: Node = ov.get(key)
+		assert_not_null(node, "缺控件 %s" % key)
+		assert_true(panel.is_ancestor_of(node),
+			"%s 必须落在底板之内（否则它会直接压在模糊背景上）" % key)
 
 
 ## pages_for 只认 `tutorial_<combo>_<纯数字>`（2026-09-23 审查加固）：

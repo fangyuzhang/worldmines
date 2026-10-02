@@ -53,7 +53,10 @@ const MIN_CELL_PX := 24                   # cell_px 下限（与矩形路径原�
 ## 不给编译期依赖再添一环（纯值复制 + 测试守卫在这里更稳）。
 const HUD_SIDE_RESERVE := 104.0
 
-## ── 动物伙伴「占位猫」的**左侧**停靠区（2026-09-29 建；2026-09-30 由右侧换到左侧）────
+## ── 动物伙伴「占位猫」的停靠区（2026-09-29 建，在棋盘**右侧**）────
+## 2026-09-30 一度计划换到左侧（对齐 CozySudoku「猫在左」），但只落了 _apply_layout 的一半
+## （avail_left 右移），_pet_dock_rect 仍量右侧 ⇒ 让位白扣、条带恒 0、伙伴消失。
+## 2026-10-01 按契约（test_pet_dock_sits_between_board_and_hud_column）与实测判定**维持右侧**。
 ## 三条值与 ui/companion_pet.gd 的 DESIGN_W / EDGE 是**两处独立声明**（沿用 HUD_SIDE_RESERVE
 ## 的先例：board_view 会被 headless 工具链间接加载，不给编译期依赖再添一环），
 ## 由 test_companion_pet.gd 的一致性断言守住——改一处忘另一处就是「猫被棋盘压住」。
@@ -72,10 +75,12 @@ const PET_EDGE := 12.0
 ## 注意它**不是**让位阈值以外的第二个阈值：条带 ∈ [PET_MIN_W, PET_W) 时会显示一只
 ## 按条带宽度等比缩小的猫（不触发让位），实测有 4 关落在这个区间。
 const PET_MIN_W := 148.0
-## **左侧**额外让位宽度 = PET_W + 2×PET_EDGE。让位后棋盘左边缘到 HUD 左列保留线之间
-## **恒有 ≥ PET_RESERVE** 的条带（推导见 _apply_layout 的 avail_left，
-## 与实测 179 关一致：所有让位关的条带都恰好 = 216）。故绝不会有"让位了还放不下"。
-## 2026-09-30：伙伴由右侧停靠改为**左侧**（对齐 CozySudoku「猫在左」），数值不变、仅换边。
+## 额外让位宽度 = PET_W + 2×PET_EDGE。让位后**棋盘右边缘到 HUD 右列保留线**之间
+## **恒有 ≥ PET_RESERVE** 的条带（推导见 _apply_layout 的 avail_w：宽度受限的盘恰好
+## = PET_RESERVE，与实测 179 关的 216 一致）。故绝不会有"让位了还放不下"。
+## 2026-09-30 曾把伙伴换到**左侧**（对齐 CozySudoku「猫在左」），但停靠区一直在棋盘
+## **右侧**（_pet_dock_rect 与 test_pet_dock_sits_between_board_and_hud_column 都是右侧口径），
+## 换边只落了 avail_left 右移那一半 ⇒ 让位白扣 216px 而条带仍为 0。数值不变。
 const PET_RESERVE := 216.0
 
 # ============ 自定义多边形（数据驱动，T-D2）几何常量与口径 ============
@@ -505,7 +510,7 @@ func _layout() -> void:
 	_sync_pet(vp)
 
 
-## 按 reserve（**左侧**额外让位宽度，px）排一次盘面。reserve = 0 时与改造前**逐像素等价**。
+## 按 reserve（伙伴让位宽度，px）排一次盘面。reserve = 0 时与改造前**逐像素等价**。
 func _apply_layout(vp: Vector2, reserve: float) -> void:
 	# `size`/`scale` 与 Control 自身属性同名（遮蔽告警）——局部只读使用，注解表达有意
 	@warning_ignore("shadowed_variable_base_class")
@@ -515,16 +520,21 @@ func _apply_layout(vp: Vector2, reserve: float) -> void:
 	# 边距：左右 24、上 HUD 64 + 上边距 24、下边距 24 + 底栏 64（随窗口自适应，无 48px 上限）
 	# 侧列保留（2026-09-28 HUD 两列改造；2026-09-30 左列已取消）：右列（对局工具列）仍浮在
 	# 棋盘右侧，棋盘必须让出这段宽度——否则右边缘约半格被按钮盖住（点不到、也看不清）。
-	# 伙伴让位（2026-09-29；2026-09-30 伙伴移到**左侧**）：reserve 从**左侧**扣 ——
-	# avail_left 右移 reserve、avail_w 同步缩短 ⇒ **右边界不动、左边界右移**，腾出左侧条带。
-	var avail_left: float = 24.0 + HUD_SIDE_RESERVE + reserve
+	# 伙伴让位（2026-09-29；停靠区在棋盘**右侧**，见 _pet_dock_rect）：reserve 只扣
+	# **可用宽**，avail_left 锚定不动 ⇒ 盘面在变窄的可用区里重新居中，棋盘右边缘左移，
+	# 右侧条带被腾出来。⚠️ **别**把 reserve 加进 avail_left —— 那是"左边界右移、右边界
+	# 不动"的算法（2026-09-30 半途换边的残留），棋盘右边缘恒 = avail_left + avail_w 不变，
+	# 一格条带都腾不出（sty_sq_wide 实测条带 0 ⇒ 伙伴消失，被布局代价用例守住）。
+	var avail_left: float = 24.0 + HUD_SIDE_RESERVE
 	var avail_w: float = maxf(vp.x - 48.0 - 2.0 * HUD_SIDE_RESERVE - reserve, 1.0)
 	var avail_h: float = vp.y - 64.0 - 64.0 - 48.0
-	# 可用区域的中心。**左边缘锚定**（= 左边距 + 两侧列保留 + 伙伴让位）而不是 vp.x×0.5：
+	# 可用区域的中心。**左边缘锚定**（= 左边距 + 两侧列保留，**不含** reserve）而不是 vp.x×0.5：
 	#   · reserve = 0 时下式恒等于 vp.x×0.5（128 + (vp.x−256)/2 = vp.x/2），与改造前逐像素等价；
-	#   · reserve > 0 时棋盘是「右边界不动、左边界右移」，而不是对称压小 ——
-	#     对称压小的话棋盘左边缘仍会顶到 128 附近，左侧条带根本腾不出来（推导：
-	#     条带 = (128 + reserve) − HUD − 24 = PET_RESERVE，与 vp.x 无关）。
+	#   · reserve > 0 时可用宽缩短 reserve、盘面在可用区里重新居中 ⇒ 棋盘右边缘左移：
+	#     宽度受限的盘（sty_sq_wide 那类宽扁盘）整宽收缩，右边缘 = avail_left + avail_w
+	#     = 1152 − reserve，条带恒 = reserve = PET_RESERVE（与 vp.x、盘面几何都无关）；
+	#     高度受限的盘格子不变，右边缘只左移 reserve/2。
+	#     _layout 的两遍法据此判定"让位有没有用"：两次都量不到条带就回滚（见 _layout）。
 	var avail_center := Vector2(avail_left + avail_w * 0.5, 64.0 + avail_h * 0.5)
 	# 自定义多边形盘（数据驱动）：同样按**视觉包围盒**（所有格心 + 所有顶点的并集，不是
 	# grid.size() 的 15×15 紧凑包围盒、也不是 bbox 字段的格心包围盒）做 scale-to-fit + 居中。

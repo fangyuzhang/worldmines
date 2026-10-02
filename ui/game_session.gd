@@ -121,6 +121,14 @@ func current_variant_id() -> String:
 
 
 ## 开始关卡。失败返回 false（调用方停留本页 + toast，不切场景）。
+## 试玩回程（2026-10-02 用户反馈）：
+## 编辑器点「试玩」后进入游戏，HUD 唯一的出口是「关卡列表」→ 选关页 ⇒ **回不到编辑器**，
+## 用户"点完试玩就丢了作品入口"。这里存一个回程场景路径，游戏 HUD 见到非空值就多显示一个
+## 「回编辑器」按钮。**正式发售的游戏里它永远是空串** ⇒ 普通玩家不会看到"编辑器"字样
+##（这是 2026-09-23「不在游戏 HUD 加返回编辑器」决策的**例外**：只对"从编辑器点进来"的试玩生效）。
+var playtest_return := ""
+
+
 func start_level(path: String) -> bool:
     level_path = path
     board = LevelLoader.load_level(path)

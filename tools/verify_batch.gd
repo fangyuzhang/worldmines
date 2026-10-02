@@ -290,7 +290,14 @@ func _check_schema_roundtrip(board: Board, level: Dictionary) -> String:
 				if int(got) < int(iv[0]) or int(got) > int(iv[1]):
 					return "masked 格值越区间 %s got=%d iv=%s" % [str(p), int(got), str(iv)]
 		else:
-			var want: Variant = rule.compute_clue(mine_seen, p, size)
+			# 【2026-10-01 组合缺口修复】拓扑盘上必须问规则的拓扑求值（与 Board 载入侧、
+			# 生成期同一契约）：否则加权/压缩值域的规则会被这条复核判成"线索值不一致"，
+			# 把**好关**当废品（假废品比漏检更贵：白跑重试 + 掩盖真实缺口）。
+			var want: Variant
+			if board.grid is AdjacencyGrid and rule.has_method("compute_clue_topo"):
+				want = rule.call("compute_clue_topo", mine_seen, p, board.grid, size)
+			else:
+				want = rule.compute_clue(mine_seen, p, size)
 			if not _value_equal(got, want):
 				return "线索值不一致 %s board=%s rule=%s" % [str(p), str(got), str(want)]
 	return ""

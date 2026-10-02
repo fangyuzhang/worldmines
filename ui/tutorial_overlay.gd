@@ -26,19 +26,39 @@ class DemoGrid extends Control:
 		queue_redraw()
 
 	func _draw() -> void:
-		var rows: Array = page.get("rows", [])
-		if rows.is_empty():
-			return
-		var cols: int = int(page.get("cols", 0))
-		if cols <= 0:
+		# 【2026-10-02 用户口径 B2：一页多盘】`boards` 有多张时**纵向排布**（盘间留一行空隙）。
+		# 单盘页（老数据/老文件）走同一条路：`boards` 为空就退回 `rows`/`cols` 当一张盘 ⇒ 行为不变。
+		var boards: Array = page.get("boards", [])
+		if boards.is_empty():
+			boards = [{"rows": page.get("rows", []), "cols": int(page.get("cols", 0))}]
+		var total_rows := 0
+		var max_cols := 0
+		for b in boards:
+			total_rows += (b["rows"] as Array).size() + 1      # +1 = 盘间空隙
+			max_cols = maxi(max_cols, int(b["cols"]))
+		total_rows = maxi(total_rows - 1, 0)
+		if total_rows <= 0 or max_cols <= 0:
 			return
 		var font := get_theme_default_font()
 		var fsize := 18
 		var pad := 12.0
 		var avail := size - Vector2(pad * 2, pad * 2)
-		var cell := minf(avail.x / float(cols), avail.y / float(maxi(rows.size(), 1)))
+		var cell := minf(avail.x / float(max_cols), avail.y / float(total_rows))
 		if cell <= 2.0:
 			return
+		var y_off := 0.0
+		for board in boards:
+			var rows: Array = board["rows"]
+			var cols: int = int(board["cols"])
+			if not rows.is_empty() and cols > 0:
+				_draw_one_board(rows, cols, cell, pad, fsize, font, y_off)
+			y_off += float(rows.size() + 1) * cell
+
+
+	## 画一张盘（由 `draw_set_transform` 平移，所以内部坐标从 0 起算）。
+	func _draw_one_board(rows: Array, cols: int, cell: float, pad: float, fsize: int,
+			font: Font, y_off: float) -> void:
+		draw_set_transform(Vector2(0, y_off), 0.0, Vector2.ONE)
 		var origin := Vector2(pad, pad)
 		for r in rows.size():
 			var row: Array = rows[r]
@@ -65,7 +85,16 @@ class DemoGrid extends Control:
 					var inset := rect.grow(-3.0)
 					draw_dashed_line(inset.position, Vector2(inset.end.x, inset.position.y), hs, 1.0)
 					draw_dashed_line(Vector2(inset.position.x, inset.end.y), inset.end, hs, 1.0)
-				if value != "" and font != null:
+				# 【2026-10-02 用户反馈修：教程"乱码、没有棋盘"】文档里的占位字母**不能当文字画**：
+				# `q` = 未知/未翻开 ⇒ 画成盖着的瓦片；`F` = 雷 ⇒ 画雷（用户口径：不用旗帜，雷更直观）。
+				# 原来一律 `draw_string(value)` ⇒ 满屏 q/F 字母（用户看到的就是这个"乱码"）。
+				var vis := TutorialData.cell_visual(value)
+				if vis == "covered":
+					draw_rect(inner, Color(ThemeManager.text(), 0.26), true)
+					draw_rect(inner.grow(-1.0), Color(ThemeManager.text(), 0.12), false, 1.0)
+				elif vis == "mine":
+					_draw_mine(rect)
+				elif value != "" and font != null:
 					var tw := font.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize)
 					draw_string(font, rect.position + Vector2((cell - tw.x) * 0.5, (cell + tw.y * 0.6) * 0.5),
 						value, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize, ThemeManager.text())
@@ -76,7 +105,26 @@ class DemoGrid extends Control:
 					draw_line(Vector2(e.end.x, e.position.y), Vector2(e.position.x, e.end.y), col, 3.0)
 
 
-var _pages: Array[String] = []
+	## 画一颗雷（= 文档里的 `F`）。[2026-10-02 用户口径]**不用旗帜，直接画雷更直观**。
+	## 全部由几何图形拼（圆 + 八根尖刺），**不依赖字体的字形** —— `✹`/`⚑` 这类符号在缺字体的
+	## 设备上会变成方块乱码，正是本次要修的病。
+	func _draw_mine(rect: Rect2) -> void:
+		var col := ThemeManager.danger()
+		var c := rect.get_center()
+		var r := minf(rect.size.x, rect.size.y) * 0.22
+		var spike := r * 1.75
+		for i in 8:
+			var a := TAU * float(i) / 8.0
+			var d := Vector2(cos(a), sin(a))
+			draw_line(c + d * (r * 0.9), c + d * spike, col, 2.0)
+		draw_circle(c, r, col)
+		# 一点高光，让它在深色底上不糊成一坨（同色系浅色，不引入新字色）
+		draw_circle(c - Vector2(r * 0.3, r * 0.3), maxf(r * 0.28, 1.0), Color(col, 0.55))
+
+
+## 页列表：元素既可以是教程文件 id（String），也可以是**内存页字典**（P6f：生成器现做的规则演示）。
+## 不能再是 Array[String] —— 强类型数组会拒绝 push 字典（引擎报 validate 失败，页面静默缺页）。
+var _pages: Array = []
 var _index := 0
 var _grid: DemoGrid = null
 var _title: Label = null
@@ -107,9 +155,27 @@ func _build_ui() -> void:
 	margin.add_theme_constant_override("margin_bottom", 32)
 	add_child(margin)
 
+	# 【用户反馈修 2026-10-02：进入教程"背景全部高斯模糊、文字重叠看不清"】
+	# 本覆盖层原本是**唯一没有面板底板**的模态：只有一层 72% 黑遮罩，而各主题的页面背景是
+	# **烘焙好的毛玻璃**（board_view 的棱镜垫板 / 选关页玻璃底），下层文字会透上来与教程文字叠在一起。
+	# 其余模态（设置弹窗 settings_popup.gd、暂停菜单）都用 `PanelContainer` 承载主题面板样式
+	# ——「PopupPanel 是 Window，主题样式只能下放到内部 Control」这条约定同样适用于本层。
+	# 补上底板后，标题 / 图解 / 正文 / 按钮全部落在**一块实心底板**上，不再与下层抢像素。
+	var panel := PanelContainer.new()
+	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	margin.add_child(panel)
+
+	var inner := MarginContainer.new()
+	inner.add_theme_constant_override("margin_left", 16)
+	inner.add_theme_constant_override("margin_right", 16)
+	inner.add_theme_constant_override("margin_top", 12)
+	inner.add_theme_constant_override("margin_bottom", 12)
+	panel.add_child(inner)
+
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 12)
-	margin.add_child(vbox)
+	inner.add_child(vbox)
 
 	_title = Label.new()
 	_title.add_theme_font_size_override("font_size", 24)
@@ -174,11 +240,45 @@ func _build_ui() -> void:
 ##
 ## 该变体没有教程页时传空数组：覆盖层显示「暂无教程内容」（已有兜底，
 ## 入口不会点了没反应）。内容覆盖清单见 levels/tutorial/。
+## 基本操作页（任何变体通用；id 固定，文件在 res://levels/tutorial/tutorial_basics_0.txt）
+const TUTORIAL_BASICS_ID := "tutorial_basics_0"
+
+
+## 为**当前变体**现做规则演示页（P6f：游戏内全部教程统一走生成器）。
+## variant_id 形态：单规则（"o4" / "pf"）或组合（"s1_o1" / "s1+o1"）。
+## 只有能解析成**已注册规则**的部分才参与生成；解析不出任何规则（如 "combo"）⇒ 返回空 ⇒ 回退静态页。
+static func _generated_pages(variant_id: String) -> Array:
+	if variant_id == "":
+		return []
+	var clue := ""
+	var globals: Array = []
+	for part in variant_id.replace("+", "_").split("_", false):
+		var r: Object = RuleRegistry.default().resolve(StringName(part))
+		if r == null:
+			continue
+		if str(r.call("get_kind")) == RulePlugin.KIND_GLOBAL:
+			globals.append(part)
+		else:
+			clue = part
+	if clue == "" and globals.is_empty():
+		return []
+	var built: Dictionary = RuleLegend.build_pages_for_ids(variant_id, clue, globals)
+	return (built["pages"] as Array) if bool(built["ok"]) else []
+
+
 static func show_for(parent: Node, variant_id: String) -> Control:
 	if parent == null or not parent.is_inside_tree():
 		return null
 	# 页列表要**提前算**：下面的复用分支也需要它（否则会沿用上一批页）。
-	var pages: Array = TutorialData.pages_for(variant_id) if variant_id != "" else []
+	# P6f：规则演示**优先用生成器现做**（本变体专用的「满足/不满足」棋盘示例，红叉标违规雷，
+	# 且每个示例都过 RuleOracle 裁判）；解析不出规则（组合 id / 未注册）⇒ 回退 res://levels/tutorial/ 静态页。
+	# 基本操作（左键翻格/右键插旗）固定附在最后——生成页讲规则，讲不了"怎么玩"。
+	var pages: Array = _generated_pages(variant_id)
+	if not pages.is_empty():
+		if TutorialData.list_ids().has(TUTORIAL_BASICS_ID):
+			pages.append(TUTORIAL_BASICS_ID)
+	else:
+		pages = TutorialData.pages_for(variant_id) if variant_id != "" else []
 	# 防重入：同一宿主已有一层教程时复用它（连点「教程」会叠出多层，关掉一层还剩一层——
 	# 用户以为按钮失灵）。但复用**必须重新 open**：2026-09-23 审计发现，原来命中即 return，
 	# 同帧内「关掉再看另一个变体」会拿到上一个变体的页列表。
@@ -208,7 +308,8 @@ func open(pages: Array = [], explicit_empty := false) -> void:
 	if list.is_empty() and not explicit_empty:
 		list = TutorialData.list_ids()
 	for p in list:
-		_pages.append(str(p))
+		# 页既可以是教程文件 id（字符串），也可以是**内存页字典**（P6f：生成器现做的规则演示）
+		_pages.append(p)
 	_index = 0
 	_refresh()
 
@@ -231,13 +332,24 @@ func _refresh() -> void:
 		if _grid != null:
 			_grid.set_page({})
 		return
-	var id: String = _pages[_index]
-	var page := TutorialData.load_page(id)
-	if str(page.get("error", "")) != "":
-		_title.text = id
-		_text.text = "该教程页解析失败：\n%s" % str(page["error"])
-		return
-	_title.text = "%s（%d/%d）" % [id, _index + 1, _pages.size()]
+	var entry: Variant = _pages[_index]
+	var page: Dictionary
+	var title: String
+	if entry is Dictionary:
+		# 【2026-10-02 真机截图修】生成器页的盘面在 `layout`、原文在 `text`（含盘面行），本层读的是
+		# `rows`/`cols` ⇒ 以前左边没有棋盘、右边把盘面行打印出来。归一函数负责补解析（见 core/tutorial.gd）。
+		page = TutorialData.normalize_page(entry)
+		# 标题仍用 `id`（既有用例断言"标题里含页 id"；改成人话标题会破坏那些契约，
+		# 而本次要修的是"没有棋盘 + 盘面行当正文"，标题不属本次范围）。
+		title = str(page.get("id", "规则演示"))
+	else:
+		title = str(entry)
+		page = TutorialData.load_page(title)
+		if str(page.get("error", "")) != "":
+			_title.text = title
+			_text.text = "该教程页解析失败：\n%s" % str(page["error"])
+			return
+	_title.text = "%s（%d/%d）" % [title, _index + 1, _pages.size()]
 	if _grid != null:
 		_grid.set_page(page)
 	if _text != null:

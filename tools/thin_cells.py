@@ -211,6 +211,20 @@ def build_server_script(cmds, per_cell: int, title: str) -> list:
         "wait_core() {",
         "  while [ \"$(ps -eo comm= | grep -c '^Godot')\" -ge \"$(nproc)\" ]; do sleep 120; done",
         "}",
+        "# 【2026-10-01 C2 看门狗自监控】看门狗死了没人知道 ⇒ 每轮开始先查它的心跳新鲜度。",
+        "# 心跳由 tools/prod_watchdog.sh 每 POLL_S（默认 300s）写一次；超过 900s 即视为疑似死亡，",
+        "# 大声告警（挂死将无人兜底），但**不中止计划**（宁可能跑完也别因兜底组件缺席而停摆）。",
+        "WD_HB=\"${EVID_DIR:-/root/hang_evidence}/watchdog_heartbeat.txt\"",
+        "wd_check() {",
+        "  if [ ! -f \"$WD_HB\" ]; then",
+        "    echo \"[warn] 看门狗心跳文件不存在（$WD_HB）—— 看门狗可能没在跑，挂死将无人兜底\" >> \"$LOG\"",
+        "    return",
+        "  fi",
+        "  local age=$(( $(date +%s) - $(stat -c %Y \"$WD_HB\" 2>/dev/null || echo 0) ))",
+        "  if [ \"$age\" -gt 900 ]; then",
+        "    echo \"[warn] 看门狗心跳已 ${age}s 未更新（POLL_S=300 时正常应 <600s）⇒ 疑似已死，挂死无人兜底\" >> \"$LOG\"",
+        "  fi",
+        "}",
         "# 各轮日志：/root/gen_window_<tag>.log；产物：<out>/<combo>/<SxS>/",
         "",
         "# 单轮带重试：**判据是 run_window_production.sh 的退出码**，不是日志里有没有 done 行。",
@@ -247,10 +261,29 @@ def build_server_script(cmds, per_cell: int, title: str) -> list:
         "  echo \"[give-up] [$tag] 三次均非零退出 rc=$rc —— 产物已幂等落盘，缺口见该轮 issues，下次收割一并入库\" >> \"$LOG\"",
         "}",
     ]
+    # 【2026-10-01 C5 双 shard】`SHARDS=2` 时把相邻两轮**并行**推进（默认 1 = 逐轮串行，行为不变）。
+    # 为什么安全：每条命令各自的产物目录不同（`user://cmp_<safe>` / `user://thinfill_<mode>_<tier>`），
+    #   ⇒ 并行不会互相覆盖；`wait_core` 本来就以 `nproc` 为上限（2 核放行 2 个 Godot）。
+    # 为什么默认关：唯一未实测的风险是**两个 Godot 进程争用同一个 `.godot` 导入缓存**（§12.2 待验项），
+    #   以及单进程 RSS（已实测生成中 251MB / 可用 1253MB ⇒ 内存侧可行）。
+    # 服务器验收：`SHARDS=2` 跑两轮，检查（a）两轮各自 `unit_done` 与串行一致、
+    #   （b）日志无 import/rebuild 报错、（c）`load` 接近核数 ⇒ 再决定是否成为默认。
+    shards = int(os.environ.get("SHARDS", "1"))
+    pending = []
     for cmd in cmds:
         tag = cmd.split()[2]
+        lines.append("wd_check")
         lines.append("wait_core")
-        lines.append("run_round %s \"%s\"" % (tag, cmd))
+        if shards > 1:
+            lines.append("run_round %s \"%s\" &" % (tag, cmd))
+            pending.append(tag)
+            if len(pending) >= shards:
+                lines.append("wait")
+                pending = []
+        else:
+            lines.append("run_round %s \"%s\"" % (tag, cmd))
+    if pending:
+        lines.append("wait")
     lines.append("echo \"=== 计划结束 $(date '+%F %H:%M:%S') ===\" >> \"$LOG\"")
     return lines
 

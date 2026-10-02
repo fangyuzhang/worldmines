@@ -380,9 +380,16 @@ static func precheck_rules(clue_rule_id: String, global_rule_ids: Array, size: V
 		if g == null or g.get_kind() != RulePlugin.KIND_GLOBAL:
 			return {"ok": false, "reason": "未知全局规则 %s" % str(gid)}
 		globals.append(g)
-	# 异形拓扑强制 classic（与 generate_with_rules 同口径，避免方向型线索在邻接表上矛盾）
-	if topology != null and clue_rule_id != "classic":
-		clue_rule = reg.resolve(&"classic")
+	# 异形拓扑门控（与 generate_with_rules 同口径）：只依赖邻域的规则（supports_topology）原样使用，
+	# 其余回退 classic 并**大声告警**（禁止静默降级）。默认 geometry_kind() = GEO_RECT_ONLY
+	# ⇒ 未声明的第三方规则行为与今天逐位一致。has_method 守卫兜住「旧契约鸭子类型规则」
+	#（CONTRACT 未含 supports_topology）：无该方法者按「未声明」处理，与今天一样回退 classic。
+	if topology != null:
+		var topo_ok: bool = clue_rule.has_method("supports_topology") and bool(clue_rule.call("supports_topology"))
+		if not topo_ok:
+			push_warning("PuzzleGenerator.precheck_rules: 异形拓扑忽略线索规则 %s（该规则未声明拓扑能力或依赖矩形几何），回退 classic，线索值按拓扑邻域计数" % clue_rule_id)
+			clue_rule = reg.resolve(&"classic")
+			clue_rule_id = "classic"
 	var cols := size.x
 	var rows := size.y
 	var n := topology.cell_count() if topology != null else cols * rows
@@ -424,13 +431,18 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 	var clue_rule: Object = reg.resolve(StringName(clue_rule_id))
 	if clue_rule == null or clue_rule.get_kind() != RulePlugin.KIND_CLUE:
 		return {}
-	# 异形拓扑（A2）：邻域由邻接表定义，只有「邻域计数」语义（等价 classic）。
-	# 方向型变体（4n/sc/knight/clock…）的 dirs 偏移在异形上无意义——正向用邻域计数、
-	# 约束却用方向窗口，两者自相矛盾（表现为静默生成失败，不报错难排查）。
-	# 故异形强制 classic：创作者拿到的仍是同一套底座，只是异形拓扑下邻域由邻接表决定。
-	if topology != null and clue_rule_id != "classic":
-		push_warning("PuzzleGenerator: 异形拓扑忽略线索规则 %s，强制 classic（邻域计数）" % clue_rule_id)
-		clue_rule = reg.resolve(&"classic")
+	# 异形拓扑门控（A2 → v4.x）：邻域由邻接表定义。
+	# 规则若声明 supports_topology()（只依赖邻域/邻接表）⇒ **原样使用**——这正是「异形盘 × 用户变体」
+	# 的解锁点；否则回退 classic 并**大声告警**（禁止静默降级，用户点名缺陷）。
+	# 默认 geometry_kind() = GEO_RECT_ONLY ⇒ 未声明的第三方规则行为与今天逐位一致。
+	# 约定：可上异形的线索规则，其线索值由 compute_clue_topo 给出（基类默认 = 拓扑邻域雷数，
+	# 故 classic 逐位不变）；声明 GENERIC 但语义非邻域计数的规则必须覆写 compute_clue_topo。
+	# has_method 守卫兜住「旧契约鸭子类型规则」（CONTRACT 未含 supports_topology）。
+	if topology != null:
+		var topo_ok: bool = clue_rule.has_method("supports_topology") and bool(clue_rule.call("supports_topology"))
+		if not topo_ok:
+			push_warning("PuzzleGenerator: 异形拓扑忽略线索规则 %s（该规则未声明拓扑能力或依赖矩形几何），回退 classic（线索值 = 拓扑邻域计数）" % clue_rule_id)
+			clue_rule = reg.resolve(&"classic")
 		if clue_rule == null:
 			return {}
 		# 落盘字段必须同步：否则 JSON 声明 knight、实际按邻域计数生成，
@@ -473,11 +485,12 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 			last_call_stats["timeout"] = int(last_call_stats["timeout"]) + 1
 			push_warning("PuzzleGenerator: 规则生成超时 %s" % clue_rule_id)
 			return {}
-		# 1. 布雷：异形走拓扑随机；矩形走全局规则构造式（镜像/禁形）优先，否则线索规则，最后随机
+		# 1. 布雷：异形优先走线索规则的拓扑构造式（v4.x 新接口，默认空 = 维持今天行为），
+		#    否则回原有随机拓扑布雷；矩形走全局规则构造式（镜像/禁形）优先，否则线索规则，最后随机
 		var t_place0 := Time.get_ticks_msec()
 		var mines: Array[Vector2i]
 		if topology != null:
-			mines = _place_random_topo(topology, mine_count)
+			mines = _place_mines_topo(clue_rule, topology, mine_count)
 		else:
 			# 传 attempt 的墙钟 deadline：布雷（多 G 时 7 次 CP-SAT 采样）也要能被截断。
 			mines = _place_mines_rules(clue_rule, globals, cols, rows, mine_count, deadline)
@@ -488,7 +501,7 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 		var mine_set := {}
 		for m in mines:
 			mine_set[m] = true
-		# 2. 全部非雷格为候选线索，正向计算线索值（异形走拓扑邻域计数，等价 classic）
+		# 2. 全部非雷格为候选线索，正向计算线索值（异形走规则自己的 compute_clue_topo，默认 = 拓扑邻域计数）
 		var values := {}
 		var clue_cells: Array[Vector2i] = []
 		var positions: Array = topology.all_positions() if topology != null else _rect_positions(rows, cols)
@@ -497,7 +510,16 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 				continue
 			var v: Variant
 			if topology != null:
-				v = _count_topo_mines(mine_set, topology.get_neighbors(pos))
+				# 线索值必须由「该规则自己的语义」给出（RulePlugin.compute_clue_topo）：
+				# 有接口 ⇒ 调用（classic 走基类默认实现 = 拓扑邻域计数 ⇒ 产物逐位不变）；
+				# 无接口（旧契约鸭子类型）⇒ 退回今天的硬编码口径，一次性告警。
+				if clue_rule.has_method("compute_clue_topo"):
+					v = clue_rule.call("compute_clue_topo", mine_set, pos, topology, size)
+				else:
+					if not Engine.has_meta("topo_clue_value_fallback_warned"):
+						Engine.set_meta("topo_clue_value_fallback_warned", true)
+						push_warning("PuzzleGenerator: 线索规则 %s 未实现 compute_clue_topo，异形盘线索值退回硬编码的拓扑邻域计数" % clue_rule_id)
+					v = _count_topo_mines(mine_set, topology.get_neighbors(pos))
 			else:
 				if not clue_rule.applies_to(pos, size):
 					continue
@@ -857,6 +879,21 @@ func _place_random(cols: int, rows: int, mine_count: int) -> Array[Vector2i]:
 	for i in mine_count:
 		out.append(cells[idx[i]])
 	return out
+
+
+## 异形盘布雷（v4.x）：线索规则的拓扑构造式优先（place_mines_topo，基类默认返回空）。
+## 为什么默认空就回落随机：place_mines_topo 是**新增可选能力**，默认空必须逐位保持今天的行为；
+## 纪律上**不引入随机重试兜底**（空 = 不提供，不是「再试一次」）。
+## 雷数硬校验口径与 _place_mines_rules 一致：返回非空但雷数不符 → 拒绝该布雷（插件违约）。
+func _place_mines_topo(clue_rule: Object, topo: GridInterface, count: int) -> Array[Vector2i]:
+	if clue_rule != null and clue_rule.has_method("place_mines_topo"):
+		var m: Array[Vector2i] = clue_rule.call("place_mines_topo", _rng, topo, count)
+		if not m.is_empty():
+			if m.size() != count:
+				push_warning("PuzzleGenerator: 拓扑布雷器返回 %d 雷 ≠ 请求 %d（插件违约，已拒绝该布雷）" % [m.size(), count])
+				return []
+			return m
+	return _place_random_topo(topo, count)
 
 
 ## 拓扑随机布雷（异形棋盘）：从拓扑格子集 Fisher-Yates 采样 count 个。

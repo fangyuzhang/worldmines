@@ -120,6 +120,22 @@ func _ready() -> void:
 	_nav_btn.pressed.connect(func():
 		GameSession.save_now()
 		get_tree().change_scene_to_file("res://ui/level_select.tscn"))
+	# 试玩回程（2026-10-02 用户反馈）：从编辑器点「试玩」进来时 `GameSession.playtest_return` 非空 ⇒
+	# 顶栏多一个「回编辑器」，放在「关卡列表」**之前**（试玩时的主操作是"回去接着改"，不是"去选关页"）。
+	# **正式发售的游戏里它永远是空串** ⇒ 普通玩家不会看到"编辑器"字样
+	#（这是 2026-09-23「不在游戏 HUD 加返回编辑器」决策的例外：只对从编辑器点进来的试玩生效）。
+	if str(GameSession.playtest_return) != "":
+		var back_ed := Button.new()
+		back_ed.text = "回编辑器"
+		back_ed.tooltip_text = "结束试玩，回到关卡编辑器（进度已存，最后几笔改动也保住了）"
+		back_ed.focus_mode = Control.FOCUS_ALL
+		back_ed.custom_minimum_size = Vector2(120, 40)
+		var target := str(GameSession.playtest_return)
+		back_ed.pressed.connect(func():
+			GameSession.save_now()
+			GameSession.playtest_return = ""
+			get_tree().change_scene_to_file(target))
+		_box.add_child(back_ed)
 	_box.add_child(_nav_btn)
 
 	# 雷数读数（⦿ + 数字）。语义「剩余 = 总雷数 − 已插旗」挪进 tooltip —— 2026-09-25

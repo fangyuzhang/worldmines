@@ -1,0 +1,1197 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WorldMines · 全站界面复刻</title>
+<!--
+  ============================================================================
+  WorldMines 全站界面复刻（纯 HTML，无构建、无外部依赖）
+  ----------------------------------------------------------------------------
+  覆盖工程里的主界面 + 覆盖层：
+    对局 / 选关 / 规则图鉴 / 模组管理 / 皮肤 / 整页设置
+    + 结算 / 暂停 / 确认框 / Toast / 生成进度 / 快速设置抽屉
+
+  几何与配色**全部取自源码原值**（不是估的）：
+    hud.gd       TOP_BAR_H=64 / ICON_BTN_SIZE=40 / TOOLBAR_EDGE=24 / TOOLBAR_GAP=8
+                 SIDE_COL_RESERVE=104 / SIDE_COL_IDLE_ALPHA=0.55
+    board_view   HUD_SIDE_RESERVE=104 / TITLEBAR_H=30 / PET_W=192 / PET_EDGE=12
+    theme        tile_gap_frac=0.064 / tile_radius_frac=0.106
+                 色板照抄 cozy_salt / terracotta / sage / dusk + dark
+
+  ★ 布局调整与交互改进**直接落进设计本身**（不另挂说明牌）：
+     统一外壳 / 标题栏并入外壳 / 底栏 64px 复用 / 读数小卡 / 工具列常显+键位角标 /
+     关卡列表抽屉化 / 设置语义化 / 危险操作分级 / 键盘可达+焦点环 / 触达 ≥44 /
+     空状态设计 / 自适应窗口
+  ============================================================================
+-->
+<style>
+/* ============================ 主题色板（照抄 theme_manager.gd） ============================ */
+:root{
+  --bg:#b7c9d4; --card:#cbf5fc; --cell-hidden:#ccdee6; --cell-revealed:#b7c9d4;
+  --text:#444d5b; --text2:#5b6471; --accent:#3471a1; --accent-text:#edfafd;
+  --danger:#c92a16; --safe:#1f5c40; --mat:#526685;
+  --grid-line:rgba(113,134,166,.34); --pet-fur:#7b889d; --pet-ink:#353d4a;
+  --pet-nose:#b04c71; --pet-leaf:#43af7d;
+  --n1:#3471a1; --n2:#1f5c40; --n3:#c92a16; --n4:#5b6471;
+  --n5:#8a5a3c; --n6:#2f7f8f; --n7:#444d5b; --n8:#7a4b96;
+  --shadow:rgba(20,38,48,.30); --shadow2:rgba(20,38,48,.18);
+  --font:"WenYuanRoundedSCVF","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+}
+.app[data-theme="cozy_terracotta"]{
+  --bg:#d3c1b2; --card:#f9cbba; --cell-hidden:#ebdecd; --cell-revealed:#d3c1b2;
+  --text:#564842; --text2:#665a55; --accent:#9a5b32; --accent-text:#fff3ec;
+  --danger:#c33016; --safe:#1e5a3e; --mat:#7d5c56; --pet-fur:#97807c; --pet-ink:#43383a;
+  --pet-nose:#ae4a6f; --pet-leaf:#42ad7b; --grid-line:rgba(125,92,86,.30);
+  --n1:#9a5b32; --n2:#1e5a3e; --n3:#c33016; --n4:#665a55;
+  --n5:#8a4a24; --n6:#2c6f7c; --n7:#564842; --n8:#7a4b96;
+}
+.app[data-theme="cozy_sage"]{
+  --bg:#bbd4c8; --card:#c3faee; --cell-hidden:#cee4d8; --cell-revealed:#bbd4c8;
+  --text:#445454; --text2:#5c6c6b; --accent:#2e7f67; --accent-text:#effffb;
+  --danger:#d42c18; --safe:#216244; --mat:#516f77; --pet-fur:#7b9197; --pet-ink:#364448;
+  --pet-nose:#ac5e4a; --pet-leaf:#45b782; --grid-line:rgba(116,151,159,.34);
+  --n1:#2e7f67; --n2:#216244; --n3:#d42c18; --n4:#5c6c6b;
+  --n5:#8a5a3c; --n6:#2f7f8f; --n7:#445454; --n8:#7a4b96;
+}
+.app[data-theme="cozy_dusk"]{
+  --bg:#c2bad6; --card:#eedffc; --cell-hidden:#d5cfe8; --cell-revealed:#c2bad6;
+  --text:#4d4357; --text2:#645a6d; --accent:#7f4bc2; --accent-text:#f8f1ff;
+  --danger:#be2815; --safe:#1d563c; --mat:#745385; --pet-fur:#8f789b; --pet-ink:#3b3243;
+  --pet-nose:#a6476a; --pet-leaf:#40a778; --grid-line:rgba(116,83,133,.30);
+  --n1:#7f4bc2; --n2:#1d563c; --n3:#be2815; --n4:#645a6d;
+  --n5:#8a5a3c; --n6:#2f6f8f; --n7:#4d4357; --n8:#a03d7a;
+}
+.app[data-theme="dark"]{
+  --bg:#1E1E24; --card:#28282E; --cell-hidden:#3A3A42; --cell-revealed:#232328;
+  --text:#E0E0E6; --text2:#888892; --accent:#7CB9E8; --accent-text:#10202c;
+  --danger:#C0504D; --safe:#4EA96B; --mat:#1a1c22; --grid-line:rgba(255,255,255,.10);
+  --pet-fur:#5d6472; --pet-ink:#c9cdd6; --pet-nose:#b5566f; --pet-leaf:#3f9c75;
+  --n1:#7CB9E8; --n2:#4EA96B; --n3:#E0706A; --n4:#A0A0AC;
+  --n5:#D9A05B; --n6:#5BC8D9; --n7:#C7C7D2; --n8:#C08BE0;
+  --shadow:rgba(0,0,0,.55); --shadow2:rgba(0,0,0,.35);
+}
+
+/* ============================ 基础 ============================ */
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:#5d6873;display:grid;place-items:center;font-family:var(--font);color:var(--text);
+  -webkit-font-smoothing:antialiased}
+button,input,select{font-family:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none}
+kbd{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.86em}
+
+.app{position:relative;background:var(--bg);overflow:hidden;
+  width:min(1280px,97vw);height:min(720px,94vh);display:flex;flex-direction:column}
+
+/* ============================ 统一外壳（一条顶栏贯穿全站） ============================ */
+.shell{height:64px;flex:0 0 64px;display:flex;align-items:center;gap:10px;padding:0 20px;
+  position:relative;z-index:20}
+.shell .logo{display:flex;align-items:center;gap:9px;font-size:17px;font-weight:700;
+  color:var(--text2);letter-spacing:.4px;margin-right:2px}
+.shell .logo .dot{width:11px;height:11px;border-radius:50%;background:var(--accent)}
+.crumb{font-size:19px;font-weight:700;color:var(--text)}
+.crumb small{font-weight:500;font-size:14px;color:var(--text2);margin-left:8px}
+.navsteps{display:flex;align-items:center;gap:6px;margin-left:6px}
+.navsteps button{height:36px;padding:0 14px;border-radius:10px;font-size:14.5px;color:var(--text2);
+  display:flex;align-items:center;gap:6px;transition:background .14s,color .14s}
+.navsteps button:hover{background:var(--card);color:var(--text)}
+.navsteps button[aria-current="page"]{background:var(--card);color:var(--text);font-weight:700;
+  box-shadow:0 2px 0 var(--shadow2)}
+/* 对局时把导航收成纯图标 —— 把顶栏黄金位置让给读数与棋盘（游玩时不看导航） */
+.app[data-screen="game"] .navsteps button .lbl{display:none}
+.app[data-screen="game"] .navsteps button{padding:0 11px}
+.app[data-screen="game"] .shell .logo{display:none}
+.shell .right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.iconbtn{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;
+  background:var(--card);color:var(--text);
+  box-shadow:0 2px 0 var(--shadow2),0 3px 8px var(--shadow2);
+  transition:transform .12s,background .12s,color .12s;position:relative}
+.iconbtn svg{width:23px;height:23px}
+.iconbtn:hover{transform:translateY(-1px);background:var(--accent);color:var(--accent-text)}
+.iconbtn[aria-pressed="true"]{background:var(--accent);color:var(--accent-text)}
+.iconbtn:focus-visible,.btn:focus-visible,.tool:focus-visible,.card:focus-visible,
+.navsteps button:focus-visible,.lv:focus-visible,.tab:focus-visible,.side .item:focus-visible,
+.xtable .cell:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.key{position:absolute;right:-3px;bottom:-3px;font-size:9px;line-height:1;padding:2px 4px;
+  border-radius:5px;background:var(--text);color:var(--bg);opacity:.85}
+
+/* ============================ 屏幕 ============================ */
+.screen{flex:1;min-height:0;display:none;position:relative}
+.screen.on{display:flex}
+
+/* ============================ 通用按钮 ============================ */
+.btn{height:42px;padding:0 18px;border-radius:12px;background:var(--card);font-size:15.5px;font-weight:600;
+  display:inline-flex;align-items:center;gap:8px;box-shadow:0 2px 0 var(--shadow2);
+  transition:transform .12s,background .12s,color .12s}
+.btn:hover{transform:translateY(-1px);background:var(--accent);color:var(--accent-text)}
+.btn:active{transform:translateY(1px)}
+.btn.primary{background:var(--accent);color:var(--accent-text)}
+.btn.ghost{background:transparent;box-shadow:none;border:1.5px solid var(--grid-line)}
+.btn.danger{background:var(--danger);color:#fff}
+.btn.sm{height:34px;padding:0 13px;font-size:14px;border-radius:10px}
+.btn[disabled]{opacity:.45;pointer-events:none}
+
+/* ============================ 对局页 ============================ */
+#sGame{padding:0 20px 0}
+/* ⚠️ 宠物要挂在 .gamegrid 上（不能挂在 104px 宽的侧列里）：
+   Godot 的停靠区是 [HUD_SIDE_RESERVE+PET_EDGE, board_left-PET_EDGE] ≈ 256px 宽，
+   而侧列只有 104 —— 挂错容器会让 192px 的宠物**溢出到屏幕外/压住棋盘**。 */
+.gamegrid{flex:1;display:flex;min-height:0;position:relative}
+.gcol-l{width:104px;flex:0 0 104px}
+.gcol-r{width:104px;flex:0 0 104px;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:14px}
+.boardwrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0}
+/* 操作提示条：开局显示，首次操作后消失（新手不知道右键插旗是扫雷最常见的第一道坎） */
+.hintbar{font-size:13px;color:var(--text2);background:var(--card);padding:7px 14px;border-radius:999px;
+  box-shadow:0 2px 0 var(--shadow2);margin-bottom:10px;white-space:nowrap;
+  transition:opacity .3s,transform .3s}
+.hintbar b{color:var(--text)}
+.hintbar.off{opacity:0;transform:translateY(-6px);pointer-events:none;height:0;margin:0;overflow:hidden}
+.mat{position:relative;padding:11px;border-radius:15px;background:var(--mat);
+  box-shadow:0 8px 22px var(--shadow), inset 0 1px 0 rgba(255,255,255,.18)}
+.grid{display:grid;grid-template-columns:repeat(9,1fr);grid-template-rows:repeat(9,1fr);
+  gap:calc(var(--cell) * .064);width:calc(var(--cell) * 9);height:calc(var(--cell) * 9)}
+.tile{border-radius:calc(var(--cell) * .106);display:grid;place-items:center;
+  font-size:calc(var(--cell) * .56);font-weight:700;line-height:1;user-select:none;position:relative;
+  background:linear-gradient(180deg,rgba(255,255,255,.38),rgba(255,255,255,0) 42%),var(--cell-hidden);
+  box-shadow:0 2px 0 var(--shadow2),0 3px 6px var(--shadow2), inset 0 1px 0 rgba(255,255,255,.75);
+  transition:background .12s,transform .08s,box-shadow .12s}
+.tile:not(.open):hover{transform:translateY(-1.5px)}
+.tile.open{background:linear-gradient(180deg,rgba(0,0,0,.10),rgba(0,0,0,0) 45%),var(--cell-revealed);
+  box-shadow:inset 0 2px 4px var(--shadow2);cursor:default;transform:none}
+/* 已翻开的数字格可再点 → 快捷展开（chord），给个可点提示 */
+.tile.open.t1,.tile.open.t2,.tile.open.t3,.tile.open.t4,
+.tile.open.t5,.tile.open.t6,.tile.open.t7,.tile.open.t8{cursor:pointer}
+.tile.open.t1:hover,.tile.open.t2:hover,.tile.open.t3:hover,.tile.open.t4:hover,
+.tile.open.t5:hover,.tile.open.t6:hover,.tile.open.t7:hover,.tile.open.t8:hover{
+  box-shadow:inset 0 2px 4px var(--shadow2),0 0 0 2px var(--accent) inset}
+/* 键盘光标 */
+.tile.cur{box-shadow:0 0 0 3px var(--accent),0 0 0 5px var(--bg) inset;z-index:2}
+/* 错峰翻开（波浪 / 单格动效）—— 手感的关键 */
+.tile.pop{animation:pop .22s cubic-bezier(.2,.9,.3,1.2) backwards}
+@keyframes pop{from{opacity:0;transform:scale(.86)}to{opacity:1;transform:scale(1)}}
+/* 踩中的那颗雷 */
+.tile.boomhit{background:var(--danger)!important;color:#fff;animation:boom .45s}
+.tile.hl{outline:2.5px solid var(--accent);outline-offset:-2.5px}
+.tile.mine{background:var(--danger);color:#fff;box-shadow:0 3px 10px var(--shadow)}
+.tile.boom{animation:boom .35s}
+@keyframes boom{0%{transform:scale(1)}50%{transform:scale(1.16)}100%{transform:scale(1)}}
+.tile svg{width:62%;height:62%}
+.t1{color:var(--n1)}.t2{color:var(--n2)}.t3{color:var(--n3)}.t4{color:var(--n4)}
+.t5{color:var(--n5)}.t6{color:var(--n6)}.t7{color:var(--n7)}.t8{color:var(--n8)}
+
+/* 读数小卡 */
+.readout{display:flex;align-items:center;gap:7px;background:var(--card);padding:6px 14px;
+  border-radius:11px;box-shadow:0 2px 0 var(--shadow2);font-size:17px;font-variant-numeric:tabular-nums}
+.readout svg{width:21px;height:21px;flex:0 0 21px}
+.topinfo{display:flex;align-items:center;gap:8px;margin-left:8px;font-size:14.5px;color:var(--text2);
+  background:var(--card);padding:6px 13px;border-radius:11px;box-shadow:0 2px 0 var(--shadow2);
+  font-variant-numeric:tabular-nums}
+
+/* 工具列：常显 + 单钮高亮 + 键位角标 */
+.toolcol{display:flex;flex-direction:column;gap:14px}
+.tool{width:104px;height:88px;border-radius:16px;background:var(--card);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;
+  color:var(--accent);font-size:18px;font-weight:600;position:relative;
+  box-shadow:0 4px 10px var(--shadow2), inset 0 1px 0 rgba(255,255,255,.7);
+  transition:transform .12s,box-shadow .12s}
+.tool svg{width:34px;height:34px}
+.tool:hover{transform:translateY(-2px);box-shadow:0 7px 18px var(--shadow)}
+.tool:active{transform:translateY(1px)}
+.tool .key{top:7px;right:8px;bottom:auto}
+
+/* 宠物（占位）：挂在 .gamegrid 左侧，pointer-events:none —— 纯装饰，绝不拦点击 */
+.pet{position:absolute;left:0;bottom:0;width:192px;height:150px;pointer-events:none;z-index:1}
+.pet .shadow{position:absolute;bottom:2px;left:34px;width:120px;height:18px;border-radius:50%;
+  background:var(--shadow2);filter:blur(7px)}
+.pet .tail{position:absolute;left:10px;bottom:34px;width:16px;height:64px;border-radius:9px;
+  background:var(--pet-fur);transform:rotate(-24deg)}
+.pet .body{position:absolute;left:36px;bottom:12px;width:120px;height:86px;border-radius:44px;
+  background:var(--pet-fur)}
+.pet .head{position:absolute;left:32px;bottom:66px;width:126px;height:84px;border-radius:46px;
+  background:var(--pet-fur)}
+.pet .ear{position:absolute;bottom:132px;width:30px;height:30px;border-radius:50% 50% 6px 6px;
+  background:var(--pet-fur)}
+.pet .ear.l{left:44px;transform:rotate(-14deg)} .pet .ear.r{left:112px;transform:rotate(14deg)}
+.pet .eye{position:absolute;bottom:104px;width:13px;height:13px;border-radius:50%;background:var(--pet-ink)}
+.pet .eye.l{left:62px} .pet .eye.r{left:112px}
+.pet .muzzle{position:absolute;bottom:84px;left:82px;width:26px;height:20px;border-radius:50%;
+  background:var(--pet-nose)}
+.pet .leaf{position:absolute;bottom:158px;left:88px;width:18px;height:18px;border-radius:50% 6px 50% 6px;
+  background:var(--pet-leaf);transform:rotate(-18deg)}
+
+/* 底栏：绘画工具条常驻（现状这块 64px 空着） */
+.bottom{height:64px;flex:0 0 64px;display:flex;align-items:center;gap:10px;padding:0 20px;
+  position:relative;z-index:15}
+.app:not([data-screen="game"]) .bottom{display:none}
+.bottom .tip{font-size:13.5px;color:var(--text2)}
+.paintbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.swatch{width:26px;height:26px;border-radius:9px;cursor:pointer;
+  box-shadow:0 0 0 2px var(--card),0 0 0 3px var(--shadow2);transition:transform .12s}
+.swatch:hover{transform:scale(1.1)}
+.swatch[aria-pressed="true"]{box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--accent)}
+.chip{height:34px;padding:0 13px;border-radius:10px;background:var(--card);font-size:14px;
+  box-shadow:0 2px 0 var(--shadow2);display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--accent);color:var(--accent-text)}
+.sep{width:1px;height:22px;background:var(--grid-line)}
+
+/* ============================ 页面骨架 ============================ */
+.page{flex:1;min-height:0;display:flex;flex-direction:column;padding:0 24px 20px;overflow:hidden}
+.pagehead{display:flex;align-items:flex-end;gap:12px;margin-bottom:14px}
+.pagehead h1{margin:0;font-size:26px}
+.pagehead p{margin:0;font-size:14.5px;color:var(--text2)}
+.pagehead .actions{margin-left:auto;display:flex;gap:10px}
+.tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.tab{height:38px;padding:0 16px;border-radius:11px;font-size:15px;color:var(--text2);
+  display:inline-flex;align-items:center;gap:7px;transition:background .14s,color .14s}
+.tab:hover{background:var(--card);color:var(--text)}
+.tab[aria-selected="true"]{background:var(--accent);color:var(--accent-text);font-weight:700;
+  box-shadow:0 2px 0 var(--shadow2)}
+.tab .cnt{font-size:12.5px;opacity:.75}
+.scroll{flex:1;min-height:0;overflow:auto;padding-right:4px}
+.scroll::-webkit-scrollbar{width:10px}
+.scroll::-webkit-scrollbar-thumb{background:var(--grid-line);border-radius:99px}
+
+/* 卡片 */
+.cards{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(178px,1fr))}
+.card{background:var(--card);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:9px;
+  box-shadow:0 3px 0 var(--shadow2),0 5px 14px var(--shadow2);cursor:pointer;
+  transition:transform .14s,box-shadow .14s;text-align:left;position:relative}
+.card:hover{transform:translateY(-3px);box-shadow:0 6px 0 var(--shadow2),0 10px 22px var(--shadow)}
+.card[aria-pressed="true"]{outline:3px solid var(--accent);outline-offset:-1px}
+.card .ttl{font-size:16.5px;font-weight:700}
+.card .desc{font-size:13px;color:var(--text2);line-height:1.45}
+.card .foot{margin-top:auto;display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text2)}
+.card .thumb{height:56px;border-radius:10px;background:var(--bg);display:grid;place-items:center;
+  font-size:12px;color:var(--text2);box-shadow:inset 0 1px 3px var(--shadow2)}
+.card .corner{position:absolute;top:10px;right:10px;font-size:11px;padding:2px 8px;border-radius:6px;
+  background:var(--accent);color:var(--accent-text);font-weight:700}
+.card .corner.warn{background:var(--danger);color:#fff}
+.card.locked{opacity:.62;filter:saturate(.6)}
+.card.locked::after{content:"锁";position:absolute;top:8px;right:11px;font-size:13px;opacity:.7}
+
+/* 分栏 */
+.split{flex:1;min-height:0;display:flex;gap:18px}
+.side{width:238px;flex:0 0 238px;display:flex;flex-direction:column;gap:6px;overflow:auto}
+.side .item{height:42px;padding:0 14px;border-radius:11px;display:flex;align-items:center;gap:9px;
+  font-size:15px;color:var(--text2);cursor:pointer;text-align:left}
+.side .item:hover{background:var(--card);color:var(--text)}
+.side .item[aria-selected="true"]{background:var(--card);color:var(--text);font-weight:700;
+  box-shadow:0 2px 0 var(--shadow2)}
+.side .grp{font-size:12.5px;color:var(--text2);padding:12px 14px 4px;opacity:.8}
+.detail{flex:1;min-width:0;overflow:auto;background:var(--card);border-radius:16px;padding:22px 24px;
+  box-shadow:0 3px 0 var(--shadow2)}
+.detail h2{margin:0 0 6px;font-size:22px}
+.detail h3{margin:20px 0 8px;font-size:16px;color:var(--text2)}
+.detail p{margin:0 0 10px;font-size:15px;line-height:1.72}
+.detail ul{margin:0;padding-left:20px;font-size:15px;line-height:1.8}
+.detail code{background:var(--bg);padding:2px 7px;border-radius:6px;font-size:13.5px}
+
+/* 设置表单：即时生效项用开关，多档项用分段控件 */
+.frow{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:11px 0;
+  border-bottom:1px solid var(--grid-line)}
+.frow:last-child{border-bottom:0}
+.frow .lab{font-size:15.5px}
+.frow .ctl{flex:0 0 auto;display:flex;align-items:center;gap:10px}
+.switch{width:50px;height:29px;border-radius:999px;background:var(--bg);position:relative;cursor:pointer;
+  box-shadow:inset 0 1px 3px var(--shadow2);transition:background .16s;flex:0 0 50px}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:23px;height:23px;border-radius:50%;
+  background:var(--card);box-shadow:0 1px 3px var(--shadow2);transition:transform .16s}
+.switch[aria-checked="true"]{background:var(--accent)}
+.switch[aria-checked="true"]::after{transform:translateX(21px)}
+.switch:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.seg{display:inline-flex;background:var(--bg);border-radius:11px;padding:3px;gap:3px}
+.seg button{height:30px;padding:0 13px;border-radius:9px;font-size:14px;color:var(--text2)}
+.seg button[aria-pressed="true"]{background:var(--card);color:var(--text);font-weight:700;
+  box-shadow:0 1px 3px var(--shadow2)}
+select{height:36px;padding:0 10px;border-radius:10px;border:1px solid var(--grid-line);
+  background:var(--bg);font-size:14.5px}
+
+/* 统计 / 徽章 */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:12px;margin-bottom:16px}
+.stat{background:var(--bg);border-radius:13px;padding:12px 15px}
+.stat .k{font-size:12.5px;color:var(--text2)}
+.stat .v{font-size:23px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:2px}
+.badge{font-size:11.5px;padding:2px 8px;border-radius:6px;background:var(--safe);color:#fff;font-weight:700}
+
+/* 关卡行 / 交叉表 */
+.lv{display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:12px;background:var(--bg);
+  cursor:pointer;transition:transform .12s;text-align:left}
+.lv:hover{transform:translateX(-3px)}
+.lv .no{width:36px;height:36px;border-radius:11px;background:var(--accent);color:var(--accent-text);
+  display:grid;place-items:center;font-weight:700;font-size:15px}
+.lv.done .no{background:var(--safe)}
+.lv .meta{margin-left:auto;font-size:12.5px;color:var(--text2);text-align:right;line-height:1.4}
+.xtable{display:grid;gap:6px;grid-template-columns:auto repeat(7,minmax(0,1fr))}
+.xtable .h{font-size:12px;color:var(--text2);display:grid;place-items:center;padding:4px}
+.xtable .cell{aspect-ratio:1.55;border-radius:10px;background:var(--card);display:grid;place-items:center;
+  font-size:12px;cursor:pointer;box-shadow:0 2px 0 var(--shadow2);transition:transform .12s}
+.xtable .cell:hover{transform:translateY(-2px);background:var(--accent);color:var(--accent-text)}
+.xtable .cell.sel{background:var(--accent);color:var(--accent-text);font-weight:700;
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 45%,transparent)}
+
+/* ============================ 覆盖层 ============================ */
+.scrim{position:absolute;inset:0;background:rgba(12,20,26,.45);opacity:0;pointer-events:none;
+  transition:opacity .2s;z-index:40}
+.scrim.on{opacity:1;pointer-events:auto}
+.modal{position:absolute;left:50%;top:50%;transform:translate(-50%,-46%) scale(.96);
+  background:var(--card);border-radius:18px;box-shadow:0 20px 48px var(--shadow);
+  opacity:0;pointer-events:none;transition:opacity .18s,transform .18s;z-index:50;
+  width:min(460px,90%);padding:24px 26px;text-align:center}
+.modal.on{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1)}
+.modal h2{margin:0 0 6px;font-size:24px}
+.modal .sub{font-size:14.5px;color:var(--text2);margin-bottom:4px}
+.modal .btnrow{display:flex;gap:10px;justify-content:center;margin-top:20px;flex-wrap:wrap}
+.bigresult{font-size:40px;font-weight:800;margin:6px 0}
+.bigresult.win{color:var(--safe)} .bigresult.lose{color:var(--danger)}
+.progress{margin-top:14px;text-align:left}
+.progress .bar{height:10px;border-radius:99px;background:var(--bg);overflow:hidden;margin-top:8px}
+.progress .bar i{display:block;height:100%;background:var(--accent);width:0;border-radius:99px;
+  transition:width .3s}
+.drawer{position:absolute;top:0;right:0;height:100%;width:min(430px,64%);
+  background:var(--card);box-shadow:-16px 0 34px var(--shadow);
+  transform:translateX(102%);transition:transform .26s cubic-bezier(.2,.8,.2,1);z-index:45;
+  display:flex;flex-direction:column;padding:18px 18px 16px}
+.drawer.on{transform:translateX(0)}
+.drawer header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.drawer header h2{margin:0;font-size:20px}
+.drawer .list{flex:1;overflow:auto;display:grid;gap:9px;align-content:start}
+.toast{position:absolute;left:50%;bottom:86px;transform:translate(-50%,16px);opacity:0;
+  background:var(--text);color:var(--bg);padding:11px 20px;border-radius:12px;font-size:14.5px;
+  transition:opacity .2s,transform .2s;z-index:60;pointer-events:none;font-weight:600}
+.toast.on{opacity:.95;transform:translate(-50%,0)}
+</style>
+</head>
+<body>
+
+<div class="app" id="app" data-theme="cozy_salt" data-screen="game">
+
+  <!-- ======================= 统一外壳 ======================= -->
+  <header class="shell">
+    <div class="logo"><span class="dot"></span>WorldMines</div>
+    <div class="crumb" id="crumb">对局<small id="crumbSub">经典变体 · 9×9 · 中级</small></div>
+    <nav class="navsteps" id="navsteps">
+      <button data-go="game" aria-current="page">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3.4" y="3.4" width="17.2" height="17.2" rx="3.4"/><path d="M3.4 9.6h17.2M9.6 9.6v11"/></svg>
+        <span class="lbl">对局</span></button>
+      <button data-go="select">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+        <span class="lbl">关卡</span></button>
+      <button data-go="codex">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 4.6h6.4a2 2 0 0 1 2 2v13a1.6 1.6 0 0 0-1.6-1.6H4zM20 4.6h-6.4a2 2 0 0 0-2 2v13a1.6 1.6 0 0 1 1.6-1.6H20z"/></svg>
+        <span class="lbl">图鉴</span></button>
+      <button data-go="mod">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" stroke-linejoin="round"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg>
+        <span class="lbl">模组</span></button>
+      <button data-go="skin">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.8-.9 1.8-1.8 0-.6-.3-1-.6-1.4-.3-.4-.6-.8-.6-1.4 0-.9.8-1.6 1.7-1.6H16A5 5 0 0 0 21 9c0-3.4-4-6-9-6z"/></svg>
+        <span class="lbl">皮肤</span></button>
+      <button data-go="settings">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.6l1.5 2.6 3-.4.6 3 2.6 1.5-1.5 2.6 1.5 2.6-2.6 1.5-.6 3-3-.4L12 21.4l-1.5-2.6-3 .4-.6-3L4.3 14.7 5.8 12 4.3 9.4l2.6-1.5.6-3 3 .4z" stroke-linejoin="round"/></svg>
+        <span class="lbl">设置</span></button>
+    </nav>
+
+    <div class="right">
+      <div class="readout" id="roMines" title="剩余雷数">
+        <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5.4"/><path d="M12 1.6v3.4M12 19v3.4M1.6 12h3.4M19 12h3.4M4.6 4.6l2.4 2.4M17 17l2.4 2.4M19.4 4.6L17 7M7 17l-2.4 2.4" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" fill="none"/></svg>
+        <span id="mineCount">10</span></div>
+      <div class="readout" id="roTime" title="用时">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><circle cx="12" cy="12.6" r="8.4"/><path d="M12 7.8v4.8l3 2M9 2.4h6"/></svg>
+        <span id="timeText">00:00</span></div>
+      <div class="topinfo" id="topinfo">
+        <span id="tiVariant">经典变体 · 9×9</span><span class="sep"></span>
+        <span id="tiNo">No.0007</span><span class="sep"></span>
+        <span id="tiProgress">0 / 71</span></div>
+      <button class="iconbtn" title="快速设置" data-drawer>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+    </div>
+  </header>
+
+  <!-- ======================= 对局 ======================= -->
+  <section class="screen on" id="sGame">
+    <div class="gamegrid">
+        <div class="pet">
+          <div class="shadow"></div><div class="tail"></div><div class="body"></div><div class="head"></div>
+          <div class="ear l"></div><div class="ear r"></div><div class="eye l"></div><div class="eye r"></div>
+          <div class="muzzle"></div><div class="leaf"></div>
+        </div>
+      <div class="gcol-l">
+      </div>
+      <div class="boardwrap">
+        <div class="hintbar" id="hintbar">
+          <b>左键</b>翻开 · <b>右键</b>插旗 · <b>方向键/WASD</b>移动 · <b>F</b>插旗 · <b>点数字</b>快捷展开 · <b>H</b>提示
+        </div>
+        <div class="mat"><div class="grid" id="grid"></div></div>
+      </div>
+      <div class="gcol-r">
+        <div class="toolcol">
+          <button class="tool" id="btnHint" title="提示（H）：一步直推（100% 必然结论）">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 21.4h4M12 2.6a6 6 0 0 0-3.6 10.8c.6.5.9 1.2 1 1.9h5.2c.1-.7.4-1.4 1-1.9A6 6 0 0 0 12 2.6z"/></svg>
+            提示<span class="key">H</span></button>
+          <button class="tool" id="btnUndo" title="撤销上一步（Ctrl+Z）">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.4h9.6a5.4 5.4 0 0 1 0 10.8H8"/><path d="M7.6 4.8L4 8.4l3.6 3.6"/></svg>
+            撤销<span class="key">⌘Z</span></button>
+          <button class="tool" id="btnPause" title="暂停 / 继续（Esc）">
+            <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6.6" y="4.6" width="4" height="14.8" rx="1.6"/><rect x="13.4" y="4.6" width="4" height="14.8" rx="1.6"/></svg>
+            暂停<span class="key">Esc</span></button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= 选关 ======================= -->
+  <section class="screen" id="sSelect">
+    <div class="page">
+      <div class="pagehead">
+        <h1>关卡选择</h1><p>按内容分页，一处只做一件事</p>
+        <div class="actions">
+          <button class="btn sm" id="btnRandom">随机一关</button>
+          <button class="btn sm" data-go="codex">玩法说明</button>
+        </div>
+      </div>
+      <div class="tabs" id="selectTabs">
+        <button class="tab" data-tab="single" aria-selected="true">单项变体 <span class="cnt">16</span></button>
+        <button class="tab" data-tab="mix" aria-selected="false">混合档 <span class="cnt">56</span></button>
+        <button class="tab" data-tab="mod" aria-selected="false">Mod <span class="cnt">3</span></button>
+      </div>
+      <div class="split">
+        <div class="scroll" id="selectBody" style="flex:1"></div>
+        <aside class="side" style="width:302px;flex:0 0 302px">
+          <div class="grp">当前选择</div>
+          <div class="detail" style="padding:16px 18px;margin-bottom:4px;flex:0 0 auto">
+            <h2 style="font-size:18px" id="selName">经典 · 9×9</h2>
+            <p style="font-size:13.5px;margin:4px 0 10px" id="selDesc">无额外约束，标准扫雷推理</p>
+            <div class="stats" style="grid-template-columns:1fr 1fr;margin:0 0 12px">
+              <div class="stat" style="padding:9px 12px"><div class="k">通关</div><div class="v" style="font-size:19px" id="selDone">12</div></div>
+              <div class="stat" style="padding:9px 12px"><div class="k">最佳</div><div class="v" style="font-size:19px" id="selBest">02:41</div></div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn primary sm" style="flex:1" id="btnPlay">开始游戏</button>
+              <button class="btn sm" id="btnContinue" disabled>继续</button>
+            </div>
+          </div>
+          <div class="grp">尺寸</div>
+          <div class="seg" style="margin:2px 6px 8px">
+            <button aria-pressed="false">6×6</button>
+            <button aria-pressed="true">9×9</button>
+            <button aria-pressed="false">16×16</button>
+          </div>
+          <div class="grp">本页关卡</div>
+          <div class="list" id="lvList" style="display:grid;gap:8px;overflow:auto;flex:1"></div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= 规则图鉴 ======================= -->
+  <section class="screen" id="sCodex">
+    <div class="page">
+      <div class="pagehead"><h1>规则图鉴</h1><p>名称与难度取自唯一事实源，规则文字与引擎实现一一对应</p></div>
+      <div class="split">
+        <nav class="side" id="codexNav"></nav>
+        <article class="detail" id="codexBody"></article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= 模组管理 ======================= -->
+  <section class="screen" id="sMod">
+    <div class="page">
+      <div class="pagehead">
+        <h1>模组管理</h1><p>加载 user://mods 下的规则包，并可为其生成可玩关卡</p>
+        <div class="actions">
+          <button class="btn sm" id="btnImportMod">导入 .zip</button>
+          <button class="btn sm" id="btnOpenModDir">打开模组目录</button>
+        </div>
+      </div>
+      <div class="split">
+        <div class="scroll" id="modList" style="flex:1;display:grid;gap:12px;align-content:start"></div>
+        <aside class="side" style="width:290px;flex:0 0 290px">
+          <div class="grp">生成设置</div>
+          <div class="detail" style="padding:15px 17px;flex:0 0 auto">
+            <div class="frow" style="padding:8px 0"><span class="lab" style="font-size:14px">目标档位</span>
+              <span class="seg"><button aria-pressed="false">简单</button><button aria-pressed="true">普通</button><button aria-pressed="false">困难</button></span></div>
+            <div class="frow" style="padding:8px 0"><span class="lab" style="font-size:14px">尝试上限</span>
+              <select><option>40</option><option>80</option></select></div>
+            <div class="frow" style="padding:8px 0;border:0"><span class="lab" style="font-size:14px">连续窗口外止损</span>
+              <div class="switch" role="switch" aria-checked="true" tabindex="0"></div></div>
+            <button class="btn primary sm" style="width:100%;justify-content:center;margin-top:8px" id="btnGen">为选中模组生成关卡</button>
+          </div>
+          <div class="grp">说明</div>
+          <p style="font-size:12.5px;color:var(--text2);padding:0 8px;line-height:1.7">
+            未加载任何模组时，选关页第三页签会隐藏并显示空状态（而不是留一个永远点不开的页签）。</p>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= 皮肤 ======================= -->
+  <section class="screen" id="sSkin">
+    <div class="page">
+      <div class="pagehead">
+        <h1>皮肤</h1><p>内置主题 + 模组皮肤，点击即用</p>
+        <div class="actions">
+          <button class="btn sm" id="btnDelSkin">删除所选</button>
+          <button class="btn sm primary" id="btnImportSkin">导入 .zip</button>
+        </div>
+      </div>
+      <div class="scroll" id="skinGrid" style="display:grid;gap:14px;align-content:start;
+        grid-template-columns:repeat(auto-fill,minmax(210px,1fr))"></div>
+    </div>
+  </section>
+
+  <!-- ======================= 整页设置 ======================= -->
+  <section class="screen" id="sSettings">
+    <div class="page">
+      <div class="pagehead">
+        <h1>设置</h1><p>按「改完会立刻影响什么」分页，而不是按代码字段分组</p>
+        <div class="actions"><button class="btn sm" id="btnResetSettings">恢复默认</button></div>
+      </div>
+      <div class="split">
+        <nav class="side" id="setNav"></nav>
+        <div class="detail" id="setBody" style="padding:18px 22px"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= 底栏 ======================= -->
+  <footer class="bottom">
+    <div class="paintbar">
+      <span class="chip" id="chipPaint" aria-pressed="true">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M15.4 3.6l5 5-8.6 8.6-5-5z"/></svg>
+        绘画</span>
+      <div class="swatch" style="background:#c92a16" aria-pressed="true"></div>
+      <div class="swatch" style="background:#3471a1" aria-pressed="false"></div>
+      <div class="swatch" style="background:#1f5c40" aria-pressed="false"></div>
+      <div class="swatch" style="background:#8a5a3c" aria-pressed="false"></div>
+      <div class="swatch" style="background:#444d5b" aria-pressed="false"></div>
+      <div class="swatch" style="background:#7a4b96" aria-pressed="false"></div>
+      <div class="swatch" style="background:#d4a017" aria-pressed="false"></div>
+      <span class="sep"></span>
+      <span class="chip" data-size>细</span>
+      <span class="chip" data-size aria-pressed="true">中</span>
+      <span class="chip" data-size>粗</span>
+      <span class="sep"></span>
+      <span class="chip" id="chipErase" title="橡皮：点一次切换「擦整条 / 擦局部」">橡皮</span>
+      <span class="chip" id="chipClear" title="清空绘画">清空</span>
+      <span class="sep"></span>
+      <span class="tip">工具条常驻于此，不再悬浮遮挡棋盘</span>
+    </div>
+  </footer>
+
+  <!-- ======================= 覆盖层 ======================= -->
+  <div class="scrim" id="scrim"></div>
+
+  <div class="modal" id="mOver">
+    <div class="bigresult win" id="overTitle">胜利！</div>
+    <div class="sub" id="overSub">用时 02:41 · 翻开 71 格</div>
+    <div class="stats" style="margin-top:18px;text-align:left">
+      <div class="stat"><div class="k">用时</div><div class="v" id="ovTime">02:41</div></div>
+      <div class="stat"><div class="k">最好纪录</div><div class="v" id="ovBest">02:41</div></div>
+      <div class="stat"><div class="k">提示次数</div><div class="v" id="ovHint">0</div></div>
+      <div class="stat"><div class="k">变体</div><div class="v" style="font-size:15px">经典</div></div>
+    </div>
+    <div class="btnrow">
+      <button class="btn" data-close>返回菜单</button>
+      <button class="btn primary" id="btnNext">下一关</button>
+    </div>
+  </div>
+
+  <div class="modal" id="mPause">
+    <h2>已暂停</h2>
+    <div class="sub" id="pauseSub">已用时 00:00 · 计时已停止</div>
+    <div class="stats" style="margin-top:18px;text-align:left">
+      <div class="stat"><div class="k">已翻开</div><div class="v" id="pOpen">0 / 71</div></div>
+      <div class="stat"><div class="k">剩余雷数</div><div class="v" id="pMines">10</div></div>
+    </div>
+    <div class="btnrow">
+      <button class="btn danger" id="btnRestart">重新开始</button>
+      <button class="btn" data-go="select" data-close>关卡列表</button>
+      <button class="btn primary" id="btnResume">继续游戏</button>
+    </div>
+  </div>
+
+  <div class="modal" id="mConfirm">
+    <h2 id="cfTitle">确定要清空绘画吗？</h2>
+    <div class="sub" id="cfSub">此操作可撤销</div>
+    <div class="btnrow">
+      <button class="btn" data-close>取消</button>
+      <button class="btn danger" id="cfOk">确定</button>
+    </div>
+  </div>
+
+  <div class="modal" id="mGen">
+    <h2>正在生成关卡</h2>
+    <div class="sub" id="genSub">尝试 0 / 40 · 普通档</div>
+    <div class="progress"><div class="bar"><i id="genBar"></i></div></div>
+    <div class="btnrow"><button class="btn" data-close>取消生成</button></div>
+  </div>
+
+  <aside class="drawer" id="drawer">
+    <header>
+      <h2>快速设置</h2>
+      <button class="iconbtn" data-close title="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+    <div class="list" id="drawerList"></div>
+  </aside>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+/* =========================================================================
+   0) 工具
+   ========================================================================= */
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e};
+const rnd=n=>Math.floor(Math.random()*n);
+const fmt=s=>`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('on');
+  clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('on'),1700)}
+
+const S={ screen:'game', theme:'cozy_salt',
+  set:{ripple:true,hover:true,keyhint:true,sound:true,autosave:true,conflict:false,
+    confirmRestart:true,noguess:false,scale:'125%'},
+  rows:9,cols:9,mines:10, board:[],open:[],flag:[],started:false,over:false,
+  elapsed:0,t0:0,timer:null,history:[],hintUsed:0, variant:'经典' };
+
+/* =========================================================================
+   1) 外壳 / 页面切换
+   ========================================================================= */
+const CRUMB={game:['对局','经典变体 · 9×9 · 中级'],select:['关卡选择','单项变体 · 16 个'],
+  codex:['规则图鉴','线索型 8 · 全局约束 7'],mod:['模组管理','已加载 2 个'],
+  skin:['皮肤','内置 5 · 模组 2'],settings:['设置','画面 · 玩法 · 音效 · 数据']};
+function go(scr){
+  S.screen=scr;
+  $('#app').dataset.screen=scr;
+  $$('.screen').forEach(s=>s.classList.toggle('on',s.id==='s'+scr[0].toUpperCase()+scr.slice(1)));
+  $$('#navsteps button').forEach(b=>b.setAttribute('aria-current',b.dataset.go===scr?'page':'false'));
+  const c=CRUMB[scr]||['',''];
+  $('#crumb').firstChild.textContent=c[0]; $('#crumbSub').textContent=c[1];
+  const onGame=scr==='game';
+  $('#roMines').style.display=onGame?'':'none';
+  $('#roTime').style.display=onGame?'':'none';
+  $('#topinfo').style.display=onGame?'':'none';
+  if(scr==='skin') renderSkins();
+  if(scr==='select') renderSelect();
+  if(scr==='game') fitCell();
+  closeAll(false);
+}
+$$('#navsteps button').forEach(b=>b.addEventListener('click',()=>go(b.dataset.go)));
+$$('[data-go]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.go)));
+
+/* =========================================================================
+   2) 棋盘
+   ========================================================================= */
+function nb(i){const r=Math.floor(i/S.cols),c=i%S.cols,o=[];
+  for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){if(!dr&&!dc)continue;
+    const rr=r+dr,cc=c+dc; if(rr>=0&&rr<S.rows&&cc>=0&&cc<S.cols)o.push(rr*S.cols+cc);}
+  return o}
+let fresh=[], cursor=-1;
+function newGame(){
+  const N=S.rows*S.cols;
+  S.board=new Array(N).fill(0);S.open=new Array(N).fill(false);S.flag=new Array(N).fill(false);
+  S.over=false;S.started=false;S.placed=false;S.elapsed=0;S.history=[];S.hintUsed=0;
+  S.boomIdx=-1; fresh=[]; cursor=-1;
+  const hb=$('#hintbar'); if(hb) hb.classList.remove('off');
+  render(); readouts();
+}
+/* ★ 首点必不踩雷（游玩体验硬要求）：布雷推迟到第一次点击，
+   并把该格及其 8 邻域排除在雷区外 —— 否则第一步就死的概率约 10/81，非常劝退。 */
+function placeMines(safe){
+  const N=S.rows*S.cols;
+  const banned=new Set([safe,...nb(safe)]);
+  const pool=[]; for(let i=0;i<N;i++) if(!banned.has(i)) pool.push(i);
+  for(let i=pool.length-1;i>0;i--){const j=rnd(i+1); const t=pool[i];pool[i]=pool[j];pool[j]=t}
+  pool.slice(0,S.mines).forEach(i=>S.board[i]=-1);
+  for(let i=0;i<N;i++) if(S.board[i]!==-1) S.board[i]=nb(i).filter(j=>S.board[j]===-1).length;
+  S.placed=true;
+}
+const ICON={flag:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 21V4"/><path d="M6 4.6h10.4l-1.8 3.4 1.8 3.4H6z" fill="currentColor" stroke="none"/></svg>',
+  mine:'<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12.6" r="5.6"/><path d="M12 1.6v3.2M12 20.4v3.2M1.6 12.6h3.2M19.2 12.6h3.2M4.6 5.2l2.3 2.3M17.1 17.7l2.3 2.3M19.4 5.2l-2.3 2.3M6.9 17.7l-2.3 2.3" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg>'};
+function fitCell(){
+  const wrap=$('.boardwrap'); if(!wrap) return;
+  const avail=Math.min(wrap.clientWidth,wrap.clientHeight);
+  // 标题栏已并入外壳 → 不再预留 TITLEBAR_H(30px)，棋盘因此更大
+  $('#app').style.setProperty('--cell',Math.max(16,Math.floor((avail-22)/9))+'px');
+}
+function render(){
+  const g=$('#grid'); g.innerHTML='';
+  const nf=new Set(fresh);
+  let k=0;
+  for(let i=0;i<S.rows*S.cols;i++){
+    const d=el('div','tile'); d.dataset.i=i;
+    if(S.open[i]){
+      d.classList.add('open'); const v=S.board[i];
+      if(v===-1){ d.classList.add('mine'); if(i===S.boomIdx) d.classList.add('boomhit'); d.innerHTML=ICON.mine; }
+      else if(v>0){ d.classList.add('t'+v); d.textContent=v; }
+      if(nf.has(i)){ d.classList.add('pop'); d.style.animationDelay=(k*14)+'ms'; k++; }
+    }else if(S.flag[i]){ d.style.color='var(--danger)'; d.innerHTML=ICON.flag; }
+    if(i===cursor) d.classList.add('cur');
+    g.appendChild(d);
+  }
+  fresh=[];
+  g.onclick=e=>{const t=e.target.closest('.tile'); if(t) clickCell(+t.dataset.i)};
+  g.oncontextmenu=e=>{e.preventDefault();const t=e.target.closest('.tile'); if(t) toggleFlag(+t.dataset.i)};
+  g.onmouseover=e=>{const t=e.target.closest('.tile'); if(!t||!S.set.hover)return;
+    clearHl(); t.classList.add('hl');
+    nb(+t.dataset.i).forEach(j=>$(`.tile[data-i="${j}"]`)?.classList.add('hl'))};
+  g.onmouseleave=clearHl;
+}
+function clearHl(){$$('.tile.hl').forEach(e=>e.classList.remove('hl'))}
+function dismissHint(){ const hb=$('#hintbar'); if(hb&&S.started) hb.classList.add('off'); }
+function pushHistory(){ S.history.push({open:S.open.slice(),flag:S.flag.slice(),over:S.over,boomIdx:S.boomIdx}); }
+
+/* 左键：未翻开 → 翻开；已翻开的数字 → 快捷展开。
+   （快捷展开是扫雷的核心操作，图鉴里写了就必须真能用 —— 说做一致） */
+function clickCell(i){
+  if(S.over) return;
+  if(S.open[i]){ chord(i); return; }
+  if(S.flag[i]) return;
+  if(!S.placed) placeMines(i);                 // ★ 首点安全
+  if(!S.started){ S.started=true; cursor=i; startTimer(); dismissHint(); }
+  pushHistory(); openFlood(i); afterChange();
+}
+/* 快捷展开（chord）：周围旗数 == 数字时，一次翻开其余邻格 */
+function chord(i){
+  const v=S.board[i]; if(!S.placed||v<=0) return;
+  const nbs=nb(i);
+  if(nbs.filter(j=>S.flag[j]).length!==v) return;
+  const hidden=nbs.filter(j=>!S.flag[j]&&!S.open[j]);
+  if(!hidden.length) return;
+  pushHistory(); hidden.forEach(j=>openFlood(j)); afterChange();
+}
+function openFlood(i){
+  if(S.board[i]===-1){                        // 踩雷：揭示全部雷并标出踩中的那颗
+    S.over=true; stopTimer(); S.boomIdx=i; S.open[i]=true;
+    for(let k=0;k<S.rows*S.cols;k++) if(S.board[k]===-1) S.open[k]=true;
+    return;
+  }
+  const st=[i], got=[];
+  while(st.length){const k=st.pop(); if(S.open[k]||S.flag[k])continue; S.open[k]=true; got.push(k);
+    if(S.board[k]===0) nb(k).forEach(j=>{if(!S.open[j]&&!S.flag[j])st.push(j)})}
+  fresh.push(...got);
+}
+function afterChange(){
+  if(S.over){ render(); readouts(); showOver(false); return; }
+  if(S.open.filter(Boolean).length >= S.rows*S.cols-S.mines){   // 胜利：自动补旗
+    S.over=true; stopTimer();
+    for(let i=0;i<S.rows*S.cols;i++) if(S.board[i]===-1 && !S.flag[i]) S.flag[i]=true;
+    render(); readouts(); showOver(true); return;
+  }
+  render(); readouts();
+}
+/* 先让棋盘把结果演完（错峰动画 / 爆炸），再弹结算 —— 否则玩家看不到发生了什么 */
+function showOver(win){
+  $('#overTitle').textContent = win ? '胜利！' : '失败';
+  $('#overTitle').className = 'bigresult ' + (win ? 'win' : 'lose');
+  $('#overSub').textContent = `用时 ${fmt(S.elapsed)} · 翻开 ${S.open.filter(Boolean).length} 格`;
+  $('#ovTime').textContent = fmt(S.elapsed);
+  $('#ovHint').textContent = S.hintUsed;
+  setTimeout(()=>openModal('mOver'), win ? 520 : 640);
+}
+function toggleFlag(i){ if(S.open[i]||S.over)return;
+  if(!S.started){ S.started=true; startTimer(); dismissHint(); }
+  S.flag[i]=!S.flag[i]; render(); readouts(); }
+function hint(){ if(S.over)return;
+  if(!S.placed){ toast('先点一下棋盘，再要提示'); return; }
+  const i=S.open.findIndex((o,k)=>!o&&!S.flag[k]&&S.board[k]>=0);
+  if(i<0) return; S.hintUsed++;
+  cursor=i; render();
+  $(`.tile[data-i="${i}"]`)?.classList.add('hl'); toast('提示：高亮格必安全');
+  setTimeout(()=>{ if(!S.over) clickCell(i); },340); }
+function undo(){ if(!S.history.length)return;
+  const h=S.history.pop(); S.open=h.open; S.flag=h.flag; S.over=h.over; S.boomIdx=h.boomIdx;
+  if(S.started && !S.timer) startTimer();
+  render(); readouts(); toast('已撤销一步'); }
+function readouts(){
+  const f=S.flag.filter(Boolean).length, rem=S.mines-f;   // 允许负数：插旗超了要让玩家看见
+  const total=S.rows*S.cols, opened=S.open.filter(Boolean).length, prog=`${opened} / ${total-S.mines}`;
+  const mc=$('#mineCount'); mc.textContent=rem;
+  mc.style.color = rem<0 ? 'var(--danger)' : '';
+  $('#pMines').textContent=rem;
+  $('#timeText').textContent=fmt(S.elapsed);
+  $('#pauseSub').textContent=`已用时 ${fmt(S.elapsed)} · 计时已停止`;
+  $('#tiProgress').textContent=prog; $('#pOpen').textContent=prog;
+}
+/* 可续跑的计时（撤销 / 从暂停回来时不重置已用时间） */
+function startTimer(){ S.t0=Date.now()-S.elapsed*1000;
+  clearInterval(S.timer);
+  S.timer=setInterval(()=>{S.elapsed=Math.floor((Date.now()-S.t0)/1000);readouts()},500); }
+function stopTimer(){clearInterval(S.timer);S.timer=null}
+
+/* =========================================================================
+   3) 选关
+   ========================================================================= */
+const SINGLE=[['经典','无额外约束，标准扫雷推理'],['钟面','数字含时钟约束'],['对偶','镜像对称线索'],
+  ['求和','邻域数字之和固定'],['排除','每行至少一雷'],['距离','线索为到雷的距离'],
+  ['链式','线索沿链传递'],['十字','十字位不布雷'],['孤岛','连通块各自计数'],
+  ['边界','边缘格约束加强'],['回环','线索成环'],['排序','每列雷数单调'],
+  ['模数','雷数取模约束'],['双子','两两成对'],['迷宫','通路必安全'],['终章','多约束叠加']];
+const MIX_C=['经典','钟面','对偶','求和','排除','距离','链式','十字'];
+const MIX_G=['无','孤岛','边界','回环','排序','模数','终章'];
+function renderSelect(){
+  const tab=$('#selectTabs .tab[aria-selected="true"]').dataset.tab;
+  const body=$('#selectBody'); body.innerHTML='';
+  if(tab==='single'){
+    const g=el('div','cards');
+    SINGLE.forEach(([n,d],i)=>{
+      const c=el('button','card'+(i>11?' locked':''));
+      c.innerHTML=`<div class="ttl">${n}</div><div class="desc">${d}</div>
+        <div class="foot"><span>9×9 · 10 雷</span><span style="margin-left:auto">${i<12?'✓ '+(((i*3+7)%40)+20)+'s':'未解锁'}</span></div>`;
+      c.onclick=()=>pickVariant(n,d,c); g.appendChild(c);
+    });
+    body.appendChild(g);
+  }else if(tab==='mix'){
+    const box=el('div'); box.style.cssText='background:var(--card);border-radius:16px;padding:18px 20px';
+    const t=el('div','xtable');
+    t.appendChild(el('div','h',''));
+    MIX_G.forEach(g=>t.appendChild(el('div','h',g)));
+    MIX_C.forEach(c=>{
+      t.appendChild(el('div','h',c));
+      MIX_G.forEach(g=>{
+        const cell=el('div','cell',g==='无'?c:c.slice(0,2)+'×'+g.slice(0,2));
+        cell.onclick=()=>{$$('.xtable .cell').forEach(x=>x.classList.remove('sel'));cell.classList.add('sel');
+          pickVariant(c+(g==='无'?'':' + '+g),'交叉档：'+c+' × '+g,null)};
+        t.appendChild(cell);
+      });
+    });
+    box.appendChild(t); body.appendChild(box);
+  }else{
+    const g=el('div','cards');
+    [['基础规则包','官方示例模组',3],['加料包','社区模组（第三方）',7],['实验场','数学边界用例',0]].forEach(([n,d,cnt])=>{
+      const c=el('button','card');
+      c.innerHTML=`<div class="corner">${cnt} 关</div><div class="ttl">${n}</div>
+        <div class="desc">${d}</div><div class="foot">${cnt?'已生成关卡':'⚠ 尚未生成'}</div>`;
+      c.onclick=()=>toast('选中：'+n); g.appendChild(c);
+    });
+    body.appendChild(g);
+  }
+  const list=$('#lvList'); list.innerHTML='';
+  for(let i=1;i<=9;i++){
+    const l=el('button','lv'+(i<=6?' done':''),
+      `<span class="no">${i}</span><span>${SINGLE[i-1][0]}</span>
+       <span class="meta">${i<=6?'✓ 00:'+String((i*7+13)%60).padStart(2,'0'):'未通关'}</span>`);
+    l.onclick=()=>go('game'); l.style.width='100%'; list.appendChild(l);
+  }
+}
+function pickVariant(n,d,node){
+  $$('.card').forEach(c=>c.setAttribute('aria-pressed','false'));
+  node&&node.setAttribute('aria-pressed','true');
+  S.variant=n;
+  $('#selName').textContent=n+' · 9×9'; $('#selDesc').textContent=d||'交叉档组合';
+  $('#tiVariant').textContent=n+' · 9×9'; $('#crumbSub').textContent=n+' · 9×9 · 中级';
+}
+$$('#selectTabs .tab').forEach(t=>t.addEventListener('click',()=>{
+  $$('#selectTabs .tab').forEach(x=>x.setAttribute('aria-selected','false'));
+  t.setAttribute('aria-selected','true'); renderSelect(); }));
+
+/* =========================================================================
+   4) 规则图鉴
+   ========================================================================= */
+const CODEX=[['clue','经典','无额外线索，标准邻域计数'],
+ ['clue','钟面','数字同时表示该格周围「有多少个方向存在雷」'],
+ ['clue','对偶','线索为镜像位置的雷数，两格互相约束'],
+ ['clue','求和','邻域内雷数与数字之和为定值'],
+ ['clue','排除','每一行 / 列至少包含一颗雷（不等式约束）'],
+ ['clue','距离','线索是到最近雷的曼哈顿距离'],
+ ['clue','链式','线索沿一条链传递，链上的值互相决定'],
+ ['con','孤岛','棋盘被分割为若干连通块，各自独立计数'],
+ ['con','边界','边缘两圈格子的约束被加强'],
+ ['con','回环','约束沿边界成环，环上雷数固定'],
+ ['con','排序','每列雷数单调不减（布局型约束）'],
+ ['con','模数','全盘雷数满足给定模数关系'],
+ ['con','终章','多项约束叠加，仅在可解时生成']];
+const OPS={'基础操作':'左键翻开、右键插旗。已翻开的数字格可再次点击进行「快捷展开」——当周围旗数等于数字时，自动翻开其余相邻格。',
+ '键盘快捷键':'<code>H</code> 提示 · <code>Ctrl/⌘+Z</code> 撤销 · <code>Esc</code> 暂停 / 返回 · <code>Tab</code> 遍历可聚焦控件 · <code>Enter/Space</code> 激活',
+ '绘画与标记':'<code>B</code> 切换绘画模式。橡皮支持「擦整条」与「擦局部」；清空需二次确认。'};
+function renderCodex(){
+  const nav=$('#codexNav'); nav.innerHTML='';
+  nav.appendChild(el('div','grp','线索型（8）'));
+  CODEX.filter(c=>c[0]==='clue').forEach(([k,n])=>{
+    const b=el('button','item',n); b.onclick=()=>codexPick(b); nav.appendChild(b);
+  });
+  nav.appendChild(el('div','grp','全局约束（7）'));
+  CODEX.filter(c=>c[0]==='con').forEach(([k,n])=>{
+    const b=el('button','item',n); b.onclick=()=>codexPick(b); nav.appendChild(b);
+  });
+  nav.appendChild(el('div','grp','操作'));
+  ['基础操作','键盘快捷键','绘画与标记'].forEach(n=>{
+    const b=el('button','item',n); b.onclick=()=>codexPick(b); nav.appendChild(b);
+  });
+  codexPick(nav.querySelector('.item'));
+}
+function codexPick(btn){
+  $$('#codexNav .item').forEach(x=>x.setAttribute('aria-selected','false'));
+  btn.setAttribute('aria-selected','true');
+  const b=$('#codexBody'); const t=btn.textContent;
+  if(OPS[t]){ b.innerHTML=`<h2>${t}</h2><p>${OPS[t]}</p>`; return; }
+  const row=CODEX.find(c=>c[1]===t)||CODEX[0];
+  b.innerHTML=`<h2>${row[1]}</h2>
+    <p style="color:var(--text2);font-size:13.5px;margin-bottom:14px">
+      ${row[0]==='clue'?'线索型 · 改变数字的含义':'全局约束 · 改变盘面布局'}</p>
+    <p>${row[2]}</p>
+    <h3>一眼看懂</h3>
+    <ul><li>线索色：<b style="color:var(--n1)">1</b> <b style="color:var(--n2)">2</b>
+      <b style="color:var(--n3)">3</b> <b style="color:var(--n4)">4</b>
+      <b style="color:var(--n5)">5</b> <b style="color:var(--n6)">6</b>
+      <b style="color:var(--n7)">7</b> <b style="color:var(--n8)">8</b></li>
+      <li>本变体只改变「数字代表什么」，盘面与操作不变。</li></ul>
+    <h3>可解性保证</h3>
+    <p>生成器只在<b>存在纯逻辑解</b>时接受该盘面，否则重试（上限与止损见模组页）。</p>`;
+}
+
+/* =========================================================================
+   5) 模组
+   ========================================================================= */
+const MODS=[['基础规则包','v1.4 · 官方','3 关',true,'随游戏内置的示例规则包'],
+  ['加料包','v0.9 · 社区：kx','7 关',true,'额外 12 个线索型变体'],
+  ['实验场','v0.2 · 社区：mm','0 关',false,'含数学边界用例，尚未生成关卡']];
+function renderMods(){
+  const box=$('#modList'); box.innerHTML='';
+  MODS.forEach(([n,v,cnt,loaded,d])=>{
+    const c=el('div','card'); c.style.cursor='default';
+    c.innerHTML=`<div class="corner ${loaded?'':'warn'}">${loaded?'已加载':'未加载'}</div>
+      <div class="ttl">${n}</div><div class="desc">${d}</div>
+      <div class="foot"><span>${v}</span><span>·</span><span>${cnt}</span>
+        <span style="margin-left:auto;display:flex;gap:8px">
+          <button class="btn sm" data-act="load">${loaded?'卸载':'加载'}</button>
+          <button class="btn sm" data-act="gen" ${loaded?'':'disabled'}>生成</button></span></div>`;
+    c.querySelector('[data-act="load"]').onclick=()=>toast(loaded?'已卸载：'+n:'已加载：'+n);
+    c.querySelector('[data-act="gen"]').onclick=()=>{ if(!loaded)return;
+      $('#genBar').style.width='0%'; $('#genSub').textContent='尝试 0 / 40 · 普通档'; openModal('mGen');
+      let p=0; const t=setInterval(()=>{p+=rnd(9)+3; if(p>=100){p=100;clearInterval(t)}
+        $('#genBar').style.width=p+'%';
+        $('#genSub').textContent=`尝试 ${Math.min(40,Math.round(p/2.5))} / 40 · 普通档`;},260); };
+    box.appendChild(c);
+  });
+}
+
+/* =========================================================================
+   6) 皮肤
+   ========================================================================= */
+const SKINS=[['cozy_salt','CozyStyle · Salt','内置','v1.0','#3471a1','#b7c9d4'],
+  ['cozy_terracotta','CozyStyle · Terracotta','内置','v1.0','#9a5b32','#d3c1b2'],
+  ['cozy_sage','CozyStyle · Sage','内置','v1.0','#2e7f67','#bbd4c8'],
+  ['cozy_dusk','CozyStyle · Dusk','内置','v1.0','#7f4bc2','#c2bad6'],
+  ['dark','深色','内置','v1.0','#7CB9E8','#1E1E24'],
+  ['cozy_salt','林间','模组：kx','v0.3','#3f7d52','#c9d8c3'],
+  ['cozy_dusk','霓虹','模组：mm','v0.1','#e05fa0','#2a2340']];
+let curSkin='cozy_salt';
+function renderSkins(){
+  const box=$('#skinGrid'); box.innerHTML='';
+  SKINS.forEach(([id,name,src,ver,acc,bg])=>{
+    const c=el('div','card');
+    const using = (src==='内置' && id===curSkin);
+    c.innerHTML=`<div class="thumb" style="background:${bg};color:${acc};font-weight:700">Aa 1 2 3</div>
+      <div class="ttl">${name}${using?' <span class="badge">使用中</span>':''}</div>
+      <div class="desc">${src} · ${ver}</div>
+      <div class="foot"><span style="width:14px;height:14px;border-radius:5px;background:${acc};display:inline-block"></span>
+        <span style="width:14px;height:14px;border-radius:5px;background:${bg};display:inline-block"></span>
+        ${src==='内置'?'<span style="margin-left:auto">不可删除</span>':''}</div>`;
+    c.onclick=()=>{ if(src==='内置'){curSkin=id; setTheme(id); renderSkins();} toast('已应用：'+name); };
+    box.appendChild(c);
+  });
+}
+
+/* =========================================================================
+   7) 整页设置（即时生效项用开关 / 多档项用分段控件）
+   ========================================================================= */
+const PAGES={
+  '画面':[['主题','select'],['界面缩放','seg',['100%','125%','150%']],
+    ['悬停邻域高亮','switch','hover'],['翻开动效（波浪 / 单格）','switch','ripple'],
+    ['绘画层透明度','seg',['50%','75%','100%']]],
+  '玩法':[['连携展开（数字周围自动翻开）','switch','conflict'],['自动存档','switch','autosave'],
+    ['键盘快捷键提示','switch','keyhint'],['重开需二次确认','switch','confirmRestart'],
+    ['无猜模式（只出可纯逻辑解的盘）','switch','noguess'],['提示档位','seg',['关闭','一步','三档']]],
+  '音效':[['音效总开关','switch','sound'],['对局音效','seg',['0%','50%','100%']],
+    ['界面音效','seg',['0%','50%','100%']]],
+  '数据':[['导出存档','button','导出'],['清空全部进度','button-danger','清空'],
+    ['已通关','text','12 / 179'],['总用时','text','04:21:07']]
+};
+function renderSettings(){
+  const nav=$('#setNav'); nav.innerHTML='';
+  Object.keys(PAGES).forEach((k,i)=>{
+    const b=el('button','item',k); b.setAttribute('aria-selected',i===0?'true':'false');
+    b.onclick=()=>setPage(k); nav.appendChild(b);
+  });
+  setPage('画面');
+}
+function setPage(k){
+  $$('#setNav .item').forEach(x=>x.setAttribute('aria-selected',x.textContent===k?'true':'false'));
+  const body=$('#setBody'); body.innerHTML=`<h2 style="font-size:20px;margin-bottom:6px">${k}</h2>`;
+  PAGES[k].forEach(([lab,type,arg])=>{
+    const r=el('div','frow'); r.appendChild(el('div','',`<div class="lab">${lab}</div>`));
+    const ctl=el('div','ctl');
+    if(type==='switch'){
+      const sw=el('div','switch'); sw.setAttribute('role','switch'); sw.tabIndex=0;
+      sw.setAttribute('aria-checked',String(!!S.set[arg]));
+      sw.onclick=()=>{const on=sw.getAttribute('aria-checked')==='true';
+        sw.setAttribute('aria-checked',String(!on)); S.set[arg]=!on;
+        if(arg==='hover'&&!S.set.hover)clearHl();};
+      ctl.appendChild(sw);
+    }else if(type==='seg'){
+      const seg=el('div','seg');
+      arg.forEach((a,i)=>{const b=el('button','',a); b.setAttribute('aria-pressed',i===1?'true':'false');
+        b.onclick=()=>{$$('button',seg).forEach(x=>x.setAttribute('aria-pressed','false'));
+          b.setAttribute('aria-pressed','true');}; seg.appendChild(b)});
+      ctl.appendChild(seg);
+    }else if(type==='select'){
+      const s=el('select');
+      [['cozy_salt','CozyStyle · Salt'],['cozy_terracotta','CozyStyle · Terracotta'],
+       ['cozy_sage','CozyStyle · Sage'],['cozy_dusk','CozyStyle · Dusk'],['dark','深色']]
+        .forEach(([v,n])=>{const o=el('option','',n);o.value=v; if(v===S.theme)o.selected=true; s.appendChild(o)});
+      s.onchange=e=>setTheme(e.target.value); ctl.appendChild(s);
+    }else if(type==='text'){
+      ctl.appendChild(el('div','',`<b style="font-size:17px;font-variant-numeric:tabular-nums">${arg}</b>`));
+    }else{
+      const b=el('button','btn sm'+(type==='button-danger'?' danger':''),arg);
+      b.onclick=()=>{ type==='button-danger'
+        ? confirmDlg('清空全部进度？','包括 12 个已通关记录与最佳成绩',()=>toast('已清空（占位）'))
+        : toast('已导出（占位）'); };
+      ctl.appendChild(b);
+    }
+    r.appendChild(ctl); body.appendChild(r);
+  });
+}
+function setTheme(t){ S.theme=t; $('#app').dataset.theme=t;
+  $$('#setBody select, #drawerList select').forEach(s=>{ if(s.value!==t) s.value=t; }); }
+
+/* =========================================================================
+   8) 覆盖层 / 抽屉
+   ========================================================================= */
+function openModal(id){ closeAll(false); $('#scrim').classList.add('on'); $('#'+id).classList.add('on'); }
+function closeAll(hideScrim=true){
+  $$('.modal.on').forEach(m=>m.classList.remove('on'));
+  $('#drawer').classList.remove('on');
+  if(hideScrim) $('#scrim').classList.remove('on');
+}
+let _cf=null;
+function confirmDlg(title,sub,ok){
+  $('#cfTitle').textContent=title; $('#cfSub').textContent=sub; _cf=ok; openModal('mConfirm'); }
+$('#scrim').addEventListener('click',()=>closeAll());
+$$('[data-close]').forEach(b=>b.addEventListener('click',()=>closeAll()));
+$('#cfOk').onclick=()=>{ closeAll(); _cf&&_cf(); };
+$('#btnResume').onclick=()=>closeAll();
+$('#btnPause').onclick=()=>openModal('mPause');
+$('#btnHint').onclick=hint; $('#btnUndo').onclick=undo;
+$('#btnRestart').onclick=()=>confirmDlg('重新开始本局？','当前进度会丢失，此操作不可撤销',
+  ()=>{closeAll();newGame();toast('已重新开始')});
+$('#btnNext').onclick=()=>{ closeAll(); newGame(); toast('已载入下一关'); };
+$('#btnPlay').onclick=()=>{ newGame(); go('game'); };
+$('#btnRandom').onclick=()=>{ newGame(); go('game'); toast('已随机载入一关'); };
+$('#btnResetSettings').onclick=()=>confirmDlg('恢复全部默认设置？','包含主题、动效与操作偏好',
+  ()=>toast('已恢复默认（占位）'));
+
+function buildDrawer(){
+  const list=$('#drawerList'); list.innerHTML='';
+  [['主题','select'],['界面缩放','seg'],['悬停高亮','switch','hover'],['翻开动效','switch','ripple'],
+   ['音效','switch','sound'],['键盘快捷键提示','switch','keyhint']].forEach(([lab,t,key])=>{
+    const r=el('div','frow'); r.appendChild(el('div','',`<div class="lab">${lab}</div>`));
+    const ctl=el('div','ctl');
+    if(t==='switch'){
+      const sw=el('div','switch'); sw.setAttribute('role','switch'); sw.tabIndex=0;
+      sw.setAttribute('aria-checked',String(!!S.set[key]));
+      sw.onclick=()=>{const on=sw.getAttribute('aria-checked')==='true';
+        sw.setAttribute('aria-checked',String(!on)); S.set[key]=!on;};
+      ctl.appendChild(sw);
+    }else if(t==='seg'){
+      const seg=el('div','seg');['100%','125%','150%'].forEach((a,j)=>{
+        const b=el('button','',a); b.setAttribute('aria-pressed',j===1?'true':'false');
+        b.onclick=()=>{$$('button',seg).forEach(x=>x.setAttribute('aria-pressed','false'));
+          b.setAttribute('aria-pressed','true')}; seg.appendChild(b)});
+      ctl.appendChild(seg);
+    }else{
+      const s=el('select');
+      [['cozy_salt','Salt'],['cozy_terracotta','Terracotta'],['cozy_sage','Sage'],
+       ['cozy_dusk','Dusk'],['dark','深色']].forEach(([v,n])=>{
+        const o=el('option','',n);o.value=v; if(v===S.theme)o.selected=true; s.appendChild(o)});
+      s.onchange=e=>setTheme(e.target.value); ctl.appendChild(s);
+    }
+    r.appendChild(ctl); list.appendChild(r);
+  });
+}
+$$('[data-drawer]').forEach(b=>b.addEventListener('click',()=>{
+  buildDrawer(); $('#scrim').classList.add('on'); $('#drawer').classList.add('on') }));
+
+/* =========================================================================
+   9) 占位交互（色板 / 分段 / 绘画条）
+   ========================================================================= */
+document.addEventListener('click',e=>{
+  const sw=e.target.closest('.swatch');
+  if(sw){ $$('.swatch',sw.parentElement).forEach(x=>x.setAttribute('aria-pressed','false'));
+    sw.setAttribute('aria-pressed','true'); return; }
+  const seg=e.target.closest('.seg button');
+  if(seg){ $$('button',seg.parentElement).forEach(x=>x.setAttribute('aria-pressed','false'));
+    seg.setAttribute('aria-pressed','true');
+    if(seg.textContent.endsWith('%')) S.set.scale=seg.textContent; return; }
+  const chip=e.target.closest('.chip');
+  if(chip){
+    if(chip.dataset.size!==undefined){
+      $$('.chip[data-size]').forEach(x=>x.setAttribute('aria-pressed','false'));
+      chip.setAttribute('aria-pressed','true'); return; }
+    if(chip.id==='chipPaint'){ const on=chip.getAttribute('aria-pressed')==='true';
+      chip.setAttribute('aria-pressed',String(!on)); toast(on?'已退出绘画模式':'已进入绘画模式'); return; }
+    if(chip.id==='chipErase'){ toast('橡皮：再点一次切换「擦整条 / 擦局部」'); return; }
+  }
+});
+$('#chipClear').addEventListener('click',()=>confirmDlg('清除全部绘画？','此操作可撤销',()=>toast('已清除（占位）')));
+$('#btnImportMod').onclick=()=>toast('导入模组 .zip（占位）');
+$('#btnOpenModDir').onclick=()=>toast('打开 user://mods（占位）');
+$('#btnImportSkin').onclick=()=>toast('导入皮肤 .zip（占位）');
+$('#btnDelSkin').onclick=()=>confirmDlg('删除所选皮肤？','内置皮肤不可删除',()=>toast('已删除（占位）'));
+$('#btnGen').onclick=()=>openModal('mGen');
+
+/* =========================================================================
+   10) 键盘：空格/回车激活聚焦控件；对局内支持方向键/WASD 走格
+   ========================================================================= */
+addEventListener('keydown',e=>{
+  if(e.target.tagName==='SELECT'||e.target.tagName==='INPUT') return;
+  const k=e.key.toLowerCase();
+  if(k==='escape'){
+    if($$('.modal.on').length||$('#drawer').classList.contains('on')) closeAll();
+    else if(S.screen!=='game') go('game');
+    else openModal('mPause');
+    return;
+  }
+  if(e.target.classList&&e.target.classList.contains('switch')&&(k===' '||k==='enter')){
+    e.preventDefault(); e.target.click(); return; }
+  if(S.screen!=='game') return;
+
+  // —— 棋盘键盘操作（扫雷对键盘玩家是刚需；原先完全没有）——
+  const cur = cursor<0 ? 0 : cursor;
+  const arrow = {'arrowup':-S.cols,'w':-S.cols,'arrowdown':S.cols,'s':S.cols,
+                 'arrowleft':-1,'a':-1,'arrowright':1,'d':1}[k];
+  if(arrow!==undefined){
+    e.preventDefault();
+    if(cursor<0){ cursor=0; render(); return; }
+    const r=Math.floor(cursor/S.cols), c=cursor%S.cols;
+    let nr=r, nc=c;
+    if(arrow===-S.cols) nr=Math.max(0,r-1); else if(arrow===S.cols) nr=Math.min(S.rows-1,r+1);
+    else if(arrow===-1) nc=Math.max(0,c-1); else nc=Math.min(S.cols-1,c+1);
+    cursor=nr*S.cols+nc; render(); return;
+  }
+  if(cursor>=0 && k==='f'){ e.preventDefault(); toggleFlag(cursor); return; }
+  if(k==='enter'||(k===' '&&cursor>=0&&!document.activeElement?.classList.contains('tool'))){
+    e.preventDefault();
+    if(cursor<0){ cursor=0; render(); } else clickCell(cursor);
+    return;
+  }
+  if(k==='h') hint();
+  else if((e.ctrlKey||e.metaKey)&&k==='z'){ e.preventDefault(); undo(); }
+  if(k===' '&&document.activeElement?.classList.contains('tool')){
+    e.preventDefault(); document.activeElement.click(); }
+});
+
+/* =========================================================================
+   11) 启动
+   ========================================================================= */
+newGame(); renderSelect(); renderCodex(); renderMods(); renderSettings(); buildDrawer();
+go('game'); setTheme('cozy_salt'); fitCell();
+addEventListener('resize',fitCell);
+</script>
+</body>
+</html>
