@@ -7,8 +7,9 @@
 #
 # 【与全仓同口径，禁止包围盒】
 #   · 盘内格一律走 `GridInterface.all_positions()`；是否在盘内走 `in_board()`；
-#     相邻判定走 `get_neighbors()`（异形盘/环绕盘上"坐标差为 1"并不等于相邻）。
-#     **绝不**用 rows×cols 双层循环假设连续坐标。
+#     相邻判定 = **正交 1×2 / 2×1**（坐标差恰好 1，**对角不算**）且经 `get_neighbors()` 复核
+#     （异形/环绕盘上"坐标差为 1"并不等于相邻）。place / validate / partition / verify 共用
+#     这一条口径（`_is_adjacent()`），**绝不**用 rows×cols 双层循环假设连续坐标。
 #   · 复合格见只读的 `core/mega_cell.gd`：本模型只问它 `owner_of(pos)` / `size_of(id)`，
 #     不复制它的合并/拆分/邻接逻辑。
 #
@@ -55,6 +56,9 @@ var _next_id: int = 1
 ##   mega —— 可选，`MegaCell` 实例（复合格归属门禁）；也接受 `doc` 键（其值同上，便于
 ##           后续把 EditorDoc 整个传进来）。
 ##
+## 相邻口径 = **正交 1×2 / 2×1**（坐标差恰好 1，**对角不算相邻**），再经棋盘邻接表复核 ——
+## 与 `partition()` / `verify_partition()` 完全一致（同一模型里不允许两套相邻口径）。
+##
 ## 成功：`{"ok": true, "id": int, "cells": Array[Vector2i]}`。
 ## 拒绝：`{"ok": false, "code": String, "reason": String}`，**无副作用**。
 ## code ∈ {"same_cell","no_grid","out_of_board","not_adjacent","occupied","cross_mega","mega_singleton"}。
@@ -71,10 +75,11 @@ func place(a: Vector2i, b: Vector2i, opts: Dictionary = {}) -> Dictionary:
 		return _reject("out_of_board", "格 (%d,%d) 不在盘内" % [a.x, a.y])
 	if not bool(grid.call("in_board", b)):
 		return _reject("out_of_board", "格 (%d,%d) 不在盘内" % [b.x, b.y])
-	if not _neighbors_of(grid, a).has(b):
+	if not _is_adjacent(grid, a, b):
 		return _reject("not_adjacent",
-			"(%d,%d) 与 (%d,%d) 不相邻：骨牌两格必须相邻（按棋盘邻接表判定；异形/环绕盘上坐标差 1 也不一定相邻）"
-			% [a.x, a.y, b.x, b.y])
+			"(%d,%d) 与 (%d,%d) 不能组成 1×2/2×1 骨牌：两格必须**正交相邻**（坐标差恰好 1，**对角不算**），"
+			% [a.x, a.y, b.x, b.y]
+			+ "且必须经棋盘邻接表确认（异形/环绕盘上坐标差 1 也不一定相邻）")
 
 	var occ_a := int(_owner.get(a, 0))
 	var occ_b := int(_owner.get(b, 0))
@@ -227,7 +232,7 @@ func validate(grid: Variant, doc: Variant = null) -> Dictionary:
 	for d2 in _sorted_records():
 		var cs: Array = d2["cells"]
 		if cs.size() == DOMINO_SIZE and _is_grid(grid):
-			if not _neighbors_of(grid, cs[0]).has(cs[1]):
+			if not _is_adjacent(grid, cs[0], cs[1]):
 				not_adjacent.append(cs[0])
 				not_adjacent.append(cs[1])
 		if mega != null and cs.size() == DOMINO_SIZE:
@@ -236,7 +241,7 @@ func validate(grid: Variant, doc: Variant = null) -> Dictionary:
 				cross_mega.append(cs[1])
 	if not not_adjacent.is_empty():
 		issues.append(_issue("not_adjacent", LEVEL_BLOCK,
-			"有骨牌的两格并不相邻（%s）—— 相邻必须按棋盘邻接表判定" % _fmt_cells(not_adjacent), not_adjacent))
+			"有骨牌不是 1×2/2×1（%s）—— 两格必须正交相邻（对角不算），且经棋盘邻接表确认" % _fmt_cells(not_adjacent), not_adjacent))
 	if not cross_mega.is_empty():
 		issues.append(_issue("cross_mega", LEVEL_BLOCK,
 			"有骨牌**跨复合格**（%s）—— 文档「复合格 × 变体」未定义组合，明确拒绝（把配对限制在同一个复合格内）"
@@ -277,6 +282,296 @@ func validate(grid: Variant, doc: Variant = null) -> Dictionary:
 		"overlaps": overlaps,
 		"overlap_cells": overlap_cells,
 		"issues": issues,
+	}
+
+
+# ==================== 划分算法（缺口 #9：1×2 / 2×1 完整覆盖）====================
+#
+# 纯函数（不改本模型状态）、确定性（不读任何全局 rng，不依赖 Dictionary 迭代序）。
+# 「区域」= 一串格坐标；「块」= 2 个**正交相邻**格（1×2 / 2×1）组成的骨牌。
+# 判界一律问网格：`in_board()` / `all_positions()`；相邻问邻接表（正交偏移 + 双向任一命中）。
+# **绝不**用 rows×cols 或包围盒推断洞格 —— 形状盘的洞格在网格里根本不存在。
+
+## 用 1×2 / 2×1 骨牌把 `region` 完整划分：区域内每个格**恰好属于一块**（不重叠、不遗漏）。
+##
+## `grid`   —— GridInterface（判界/相邻的唯一口径，禁用包围盒）。
+## `region` —— Array，元素为 Vector2i / [x, y] / {x, y}；传 null ⇒ 整个盘（`all_positions()`）。
+##             **必须全部在盘内**：出现洞格/盘外格即拒绝（否则无法保证骨牌都在盘内）。
+##
+## 返回（纯函数，不改本模型任何状态）：
+##   {ok: bool,
+##    blocks: Array,   # 每块 = Array[Vector2i]（长度 2，按 (x,y) 字典序）；按块首格稳定排序
+##    reason: String,  # ok=true 时为 ""；否则一句可读理由（奇数面积 / 洞格割裂 / 非可铺区域 …）
+##    code: String}    # ok=true 时为 ""，否则 no_grid / no_region / bad_region /
+##                     # region_off_board / odd_area / no_tiling
+##
+## 确定性：同一输入 ⇒ blocks 逐位相同（候选与遍历顺序都固定为 (x,y) 字典序，不掷色子）。
+func partition(grid: Variant, region: Variant = null) -> Dictionary:
+	if not _is_grid(grid):
+		return {"ok": false, "blocks": [], "code": "no_grid",
+			"reason": "未提供棋盘：partition 需要 GridInterface（判 in_board / 相邻只能问它，禁止包围盒）"}
+	var norm := _normalize_region(grid, region)
+	if not bool(norm["ok"]):
+		return {"ok": false, "blocks": [], "code": str(norm["code"]), "reason": str(norm["reason"])}
+	var cells: Array = norm["cells"]
+	if cells.is_empty():
+		return {"ok": true, "blocks": [], "code": "", "reason": ""}
+	if cells.size() % DOMINO_SIZE != 0:
+		return {"ok": false, "blocks": [], "code": "odd_area",
+			"reason": "区域面积为奇数（%d 格）：1×2/2×1 骨牌每块 2 格，不可能完整覆盖（必然至少留 1 格空缺）"
+				% cells.size()}
+
+	var region_set := {}
+	for p: Vector2i in cells:
+		region_set[p] = true
+
+	# 每格的候选伙伴：正交偏移（|dx|+|dy| == 1，排除对角）+ 邻接表确认 + 仍在区域内。
+	var cand := {}
+	for p: Vector2i in cells:
+		var lst: Array = []
+		for dir: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var q := p + dir
+			if region_set.has(q) and _is_adjacent(grid, p, q):
+				lst.append(q)
+		cand[p] = lst
+
+	var remaining := {}
+	for p: Vector2i in cells:
+		remaining[p] = true
+	var blocks: Array = []
+	var fail := {"cell": Vector2i.ZERO, "has": false}
+	if not _solve_tiling(cells, cand, remaining, blocks, fail):
+		var where := ""
+		if bool(fail["has"]):
+			var fp: Vector2i = fail["cell"]
+			where = "，例如格 (%d,%d) 找不到任何可配对的相邻格" % [fp.x, fp.y]
+		return {"ok": false, "blocks": [], "code": "no_tiling",
+			"reason": "无法用 1×2/2×1 骨牌完整覆盖该区域%s：洞格把区域割裂成奇数块 / 存在孤立格 / 非可铺区域" % where}
+	blocks.sort_custom(_block_less)
+	return {"ok": true, "blocks": blocks, "code": "", "reason": ""}
+
+
+## 校验一份已有划分是否合法。**每条错误都逐格给出坐标**（指名哪个格出问题），不只给计数。
+##
+## 返回：
+##   {ok: bool, reason: String, code: String,   # 首个错误理由 / 机器码（ok 时均 ""）
+##    errors: Array,                            # [{code, level, text, cells}] 逐条可读错误
+##    uncovered: Array[Vector2i],               # 区域内没被任何块覆盖的格
+##    overlaps: Array,                          # [{pos, count, blocks}] 区域内被多块覆盖的格
+##    off_board: Array[Vector2i],               # 块里但**不在盘内**的格（洞格/盘外格）
+##    outside_region: Array[Vector2i],          # 块里、在盘内但在区域外的格
+##    not_adjacent: Array[Vector2i],            # 同块两格不是 1×2/2×1（对角 / 不相邻）
+##    bad_blocks: Array[int]}                   # 结构非法（非 2 个不同格）的块下标
+func verify_partition(grid: Variant, region: Variant, blocks: Variant) -> Dictionary:
+	if not _is_grid(grid):
+		return _verify_fail("no_grid",
+			"未提供棋盘：verify_partition 需要 GridInterface（判 in_board 的唯一口径，禁用包围盒）")
+	var norm := _normalize_region(grid, region)
+	if not bool(norm["ok"]):
+		return _verify_fail(str(norm["code"]), str(norm["reason"]))
+	var cells: Array = norm["cells"]
+	var region_set := {}
+	for p: Vector2i in cells:
+		region_set[p] = true
+
+	var errors: Array = []
+	var off_board: Array = []
+	var outside_region: Array = []
+	var not_adjacent: Array = []
+	var bad_blocks: Array[int] = []
+	var occ := {}
+	var occ_blocks := {}
+
+	var blk: Array = []
+	if blocks is Array:
+		blk = blocks
+	else:
+		errors.append(_issue("bad_blocks", LEVEL_BLOCK,
+			"划分必须是「块数组」（收到 %s）—— 每块是 2 个格的数组或 {cells:[...]}" % str(typeof(blocks)), []))
+
+	for i in blk.size():
+		var pair := _resolve_block(blk[i])
+		if pair.size() != DOMINO_SIZE or pair[0] == pair[1]:
+			bad_blocks.append(i)
+			errors.append(_issue("bad_block", LEVEL_BLOCK,
+				"第 %d 块不是合法骨牌（必须是 2 个**不同**的格；收到 %s）" % [i, str(blk[i])], []))
+			continue
+		for p: Vector2i in pair:
+			if not bool((grid as Object).call("in_board", p)):
+				off_board.append(p)
+			elif not region_set.has(p):
+				outside_region.append(p)
+			occ[p] = int(occ.get(p, 0)) + 1
+			if not occ_blocks.has(p):
+				occ_blocks[p] = []
+			(occ_blocks[p] as Array).append(i)
+		if not _is_adjacent(grid, pair[0], pair[1]):
+			not_adjacent.append(pair[0])
+			not_adjacent.append(pair[1])
+
+	var uncovered: Array[Vector2i] = []
+	var overlaps: Array = []
+	for p: Vector2i in cells:
+		var n := int(occ.get(p, 0))
+		if n == 0:
+			uncovered.append(p)
+		elif n > 1:
+			overlaps.append({"pos": p, "count": n, "blocks": (occ_blocks.get(p, []) as Array).duplicate()})
+
+	off_board = _dedup_sorted(off_board)
+	outside_region = _dedup_sorted(outside_region)
+	not_adjacent = _dedup_sorted(not_adjacent)
+	if not off_board.is_empty():
+		errors.append(_issue("off_board", LEVEL_BLOCK,
+			"块里出现**不在盘内**的格（%s）—— 形状盘/洞格必须按网格判界，不能按包围盒" % _fmt_cells(off_board), off_board))
+	if not outside_region.is_empty():
+		errors.append(_issue("outside_region", LEVEL_BLOCK,
+			"块里出现**区域外**的格（%s）—— 划分必须恰好覆盖区域，不可越界铺到区域之外" % _fmt_cells(outside_region), outside_region))
+	if not not_adjacent.is_empty():
+		errors.append(_issue("not_adjacent", LEVEL_BLOCK,
+			"有块的两格不是 1×2/2×1（%s）—— 骨牌必须正交相邻（对角不算相邻）" % _fmt_cells(not_adjacent), not_adjacent))
+	if not overlaps.is_empty():
+		var ov_cells: Array[Vector2i] = []
+		for o in overlaps:
+			ov_cells.append((o as Dictionary)["pos"])
+		errors.append(_issue("overlap", LEVEL_BLOCK,
+			"划分重叠：%d 个区域格被多块重复占用（%s）—— 每格必须恰好属于一块" % [ov_cells.size(), _fmt_cells(ov_cells)], ov_cells))
+	if not uncovered.is_empty():
+		errors.append(_issue("uncovered", LEVEL_BLOCK,
+			"划分不完整：还有 %d 个区域格没有被任何块覆盖（%s）—— 不完整会阻止保存" % [uncovered.size(), _fmt_cells(uncovered)], uncovered))
+
+	var reason := ""
+	var code := ""
+	if not errors.is_empty():
+		var first: Dictionary = errors[0]
+		reason = str(first["text"])
+		code = str(first["code"])
+	return {
+		"ok": errors.is_empty(),
+		"reason": reason,
+		"code": code,
+		"errors": errors,
+		"uncovered": uncovered,
+		"overlaps": overlaps,
+		"off_board": off_board,
+		"outside_region": outside_region,
+		"not_adjacent": not_adjacent,
+		"bad_blocks": bad_blocks,
+	}
+
+
+# ==================== 内部：划分算法 ====================
+
+## 确定性回溯：每步取「候选最少」的未覆盖格（并列取 (x,y) 最小者），按候选字典序尝试。
+func _solve_tiling(order: Array, cand: Dictionary, remaining: Dictionary, blocks: Array, fail: Dictionary) -> bool:
+	var best := Vector2i.ZERO
+	var best_avail: Array = []
+	var found := false
+	for p: Vector2i in order:
+		if not remaining.has(p):
+			continue
+		var avail: Array = []
+		for q: Vector2i in (cand[p] as Array):
+			if remaining.has(q):
+				avail.append(q)
+		if avail.is_empty():
+			fail["cell"] = p
+			fail["has"] = true
+			return false
+		if not found or avail.size() < best_avail.size():
+			found = true
+			best = p
+			best_avail = avail
+			if avail.size() == 1:
+				break
+	if not found:
+		return true
+	for q: Vector2i in best_avail:
+		remaining.erase(best)
+		remaining.erase(q)
+		blocks.append(_canon_pair([best, q]))
+		if _solve_tiling(order, cand, remaining, blocks, fail):
+			return true
+		blocks.pop_back()
+		remaining[best] = true
+		remaining[q] = true
+	return false
+
+
+## 归一化区域：解析坐标 → 去重 → 判界（**必须全在盘内**）→ 按 (x,y) 稳定排序。
+func _normalize_region(grid: Variant, region: Variant) -> Dictionary:
+	var empty_cells: Array[Vector2i] = []
+	var raw: Variant = region
+	if raw == null:
+		raw = (grid as Object).call("all_positions")
+	if not (raw is Array):
+		return {"ok": false, "cells": empty_cells, "code": "no_region",
+			"reason": "区域必须是坐标数组（Vector2i / [x,y] / {x,y}），或传 null 表示整盘"}
+	var seen := {}
+	var cells: Array[Vector2i] = []
+	var bad_type := 0
+	for v: Variant in (raw as Array):
+		var pv: Variant = _to_pos(v)
+		if pv == null:
+			bad_type += 1
+			continue
+		var p: Vector2i = pv
+		if not seen.has(p):
+			seen[p] = true
+			cells.append(p)
+	if bad_type > 0:
+		return {"ok": false, "cells": empty_cells, "code": "bad_region",
+			"reason": "区域里有 %d 个无法解析的坐标项（只接受 Vector2i / [x,y] / {x,y}）" % bad_type}
+	cells.sort_custom(_pos_less)
+	var off: Array[Vector2i] = []
+	for p: Vector2i in cells:
+		if not bool((grid as Object).call("in_board", p)):
+			off.append(p)
+	if not off.is_empty():
+		return {"ok": false, "cells": empty_cells, "code": "region_off_board",
+			"reason": "区域包含 %d 个**不在盘内**的格（%s）：洞格/盘外格不参与划分（判界只认网格 in_board，不用包围盒）"
+				% [off.size(), _fmt_cells(off)]}
+	return {"ok": true, "cells": cells, "code": "", "reason": ""}
+
+
+## 正交相邻（1×2/2×1）：坐标差恰好 1（排除对角），且网格邻接表（双向任一）确认。
+## 异形/环绕盘上「坐标差 1」不一定相邻 ⇒ 必须让邻接表复核；矩形盘上正交即相邻。
+static func _is_adjacent(grid: Variant, a: Vector2i, b: Vector2i) -> bool:
+	var d := b - a
+	if not ((absi(d.x) == 1 and d.y == 0) or (absi(d.y) == 1 and d.x == 0)):
+		return false
+	return _neighbors_of(grid, a).has(b) or _neighbors_of(grid, b).has(a)
+
+
+## 解析一块：接受 Array / {cells:[...]}；坐标去重后按 (x,y) 字典序（合法块长度 = 2）。
+static func _resolve_block(v: Variant) -> Array[Vector2i]:
+	var raw: Variant = v
+	if raw is Dictionary and (raw as Dictionary).has("cells"):
+		raw = (raw as Dictionary)["cells"]
+	return _canon_pair(raw)
+
+
+static func _block_less(a: Variant, b: Variant) -> bool:
+	return _pair_less(a as Array, b as Array)
+
+
+static func _dedup_sorted(cells: Array) -> Array[Vector2i]:
+	var seen := {}
+	var out: Array[Vector2i] = []
+	for p: Vector2i in cells:
+		if not seen.has(p):
+			seen[p] = true
+			out.append(p)
+	out.sort_custom(_pos_less)
+	return out
+
+
+static func _verify_fail(code: String, reason: String) -> Dictionary:
+	return {
+		"ok": false, "reason": reason, "code": code,
+		"errors": [_issue(code, LEVEL_BLOCK, reason, [])],
+		"uncovered": [], "overlaps": [], "off_board": [],
+		"outside_region": [], "not_adjacent": [], "bad_blocks": [],
 	}
 
 

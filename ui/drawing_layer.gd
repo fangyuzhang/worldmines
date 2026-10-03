@@ -47,16 +47,14 @@ const MIN_SAMPLE_DIST := 2.5
 ## 在 60fps 下仍是毫秒量级，是"可接受的最坏单笔"。
 const MAX_STROKE_POINTS := 2000
 
-## 抽稀容差（单位 = 棋盘坐标）。棋盘坐标口径见 board_view._unit_px() 与文件头：
-## **1 棋盘单位 = 1 格**（矩形/蜂窝/自定义盘同构），不新造概念。
-## 取格宽的 5%（= 0.05 格）：小于此幅度的抖动在单格内视觉不可辨、可抹掉，
-## 又不至于把一格内的转折形状改走样（对应"格宽的 5% 左右"）。
-const BOARD_UNIT_PER_CELL := 1.0
-const SIMPLIFY_EPSILON := BOARD_UNIT_PER_CELL * 0.05
+## 抽稀容差 / 量化步长：**别名常量**。值与 derivation 注释已上移到 core/stroke_limits.gd
+## （唯一事实来源 —— core 是纯逻辑层，不该被 UI 层反向依赖；见该文件头「分层纪律」）。
+## 别名化的目的：本文件与全部既有调用点（含测试）继续按同名常量使用，一字不改且口径不漂移。
+const StrokeLimitsScript := preload("res://core/stroke_limits.gd")
+const BOARD_UNIT_PER_CELL := StrokeLimitsScript.BOARD_UNIT_PER_CELL
+const SIMPLIFY_EPSILON := StrokeLimitsScript.EPSILON
 
-## 落盘坐标量化步长。原落盘坐标精度约定 1e-4：按步长取整后最大误差 = 步长/2 = 5e-5 ≤ 1e-4，
-## 与原精度兼容；落盘存整数格点而非浮点 ⇒ 同一笔画跨机器/跨次加载结果逐位一致。
-const QUANT_STEP := 1e-4
+const QUANT_STEP := StrokeLimitsScript.QUANT_STEP
 
 ## 棋盘坐标换算钩子（board_view 注入）。空 Callable = 不透换（屏幕坐标即棋盘坐标）。
 var board_to_screen := Callable()
