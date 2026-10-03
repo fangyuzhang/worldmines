@@ -3,6 +3,18 @@ q	F	{@!}4	F	q
 q	q	F	q	q
 q	F	{@clue}4	F	q
 q	q	F	q	q
+--
+q	{@!}F	q	{@!}F	q
+q	{@!}F	q	q	q
+{@!}F	q	q	{@!}F	q
+q	q	q	q	{@!}F
+q	q	q	{@!}F	{@!}F
+--
+q	{@!}F	q	{@!}F	q
+q	{@!}F	q	q	q
+{@!}F	q	q	{@!}F	q
+q	q	q	q	{@!}F
+q	q	q	q	q
 ? 相邻行锁：上下相邻的两行，雷的数量一定相差 1。
 
 图中各行雷数从上到下依次是 1、2、1、2、1——每对相邻行都刚好差 1。

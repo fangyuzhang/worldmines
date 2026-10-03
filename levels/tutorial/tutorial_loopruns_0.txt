@@ -3,6 +3,18 @@ q	{@clue}2	q	q	q
 F	q	{@!}0	q	q
 q	q	q	q	F
 q	q	q	q	q
+--
+{@!}F	{@clue}1	{@clue}0	{@clue}0	{@clue}0
+{@clue}1	{@clue}2	{@clue}1	{@clue}1	{@clue}0
+{@clue}0	{@clue}1	{@!}F	{@clue}1	{@clue}0
+{@clue}0	{@clue}1	{@clue}1	{@clue}2	{@clue}1
+{@clue}0	{@clue}0	{@clue}0	{@clue}1	{@!}F
+--
+{@clue}1	{@clue}1	{@clue}1	{@clue}1	{@clue}0
+{@clue}1	{@!}F	{@!}F	{@clue}1	{@clue}0
+{@clue}1	{@!}F	{@clue}1	{@clue}1	{@clue}0
+{@clue}1	{@clue}1	{@clue}1	{@clue}0	{@clue}0
+{@clue}0	{@clue}0	{@clue}0	{@clue}0	{@clue}0
 ? LoopRuns 规则：把该格周围 8 格看成一个首尾相接的「环」，
 数字表示环上连续雷段的数量（0~4）。
 

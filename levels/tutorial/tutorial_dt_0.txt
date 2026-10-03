@@ -3,6 +3,18 @@ q	q	F	q	q
 F	{@clue}D	q	q	F
 q	q	q	{@clue}D	q
 {@clue}D	q	F	q	{@clue}D
+--
+{@!}F	q	q	{@!}F	{@!}F
+q	q	q	q	q
+{@!}F	q	{@!}F	q	q
+{@!}F	q	q	{@!}F	{@!}F
+q	q	q	q	q
+--
+{@!}F	q	q	{@!}F	{@!}F
+q	q	q	q	q
+{@x}F	q	{@!}F	q	q
+{@!}F	q	{@!}F	{@!}F	{@!}F
+q	q	q	q	q
 ? DT（Domino）规则：棋盘事先被划分成若干「骨牌」（相邻两格一组），
 每块骨牌中恰好有 1 颗雷。
 

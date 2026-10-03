@@ -158,8 +158,12 @@ func refresh() -> void:
 	if _scrim != null:
 		var fr := _fan
 		fr.position -= origin
-		(_scrim as Control).position = fr.position
-		(_scrim as Control).size = fr.size
+		# 【审查 B10 修：每帧无条件写】只在**真的变了**时才写 —— 值语义比较，写不写结果一样，
+		# 但省掉每帧的布局失效/重排（说明层是常驻整屏 Control，卡片最多二十几张）。
+		if (_scrim as Control).position != fr.position:
+			(_scrim as Control).position = fr.position
+		if (_scrim as Control).size != fr.size:
+			(_scrim as Control).size = fr.size
 	var x := _fan.position.x + (_fan.size.x - CARD_W) * 0.5 - origin.x
 	var last_bottom := -1.0e9
 	_dropped = 0
@@ -187,8 +191,13 @@ func refresh() -> void:
 			_dropped += 1
 			continue
 		y = minf(y, limit)
-		card.position = Vector2(x, y)
-		card.size = Vector2(CARD_W, h)
+		# 【审查 B10 修】同上：变了才写（卡片每帧重写位置/尺寸会触发子控件重排）
+		var want_pos := Vector2(x, y)
+		var want_size := Vector2(CARD_W, h)
+		if card.position != want_pos:
+			card.position = want_pos
+		if card.size != want_size:
+			card.size = want_size
 		last_bottom = y + h
 	queue_redraw()
 

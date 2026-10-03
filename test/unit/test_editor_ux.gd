@@ -948,6 +948,34 @@ func test_forge_close_button_stops_and_hides() -> void:
 	assert_false(dlg.visible, "关闭后弹窗应收起")
 
 
+func test_help_closes_on_outside_click_and_escape() -> void:
+	# 审查 B10：说明层的**真实关闭路径**（点外面 / ESC）此前零覆盖（只测了信号）。
+	var ed := await _make_editor()
+	_bind(ed, _doc5())
+	assert_true(_press(ed, "说明"), "应能打开「说明」")
+	var layer: Control = ed.get("_help_layer")
+	assert_not_null(layer, "说明层应存在")
+	var mb := InputEventMouseButton.new()
+	mb.button_index = MOUSE_BUTTON_LEFT
+	mb.pressed = true
+	layer._gui_input(mb)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var cur: Control = ed.get("_help_layer")
+	assert_true(cur == null or not cur.is_inside_tree(), "点说明外面应收起说明层（真实关闭路径）")
+	assert_true(_press(ed, "说明"), "应能再次打开")
+	var layer2: Control = ed.get("_help_layer")
+	assert_not_null(layer2, "说明层应能重建")
+	var k := InputEventKey.new()
+	k.keycode = KEY_ESCAPE
+	k.pressed = true
+	layer2._input(k)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var cur2: Control = ed.get("_help_layer")
+	assert_true(cur2 == null or not cur2.is_inside_tree(), "按 ESC 应收起说明层")
+
+
 func test_help_layer_never_silently_drops_cards() -> void:
 	# 审查 B8：原来"放不下就整张不画"是**静默丢弃**，而测试只数 `_items` ⇒ 永远绿。
 	var ed := await _make_editor()

@@ -31,12 +31,9 @@ class DemoGrid extends Control:
 		var boards: Array = page.get("boards", [])
 		if boards.is_empty():
 			boards = [{"rows": page.get("rows", []), "cols": int(page.get("cols", 0))}]
-		var total_rows := 0
-		var max_cols := 0
-		for b in boards:
-			total_rows += (b["rows"] as Array).size() + 1      # +1 = 盘间空隙
-			max_cols = maxi(max_cols, int(b["cols"]))
-		total_rows = maxi(total_rows - 1, 0)
+		var ext := TutorialData.boards_extent(boards)     # 纯函数：总行数（含盘间空隙）与最大列数
+		var total_rows := int(ext["rows"])
+		var max_cols := int(ext["cols"])
 		if total_rows <= 0 or max_cols <= 0:
 			return
 		var font := get_theme_default_font()

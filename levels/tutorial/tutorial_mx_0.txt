@@ -3,6 +3,18 @@ F	q	q	q	F
 q	F	{@clue}2	F	q
 q	q	q	q	q
 q	q	q	q	q
+--
+q	{@!}F	q	{@!}F	q
+{@!}F	q	{@!}F	q	{@!}F
+q	q	{@!}F	q	q
+q	q	q	q	q
+q	{@!}F	q	{@!}F	q
+--
+q	q	q	q	q
+{@!}F	q	{@!}F	q	{@!}F
+q	q	{@!}F	q	q
+q	q	q	q	q
+q	{@!}F	q	{@!}F	q
 ? 镜像：整盘雷的分布左右完全对称——第 1 列和第 5 列一样、第 2 列和第 4 列一样。
 
 图中每一颗雷在另一侧都有镜像伙伴；中心的「2」正是左右两颗伙伴贡献的。

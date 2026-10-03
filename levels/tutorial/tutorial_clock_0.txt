@@ -3,6 +3,18 @@ q	{@!}8	q	q	q
 q	q	{@clue}3	F	q
 q	q	q	q	q
 q	q	q	q	q
+--
+{@!}F	{@clue}7	{@clue}0	{@clue}0	{@clue}0
+{@clue}1	{@clue}4	{@clue}5	{@clue}6	{@clue}0
+{@clue}0	{@clue}3	{@!}F	{@clue}7	{@clue}0
+{@clue}0	{@clue}2	{@clue}1	{@clue}4	{@clue}5
+{@clue}0	{@clue}0	{@clue}0	{@clue}3	{@!}F
+--
+{@clue}4	{@clue}4	{@clue}5	{@clue}6	{@clue}0
+{@clue}3	{@!}F	{@!}F	{@clue}7	{@clue}0
+{@clue}2	{@!}F	{@clue}1	{@clue}8	{@clue}0
+{@clue}2	{@clue}1	{@clue}8	{@clue}0	{@clue}0
+{@clue}0	{@clue}0	{@clue}0	{@clue}0	{@clue}0
 ? 钟点：数字是一串方位密码。按「上、右上、右、右下、下、左下、左、左上」的顺序，
 第一颗雷出现在哪个方位，数字就是几；一圈都没有雷是 0。
 

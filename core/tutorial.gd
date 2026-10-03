@@ -107,6 +107,18 @@ static func normalize_page(page: Dictionary) -> Dictionary:
 	return out
 
 
+## 一页多盘（B2）的**版面尺寸**（纯函数，便于单测）：返回总行数（含盘间 1 行空隙）与最大列数。
+## 绘制端据此算格子边长；测试据此断言"三张盘也放得下、格子不会小到看不见"。
+static func boards_extent(boards: Array) -> Dictionary:
+	var total_rows := 0
+	var max_cols := 0
+	for b in boards:
+		var d: Dictionary = b
+		total_rows += (d.get("rows", []) as Array).size() + 1
+		max_cols = maxi(max_cols, int(d.get("cols", 0)))
+	return {"rows": maxi(total_rows - 1, 0), "cols": max_cols}
+
+
 ## 教程文档里的**占位字母** → 视觉语义（纯函数，便于单测）。
 ## 【2026-10-02 用户反馈修：教程界面"乱码、没有棋盘"】文档用单字母表示特殊格：
 ##   · `q` = 未知/未翻开（应画成"盖着的瓦片"）

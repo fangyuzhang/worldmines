@@ -1,5 +1,17 @@
 {@clue}1	q	F		q	F	q
 q	F	q		F	{@clue}3	q
 F	q	{@!}1		q	q	F
+--
+{@!}F	{@clue}1	{@clue}0	{@clue}0	{@clue}0
+{@clue}1	{@clue}2	{@clue}1	{@clue}1	{@clue}0
+{@clue}0	{@clue}1	{@!}F	{@clue}1	{@clue}0
+{@clue}0	{@clue}1	{@clue}1	{@clue}2	{@clue}1
+{@clue}0	{@clue}0	{@clue}0	{@clue}1	{@!}F
+--
+{@clue}1	{@clue}2	{@clue}2	{@clue}1	{@clue}0
+{@clue}2	{@!}F	{@!}F	{@clue}1	{@clue}0
+{@clue}2	{@!}F	{@clue}3	{@clue}1	{@clue}0
+{@clue}1	{@clue}1	{@clue}1	{@clue}0	{@clue}0
+{@clue}0	{@clue}0	{@clue}0	{@clue}0	{@clue}0
 ? 空列用于视觉留白——把一组格与另一组格在视觉上分开，便于分组讲解。
 它只是排版手段，不代表盘面上真的有「两块棋盘」。

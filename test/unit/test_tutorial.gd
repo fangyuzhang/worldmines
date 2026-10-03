@@ -80,6 +80,23 @@ func test_clue_page_has_three_boards_with_varied_numbers() -> void:
 	assert_true(non_zero, "三张盘里必须出现 0 以外的数字（否则用户只能看到一片 0）：%s" % str(values.keys()))
 
 
+func test_multi_board_extent_keeps_cells_visible() -> void:
+	# 【B2 的可验证部分】三张盘竖排时：总行数要含盘间空隙，且按它算出的格子边长**不能小到看不见**。
+	# （`_draw` 在无头下不渲染，"好不好看"只能人眼；但"放不放得下、会不会小于 2px"是纯数学，能钉。）
+	var boards := [
+		{"rows": [[{}], [{}], [{}], [{}], [{}]], "cols": 5},
+		{"rows": [[{}], [{}], [{}], [{}], [{}]], "cols": 5},
+		{"rows": [[{}], [{}], [{}], [{}], [{}]], "cols": 5},
+	]
+	var ext := Tutorial.boards_extent(boards)
+	assert_eq(int(ext["rows"]), 17, "三张 5 行盘 + 2 行空隙 = 17 行：%s" % str(ext))
+	assert_eq(int(ext["cols"]), 5, "最大列数取各盘最大")
+	# 说明层的盘区约 360×300（`_grid.custom_minimum_size`），减掉 pad 12*2 后每格必须 ≥ 2px
+	var cell := minf((360.0 - 24.0) / float(ext["cols"]), (300.0 - 24.0) / float(ext["rows"]))
+	assert_gt(cell, 2.0, "三张盘的格子边长应大于绘制下限 2px（实得 %.1f）" % cell)
+	assert_eq(int(Tutorial.boards_extent([])["rows"]), 0, "空盘列表要安全返回 0")
+
+
 func test_placeholder_letters_have_visual_meaning() -> void:
 	# 【2026-10-02 用户反馈：游玩中点教程"乱码、没有棋盘"】根因是绘制端把文档占位字母**当文字画**
 	# （`tutorial_overlay.DemoGrid._draw` 里原来是 `draw_string(value)`）⇒ 满屏 q/F 字母。
