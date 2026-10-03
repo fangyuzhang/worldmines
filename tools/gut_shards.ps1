@@ -17,6 +17,12 @@
 #
 # 用法： powershell -File tools/gut_shards.ps1 -Dir res://test/unit -Shards 6 -Log tools/_ci_gut.log
 # 退出码：0 = 该套件全过；1 = 有失败 / 有分片没有摘要（崩了或整文件解析失败）。
+#
+# [2026-10-04 健壮性] 两处真实事故的修法：
+#   · 缺摘要分片**定向重跑一次**（同一 $prefix、同一 -gtest 文件列表）再聚合；**仍缺摘要才判红**。
+#     之前"偶发只合并到部分分片"直接判红、却不知是哪片哪条 ⇒ 现在会打印 [retry] 片号。
+#   · 判红**不删分片日志**，打印出问题分片的**绝对路径** + [Failed] 行 / 失败用例名 / SCRIPT ERROR；
+#     都没有就明说"无 [Failed]，疑似无摘要"。绿时行为不变（不多打印、不删日志）。
 param(
     [Parameter(Mandatory = $true)][string]$Dir,
     [int]$Shards = 4,
@@ -25,7 +31,12 @@ param(
     # 只跑文件名匹配它的用例（用于单独跑"慢套件"）
     [string]$Only = '',
     # 跳过文件名匹配它的用例（默认门禁跳过慢套件；实测见下）
-    [string]$Skip = ''
+    [string]$Skip = '',
+    # —— 以下两个开关**仅供自测**（默认关闭；门禁/CI 一律不得传入）——
+    # 自测：所有分片跑完后，故意丢弃第 N 片（label 从 1 起）的日志，再进入聚合，以真实触发重跑路径。
+    [int]$SimulateMissingShard = -1,
+    # 自测：配合上一条 —— 重跑后仍丢弃该片日志，用于验证"重跑也无摘要 ⇒ 判红并打印证据"。
+    [switch]$SimulateRetryAlsoMissing
 )
 
 $ErrorActionPreference = 'Continue'
@@ -72,12 +83,17 @@ $prefix = "_shard_{0}_{1}" -f ($Dir -replace '[^a-zA-Z0-9]', '_'), $PID
 Get-ChildItem (Join-Path $logDir ($prefix + '_*.log')) -ErrorAction SilentlyContinue | Remove-Item -Force
 Get-ChildItem (Join-Path $logDir ($prefix + '_*.log.err')) -ErrorAction SilentlyContinue | Remove-Item -Force
 $jobs = @()
+# 每片的定义（label / 输出路径 / res:// 文件列表）都留下来：重跑时**原样复用**这两项，
+# 保证"重跑不改变用例集合"（同一 -gtest 文件列表）。
+$shardDefs = @()
 $idx = 0
 $tShard = @{}
 foreach ($b in $buckets) {
     if ($b.files.Count -eq 0) { continue }
-    $list = ($b.files | ForEach-Object { 'res://' + ($_.FullName.Substring($root.Length + 1) -replace '\\', '/') }) -join ','
+    $resList = @($b.files | ForEach-Object { 'res://' + ($_.FullName.Substring($root.Length + 1) -replace '\\', '/') })
+    $list = ($resList -join ',')
     $out = Join-Path $logDir ("{0}_{1}.log" -f $prefix, $idx)
+    $shardDefs += @{ label = ($idx + 1); out = $out; res = $resList; count = $b.files.Count; kind = 'plain' }
     # ⚠ 必须 `$jobs +=`：2026-10-03 我加计时时误写成 `$proc =`，`$jobs` 变空 ⇒ 后面 Wait-Process
     # 立刻返回 ⇒ 分片还在跑就去聚合（stateful 片摘要缺失、CI 报 collected 129 != files 150）。
     $jobs += Start-Process -FilePath $Godot -PassThru -NoNewWindow -ArgumentList @(
@@ -98,22 +114,127 @@ foreach ($k in ($tShard.Keys | Sort-Object)) {
 #   总时长由**某一片**决定，而不是套件规模。）
 
 if ($stateful.Count -gt 0) {
-    $list = ($stateful | ForEach-Object { 'res://' + ($_.FullName.Substring($root.Length + 1) -replace '\\', '/') }) -join ','
+    $resList = @($stateful | ForEach-Object { 'res://' + ($_.FullName.Substring($root.Length + 1) -replace '\\', '/') })
+    $list = ($resList -join ',')
     $out = Join-Path $logDir ($prefix + '_state.log')
+    $shardDefs += @{ label = ($idx + 1); out = $out; res = $resList; count = $stateful.Count; kind = 'stateful' }
     Write-Host ("  串行片（有状态：碰 user:// / ModAPI）: {0} 个文件" -f $stateful.Count)
     & $Godot --headless --path $root -s addons/gut/gut_cmdln.gd "-gtest=$list" -gexit *> $out
+}
+
+# ===================== 聚合（缺摘要分片**定向重跑一次**） =====================
+# 某片日志缺失 / 0 字节 / 无 `Tests \d+` 摘要 ⇒ 只把**那几片**用同一 $prefix、同一 -gtest 文件列表
+# 重跑一次，再重新聚合；**仍缺摘要才判红**（"重跑过"绝不等于放行）。判红时**不删**分片日志。
+function Get-ShardReport {
+    param([string]$Path)
+    $fi = Get-Item -LiteralPath $Path -ErrorAction SilentlyContinue
+    $raw = ''
+    if ($null -ne $fi -and $fi.Length -gt 0) { $raw = Get-Content -LiteralPath $Path -Raw }
+    if ($null -eq $raw) { $raw = '' }
+    return @{
+        Path       = $Path
+        Exists     = ($null -ne $fi)
+        Bytes      = $(if ($null -ne $fi) { $fi.Length } else { -1 })
+        Raw        = $raw
+        HasSummary = [bool]($raw -match 'Tests\s+\d+')
+    }
+}
+
+# 重跑单片：stdout 覆盖同一路径（复用同一 $prefix），stderr 走 .err
+function Invoke-ShardRun {
+    param([string]$OutPath, [string[]]$ResFiles)
+    $list = ($ResFiles -join ',')
+    $p = Start-Process -FilePath $Godot -PassThru -NoNewWindow -ArgumentList @(
+        '--headless', '--path', $root, '-s', 'addons/gut/gut_cmdln.gd', "-gtest=$list", '-gexit'
+    ) -RedirectStandardOutput $OutPath -RedirectStandardError ($OutPath + '.err')
+    $p | Wait-Process -ErrorAction SilentlyContinue
+}
+
+# 判红时的证据打印：**保留**分片日志、给出绝对路径 + [Failed] / 失败用例名 / SCRIPT ERROR
+function Write-RedEvidence {
+    param($ShardDefs, $Reports)
+    Write-Host ''
+    Write-Host '--- [evidence] 判红：分片日志已保留（未删），定位证据如下 ---'
+    foreach ($sd in $ShardDefs) {
+        $r = $Reports[$sd.label]
+        $abs = (Resolve-Path -LiteralPath $sd.out -ErrorAction SilentlyContinue).Path
+        if (-not $abs) { $abs = $sd.out }
+        $errPath = $sd.out + '.err'
+        $errAbs = (Resolve-Path -LiteralPath $errPath -ErrorAction SilentlyContinue).Path
+        $errRaw = ''
+        if (Test-Path -LiteralPath $errPath) { $errRaw = Get-Content -LiteralPath $errPath -Raw }
+        if ($null -eq $errRaw) { $errRaw = '' }
+        # 去掉 GUT 的 ANSI 颜色码，便于抓取 [Failed] / SCRIPT ERROR
+        $all = (($r.Raw) + "`n" + $errRaw) -replace '\u001b\[[0-9;]*m', ''
+        $failLines = @([regex]::Matches($all, '(?m)^.*\[Failed\].*$') | ForEach-Object { $_.Value.Trim() })
+        $errLines = @([regex]::Matches($all, '(?m)^.*SCRIPT ERROR.*$') | ForEach-Object { $_.Value.Trim() })
+        # GUT 先打 `- <test_name>`，紧随其后的 [Failed] 属于该用例
+        $names = New-Object System.Collections.Generic.List[string]
+        $cur = ''
+        foreach ($ln in ($all -split "`r?`n")) {
+            $mn = [regex]::Match($ln, '^\s*-\s+(\S.*?)\s*$')
+            if ($mn.Success) { $cur = $mn.Groups[1].Value }
+            elseif ($ln -match '\[Failed\]') { if ($cur -and -not $names.Contains($cur)) { $names.Add($cur) } }
+        }
+        if ($r.HasSummary -and $failLines.Count -eq 0 -and $errLines.Count -eq 0) { continue }
+        Write-Host ("  [分片 {0}] 日志: {1}" -f $sd.label, $abs)
+        if ($errAbs) { Write-Host ("              err: {0}" -f $errAbs) }
+        if (-not $r.HasSummary) {
+            Write-Host ("              bytes={0}，无 Tests 摘要（分片崩了 / 整文件解析失败）" -f $r.Bytes)
+        }
+        foreach ($n in $names) { Write-Host ("              失败用例: {0}" -f $n) }
+        foreach ($l in $failLines) { Write-Host ("              {0}" -f $l) }
+        foreach ($l in $errLines) { Write-Host ("              {0}" -f $l) }
+        if ($failLines.Count -eq 0 -and $errLines.Count -eq 0) { Write-Host '              无 [Failed]，疑似无摘要' }
+    }
+}
+
+# 仅供自测（默认 -1 = 关闭）：跑完故意丢弃第 N 片的日志，以真实驱动"缺摘要 ⇒ 定向重跑"路径
+if ($SimulateMissingShard -ge 1) {
+    $victim = $shardDefs | Where-Object { $_.label -eq $SimulateMissingShard } | Select-Object -First 1
+    if ($null -eq $victim) {
+        Write-Host ("[selftest] 没有分片 {0}（本次共 {1} 片）" -f $SimulateMissingShard, $shardDefs.Count)
+    } else {
+        Remove-Item -LiteralPath $victim.out -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath ($victim.out + '.err') -Force -ErrorAction SilentlyContinue
+        Write-Host ("[selftest] 已丢弃分片 {0} 的日志：{1}" -f $victim.label, $victim.out)
+    }
+}
+
+$reports = @{}
+$missingDefs = @()
+for ($attempt = 1; $attempt -le 2; $attempt++) {
+    $reports = @{}
+    $missingDefs = @()
+    foreach ($sd in $shardDefs) {
+        $r = Get-ShardReport $sd.out
+        $reports[$sd.label] = $r
+        if (-not $r.HasSummary) { $missingDefs += $sd }
+    }
+    if ($missingDefs.Count -eq 0) { break }
+    if ($attempt -ge 2) { break }   # 第二次仍缺摘要 ⇒ 不再重跑，进入判红 + 证据
+    foreach ($sd in $missingDefs) {
+        Write-Host ("[retry] 分片 {0} 无摘要，定向重跑（1/1）" -f $sd.label)
+        Invoke-ShardRun -OutPath $sd.out -ResFiles $sd.res
+    }
+    if ($SimulateRetryAlsoMissing) {
+        foreach ($sd in $missingDefs) {
+            Remove-Item -LiteralPath $sd.out -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath ($sd.out + '.err') -Force -ErrorAction SilentlyContinue
+        }
+        Write-Host '[selftest] 已丢弃重跑结果（重跑也不给日志）⇒ 下一步应判红并打印证据'
+    }
 }
 
 # 合成与串行同格式的日志：GUT 的判定逻辑（Failing Tests / no-summary / SCRIPT ERROR）继续可用
 $passing = 0; $failing = 0; $tests = 0; $asserts = 0; $scripts = 0; $summaries = 0
 $combined = New-Object System.Collections.Generic.List[string]
-# ⚠ 日志清单只取**一次**，随后"求和"与"对账分片数"都用这一份 —— 之前两处各自 glob 枚举，
-# 结果 Fragments(8) 与分片数(9) 不一致 ⇒ 明明全过却判红（2026-10-03 实测踩到）。
-$shardLogs = @(Get-ChildItem (Join-Path $logDir ($prefix + '_*.log')) | Sort-Object Name)
-foreach ($lg in $shardLogs) {
-    $raw = Get-Content $lg.FullName -Raw
-    if ($null -eq $raw) { $raw = '' }
-    $combined.Add("===== $($lg.Name) =====")
+# ⚠ 分片清单只取**一次**（$shardDefs），"求和"与"对账有摘要片数"都用它 ——
+# 之前两处各自 glob 枚举，结果 Fragments(8) 与分片数(9) 不一致 ⇒ 明明全过却判红（2026-10-03 实测踩到）。
+foreach ($sd in $shardDefs) {
+    $r = $reports[$sd.label]
+    $raw = $r.Raw
+    $combined.Add("===== $(Split-Path -Leaf $sd.out) =====")
     $combined.Add($raw)
     $m = [regex]::Match($raw, 'Scripts\s+(\d+)')
     if ($m.Success) { $scripts += [int]$m.Groups[1].Value }
@@ -124,7 +245,7 @@ foreach ($lg in $shardLogs) {
     $m = [regex]::Match($raw, 'Failing Tests\s+(\d+)')
     if ($m.Success) { $failing += [int]$m.Groups[1].Value }
     # 有摘要 = 打印了 Tests 行（全过时 GUT 不打 Failing 行，所以只看 Tests 行）
-    if ($raw -match 'Tests\s+\d+') { $summaries++ }
+    if ($r.HasSummary) { $summaries++ }
     $m = [regex]::Match($raw, 'Asserts\s+(\d+)')
     if ($m.Success) { $asserts += [int]$m.Groups[1].Value }
 }
@@ -142,5 +263,8 @@ $summary = @(
 $summary | ForEach-Object { Write-Host "  $_" }
 
 # 分片数 vs 有摘要的分片数不一致 ⇒ 有分片崩了/整文件解析失败，比"有失败"更坏
-if ($failing -ne 0 -or $summaries -ne $shardLogs.Count) { exit 1 }
+if ($failing -ne 0 -or $summaries -ne $shardDefs.Count) {
+    Write-RedEvidence -ShardDefs $shardDefs -Reports $reports
+    exit 1
+}
 exit 0
