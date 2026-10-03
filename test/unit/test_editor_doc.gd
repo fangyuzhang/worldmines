@@ -10,6 +10,56 @@
 #   6) 环绕盘能被生成管线真的产出关卡（编辑器画完就能玩）。
 extends GutTest
 
+
+func test_neighbor_degree_limits_warn_and_block() -> void:
+	# 【清单·数据爆炸 B】单格邻居 >30 警告、>80 阻止。形状盘最容易中招：作者写一张大偏移表时
+	# 不会意识到自己在造一个"读不出数字"的格子。
+	var d := EditorDoc.new(9, 9)
+	d.mines.append(Vector2i(4, 4))
+	# ① 6×6 邻域 = 35 个偏移 ⇒ 应警告、不阻止
+	var w: Array[Vector2i] = []
+	for y in range(-3, 3):
+		for x in range(-3, 3):
+			if x != 0 or y != 0:
+				w.append(Vector2i(x, y))
+	d.dirs = w
+	var rep_w := d.validate()
+	assert_true(_has_neighbor_issue(rep_w["warnings"]), "35 个邻居应出「邻接偏多」警告：%s" % str(rep_w["warnings"]))
+	assert_false(_has_neighbor_issue(rep_w["errors"]), "35 个邻居不该被阻止")
+	# ② 边界：9×9 邻域**正好 80** ⇒ 门槛是 `>80` 才阻止 ⇒ 这一档**只警告不阻止**（把边界写死，防后人改错）
+	var edge: Array[Vector2i] = []
+	for y in range(-4, 5):
+		for x in range(-4, 5):
+			if x != 0 or y != 0:
+				edge.append(Vector2i(x, y))
+	assert_eq(edge.size(), 80, "9×9 邻域应正好 80 个偏移（不含自身）")
+	d.dirs = edge
+	var rep_e := d.validate()
+	assert_false(_has_neighbor_issue(rep_e["errors"]), "正好 80 不该被阻止（门槛是 >80）")
+	assert_true(_has_neighbor_issue(rep_e["warnings"]), "正好 80 应出警告")
+	# ③ 11×11 邻域 = 120 个偏移 ⇒ 超过上限，必须阻止
+	var b: Array[Vector2i] = []
+	for y in range(-5, 6):
+		for x in range(-5, 6):
+			if x != 0 or y != 0:
+				b.append(Vector2i(x, y))
+	d.dirs = b
+	var rep_b := d.validate()
+	assert_true(_has_neighbor_issue(rep_b["errors"]), "120 个邻居必须被阻止：%s" % str(rep_b["errors"]))
+	# ③ 默认邻域不许误报（闸门不能把正常关卡挡下）
+	var ok := EditorDoc.new(9, 9)
+	ok.mines.append(Vector2i(4, 4))
+	assert_false(_has_neighbor_issue(ok.validate()["warnings"]), "默认邻域不该触发邻接警告")
+
+
+func _has_neighbor_issue(list: Array) -> bool:
+	# 只认**本门禁自己的消息**（"单格邻接 …"）。用宽串"邻接"会误命中 `WrapTopology` 自己的报错
+	#（实测：35 个偏移会让拓扑构建器先报一条同样含"邻接"的错误）⇒ 那会把"某处报错"当成"我的门禁触发"。
+	for it in list:
+		if str((it as Dictionary).values()).find("单格邻接") != -1:
+			return true
+	return false
+
 ## 本文件注册进全局表的 spec id（after_each 全部注销——注册表是进程级单例，不清理会污染别的套件）
 var _registered: Array[String] = []
 

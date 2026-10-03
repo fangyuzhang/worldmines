@@ -64,6 +64,12 @@ var _tabs: TabContainer = null
 ## 从界面上**搬进「说明」的长解释文字**（用户原话：用户忘了一个按钮是干什么的，打开说明看一眼就想起来了；
 ## 会了之后再看界面上这么多字会觉得烦 ⇒ 界面只留干净列表，正文放这里）。
 ## 键 = 界面上那条"指路标签"的开头（说明卡片会连线指回它）。
+## 输入侧总量闸门（清单·数据爆炸 I）。**用 preload 而不是 class_name**：本文件顶部注释与
+## `ui/tutorial_overlay.gd:12` 都记着同一个坑（坑表 #26）——headless 下**新全局类不在 .godot 缓存里**，
+## 一旦别的脚本按类名引用它，整份脚本解析失败（我 2026-10-03 当场踩了一次）。
+const LevelGuardRef := preload("res://core/level_guard.gd")
+
+
 ## 【2026-10-02 用户口径："说明里都是说了一堆废话，删了，换成给用户的引导"】
 ## 一步一句话、动词开头、只说"点了会发生什么"，不解释为什么这么设计。
 const HELP_GUIDE := ("① 左栏「随机布雷」——先铺一盘\n"
@@ -2376,12 +2382,22 @@ func _slug(text: String) -> String:
 func _save() -> void:
 	DirAccess.make_dir_recursive_absolute(EDITOR_DIR)
 	var path := _target_save_path()
-	var f := FileAccess.open(path, FileAccess.WRITE)
+	# 【清单·一「保存」注意事项】原来手动保存是**直写**目标文件：写到一半崩/断电就留下半截 JSON，
+	# 用户下次打开就是坏档。清单明确要求"复用游戏本体那套防损坏写入（临时文件→替换），
+	# 编辑器不能自己发明一套"。这里与 `_write_autosave()`、以及游戏本体的
+	# `ui/save_coordinator.gd`（TEMP→BAK→MAIN）走同一套**原子写**：先写 `.tmp`，再改名替换。
+	var tmp := path + ".tmp"
+	var f := FileAccess.open(tmp, FileAccess.WRITE)
 	if f == null:
 		_toast("保存失败：%s" % path, true)
 		return
 	f.store_string(JSON.stringify(doc.to_level_json(), "  "))
 	f.close()
+	var err := DirAccess.rename_absolute(tmp, path)
+	if err != OK:
+		DirAccess.remove_absolute(tmp)      # 别留半截临时文件在存档目录里
+		_toast("保存失败（新内容没能替换旧文件，错误码 %d）" % err, true, 6.0)
+		return
 	_current_path = path
 	_dirty = false
 	_refresh_open_list()
@@ -2466,9 +2482,21 @@ func _load_from_file(path: String) -> bool:
 
 
 func _load_from_text(text: String) -> bool:
+	# 【清单·数据爆炸 I「输入侧异常大数」】粘贴/导入的内容可能是**合法但巨大**的（声明 10 万格）
+	# ⇒ 加载即卡死。玩家侧加载器早就有这套闸门，编辑器却绕开了 ⇒ 这里分两道补上，且**先看字节数**
+	#（先于解析：巨大文本连 parse_json 都不该跑）。
+	var gate := LevelGuardRef.check_text(text)
+	if not bool(gate["ok"]):
+		_toast("导入被拒：%s" % str(gate["reason"]), true, 7.0)
+		return false
 	# 安全解析：粘贴/导入的内容读不懂是常态（用户会粘错东西），不该刷 ERROR 日志
 	var parsed: Variant = SpecHelper.parse_json_safe(text)
 	if not (parsed is Dictionary):
+		return false
+	# 第二道：看**声明的规模**（尺寸/雷位/障碍/初始翻开），超限直接拒（宁可不导入，也不让编辑器卡死）
+	var gate2 := LevelGuardRef.check_level(parsed as Dictionary)
+	if not bool(gate2["ok"]):
+		_toast("导入被拒：%s" % str(gate2["reason"]), true, 7.0)
 		return false
 	_undo.append(doc.snapshot())
 	_redo.clear()

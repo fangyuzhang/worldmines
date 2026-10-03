@@ -453,6 +453,29 @@ func validate() -> Dictionary:
 		if wrap and cols > 0 and rows > 0 and ((d.x % cols) == 0) and ((d.y % rows) == 0) and d != Vector2i.ZERO:
 			warnings.append(_issue("offset_identity", "偏移 (%d,%d) 在环绕盘上正好是整圈 ⇒ 等价于自身邻居" % [d.x, d.y]))
 
+	# 1b) 【清单·数据爆炸 B：邻接图规模】单格邻居太多 ⇒ 那格的数字**读不出来**，求解器也扛不住。
+	# 形状盘最容易中招：作者写一张"周围 30 多格"的偏移表时，不会意识到自己在造一个没法读的数字。
+	# 判据就地按偏移算（与上面两条偏移告警同一套口径：环绕折回去重、排除自身偏移）。
+	var neighbor_cap_warn := 30
+	var neighbor_cap_block := 80
+	var seen_off := {}
+	for d in dirs:
+		var dx := d.x
+		var dy := d.y
+		if wrap and cols > 0 and rows > 0:
+			dx = ((dx % cols) + cols) % cols
+			dy = ((dy % rows) + rows) % rows
+		if dx == 0 and dy == 0:
+			continue                       # 自身偏移（含环绕后的整圈）不算邻居
+		seen_off[Vector2i(dx, dy)] = true
+	var deg := seen_off.size() + (1 if include_self else 0)
+	if deg > neighbor_cap_block:
+		errors.append(_issue("neighbor_huge",
+			"单格邻接 %d 格（上限 %d）—— 这一格的数字没法读、求解器也算不动：请减少邻域偏移" % [deg, neighbor_cap_block]))
+	elif deg > neighbor_cap_warn:
+		warnings.append(_issue("neighbor_many",
+			"单格邻接 %d 格（超过 %d 就该警惕）—— 那格的数字会很难读" % [deg, neighbor_cap_warn]))
+
 	# 2) 雷位
 	var mseen := {}
 	for m in mines:

@@ -11,6 +11,9 @@
 # 类型纪律：编辑器脚本没有 class_name ⇒ 变量声明成 Object 并用 .call() 调它的方法。
 extends GutTest
 
+## 输入侧总量闸门：**preload 引用**（新全局类在 headless 缓存里可能解析不到，见坑表 #26）。
+const LevelGuardRef := preload("res://core/level_guard.gd")
+
 
 var _registered: Array[String] = []
 
@@ -946,6 +949,46 @@ func test_forge_close_button_stops_and_hides() -> void:
 	assert_not_null(close_btn, "应有「关闭」按钮（且接的是 _forge_close，不是裸 hide）")
 	ed.call("_forge_close")
 	assert_false(dlg.visible, "关闭后弹窗应收起")
+
+
+func test_import_gate_refuses_absurd_level_data() -> void:
+	# 【清单·数据爆炸 I：加载期总量校验拒载】"合法但巨大"的导入必须在**加载期**被拒，
+	# 而不是先解析再卡死（编辑器的粘贴/导入此前完全没闸门）。
+	var ed := await _make_editor()
+	_bind(ed, _doc5())
+	# ① 声明 1600 万格（4000×4000）—— 结构完全合法，但规模离谱
+	var huge := JSON.stringify({"schema": 1, "level_doc": true, "size": {"rows": 4000, "cols": 4000}})
+	assert_false(bool(ed.call("_load_from_text", huge)), "声明 1600 万格的数据必须被拒载")
+	# ② 尺寸正常但雷位数组 5000 条（超过可编辑格数上限）
+	var many: Array = []
+	for i in 5000:
+		many.append([i % 9, (i / 9) % 9])
+	var bomb := JSON.stringify({"schema": 1, "level_doc": true, "size": {"rows": 9, "cols": 9}, "mines": many})
+	assert_false(bool(ed.call("_load_from_text", bomb)), "雷位数组超上限必须被拒载")
+	# ③ 超字节上限：连解析都不该跑
+	assert_false(bool(LevelGuardRef.check_text("x".repeat(LevelGuardRef.MAX_BYTES + 1))["ok"]), "超 2MB 的文本要拒")
+	# ④ **闸门不许误伤**：正常关卡文本仍要能导入（这是最容易写错的一条）
+	var ok_text := JSON.stringify((ed.get("doc") as EditorDoc).to_level_json())
+	assert_true(bool(ed.call("_load_from_text", ok_text)), "正常关卡文本必须仍能导入")
+	assert_true(bool(LevelGuardRef.check_level({"size": {"rows": 9, "cols": 9}})["ok"]), "9×9 应放行")
+
+
+func test_save_writes_atomically_and_leaves_no_tmp() -> void:
+	# 【清单·一「保存」】手动保存必须**原子写**（临时文件→替换），不能直写目标文件
+	#（写一半崩掉就是坏档）。同时不许在存档目录里留下 .tmp 残渣。
+	var ed := await _make_editor()
+	_bind(ed, _doc5())
+	ed.call("_save")
+	var used: String = str(ed.get("_current_path"))
+	assert_true(used != "", "保存后应记住当前文件")
+	assert_true(FileAccess.file_exists(used), "目标文件应存在：%s" % used)
+	assert_false(FileAccess.file_exists(used + ".tmp"), "不许留下 .tmp 残渣：%s.tmp" % used)
+	var back := LevelSets.read_level(used)
+	assert_false(back.is_empty(), "写出来的应是可解析的关卡 JSON")
+	# 再存一次（覆盖路径）也必须成功 —— 原子写最容易在"目标已存在"这一步翻车
+	ed.call("_save")
+	assert_true(FileAccess.file_exists(used), "重复保存后文件仍在：%s" % used)
+	assert_false(FileAccess.file_exists(used + ".tmp"), "重复保存也不许留 .tmp")
 
 
 func test_help_closes_on_outside_click_and_escape() -> void:
