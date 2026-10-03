@@ -44,6 +44,10 @@ const SHAPE_BOOLEAN := preload("res://core/shape_boolean.gd")
 const SHAPE_DAG := preload("res://core/shape_dag.gd")
 const REPAIR_SUGGEST := preload("res://core/repair_suggest.gd")
 const SHARE_CODE := preload("res://core/share_code.gd")
+## 复合格（MegaCell）：合并/拆分/邻接门禁/**下钻**全在 core（已单测），本轮只补 UI 入口。
+## 同上面四个模块：**用 preload 引用、不按 class_name 引用**（坑 #26）。
+## 【下钻状态是导航、不是关卡内容】它只由 UI 持有，绝不写进 `doc.to_level_json()`。
+const MEGA_CELL := preload("res://core/mega_cell.gd")
 
 const EDITOR_DIR := "user://editor"
 ## 图标工厂：本仓约定是**逐文件 preload**（`ui_icons.gd` 刻意没有 class_name，见其文件头注释）
@@ -226,6 +230,15 @@ var _rule_report: Label
 var _verify_state: Label
 var _verify_issues: VBoxContainer
 var _issues_box: VBoxContainer
+# ---- 复合格下钻（MegaCell 接线，2026-10-04）----
+## 下钻状态是**纯数据**（`MegaCell.drill_state()` 口径：`{version, path}`）。UI 只持有它。
+## 判据一律问 core（`is_inside` / `drill_path`），本文件不自造"我现在在第几层"的算法。
+var _mega_drill: Dictionary = MEGA_CELL.drill_state()
+## 试玩视图切换时暂存的下钻状态（`drill_to_dict` 产物）——见 `_enter_playtest` / `_exit_playtest`。
+var _mega_drill_saved: Dictionary = {}
+var _mega_opt: OptionButton
+var _mega_state_label: Label
+var _mega_note: Label
 var _open_opt: OptionButton
 # ---- 零代码页「AI 帮我写」（逻辑在 core/spec_helper.gd，本页只负责"三段式"交互）----
 var _idea_edit: LineEdit
@@ -1496,8 +1509,38 @@ func _build_props_tab() -> Control:
 	box.add_child(_plain_label("选形状后，邻域/边界控件不适用；雷位与障碍照常编辑。"
 		+ "「形状尺寸」对圆 / 星 / 扇形是半径（格）。"))
 	_build_shape_compose(box)
+	# 复合格（MegaCell）：合并/拆分/邻接下钻都在 core，这里只补"进入 / 返回"两个入口。
+	_build_mega_drill(box)
 	scroll.add_child(box)
 	return scroll
+
+
+## 复合格（Mega Cell）下钻区：core（`core/mega_cell.gd`）已有 `drill_in/drill_out/is_inside/drill_path`，
+## 缺的是 UI 入口。本块只做三件事：
+##   ① 下拉列出当前文档里已有的复合格（`doc.mega_cells.ids()`）；
+##   ② 两个按钮 = 进入 / 返回（走 core 的同名 API，不在 UI 里重算层级）；
+##   ③ 常驻状态行显示**当前是否在格内 + 层级路径**（如 `#12 › #7`）+ **失败原因原文**。
+## 【为什么不写进关卡 JSON】下钻是"我正在看哪一格内部"的**导航状态**，不是关卡内容 ⇒
+## 不碰 `doc.to_level_json()`（core 落盘格式一字不改）。
+func _build_mega_drill(box: VBoxContainer) -> void:
+	box.add_child(_section_label("复合格（把一片格合并成一格；可下钻看内部）"))
+	box.add_child(_plain_label("选一个复合格 → 点「进入这一格」看它内部的基础格；"
+		+ "点「返回上一层」回到整盘。下钻只是「看」，不改关卡数据。"))
+	_mega_opt = OptionButton.new()
+	# 同配方/布局规则下拉：长文案不许把右栏撑宽（实测会把棋盘挤到一格只剩 29px）
+	_mega_opt.fit_to_longest_item = false
+	_mega_opt.clip_text = true
+	box.add_child(_mega_opt)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.add_child(_action_button("进入这一格", _on_mega_drill_in))
+	row.add_child(_action_button("返回上一层", _on_mega_drill_out))
+	box.add_child(row)
+	_mega_state_label = _plain_label("")
+	box.add_child(_mega_state_label)
+	_mega_note = _plain_label("")
+	box.add_child(_mega_note)
+	_refresh_mega_ui()
 
 
 func _build_rule_tab() -> Control:
@@ -2445,6 +2488,133 @@ func _apply_kind_at(p: Vector2i, kind: String) -> void:
 # 且它按 rows/cols 判界，对形状盘本来就是错口径）。
 
 
+# ==================== 复合格下钻（MegaCell 接线） ====================
+#
+# 分层：**core 是唯一权威**（进入/返回/路径/深度判定全在 `core/mega_cell.gd`，已单测）；
+# 本文件只做"取选中 id → 调 core → 把 path / reason 画出来"，不重算层级、不复制 core 的判据。
+# 失败一律**原文显示 reason**（core 已给可读人话），绝不只说"失败"。
+
+func _mega_registry() -> Variant:
+	if doc == null:
+		return null
+	return doc.mega_cells
+
+
+func _mega_selected_id() -> int:
+	if _mega_opt == null or _mega_opt.item_count == 0 or _mega_opt.selected < 0:
+		return 0
+	return int(_mega_opt.get_item_id(_mega_opt.selected))
+
+
+## 重建复合格下拉（换文档 / 合并 / 拆分后都要跟上），并把显示与当前下钻状态对齐。
+func _refresh_mega_ui() -> void:
+	if _mega_opt == null:
+		return
+	var keep := _mega_opt.selected
+	_mega_opt.clear()
+	# 显式 Variant：`_mega_registry()` 返回 Variant，`var x :=` 会被判成"从 Variant 推断"（本工程当错误）
+	var inst: Variant = _mega_registry()
+	if inst != null:
+		for gid in inst.ids():
+			_mega_opt.add_item("复合格 #%d（内部 %d 格）" % [gid, inst.size_of(gid)], gid)
+	if _mega_opt.item_count == 0:
+		# 空下拉在界面上就是"一个没有内容的按钮"（既有可用性用例专门抓这个）⇒ 给一行占位；
+		# 点「进入这一格」会拿到 core 的可读拒绝理由（id=0 ⇒ not_mega），而不是静默。
+		_mega_opt.add_item("（本关还没有复合格：先合并一片格）", 0)
+	else:
+		_mega_opt.selected = clampi(keep, 0, _mega_opt.item_count - 1)
+	# 文档换了之后，旧的路径可能指向已不存在的复合格 ⇒ 退回顶层（不让界面说谎）。
+	if inst != null and MEGA_CELL.is_inside(_mega_drill):
+		for gid2 in MEGA_CELL.drill_path(_mega_drill):
+			if not inst.has(gid2):
+				_mega_drill = MEGA_CELL.drill_state()
+				_mega_set_note("复合格 #%d 已不存在，已退回整盘视图" % gid2, true)
+				break
+	_refresh_mega_state()
+
+
+## 状态行：**当前是否在格内 + 层级路径**（如 `#12 › #7`）。判据只问 core。
+func _refresh_mega_state() -> void:
+	if _mega_state_label == null:
+		return
+	if not MEGA_CELL.is_inside(_mega_drill):
+		_mega_state_label.text = "当前：整盘视图（未下钻）"
+		return
+	var path: Array[int] = MEGA_CELL.drill_path(_mega_drill)
+	_mega_state_label.text = "当前：在复合格内部 ｜ 层级路径 %s ｜ 深度 %d" % [
+		_mega_path_text(path), path.size()]
+
+
+## 层级路径文案：由外到内（`#12 › #7`）。
+func _mega_path_text(path: Array[int]) -> String:
+	var parts: Array[String] = []
+	for gid in path:
+		parts.append("#%d" % gid)
+	return " › ".join(parts)
+
+
+## 「进入这一格」：真实入口（下拉选中的复合格）。core 拒绝时**原文显示 reason**，且状态不变。
+func _on_mega_drill_in() -> void:
+	var inst: Variant = _mega_registry()
+	if inst == null:
+		_mega_set_note("文档未就绪，无法下钻", true)
+		return
+	var gid := _mega_selected_id()
+	var res: Dictionary = inst.drill_in(_mega_drill, gid)
+	if not bool(res.get("ok", false)):
+		# 失败必须给出 core 的原因原文（非法目标 / 不存在 / 超深…）
+		_mega_set_note(str(res.get("reason", "进入失败（core 未给出原因）")), true)
+		_refresh_mega_state()
+		return
+	var inner: Array[Vector2i] = res.get("inner", [])
+	_mega_set_note("已进入复合格 #%d（内部 %d 格）" % [gid, inner.size()], false)
+	_refresh_mega_state()
+	# 下钻后把**内部基础格**高亮出来（「看内部」这件事要真的看得见）
+	if canvas != null:
+		canvas.set_highlight(inner)
+		_toast("已进入复合格 #%d 内部" % gid)
+
+
+## 「返回上一层」：成功 ⇒ 视图回到整盘；顶层再退 ⇒ 显示 core 的 reason（不许静默）。
+func _on_mega_drill_out() -> void:
+	var inst: Variant = _mega_registry()
+	if inst == null:
+		_mega_set_note("文档未就绪，无法返回", true)
+		return
+	var res: Dictionary = inst.drill_out(_mega_drill)
+	if not bool(res.get("ok", false)):
+		_mega_set_note(str(res.get("reason", "返回失败（core 未给出原因）")), true)
+		_refresh_mega_state()
+		return
+	_mega_set_note("已返回上一层" + ("" if MEGA_CELL.is_inside(_mega_drill) else "：回到整盘视图"), false)
+	_refresh_mega_state()
+	# 退出后**视图回到整盘**：把高亮交还给「问题格」（下钻时那组高亮被内部格占用了）。
+	if doc != null and canvas != null:
+		_refresh_errors()
+		_toast("已回到整盘视图")
+
+
+## 下钻结果提示：失败**原文显示 reason**（颜色 + 文字双信号，颜色不是唯一信号）。
+func _mega_set_note(text: String, bad: bool) -> void:
+	if _mega_note == null:
+		return
+	_mega_note.text = ("⚠ " if bad else "· ") + text
+	_mega_note.add_theme_color_override("font_color",
+		Color(1.0, 0.55, 0.35, 1.0) if bad else _label_color())
+
+
+## 下钻状态的**显式序列化**（走 core 的 codec，UI 不自造格式）。
+func _mega_drill_snapshot() -> Dictionary:
+	return MEGA_CELL.drill_to_dict(_mega_drill)
+
+
+## 用 core 的 codec 还原下钻状态，并把界面同步过去。返回"是否在格内"。
+func _mega_drill_restore(d: Variant) -> bool:
+	_mega_drill = MEGA_CELL.drill_from_dict(d)
+	_refresh_mega_state()
+	return MEGA_CELL.is_inside(_mega_drill)
+
+
 # ==================== 刷新 ====================
 
 func _mark_dirty() -> void:
@@ -2461,6 +2631,7 @@ func _refresh_all() -> void:
 	_refresh_status()
 	_refresh_open_list()
 	_refresh_global_list()
+	_refresh_mega_ui()
 
 
 func _refresh_preview() -> void:
@@ -2486,33 +2657,105 @@ func _refresh_errors() -> void:
 	_refresh_status()
 
 
-## 把 validate() 的结论铺进"本盘问题"列表（错误在前、提醒在后，各带格坐标）。
+## 问题三级（core/editor_doc.gd 的 ISSUE_ERROR / ISSUE_WARN / ISSUE_INFO）在界面上的呈现。
+## 键 = core 的 level 取值（唯一权威）；顺序即显示顺序：阻止 → 警告 → 提示（严重到轻）。
+## 颜色只用在**分组标题**上（正文保持主题色，避免浅色主题下低对比）。
+const ISSUE_LEVEL_UI := [
+	{"level": EditorDoc.ISSUE_ERROR, "title": "阻止", "color": Color(0.90, 0.27, 0.24, 1.0)},
+	{"level": EditorDoc.ISSUE_WARN, "title": "警告", "color": Color(0.85, 0.60, 0.10, 1.0)},
+	{"level": EditorDoc.ISSUE_INFO, "title": "提示", "color": Color(0.25, 0.55, 0.95, 1.0)},
+]
+
+
+## 把 validate() 的结论铺进"本盘问题"列表，**按三级（阻止 / 警告 / 提示）分组**展示。
+## 【为什么不按桶名分组】`warnings` 桶是「warn ∪ info」的**兼容超集**（core 刻意保持向后兼容）
+## ⇒ 按桶名分三级会把 info 同时塞进「警告」里（重复计数、分级错误）。分组判据只认每条问题的
+## `level` 字段（core 的权威分级）。
 ## 只展示前 12 条：面板是给人看的，超过这个量说明该先修结构性问题而不是刷屏。
 func _refresh_issue_list(rep: Dictionary) -> void:
+	# ⚠ 必须**立即** `remove_child` 再 `queue_free()`：`queue_free()` 是**帧末延迟删除**，
+	# 同一帧里紧接着 `add_child` 新分组头时，旧节点仍留在 `get_children()` 里 ⇒ 新内容被追加在
+	# **过期条目之后**，`get_child(0)` 拿到的是上一轮的头（实测：兜底归级用例读到旧节点、
+	# `ed_issue_head` 为 null；列表本身也会在下一帧前短暂重复）。
 	for c in _issues_box.get_children():
+		_issues_box.remove_child(c)
 		c.queue_free()
-	if bool(rep["ok"]) and (rep["warnings"] as Array).is_empty():
+	var rows := _issue_rows(rep)
+	if rows.is_empty():
 		_issues_box.add_child(_plain_label("没有问题：可以按左上角「试玩」，或存成分享包。"))
 		return
 	var shown := 0
-	for bucket in [["errors", "错误"], ["warnings", "提醒"]]:
-		for it in rep[bucket[0]]:
+	for spec in ISSUE_LEVEL_UI:
+		var level := str(spec["level"])
+		var group: Array = []
+		for it in rows:
+			if _issue_level_of(it) == level:
+				group.append(it)
+		if group.is_empty():
+			continue
+		_issues_box.add_child(_issue_head(spec, group.size()))
+		for it in group:
 			if shown >= 12:
 				break
 			var d: Dictionary = it
 			var pos: Vector2i = d["pos"]
-			var line := "· [%s] %s%s" % [
-				str(bucket[1]), str(d["text"]),
+			var line := "[%s] %s%s" % [
+				str(spec["title"]), str(d["text"]),
 				"" if pos.x < 0 else "（格 %d,%d）" % [pos.x, pos.y]]
 			# 带格坐标的问题 → 做成可点条目，点了把视口**定位到那一格**（文档「六」点击跳转）。
 			# 与格无关的问题（pos = (-1,-1)）仍是纯文字。
 			if pos.x >= 0:
-				_issues_box.add_child(_jump_button(line, pos))
+				var btn := _jump_button(line, pos)
+				btn.set_meta("ed_issue_level", level)
+				_issues_box.add_child(btn)
 			else:
-				_issues_box.add_child(_plain_label(line))
+				var lb := _plain_label(line)
+				lb.set_meta("ed_issue_level", level)
+				_issues_box.add_child(lb)
 			shown += 1
+		if shown >= 12:
+			break
 	if shown >= 12:
 		_issues_box.add_child(_plain_label("…还有更多，先在画布里逐个修掉高亮格"))
+
+
+## 单条问题的**归级**：认不出来的一律当**阻止**级。
+## 【为什么必须兜底】三级是 core 定的枚举；若将来 core 加了第四级 / 改了取值，而本表没同步，
+## 不兜底就会"哪一组都不匹配 ⇒ 该条**静默消失**"。静默丢问题比归错级严重得多（宁严不丢）。
+func _issue_level_of(it: Variant) -> String:
+	var lv := str((it as Dictionary).get("level", EditorDoc.ISSUE_ERROR))
+	for spec in ISSUE_LEVEL_UI:
+		if str(spec["level"]) == lv:
+			return lv
+	return EditorDoc.ISSUE_ERROR
+
+
+## 统一的问题行（每条带 level）。优先用 core 的 `issues`（三级统一、带 level）；
+## 只有在它缺失时才按兼容桶补出 level —— 让只给分桶的旧调用方仍能用（如既有单测）。
+func _issue_rows(rep: Dictionary) -> Array:
+	var unified: Array = rep.get("issues", [])
+	if not unified.is_empty():
+		return unified.duplicate()
+	var out: Array = []
+	var fallback := [["errors", EditorDoc.ISSUE_ERROR], ["warnings", EditorDoc.ISSUE_WARN], ["infos", EditorDoc.ISSUE_INFO]]
+	for pair in fallback:
+		for it in rep.get(pair[0], []):
+			var d: Dictionary = (it as Dictionary).duplicate()
+			if not d.has("level"):
+				d["level"] = str(pair[1])
+			out.append(d)
+	return out
+
+
+## 一级的分组标题（文案 + 条数 + 颜色）。标题**去掉 `ed_label` 标记**：
+## `_repaint_labels()` 会把带标记的字色重刷成主题色，那会把三级颜色抹平。
+func _issue_head(spec: Dictionary, count: int) -> Label:
+	var lb := _plain_label("%s（%d 条）" % [str(spec["title"]), count])
+	lb.add_theme_font_size_override("font_size", 13)
+	lb.add_theme_color_override("font_color", spec["color"])
+	lb.remove_meta("ed_label")
+	lb.set_meta("ed_issue_head", str(spec["level"]))
+	return lb
 
 
 func _refresh_rule_report() -> void:
@@ -3512,7 +3755,9 @@ func _clear_repairs() -> void:
 	_repair_plans.clear()
 	if _repair_box == null:
 		return
+	# 同 `_refresh_issue_list`：`queue_free()` 延迟到帧末 ⇒ 必须立刻 `remove_child`。
 	for c in _repair_box.get_children():
+		_repair_box.remove_child(c)
 		c.queue_free()
 
 
@@ -4082,6 +4327,10 @@ func _toggle_playtest() -> void:
 func _enter_playtest() -> void:
 	if not _prepare_play_session():
 		return
+	# 试玩显示的是**整盘**（游戏里没有"下钻"这回事）⇒ 记下当前下钻视图、先退回顶层；
+	# 回编辑时再用 core 的 codec 原样还回去（`drill_to_dict` / `drill_from_dict` 往返）。
+	_mega_drill_saved = _mega_drill_snapshot()
+	_mega_drill = MEGA_CELL.drill_state()
 	GameSession.playtest_return = PLAYTEST_RETURN
 	var scene: PackedScene = load("res://ui/board_view.tscn")
 	if scene == null:
@@ -4107,6 +4356,9 @@ func _exit_playtest() -> void:
 	GameSession.playtest_return = ""
 	_view_state.set_mode(VIEW_STATE.MODE_EDIT)
 	_apply_cheat_visibility()
+	# 回到编辑：把进试玩时暂存的下钻视图还回去（走 core 的 codec，界面随后由 _refresh_all 同步）。
+	if not _mega_drill_saved.is_empty():
+		_mega_drill_restore(_mega_drill_saved)
 	_refresh_all()
 	_toast("已回到编辑（改动没有丢）")
 
