@@ -26,7 +26,11 @@ const PLAY_PATH := "user://editor/_play.json"
 ## 试玩回程（2026-10-02）：点「试玩」时把它写进 `GameSession.playtest_return`，
 ## 游戏 HUD / 结算层据此多显示「回编辑器」按钮（正式游戏里该标记为空 ⇒ 玩家看不到"编辑器"字样）。
 const PLAYTEST_RETURN := "res://ui/level_editor.tscn"
-const UNDO_LIMIT := 50
+## 【W1】清单·一：撤销深度**至少 200 步**。diff 化之后这一步很便宜（≈12B/格），
+## 但"快照型"记录（结构改动/随机布雷这类批量动作）仍然贵（5000 格 ≈2MB）⇒ 它另有上限
+##（`UNDO_SNAP_LIMIT`）：200 张快照 ≈ 400MB，40 张 ≈ 80MB，这是清单里点名的内存爆炸 D。
+const UNDO_LIMIT := 200
+const UNDO_SNAP_LIMIT := 40
 const STROKE_COALESCE_MS := 700
 const AUTOSAVE_IDLE_MS := 1200
 ## 昂贵检查（拓扑审计 + 关卡结构校验）与全量预览的去抖窗口。
@@ -1233,21 +1237,40 @@ func _push_undo(allow_merge := true) -> void:
 		_last_undo_ms = now
 		return
 	_last_undo_ms = 0 if not allow_merge else now
-	# 用 snapshot() 而不是 to_level_json()：后者含 topology（派生、可达数 MB），
-	# 50 步撤销会吃掉上百 MB（见 core/editor_doc.gd:snapshot 的注释）
-	_undo.append(doc.snapshot())
+	# 【W1】优先记 **diff**（格子级改动只存受影响的格 ≈12B/格）；没有待记改动（改尺寸/换邻域/
+	# 随机布雷这类结构或批量动作）才退回 `snapshot()` 兜底 —— 那一步很贵（5000 格 ≈2MB），
+	# 所以快照型记录另有更低的上限（见 `_trim_undo`）。`to_level_json()` 不能用（含派生 topology）。
+	if doc.has_diff():
+		_undo.append({"kind": "diff", "cells": doc.take_diff()})
+	else:
+		_undo.append({"kind": "snap", "snap": doc.snapshot()})
+	_trim_undo()
+	_redo.clear()
+
+
+## 撤销栈裁剪：总数 ≤ `UNDO_LIMIT`，且其中**快照型** ≤ `UNDO_SNAP_LIMIT`（内存硬上限）。
+## 两个上限都要：只限总数 ⇒ 200 张快照又是上百 MB；只限快照数 ⇒ 微操作步数不够（清单要求 ≥200）。
+func _trim_undo() -> void:
 	while _undo.size() > UNDO_LIMIT:
 		_undo.pop_front()
-	_redo.clear()
+	var snaps := 0
+	for it in _undo:
+		if str((it as Dictionary).get("kind", "")) == "snap":
+			snaps += 1
+	while snaps > UNDO_SNAP_LIMIT:
+		for i in _undo.size():
+			if str((_undo[i] as Dictionary).get("kind", "")) == "snap":
+				_undo.remove_at(i)
+				snaps -= 1
+				break
+
 
 
 func _undo_once() -> void:
 	if _undo.is_empty():
 		_toast("没有可撤销的操作")
 		return
-	_redo.append(doc.snapshot())
-	var snap: Dictionary = _undo.pop_back()
-	doc.restore(snap)
+	_redo.append(_apply_record(_undo.pop_back()))
 	_doc_to_ui()
 	_mark_dirty()
 	_refresh_all()
@@ -1257,12 +1280,21 @@ func _redo_once() -> void:
 	if _redo.is_empty():
 		_toast("没有可重做的操作")
 		return
-	_undo.append(doc.snapshot())
-	var snap: Dictionary = _redo.pop_back()
-	doc.restore(snap)
+	_undo.append(_apply_record(_redo.pop_back()))
 	_doc_to_ui()
 	_mark_dirty()
 	_refresh_all()
+
+
+## 应用一条撤销/重做记录，并返回**反向记录**（撤销↔重做共用同一条路径）。
+## 两种记录：`{"kind":"diff","cells":PackedInt32Array}` 与 `{"kind":"snap","snap":快照}`。
+func _apply_record(rec: Dictionary) -> Dictionary:
+	if str(rec.get("kind", "")) == "diff":
+		return {"kind": "diff", "cells": doc.apply_diff(rec.get("cells", PackedInt32Array()))}
+	var snap: Variant = rec.get("snap", {})
+	var back := doc.snapshot()          # 先取"现在"，恢复完再把它当作反向记录
+	doc.restore(snap if snap is Dictionary else {})
+	return {"kind": "snap", "snap": back}
 
 
 ## 编辑动作之后把"声明的总雷数"改回未声明 ⇒ 以实际雷位为准。

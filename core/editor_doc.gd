@@ -788,6 +788,83 @@ func _level_dict(include_topology: bool) -> Dictionary:
 ## 而外部拓扑（六边形/三角等）重算不出来 ⇒ 存**引用**：它在会话里只被整体替换、
 ## 从不原地修改（`load_from` 用 duplicate、`_carve_holes` 返回新字典），
 ## 因此多份快照共享同一对象是安全的，也不会复制出多份大表。
+## ── W1：**撤销记"改动"而不是整盘快照**（清单·数据爆炸 D）────────────────────────
+## 清单原文：连续微操作要合并成一步；**大棋盘撤销用"记录改动"而不是"整个棋盘快照"** ——
+## 5000 格 × 200 张快照 ≈ 上百 MB。这里的口径：
+##   · 每次改动前对**受影响的格**记一次"改动前的状态"（每格 3 个 int：x, y, code ≈12B）；
+##   · 撤销 = 把这些格恢复成记录里的状态；重做 = 把撤销时记下的"当时状态"再恢复回去；
+##   · 只有结构/大批量改动（改尺寸、换邻域、随机布雷…）才由调用方走 `snapshot()` 兜底。
+const CELL_EMPTY := 0
+const CELL_MINE := 1
+const CELL_OBSTACLE := 2
+const CELL_REVEALED := 3
+
+var _diff: PackedInt32Array = PackedInt32Array()
+var _diff_seen: Dictionary = {}
+
+
+## 一格当前状态（雷↔障碍↔初始翻开三集合互斥 ⇒ 单值就能表达）。
+func state_code(p: Vector2i) -> int:
+	if mines.has(p):
+		return CELL_MINE
+	if obstacles.has(p):
+		return CELL_OBSTACLE
+	if revealed.has(p):
+		return CELL_REVEALED
+	return CELL_EMPTY
+
+
+## 把一格设成指定状态（与 `EditorCanvas._apply_kind` 同一套互斥语义：先清三集合再写一个）。
+func set_state(p: Vector2i, code: int) -> void:
+	mines.erase(p)
+	obstacles.erase(p)
+	revealed.erase(p)
+	match code:
+		CELL_MINE:
+			mines.append(p)
+		CELL_OBSTACLE:
+			obstacles.append(p)
+		CELL_REVEALED:
+			revealed[p] = null
+
+
+## 记一格"改动前的状态"（同一格只记第一次 —— 那才是撤销点；重笔刷不该把第一次覆盖掉）。
+func note_cell(p: Vector2i) -> void:
+	if _diff_seen.has(p):
+		return
+	_diff_seen[p] = true
+	_diff.append(p.x)
+	_diff.append(p.y)
+	_diff.append(state_code(p))
+
+
+func has_diff() -> bool:
+	return not _diff.is_empty()
+
+
+## 取出当前 diff 并清空暂存（空数组 = 这步没有格子级改动 ⇒ 调用方退回快照兜底）。
+func take_diff() -> PackedInt32Array:
+	var out := _diff
+	_diff = PackedInt32Array()
+	_diff_seen.clear()
+	return out
+
+
+## 应用一条 diff（把每条 `[x,y,code]` 恢复成 code），并**返回反向 diff**（供重做）。
+func apply_diff(cells: PackedInt32Array) -> PackedInt32Array:
+	var inverse := PackedInt32Array()
+	var i := 0
+	while i + 2 < cells.size():
+		var p := Vector2i(cells[i], cells[i + 1])
+		var code := cells[i + 2]
+		inverse.append(p.x)
+		inverse.append(p.y)
+		inverse.append(state_code(p))
+		set_state(p, code)
+		i += 3
+	return inverse
+
+
 func snapshot() -> Dictionary:
 	return {
 		"level": _level_dict(false),
@@ -802,6 +879,11 @@ func snapshot() -> Dictionary:
 			"obstacles": obstacles.duplicate(),
 		},
 		"foreign": foreign_topology,
+		# ⚠ 形状参数也必须**显式**存（2026-10-03 修）：`load_from()` 会把 `shape_kind/shape_params`
+		# 清零（见本文件 :866-867）⇒ 快照里不带它们，"换形状后按撤销"会悄悄退回方阵，
+		# 用户手工改过的格子与形状定义一起丢。清单也明确要求"形状参数随时改、改完一键重新生成"，
+		# 那么撤销就必须能回到**原形状**，而不是回到一个看似正常的方阵。
+		"shape": {"kind": shape_kind, "params": shape_params.duplicate(true)},
 	}
 
 
@@ -822,6 +904,11 @@ func restore(snap: Dictionary) -> bool:
 		obstacles.assign(s.get("obstacles", []))
 	var f: Variant = snap.get("foreign", {})
 	foreign_topology = f if f is Dictionary else {}
+	var sh: Variant = snap.get("shape", {})
+	if sh is Dictionary:
+		shape_kind = str((sh as Dictionary).get("kind", ""))
+		var pr: Variant = (sh as Dictionary).get("params", {})
+		shape_params = (pr as Dictionary).duplicate(true) if pr is Dictionary else {}
 	return true
 
 

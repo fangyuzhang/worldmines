@@ -184,6 +184,9 @@ func _handle_button(mb: InputEventMouseButton) -> void:
 			return
 		if pos.x >= 0:
 			if tool == Tool.PAINT or tool == Tool.ERASE:
+				# 【W1】编辑器在收到 `cell_edit_started` 时**立刻**压撤销点（"改动之前"这条规矩）
+				# ⇒ 必须**先**把这一格的"改动前状态"记进文档，否则那一刻 diff 还是空的、只拿得到快照。
+				doc.note_cell(pos)
 				# 撤销点必须在**改动之前**发出：编辑器据此存"改动前"的快照。
 				# 若只在 `cell_edited`（改动之后）里存，撤销栈里全是"改完之后"的状态 ⇒
 				# 按一次撤销等于没动、要按两次才退一步（2026-10-02 复查发现的真实缺陷）。
@@ -193,8 +196,14 @@ func _handle_button(mb: InputEventMouseButton) -> void:
 	elif _dragging:
 		_dragging = false
 		if tool == Tool.RECT_FILL and _drag_start.x >= 0 and pos.x >= 0:
+			var box := Rect2i(_drag_start, pos - _drag_start).abs()
+			# 【W1】整框先各记一次"改动前状态" ⇒ 这一步在撤销栈里是**一条 diff**（不是整盘快照），
+			# 拉一次大框也只占"框内格数 × 12B"。
+			for yy in range(box.position.y, box.position.y + box.size.y + 1):
+				for xx in range(box.position.x, box.position.x + box.size.x + 1):
+					doc.note_cell(Vector2i(xx, yy))
 			cell_edit_started.emit(_drag_start)
-			_fill_rect(Rect2i(_drag_start, pos - _drag_start).abs())
+			_fill_rect(box)
 		elif tool == Tool.SELECT:
 			set_selection(Rect2i(_drag_start, pos - _drag_start).abs())
 		_rect_preview = Rect2i()
@@ -259,6 +268,7 @@ func _apply_tool(pos: Vector2i) -> void:
 ## `fresh=true` ⇒ 这次手势的**第一个**动作：撤销点在改动**之前**发（与左键同规矩，一笔 = 一步撤销）。
 func _erase_cell(pos: Vector2i, fresh: bool = true) -> void:
 	if fresh:
+		doc.note_cell(pos)          # 【W1】同上：撤销点在改动之前，先记"改动前状态"
 		cell_edit_started.emit(pos)
 	_apply_kind(pos, KIND_CLEAR)
 	cell_edited.emit(pos)
@@ -309,6 +319,9 @@ func _apply_kind(pos: Vector2i, kind: String) -> void:
 ## 公开写入口（审查 D12：编辑器里原来有一份**重复实现** `level_editor._apply_kind_at`，
 ## 两份迟早分叉 ⇒ 收口到这里，编辑器（粘贴等路径）只调用本函数）。
 func apply_kind(pos: Vector2i, kind: String) -> void:
+	# 【W1】写盘前先让文档记下这格"改动前的状态"（撤销才有 diff 可回退）。
+	# 放在这唯一写入口上 ⇒ 画笔/橡皮/右键擦/矩形填充/粘贴全部自动覆盖，不必逐处埋点。
+	doc.note_cell(pos)
 	_apply_kind(pos, kind)
 
 

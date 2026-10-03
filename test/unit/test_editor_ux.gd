@@ -951,6 +951,34 @@ func test_forge_close_button_stops_and_hides() -> void:
 	assert_false(dlg.visible, "关闭后弹窗应收起")
 
 
+func test_undo_records_a_cell_diff_not_a_whole_snapshot() -> void:
+	# 【W1-S1】格子级改动必须记 **diff**（≈12B/格），而不是整盘快照（5000 格 ≈2MB）——
+	# 清单·数据爆炸 D 点名要求；深度提到 200 步也只有靠 diff 才吃得消。
+	var ed := await _make_editor()
+	_bind(ed, _doc5())
+	var canvas: EditorCanvas = ed.get("canvas")
+	canvas.size = Vector2(600, 600)
+	var before := (ed.get("doc") as EditorDoc).mines.size()
+	var ev := InputEventMouseButton.new()
+	ev.button_index = MOUSE_BUTTON_LEFT
+	ev.pressed = true
+	ev.position = canvas.cell_rect(Vector2i(3, 3)).get_center()
+	canvas._gui_input(ev)                      # 真实输入路径：按下即画一格
+	var stack: Array = ed.get("_undo")
+	# 编辑器在 `cell_edit_started` 时就自己压了撤销点（"改动之前"这条规矩）⇒ 这里不该再手动 push
+	assert_eq(stack.size(), 1, "一次点击 = 一步（编辑器自己压的那一步）")
+	assert_eq(str((stack[0] as Dictionary).get("kind", "")), "diff", "格子级改动必须记 diff 而不是快照")
+	var cells: PackedInt32Array = (stack[0] as Dictionary).get("cells", PackedInt32Array())
+	assert_eq(cells.size(), 3, "一格 diff 应是 3 个 int（x,y,code），实得 %d" % cells.size())
+	ed.call("_undo_once")
+	var d: EditorDoc = ed.get("doc")
+	assert_eq(d.mines.size(), before, "撤销必须回到改动前")
+	assert_false(d.mines.has(Vector2i(3, 3)), "该格应恢复为无雷")
+	ed.call("_redo_once")
+	assert_true(d.mines.has(Vector2i(3, 3)), "重做应把这格雷放回来")
+	assert_eq((ed.get("_undo") as Array).size(), 1, "重做后撤销栈应仍是一步")
+
+
 func test_import_gate_refuses_absurd_level_data() -> void:
 	# 【清单·数据爆炸 I：加载期总量校验拒载】"合法但巨大"的导入必须在**加载期**被拒，
 	# 而不是先解析再卡死（编辑器的粘贴/导入此前完全没闸门）。
