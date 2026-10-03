@@ -17,6 +17,25 @@ extends Control
 
 const CANVAS := preload("res://ui/editor_canvas.gd")
 const UI_TOAST := preload("res://ui/ui_toast.gd")
+## 键位绑定表（独立段 `[editor_keys]`）与编辑/试玩统一状态机。
+## 都**不用 class_name**：headless 下新全局类不在 `.godot` 缓存里，按类名引用会让整份脚本解析失败
+##（本文件顶部与 `ui/tutorial_overlay.gd:12` 记的同一个坑 #26）。
+const BINDINGS := preload("res://core/editor_bindings.gd")
+const VIEW_STATE := preload("res://core/editor_view_state.gd")
+## 猜点热力图 / 推理链回放：只接线，算法在 core 的两个纯逻辑模块里（本切片不重写它们）。
+## 同 BINDINGS/VIEW_STATE：**用 preload 引用、不按 class_name 引用**——headless 下新全局类
+## 不在 `.godot` 缓存里时，按类名会让整份脚本解析失败（坑表 #26）。
+const HOTMAP := preload("res://core/hotmap.gd")
+const REPLAY := preload("res://core/replay_model.gd")
+## 推理链的数据来源（ProofLog 产出 ReasoningStep.to_dict() 数组，正是 ReplayModel.load 吃的形态）。
+const PROOF_LOG := preload("res://core/proof_log.gd")
+## 全局性能记账 + 统一降级顺序（core/perf_ledger.gd；本切片只**接线**、不改它）。
+## 同 BINDINGS/VIEW_STATE：**用 preload 引用、不按 class_name 引用**——headless 下新全局类不在
+## `.godot` 缓存里时，按类名会让整份脚本解析失败（坑表 #26）。
+const PERF_LEDGER := preload("res://core/perf_ledger.gd")
+## 模板库（core/template_library.gd，文档「九」+「十.6」）。它**刻意没有 class_name**（见其文件头），
+## 所以只能 preload；本切片只接线，模板数据与 `apply_to_doc` 全在 core。
+const TEMPLATES := preload("res://core/template_library.gd")
 
 const EDITOR_DIR := "user://editor"
 ## 图标工厂：本仓约定是**逐文件 preload**（`ui_icons.gd` 刻意没有 class_name，见其文件头注释）
@@ -32,7 +51,15 @@ const PLAYTEST_RETURN := "res://ui/level_editor.tscn"
 const UNDO_LIMIT := 200
 const UNDO_SNAP_LIMIT := 40
 const STROKE_COALESCE_MS := 700
+## 自动保存空闲去抖（毫秒）。**这是"原频率"基准**：降级后实际间隔 = 本值 ÷ `_perf.rate_of("autosave")`
+##（见 `_process`；`PerfLedger.DELAYED_AUTOSAVE_RATE = 0.25` ⇒ 1200/0.25 = 4800ms，即"延后自动保存"）。
 const AUTOSAVE_IDLE_MS := 1200
+## 【待真机标定】重活耗时预算（毫秒）：`PerfLedger.tick_measured()` 用它把"已上报的实测耗时合计"
+## 判成达标 / 超载。依据：本仓**没有**真机帧时间实测值可引，`core/perf_ledger.gd` 头部也只写
+## "帧预算要真机标定"、其 `RESTORE_MARGIN` 同为启发式常量；故取仓内**唯一有出处**的耗时预算 ——
+## `EditorVerify.DEFAULT_TOTAL_BUDGET_MS`（8s，core/editor_verify.gd:36 注释的"总墙钟预算"）：
+## 四件重活的实测耗时合计不该超过验证器自己的总预算。**这是起点占位、不是实测帧预算**，待真机 profile 后替换。
+const PERF_FRAME_BUDGET_MS := EditorVerify.DEFAULT_TOTAL_BUDGET_MS
 ## 昂贵检查（拓扑审计 + 关卡结构校验）与全量预览的去抖窗口。
 ## 实测（64x64 环绕盘 / 400 雷）：全量预览 101 ms、`grid()` 91 ms、拓扑审计更贵 ⇒
 ## 每改一格都跑一遍会让拖动直接卡死；去抖后编辑路径只剩"增量重算 ≤9 格"。
@@ -232,10 +259,59 @@ var _current_path := ""
 var _tool_group := ButtonGroup.new()
 var _kind_group := ButtonGroup.new()
 
+# ---- 快捷键体系 + 显示开关（文档「二」「七」）----
+## 键位绑定表：唯一真源，独立段 `[editor_keys]`，可读回、可缺省回退。
+var _bindings := BINDINGS.new()
+## 编辑/试玩两态的统一状态机（禁止各处自己判断"要不要显示作弊信息"）。
+var _view_state := VIEW_STATE.new()
+var _grid_btn: Button
+var _cheat_btn: Button
+var _sym_btn: Button
+## 对称模式：0=关 1=竖轴 2=横轴 3=四象（Ctrl+G 循环）。
+var _sym_mode := 0
+## 内嵌试玩层（Tab 秒切用）：非空 = 正在"试玩态"。点「试玩」按钮仍走整场景切换。
+var _play_overlay: CanvasLayer = null
+## 工具/格型按钮（快捷键改状态后要同步它们的高亮，否则界面在骗人）。
+var _tool_btns: Array = []
+var _kind_btns: Array = []
+## 验证页的星级行（1~5 星；旧三档文案保留在 `_verify_state` 里）。
+var _verify_stars: Label
+
+# ---- 猜点热力图（HotMap 接线）：开关 + 一行可读说明（理由/错误都显示出来，不静默） ----
+## 画布叠加层的层名：热力图的数据与显隐都挂在画布这一个名字上（正式 API 见 `editor_canvas.set_overlay`）。
+const HOTMAP_OVERLAY := "hotmap"
+var _hotmap_btn: Button
+var _hotmap_note: Label
+var _hotmap_on := false
+## 求解器（`HotMap.build`）实际跑过几次。**可观察字段**，供单测断言"恢复可见时不重跑"
+##（与画布 `_static_cache_builds` 同一套路：状态可观察、不靠像素/耗时猜）。
+var _hotmap_builds := 0
+
+# ---- 全局性能记账（PerfLedger 接线）：每编辑器一个实例（纯 RefCounted，不依赖场景树）----
+## 上报实测耗时 + 按文档钦定的统一降级顺序降档 / 回爬；状态机全在 core/perf_ledger.gd，本文件只接线。
+var _perf = PERF_LEDGER.new()
+
+# ---- 模板库入口（TemplateLibrary 接线）：左栏「从模板开始」下拉 + 用这个模板 ----
+var _template_opt: OptionButton
+var _template_note: Label
+
+# ---- 推理链回放（ReplayModel 接线）：虚拟化列表 + 截断 banner ----
+## 不加类型标注（也不写 `ReplayModel`）：headless 下新全局类不在 `.godot` 缓存里，
+## 按类名写会让整份脚本解析失败（坑表 #26）⇒ 走 `REPLAY.new()` + 动态调用。
+var _replay_model = null
+var _replay_btn: Button
+var _replay_scroll: ScrollContainer
+var _replay_rows: Control
+var _replay_banner: Label
+var _replay_note: Label
+## 行高用 var 而非 const：测试要通过 `ed.get()` 读它（Object 取不到脚本常量）。
+var _replay_row_h := 22.0
+
 
 func _ready() -> void:
 	add_to_group("themed")
 	name = "LevelEditor"
+	_bindings.load_cfg()          # 先读键位：左栏 tooltip 要显示当前键名
 	ThemeManager.theme_changed.connect(_on_theme_changed)
 	ThemeManager.theme_settled.connect(_on_theme_settled)
 	_build_ui()
@@ -243,10 +319,18 @@ func _ready() -> void:
 	_doc_to_ui()
 	_load_autosave_if_any()
 	_refresh_all()
+	# 画布此时才存在（`_build_left_bar` 比它早）⇒ 统一状态机的"显雷"这一侧在这里再应用一次。
+	_apply_cheat_visibility()
 
 
 func _process(_delta: float) -> void:
 	var now := Time.get_ticks_msec()
+	# 【PerfLedger 接线 ④】每帧用"上报的实测耗时预算"驱动统一降级状态机（预算见 PERF_FRAME_BUDGET_MS）。
+	# 返回**本次实际执行**的降级 / 回爬动作（受进入/退出/最小保持三重滞后约束，最多一档）；
+	# 有变档才去把这些动作落到界面上（本文件只影响热力图显隐，其余是"读参数"式接线）。
+	var perf_acts: Array = _perf.tick_measured(now, PERF_FRAME_BUDGET_MS)
+	if not perf_acts.is_empty():
+		_apply_perf_actions(perf_acts)
 	if _full_preview_due != 0 and now >= _full_preview_due:
 		_full_preview_due = 0
 		_refresh_preview()
@@ -256,9 +340,16 @@ func _process(_delta: float) -> void:
 		_refresh_errors()
 	if not _dirty:
 		return
-	if now - _last_change_ms < AUTOSAVE_IDLE_MS:
+	# 【PerfLedger 接线 ③】自动保存空闲间隔按 `rate_of("autosave")` 缩放（见 `_autosave_idle_ms`）。
+	if now - _last_change_ms < _autosave_idle_ms():
 		return
 	_write_autosave()
+
+
+## 当前自动保存空闲间隔（毫秒）= `AUTOSAVE_IDLE_MS ÷ rate_of("autosave")`。
+## 1.0 = 原 1200ms；降到 DELAYED_AUTOSAVE_RATE(0.25) ⇒ 1200/0.25 = 4800ms（延后落盘，内存里的文档不丢）。
+func _autosave_idle_ms() -> int:
+	return int(AUTOSAVE_IDLE_MS / maxf(0.01, _perf.rate_of(PERF_LEDGER.JOB_AUTOSAVE)))
 
 
 # ==================== UI 组装 ====================
@@ -307,7 +398,11 @@ func _build_ui() -> void:
 				rect.size.x, rect.size.y, _clipboard_cells.size()]))
 	# 撤销点取在"改动之前"（画布在手势开始时发这个信号）——见 editor_canvas.gd 里那条注释
 	canvas.cell_edit_started.connect(_on_cell_edit_started)
+	# 油漆桶结果：截断时必须说清"仅染了前 N 格"（否则用户以为整片都染了）
+	canvas.bucket_reported.connect(_on_bucket_reported)
 	body.add_child(canvas)
+	# 热力图不再挂"运行期子节点"：改由画布的正式叠加层 API 承载（`canvas.set_overlay("hotmap", …)`）。
+	# 缩放/平移/改盘后的重画由画布自己 `queue_redraw()` 负责 ⇒ 本文件不必再接 `draw/resized`。
 	body.add_child(_build_right_panel())
 
 	root.add_child(_build_status_bar())
@@ -453,25 +548,64 @@ func _build_left_bar() -> Control:
 	#（要滚约 1.5 屏），而它是"一次做很多关"的唯一入口 —— 小白不会去滚一个看不出有内容的侧栏。
 	# 所以首屏（四步条正下方）再放一个同样的入口；下面那一组保留（那里有「安装分享包」等邻居）。
 	box.add_child(_action_button("要做很多关？→ 批量生成关卡", _open_forge))
+	# 【模板库接线】新手"照着做就能出一关"的最快入口（文档「九」+「十.6：模板库是主要入门路径」）。
+	# 放在工具清单**之前**：第一次打开的人先看到"可以不用从零画"，而不是"一堆工具"。
+	_build_template_entry(box)
 	box.add_child(_section_label("工具"))
 	# 每个工具都要能自己讲清"这是什么、拿来干什么"——用户实测问过"区域选择有什么用吗"，
 	# 而它（配合下面的「复制选区 / 粘贴到选区」整块复制格型）在界面上原本一个字都没解释。
-	for t in [[EditorCanvas.Tool.PAINT, "画笔", "在格子上涂当前选的格型（按住拖动可连画）"],
-			[EditorCanvas.Tool.ERASE, "橡皮", "把格子擦回「空」"],
-			[EditorCanvas.Tool.RECT_FILL, "矩形填充", "拖一个方框，整块刷成当前格型（批量摆障碍/已翻开）"],
+	for t in [[EditorCanvas.Tool.PAINT, "画笔", "在格子上涂当前选的格型（按住拖动可连画）", "B / ①"],
+			[EditorCanvas.Tool.ERASE, "橡皮", "把格子擦回「空」", "E / ②"],
+			[EditorCanvas.Tool.RECT_FILL, "矩形填充", "拖一个方框，整块刷成当前格型（批量摆障碍/已翻开）", "③"],
 			[EditorCanvas.Tool.SELECT, "区域选择",
-				"先框选一片区域，再用下面的「复制选区 / 粘贴到选区」整块复制格型——例如把一块障碍图案搬到别处"],
-			[EditorCanvas.Tool.PAN, "平移（或按住中键）", "拖动整张棋盘看（棋盘很大时用）；也可以直接按住鼠标中键拖"]]:
+				"先框选一片区域，再用下面的「复制选区 / 粘贴到选区」整块复制格型——例如把一块障碍图案搬到别处", "L / ④"],
+			[EditorCanvas.Tool.PAN, "平移（或按住中键）", "拖动整张棋盘看（棋盘很大时用）；也可以直接按住鼠标中键拖",
+				"P / ⑤；或按住空格临时平移"]]:
 		var tool_btn := _toggle_button(str(t[1]), _tool_group, func() -> void:
 			canvas.tool = int(t[0]))
-		tool_btn.tooltip_text = str(t[2])
+		tool_btn.tooltip_text = "%s（快捷键：%s）" % [str(t[2]), str(t[3])]
+		_tool_btns.append(tool_btn)
 		box.add_child(tool_btn)
 
+	# 文档语义落到 tooltip：M=放雷、S=强制安全格（= 初始已翻开）；⑧⑨ 是最常用两型的数字快选。
 	box.add_child(_section_label("格型（画笔画什么）"))
-	for k in [[EditorCanvas.KIND_MINE, "地雷"], [EditorCanvas.KIND_OBSTACLE, "障碍"],
-			[EditorCanvas.KIND_REVEAL, "初始已翻开"], [EditorCanvas.KIND_CLEAR, "清空该格"]]:
-		box.add_child(_toggle_button(str(k[1]), _kind_group, func() -> void:
-			canvas.paint_kind = str(k[0])))
+	for k in [[EditorCanvas.KIND_MINE, "地雷", "画笔画上去 = 放雷（M / ⑧）"],
+			[EditorCanvas.KIND_OBSTACLE, "障碍", "画笔画上去 = 洞 / 格不存在（⑨）"],
+			[EditorCanvas.KIND_REVEAL, "初始已翻开", "强制安全格：保证不是雷、开局就翻开（S）"],
+			[EditorCanvas.KIND_CLEAR, "清空该格", "把该格擦回空（橡皮同效）"]]:
+		var kind_btn := _toggle_button(str(k[1]), _kind_group, func() -> void:
+			canvas.paint_kind = str(k[0]))
+		kind_btn.tooltip_text = str(k[2])
+		_kind_btns.append(kind_btn)
+		box.add_child(kind_btn)
+
+	# 显示开关（文档「一/七」）：网格线（G）、显雷（仅编辑态，H）、对称（Ctrl+G 循环）。
+	# 三个都是"看一眼就知道现在开没开"的开关（toggle 按钮 + 文案带状态）。
+	box.add_child(_section_label("显示"))
+	_grid_btn = _action_button("网格线", _toggle_grid)
+	_grid_btn.toggle_mode = true
+	_grid_btn.button_pressed = true                 # 与画布 `show_grid` 的默认值一致
+	_grid_btn.tooltip_text = _bindings.hint("grid_toggle")
+	box.add_child(_grid_btn)
+	_cheat_btn = _action_button("显示雷/线索（编辑态）", _toggle_cheats)
+	_cheat_btn.toggle_mode = true
+	_cheat_btn.tooltip_text = _bindings.hint("cheat_toggle")
+	box.add_child(_cheat_btn)
+	# 猜点热力图（差异化功能）：打开时把 HotMap.build(doc) 的结果涂到棋盘上
+	# （红 = 必须猜的格，越深 = 越晚推出）；与"显雷"同一套试玩态强制隐藏判据。
+	# 放在「显示」分组：它是**叠加显示**，和网格线/显雷/对称是一类东西。
+	_hotmap_btn = _action_button("猜点热力图：关", _toggle_hotmap)
+	_hotmap_btn.toggle_mode = true
+	_hotmap_btn.tooltip_text = "把棋盘涂成推理热力图：红=必须猜的格，颜色越深=越晚才推出来；试玩态自动隐藏"
+	box.add_child(_hotmap_btn)
+	_hotmap_note = _plain_label("")
+	_hotmap_note.visible = false
+	box.add_child(_hotmap_note)
+	_sym_btn = _action_button("对称：关", _cycle_symmetry)
+	_sym_btn.tooltip_text = _bindings.hint("symmetry_cycle")
+	box.add_child(_sym_btn)
+	box.add_child(_plain_label("对称开启后，画笔/橡皮画的格子会同时镜像到对称位置（矩形填充/直线/油漆桶不改动）。"))
+	_apply_cheat_visibility()
 
 	box.add_child(_section_label("布雷"))
 	var row := HBoxContainer.new()
@@ -480,7 +614,9 @@ func _build_left_bar() -> Control:
 	_mines_spin.value_changed.connect(func(_v: float) -> void: _on_mines_changed())
 	row.add_child(_mines_spin)
 	box.add_child(row)
-	box.add_child(_action_button("随机布雷（按上面的雷数）", _random_mines))
+	var rand_btn := _action_button("随机布雷（按上面的雷数）", _random_mines)
+	rand_btn.tooltip_text = "%s；Ctrl+N 同效" % _bindings.hint("random_mines")
+	box.add_child(rand_btn)
 	box.add_child(_action_button("清空全部雷/障碍/翻开", _clear_all))
 
 	box.add_child(_section_label("编辑"))
@@ -521,7 +657,9 @@ func _build_left_bar() -> Control:
 	#（见 REF_TEXT["操作提示"]），界面压成两行短句、只留最要紧的。
 	box.add_child(_section_label("操作提示"))
 	box.add_child(_plain_label("左键点格子 = 放雷 / 改格型（不是开格！）｜右键 = 擦掉该格（按住可连擦）\n"
-		+ "拖动 = 连续画 ｜滚轮 = 缩放 ｜中键拖 = 平移 ｜快捷键：Ctrl+Z 撤销 ｜ Ctrl+Y 重做 ｜ Ctrl+S 保存"))
+		+ "拖动 = 连续画 ｜滚轮 = 缩放 ｜中键拖 = 平移\n"
+		+ "快捷键：M 放雷 ｜ S 强制安全格 ｜ B 画笔 ｜ E 橡皮 ｜ G 网格 ｜ Ctrl+G 对称\n"
+		+ "选区：R 旋转 90° ｜ Ctrl+R 镜像 ｜ Ctrl+C/V 复制/粘贴 ｜ Ctrl+Z 撤销 ｜ Ctrl+Y 重做 ｜ Ctrl+S 保存"))
 	# 术语对照（P7.5，小白友好）：规格/邻域/环绕/深度/峰值 这些词界面上到处在用，
 	# 但**没有一处解释过它们**——第一次来的人只能猜。就地给一张小对照表，比 tooltip 更可靠
 	#（tooltip 不悬停就看不到，本会话已在别处踩过这个坑）。
@@ -535,6 +673,103 @@ func _build_left_bar() -> Control:
 		+ "深度：解开某一步要同时把握几条线索；越大越难。\n"
 		+ "峰值：整盘最深那一步的深度（难度档位就是按峰值分的：普通 2~3、困难 4~5、噩梦 6+）。"))
 	return outer
+
+
+# ==================== 模板库（TemplateLibrary 接线） ====================
+#
+# 分工：模板数据 / 概念可见性 / `apply_to_doc` 全在 `core/template_library.gd`（纯数据 + 纯查询，
+# 已单测）；本文件只做三件事 —— ① 一个下拉 + 一个按钮；② 应用前过**既有**预算闸门
+#（`_budget_allows`，与改尺寸 / 换形状同一道，绝不绕过）；③ 失败给**可读提示**（toast + 常驻说明行）。
+
+## 左栏「从模板开始」入口：下拉（官方示例 + 新手教程）+ 「用这个模板」+ 一行说明。
+func _build_template_entry(box: VBoxContainer) -> void:
+	box.add_child(_section_label("从模板开始（新手照做就有一关）"))
+	box.add_child(_plain_label("先挑一个现成模板铺好棋盘，再改雷位/规则；应用后可按 Ctrl+Z 撤销。"))
+	_template_opt = OptionButton.new()
+	# 与配方/布局规则下拉同因：长文案不许把左栏/棋盘撑宽。
+	_template_opt.fit_to_longest_item = false
+	_template_opt.clip_text = true
+	_template_opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var ts := TEMPLATES.all_templates()
+	for i in ts.size():
+		var t: Dictionary = ts[i]
+		_template_opt.add_item(str(t["name"]), i)
+		_template_opt.set_item_metadata(i, str(t["id"]))
+	_template_opt.item_selected.connect(func(_i: int) -> void: _refresh_template_note())
+	box.add_child(_template_opt)
+	_template_note = _plain_label("")
+	_template_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(_template_note)
+	var use_btn := _action_button("用这个模板（铺好棋盘）", _apply_selected_template)
+	use_btn.tooltip_text = "把选中的模板铺成当前关卡（先过格数预算闸门）；应用后可 Ctrl+Z 撤销"
+	box.add_child(use_btn)
+	_refresh_template_note()
+
+
+## 下拉选中项的描述（常驻说明行；也是"应用失败"的提示落点）。
+func _refresh_template_note() -> void:
+	if _template_opt == null or _template_note == null:
+		return
+	var idx := _template_opt.selected
+	if idx < 0:
+		return
+	var t := TEMPLATES.find_template(str(_template_opt.get_item_metadata(idx)))
+	if t.is_empty():
+		_template_note.text = "未知模板（列表可能已变，请重开）。"
+		return
+	_template_note.text = "%s：%s" % [str(t["name"]), str(t["desc"])]
+
+
+func _set_template_note(text: String) -> void:
+	if _template_note != null:
+		_template_note.text = text
+
+
+## 点「用这个模板」：按 id 取模板 → 套用（未知 id 也给可读原因，不静默）。
+func _apply_selected_template() -> void:
+	if _template_opt == null:
+		return
+	var idx := _template_opt.selected
+	if idx < 0:
+		_set_template_note("还没选模板。")
+		return
+	var tid := str(_template_opt.get_item_metadata(idx))
+	var r := TEMPLATES.apply(tid)
+	if not bool(r["ok"]):
+		_set_template_note(str(r["reason"]))
+		_toast(str(r["reason"]), true, 6.0)
+		return
+	_apply_template_build(r["doc_build"], _template_opt.get_item_text(idx))
+
+
+## 把一份 `doc_build` 铺进当前文档。**应用前必过 `_budget_allows`**（超限时它自己弹可读提示）。
+## 返回是否真的应用（给测试钉住"超预算被拦"这条）。
+func _apply_template_build(doc_build: Dictionary, template_name: String) -> bool:
+	if doc == null or doc_build.is_empty():
+		_set_template_note("模板内容为空，没有改动文档。")
+		return false
+	var kind := str(doc_build.get("shape_kind", ""))
+	var raw_params: Variant = doc_build.get("shape_params", {})
+	var params: Dictionary = raw_params if raw_params is Dictionary else {}
+	var est_rows := int(doc_build.get("rows", doc.rows))
+	var est_cols := int(doc_build.get("cols", doc.cols))
+	# ① 既有预算闸门（改尺寸 / 换形状同一道）。被拦时 `_budget_allows` 已经弹过可读提示，这里补常驻说明。
+	if not _budget_allows(kind, params, est_rows, est_cols):
+		_set_template_note("模板「%s」超出格数预算，未应用（原因见上方提示；可改用更小的模板）。"
+			% template_name)
+		return false
+	# ② 整份文档替换 ⇒ 记一步快照型撤销（与导入文本 / 清空全部同口径）。
+	_push_undo(false)
+	TEMPLATES.apply_to_doc(doc, doc_build)
+	_sync_declared_total()      # 模板自带实际雷位 ⇒ 声明雷数交回"按实际导出"（-1）
+	_current_path = ""          # 这是"新东西" ⇒ 别让下次保存覆盖掉原来那份文件
+	_doc_to_ui()
+	_mark_dirty()
+	_refresh_all()
+	_set_template_note("已应用模板「%s」：%d×%d、%d 颗雷（可 Ctrl+Z 撤销）。" % [
+		template_name, doc.rows, doc.cols, doc.mine_count()])
+	_toast("已套用模板「%s」：可以直接试玩；想重来按 Ctrl+Z" % template_name, false, 4.5)
+	return true
 
 
 func _build_right_panel() -> Control:
@@ -716,22 +951,28 @@ func _build_props_tab() -> Control:
 		+ "这块棋盘就按「谁挨着谁」来算——能用上的规则会变少。\n"
 		+ "如果下面的「本盘问题」冒出红字，照着它说的改就行。"))
 
-	# 形状族：借 `ShapeGenerator` 的九族实现（这里先接最常用的两族；加族只需再加一个分支）
-	box.add_child(_section_label("形状（六边形 / 三角等）"))
+	# 形状族：借 `ShapeGenerator` 的实现（这里接最常用的两族 + 参数化轮廓三族；加族只需再加一个分支）
+	box.add_child(_section_label("形状（六边形 / 三角 / 圆 / 星 / 扇）"))
 	_shape_opt = OptionButton.new()
 	_shape_opt.add_item("方形网格（默认）", 0)
 	_shape_opt.add_item("蜂窝六边形", 1)
 	_shape_opt.add_item("三角网格", 2)
+	_shape_opt.add_item("圆形", 3)
+	_shape_opt.add_item("星形（五角）", 4)
+	_shape_opt.add_item("扇形（90°）", 5)
 	_shape_opt.item_selected.connect(func(_i: int) -> void: _on_shape_selected())
 	box.add_child(_shape_opt)
 	var srow := HBoxContainer.new()
 	srow.add_child(_plain_label("形状尺寸"))
-	_shape_size = _spin(2, 12, 1)
+	# 上限 40（原 12）：让"半径过大"的拦截**用户真能触发**（圆/星结构上限 32/35、扇 63），
+	# 而不是一段没人走得到的防御代码。超限由 `_budget_allows` → `_shape_upper_bound_reason` 拦住给提示。
+	_shape_size = _spin(2, 40, 1)
 	_shape_size.value = 4
 	_shape_size.value_changed.connect(func(_v: float) -> void: _on_shape_selected())
 	srow.add_child(_shape_size)
 	box.add_child(srow)
-	box.add_child(_plain_label("选形状后，邻域/边界控件不适用；雷位与障碍照常编辑。"))
+	box.add_child(_plain_label("选形状后，邻域/边界控件不适用；雷位与障碍照常编辑。"
+		+ "「形状尺寸」对圆 / 星 / 扇形是半径（格）。"))
 	scroll.add_child(box)
 	return scroll
 
@@ -786,6 +1027,10 @@ func _build_verify_tab() -> Control:
 	_verify_plain = _plain_label("")
 	_verify_plain.add_theme_font_size_override("font_size", 14)
 	box.add_child(_verify_plain)
+	# 难度星级（1~5 星）：`Difficulty.stars_of_steps` 吃**推理轮数**；旧三档文案仍在下一条。
+	_verify_stars = _plain_label("")
+	_verify_stars.add_theme_font_size_override("font_size", 14)
+	box.add_child(_verify_stars)
 	_verify_state = _plain_label("")
 	box.add_child(_verify_state)
 	var scroll := ScrollContainer.new()
@@ -794,6 +1039,34 @@ func _build_verify_tab() -> Control:
 	_verify_issues.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(_verify_issues)
 	box.add_child(scroll)
+
+	# 推理链回放（文档「六」）：数据来自 ProofLog，窗口计算/读取在 ReplayModel（纯逻辑、已单测）。
+	# **虚拟化**：总高 = 步数 × 行高，但只实例化 `visible_range()` 给出的那几行 ⇒ 万步日志也不会
+	# 一次性建上万个节点（H 类内存爆炸的逃生口）。
+	# 【为什么放在验证页】它和「开始验证」是同一条路径：先验证，再看"这盘是怎么推出来的"。
+	# 【为什么不新开页签】`test_level_editor_smoke` 钉死了"右侧正好 4 页"，本切片不许削弱既有断言。
+	box.add_child(_section_label("推理链回放（点一行，把棋盘定位到那一步）"))
+	_replay_btn = _action_button("生成推理链回放", _on_replay_build)
+	_replay_btn.tooltip_text = "推导一遍这盘的推理链，列成可点列表；点某一行会把棋盘定位到那一步的结论格"
+	box.add_child(_replay_btn)
+	_replay_banner = _plain_label("")
+	_replay_banner.visible = false
+	# 截断是**如实透出**的警告，用暖色 + ⚠ 双信号（颜色不能是唯一信号）
+	_replay_banner.add_theme_color_override("font_color", Color(1.0, 0.72, 0.2, 1.0))
+	box.add_child(_replay_banner)
+	_replay_note = _plain_label("点上面的按钮生成；生成后滚动列表，点某一行会定位到那一步的结论格。")
+	box.add_child(_replay_note)
+	_replay_scroll = ScrollContainer.new()
+	_replay_scroll.custom_minimum_size = Vector2(0, 150)
+	_replay_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_replay_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	# 列表内容是一个**纯 Control**（不用 VBoxContainer）：行按绝对坐标摆放才能只建视口内的行。
+	_replay_rows = Control.new()
+	_replay_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_replay_rows.mouse_filter = Control.MOUSE_FILTER_PASS
+	_replay_scroll.add_child(_replay_rows)
+	_replay_scroll.get_v_scroll_bar().value_changed.connect(_on_replay_scrolled)
+	box.add_child(_replay_scroll)
 	return box
 
 
@@ -1008,13 +1281,171 @@ func _doc_to_ui() -> void:
 		"tri_grid":
 			_shape_opt.selected = 2
 			_shape_size.value = int(doc.shape_params.get("cols", 4))
+		"circle":
+			_shape_opt.selected = 3
+			_shape_size.value = int(doc.shape_params.get("radius", 4))
+		"star":
+			_shape_opt.selected = 4
+			_shape_size.value = int(doc.shape_params.get("outer_radius", 4))
+		"sector":
+			_shape_opt.selected = 5
+			_shape_size.value = int(doc.shape_params.get("radius", 4))
 		_:
 			_shape_opt.selected = 0
 	_syncing = false
 
 
+## 格子数事前估算的**统一闸门**（改尺寸 / 换形状 / 随机布雷共用）。
+## 返回 true = 允许继续；false = 硬阻（不执行，已弹提示）。`warn` 档执行但顺手提示。
+## 【为什么在 UI 侧而非 doc 侧】doc 是纯数据、没有 toast；"估算了要不要真的做"是交互决策。
+##
+## 【为什么 estimate 之外还要一道"形状上界"】`EditorDoc.estimate_cells` 对圆/星/扇给的是
+## **精确几何格数**，漏掉两堵更严的墙：① `ShapeGenerator.build_*` 建盘前用**闭式上界** `π(r+1)²+1`
+## 拒收（超 5000 ⇒ 返回 0 格 ⇒ 盘变空）；② `validate()`/加载器用 `rows*cols > 4096`（形状盘 rows*cols
+## = 包围盒面积，与格数无关）⇒ 能编辑、不能玩。故先过 `_shape_upper_bound_reason`（两道取更严）。
+func _budget_allows(kind: String, params: Dictionary, est_rows: int, est_cols: int) -> bool:
+	var shape_reason := _shape_upper_bound_reason(kind, params)
+	if shape_reason != "":
+		_toast(shape_reason, true, 7.0)
+		return false
+	var rep := EditorDoc.check_cell_budget(EditorDoc.estimate_cells(kind, params, est_rows, est_cols))
+	if not bool(rep["ok"]):
+		_toast_cell_budget_block(rep)
+		return false
+	if str(rep["level"]) == "warn":
+		_toast(str(rep["reason"]), false, 3.5)
+	return true
+
+
+## 圆 / 星 / 扇的**生成器侧格数上界**：与 `ShapeGenerator.build_*` 建盘前那道闸门
+## `_budget_reason(_disk_upper_bound(...))` **逐字同入参**（只读复用 core 的权威公式，
+## 不在此另立魔数）。返回 0 = 该族没有这道闸门（方阵 / 六边形 / 三角…只在 estimate 层判）。
+func _shape_upper_bound(kind: String, params: Dictionary) -> float:
+	match kind:
+		"circle":
+			return ShapeGenerator._disk_upper_bound(float(params.get("radius", 0)))
+		"star":
+			return ShapeGenerator._disk_upper_bound(float(params.get("outer_radius", 0)))
+		"sector":
+			var span: float = float(params.get("end_deg", 0.0)) - float(params.get("start_deg", 0.0))
+			return ShapeGenerator._disk_upper_bound(float(params.get("radius", 0))) * span / 360.0
+	return 0.0
+
+
+func _shape_radius_of(kind: String, params: Dictionary) -> int:
+	return int(params.get("outer_radius", 0)) if kind == "star" else int(params.get("radius", 0))
+
+
+## 形状盘的真实 rows/cols：与 `EditorDoc.sync_size_to_shape()` **同一口径**（生成器真建一次盘，
+## 取归一化包围盒）。返回 (0,0) = 建不出来（非法参数 / 生成器闸门已拒）。
+func _shape_bbox_size(kind: String, params: Dictionary) -> Vector2i:
+	var g: AdjacencyGrid = ShapeGenerator.to_adjacency_grid(kind, params)
+	if g == null:
+		return Vector2i.ZERO
+	return AdjacencyGrid.normalized(g).size()
+
+
+## 结构硬上限预检：`EditorDoc.validate()` / `LevelGuard` 都用 `rows*cols > MAX_CELLS(4096)` 硬拒
+## （"能编辑、不能玩"，重导入还会被加载器拒收）。形状盘的 rows*cols = **包围盒面积**，与格数无关
+## ⇒ 不能拿 `estimate_cells`（格数）去比 4096。先用便宜上界 (2r+1)² 排除，只有它超了才真建一次盘
+## 取精确包围盒——所以圆/星只在边界那一两档付这笔钱，常规半径零开销。
+func _shape_bbox_over(kind: String, params: Dictionary) -> bool:
+	var side := 2 * _shape_radius_of(kind, params) + 1
+	if side * side <= EditorDoc.MAX_CELLS:
+		return false
+	var sz := _shape_bbox_size(kind, params)
+	return sz.x * sz.y > EditorDoc.MAX_CELLS
+
+
+## 该轮廓参数"生成器会产格 **且** 不越结构硬上限" ⇒ 可建（两道闸门取更严的那个）。
+func _shape_radius_allowed(kind: String, params: Dictionary) -> bool:
+	if int(clampf(_shape_upper_bound(kind, params), 0.0, 9.0e18)) > EditorDoc.MAX_CELL_BUDGET:
+		return false
+	return not _shape_bbox_over(kind, params)
+
+
+## 上界预检的可读原因："" = 生成器会照做且结构不超限；非空 = **该半径不可用**。
+## 两道闸门各自说清"为什么"，但**共用同一个可用上限数字**（避免用户在 5000 / 4096 两堵墙间来回弹）：
+##   A. 生成器闭式上界 > MAX_CELL_BUDGET(5000) ⇒ `build_*` 直接返回 0 格（盘会变空）；
+##   B. 包围盒 rows*cols > MAX_CELLS(4096) ⇒ 校验报错、不能试玩/保存、重导入被拒（能编辑、不能玩）。
+func _shape_upper_bound_reason(kind: String, params: Dictionary) -> String:
+	if kind != "circle" and kind != "star" and kind != "sector":
+		return ""
+	var label := _shape_kind_label(kind)
+	var r := _shape_radius_of(kind, params)
+	if int(clampf(_shape_upper_bound(kind, params), 0.0, 9.0e18)) > EditorDoc.MAX_CELL_BUDGET:
+		var rmax_gen := _max_usable_shape_radius(kind, params)
+		return "%s：当前半径 %d 过大——生成器为避免盘爆炸会直接放弃（返回 0 个格子，盘会变空）。\n" % [
+				label, r] + "可用上限约 %d 格：请把「形状尺寸」调到 %d 以内再试。" % [rmax_gen, rmax_gen]
+	if _shape_bbox_over(kind, params):
+		var sz := _shape_bbox_size(kind, params)
+		var rmax := _max_usable_shape_radius(kind, params)
+		return "%s：当前半径 %d 过大——盘面 %d×%d 共 %d 格，超过硬上限 %d" % [
+				label, r, sz.x, sz.y, sz.x * sz.y, EditorDoc.MAX_CELLS] \
+				+ "（能编辑、不能试玩/保存，重新导入会被拒）。\n可用上限约 %d 格：请把「形状尺寸」调到 %d 以内再试。" % [rmax, rmax]
+	return ""
+
+
+## 该轮廓参数下**真正可建**的最大半径——两道闸门取更严（提示里只给这一个数字）。
+## 生成器的闭式上界是"安全上界" ⇒ 在 [1, 上界] 上二分（谓词对半径单调），再线性纠正边界。
+func _max_usable_shape_radius(kind: String, params: Dictionary) -> int:
+	if kind != "circle" and kind != "star" and kind != "sector":
+		return 0
+	var frac := 1.0
+	if kind == "sector":
+		frac = maxf((float(params.get("end_deg", 0.0))
+			- float(params.get("start_deg", 0.0))) / 360.0, 0.0)
+	if frac <= 0.0:
+		return 0
+	var rkey := "outer_radius" if kind == "star" else "radius"
+	var probe := params.duplicate()
+	probe[rkey] = 1
+	if not _shape_radius_allowed(kind, probe):
+		return 0
+	var lo := 1
+	var hi := maxi(clampi(int(sqrt(maxf((float(EditorDoc.MAX_CELL_BUDGET) - 1.0) / (PI * frac), 0.0))) - 1,
+			1, 1000000), 1)
+	while lo < hi:
+		var mid := (lo + hi + 1) / 2
+		probe[rkey] = mid
+		if _shape_radius_allowed(kind, probe):
+			lo = mid
+		else:
+			hi = mid - 1
+	while lo < 1000000:
+		probe[rkey] = lo + 1
+		if not _shape_radius_allowed(kind, probe):
+			break
+		lo += 1
+	return lo
+
+
+func _shape_kind_label(kind: String) -> String:
+	match kind:
+		"circle":
+			return "圆形"
+		"star":
+			return "星形"
+		"sector":
+			return "扇形"
+	return kind
+
+
+## 预算硬阻提示：说清"预计多少格"，并把**三条出路**逐条列出来（小白不必自己想办法）。
+func _toast_cell_budget_block(rep: Dictionary) -> void:
+	var hints: Array = rep.get("hints", [])
+	var lines: Array[String] = []
+	for i in hints.size():
+		lines.append("%d) %s" % [i + 1, str(hints[i])])
+	_toast("%s\n可行的出路：%s" % [str(rep.get("reason", "")), "；".join(lines)], true, 7.0)
+
+
 func _on_size_changed() -> void:
 	if _syncing:
+		return
+	# 事前估算：先按"将要采用"的行/列算格数，超了就不改文档（并把界面拉回文档值）。
+	if not _budget_allows(doc.shape_kind, doc.shape_params, int(_rows_spin.value), int(_cols_spin.value)):
+		_doc_to_ui()
 		return
 	_push_undo(false)
 	doc.rows = int(_rows_spin.value)
@@ -1052,22 +1483,52 @@ func _on_neighborhood_changed() -> void:
 	_refresh_all()
 
 
-## 选形状 ⇒ 棋盘改由 `ShapeGenerator` 生成（九族现成），并把 rows/cols 同步成其包围盒。
+## 选形状 ⇒ 棋盘改由 `ShapeGenerator` 生成（网格族 + 参数化轮廓族均为现成实现），并把
+## rows/cols 同步成其包围盒。
 ## 形状盘上「邻域/边界」不适用（与载入外部拓扑同理，validate 会给出 `shape_active` 提醒）。
 func _on_shape_selected() -> void:
 	if _syncing:
 		return
-	_push_undo(false)
+	# 先按"将要采用"的形状参数估算格数（纯计算，不建盘）：超最高上限就**不动文档**，
+	# 把下拉/尺寸拉回当前值，避免界面显示一个没生效的选择。
+	var kind := ""
+	var params: Dictionary = {}
+	# 注意：不得命名为 `size`——会遮蔽 Control 基类的 `size` 属性（test_code_hygiene 会红）。
+	var shape_dim := int(_shape_size.value)
 	match _shape_opt.selected:
 		1:
-			doc.shape_kind = "hex"
-			doc.shape_params = {"size": int(_shape_size.value)}
+			kind = "hex"
+			params = {"size": shape_dim}
 		2:
-			doc.shape_kind = "tri_grid"
-			doc.shape_params = {"cols": int(_shape_size.value), "rows": int(_shape_size.value)}
+			kind = "tri_grid"
+			params = {"cols": shape_dim, "rows": shape_dim}
+		3:
+			# 圆：默认 precision 24（与 build_circle 签名默认一致）。
+			kind = "circle"
+			params = {"radius": shape_dim, "precision": 24}
+		4:
+			# 星形：五角 + 内外半径比 0.5（合理默认；半径由「形状尺寸」给）。
+			kind = "star"
+			params = {"points": 5, "outer_radius": shape_dim, "inner_ratio": 0.5}
+		5:
+			# 扇形：默认 0°→90° 的四分之一扇（顶点在下方）。
+			kind = "sector"
+			params = {"radius": shape_dim, "start_deg": 0.0, "end_deg": 90.0}
 		_:
-			doc.shape_kind = ""
-			doc.shape_params = {}
+			kind = ""
+			params = {}
+	var est_rows := shape_dim if kind != "" else int(_rows_spin.value)
+	var est_cols := shape_dim if kind != "" else int(_cols_spin.value)
+	# 【已删掉旧的包围盒兜底】那段曾把圆/星/扇的 est_rows/est_cols 覆盖成 (2r+1)²，
+	# 但 `EditorDoc.estimate_cells` 现在对这三族**按 shape_params 算精确几何格数**、根本不看
+	# 这两个参数 ⇒ 兜底早已失效（只有副作用：让人误以为它是防线）。真正的防线是
+	# `_budget_allows` → `_shape_upper_bound_reason`：用生成器同一上界拦住"会返回 0 格"的半径。
+	if not _budget_allows(kind, params, est_rows, est_cols):
+		_doc_to_ui()
+		return
+	_push_undo(false)
+	doc.shape_kind = kind
+	doc.shape_params = params
 	doc.sync_size_to_shape()
 	# 换盘型后原来的雷/障碍可能落在盘外：**移走并告知**（画布上没有那个格 ⇒ 留着会变成
 	# "看得见的校验错误 + 看不见的雷"，比移除更糟）。已 `_push_undo`，可一键撤销。
@@ -1203,9 +1664,13 @@ func _on_cell_edit_started(_pos: Vector2i) -> void:
 ## 改一格后的**快路径**：只重算"该格 + 其邻居"的线索值并刷新状态栏；
 ## 昂贵的检查（拓扑审计 / 结构校验）与全量预览合并到去抖里跑（见 `_process`）。
 func _on_cell_edited(pos: Vector2i) -> void:
+	# 对称（Ctrl+G）：单格手势把同一格型镜像到对称位置（见 `_apply_symmetry` 的范围约束）。
+	var mirrored := _apply_symmetry(pos)
 	_sync_declared_total()
 	_mark_dirty()
 	_refresh_preview_around(pos)
+	for mp in mirrored:
+		_refresh_preview_around(mp)
 	_refresh_status()
 	_checks_due = Time.get_ticks_msec() + CHECKS_IDLE_MS
 
@@ -1305,6 +1770,11 @@ func _sync_declared_total() -> void:
 
 
 func _random_mines() -> void:
+	# 事前估算：盘太大就别撒雷（随机布雷是最容易一次建大盘、最该先拦的批量动作）。
+	var budget := doc.cell_budget_report()
+	if not bool(budget["ok"]):
+		_toast_cell_budget_block(budget)
+		return
 	# 按钮命令 ⇒ 自成一步撤销（不被 700ms 合并窗折进上一条命令）
 	var target := int(_mines_spin.value)
 	# 【审查修 A3（真 bug）】这里原来用 `for y in doc.rows / for x in doc.cols` 双层遍历，而形状盘
@@ -1342,6 +1812,8 @@ func _random_mines() -> void:
 	_sync_declared_total()
 	_mark_dirty()
 	_refresh_all()
+	if str(budget["level"]) == "warn":
+		_toast(str(budget["reason"]), false, 3.5)
 
 
 ## 「清空全部雷/障碍/翻开」：这是"一下就没了"的操作 ⇒ **先问一句**。
@@ -1384,7 +1856,11 @@ func _paste_selection() -> void:
 		var rel: Vector2i = item["rel"]
 		var kind := str(item["kind"])
 		var p := base + rel
-		if p.x < doc.cols and p.y < doc.rows:
+		# 【审查遗留修复（A3 同族，真 bug）】原来用**包围盒**判界 `p.x < doc.cols and p.y < doc.rows`：
+		#   · 形状盘（蜂窝/三角/环形）上会把**洞格**一起写了（盘外看不见的格）；
+		#   · 负数坐标**竟然算通过**（`-1 < cols` 为真）⇒ 往左上角粘贴会直接写到盘外。
+		# 与 `editor_canvas._fill_rect` 统一口径：问网格 `in_board()`。
+		if doc.grid().in_board(p):
 			_apply_kind_at(p, kind)
 	_sync_declared_total()
 	_mark_dirty()
@@ -1400,7 +1876,9 @@ func _cells_in(rect: Rect2i) -> Array:
 	for y in range(rect.position.y, rect.position.y + rect.size.y + 1):
 		for x in range(rect.position.x, rect.position.x + rect.size.x + 1):
 			var p := Vector2i(x, y)
-			if p.x >= doc.cols or p.y >= doc.rows:
+			# 同上（A3 同族）：复制也要按**网格**判界 —— 包围盒会把洞格与负坐标都当成"盘内"，
+			# 于是剪贴板里会混进盘外格，粘贴时再散布出去。
+			if not doc.grid().in_board(p):
 				continue
 			out.append({"rel": p - rect.position, "kind": _kind_of(p)})
 	return out
@@ -1435,6 +1913,8 @@ func _apply_kind_at(p: Vector2i, kind: String) -> void:
 func _mark_dirty() -> void:
 	_dirty = true
 	_last_change_ms = Time.get_ticks_msec()
+	# 文档一变，热力图/回放这些"按当时盘面算出来的"派生视图立刻作废（见 `_invalidate_derived_views`）。
+	_invalidate_derived_views()
 
 
 func _refresh_all() -> void:
@@ -1484,9 +1964,15 @@ func _refresh_issue_list(rep: Dictionary) -> void:
 				break
 			var d: Dictionary = it
 			var pos: Vector2i = d["pos"]
-			_issues_box.add_child(_plain_label("· [%s] %s%s" % [
+			var line := "· [%s] %s%s" % [
 				str(bucket[1]), str(d["text"]),
-				"" if pos.x < 0 else "（格 %d,%d）" % [pos.x, pos.y]]))
+				"" if pos.x < 0 else "（格 %d,%d）" % [pos.x, pos.y]]
+			# 带格坐标的问题 → 做成可点条目，点了把视口**定位到那一格**（文档「六」点击跳转）。
+			# 与格无关的问题（pos = (-1,-1)）仍是纯文字。
+			if pos.x >= 0:
+				_issues_box.add_child(_jump_button(line, pos))
+			else:
+				_issues_box.add_child(_plain_label(line))
 			shown += 1
 	if shown >= 12:
 		_issues_box.add_child(_plain_label("…还有更多，先在画布里逐个修掉高亮格"))
@@ -1514,7 +2000,9 @@ func _refresh_status() -> void:
 		return
 	_density_label.text = "总格数 %d，可用 %d，雷 %d，密度 %.1f%%" % [
 		doc.rows * doc.cols, doc.cell_count(), doc.mine_count(), doc.density() * 100.0]
-	var tool_names := ["画笔", "橡皮", "矩形填充", "区域选择", "平移"]
+	# 工具名**必须与 `EditorCanvas.Tool` 逐一对应**：数字快选 1~9 能选到直线/油漆桶，
+	# 旧表只有 5 项 ⇒ 会 IndexError（这就是"新工具追加在末尾"要同步的地方）。
+	var tool_names := ["画笔", "橡皮", "矩形填充", "区域选择", "平移", "直线", "油漆桶"]
 	var kind_names := {"mine": "地雷", "obstacle": "障碍", "reveal": "初始已翻开", "clear": "清空"}
 	var err := str(canvas.get_meta("first_error", "")) if canvas != null else ""
 	var pos_text := "盘外" if canvas == null or canvas.hover.x < 0 else "(%d,%d)" % [canvas.hover.x, canvas.hover.y]
@@ -2363,12 +2851,21 @@ func _on_verify() -> void:
 
 
 func _run_verify() -> void:
-	var r := EditorVerify.verify(doc)
+	# 按岛分别判定（W4）：单岛时 `verify_islands` 内部直接复用 `verify()`（与旧口径逐一一致），
+	# 多岛时逐岛给结论。UI 只消费 state/label/reason/stats ⇒ 单岛显示与现在**完全一样**。
+	# 【PerfLedger 接线 ①】如实上报本次验证的**实测墙钟耗时**（模块只存/合计，自己不测、不猜）。
+	var _verify_t0 := Time.get_ticks_msec()
+	var r := EditorVerify.verify_islands(doc)
+	_perf.report_ms(PERF_LEDGER.JOB_VERIFY, float(Time.get_ticks_msec() - _verify_t0))
+	# 【PerfLedger 接线 ①】下面这几行只是拼统计文本（纯 Label 赋值），也顺手记一下它的耗时（stats 活）。
+	var _stats_t0 := Time.get_ticks_msec()
 	# 先给"人话结论"（小白只看这一行就够），技术细节放下一行（保留，供作者/再交给 AI 时用）
 	if _verify_plain != null:
 		_verify_plain.text = _plain_conclusion(str(r["state"]))
 	_verify_state.text = "%s\n%s" % [str(r["label"]), str(r["reason"])]
 	var st: Dictionary = r["stats"]
+	if _verify_stars != null:
+		_verify_stars.text = _stars_line(st)
 	if not st.is_empty():
 		var sol := int(st.get("solutions", -1))
 		# 去掉"后端 cpsat"这类黑话（stats 字典里仍保留 backend，测试要用）
@@ -2376,8 +2873,52 @@ func _run_verify() -> void:
 			int(st.get("rounds", 0)), int(st.get("revealed_start", 0)), int(st.get("forced_safe", 0)),
 			int(st.get("forced_mine", 0)), "未知" if sol < 0 else str(sol),
 			int(st.get("elapsed_ms", 0))]))
+		# 多岛：逐岛一行（"1 号岛 OK / 2 号岛需盲猜 3 次"）。单岛不加 —— 保持与旧显示一致。
+		var islands: Array = st.get("islands", [])
+		if islands.size() > 1:
+			_verify_issues.add_child(_plain_label("按岛分别判定（共 %d 个岛）：" % islands.size()))
+			for it in islands:
+				_verify_issues.add_child(_plain_label(_island_line(it)))
 	for it in r["issues"]:
 		_verify_issues.add_child(_plain_label("· %s" % str((it as Dictionary)["text"])))
+	_perf.report_ms(PERF_LEDGER.JOB_STATS, float(Time.get_ticks_msec() - _stats_t0))
+
+
+## 单个岛的结论一行（"1 号岛：无需猜测可解（10 格 / 1 雷）"）。
+func _island_line(it: Dictionary) -> String:
+	var head := "%d 号岛：" % int(it.get("id", 0))
+	var cells := int(it.get("cell_count", 0))
+	var mines := int(it.get("mines", 0))
+	var st := str(it.get("state", ""))
+	var tail := ""
+	match st:
+		EditorVerify.STATE_NO_GUESS:
+			tail = "OK（不用猜就能推完）"
+		EditorVerify.STATE_NEEDS_GUESS:
+			var g := int(it.get("guesses", -1))
+			var left := int(it.get("left", -1))
+			# guesses < 0 = 该岛走的是单岛旧路径（无逐岛盲猜计数）⇒ 只说"要猜"
+			if g >= 0:
+				tail = "需盲猜 %d 次（还有 %d 格推不出来）" % [g, left]
+			else:
+				tail = "需要盲猜"
+		EditorVerify.STATE_CONTRADICTION:
+			tail = "有逻辑矛盾"
+		_:
+			tail = "未能得出结论"
+	return "%s%s ｜ %d 格 / %d 雷" % [head, tail, cells, mines]
+
+
+## 难度星级行（W5）：`stars_of_steps` 吃推理轮数；旧三档文案（档位名）同时给出，不互相取代。
+func _stars_line(st: Dictionary) -> String:
+	if st.is_empty():
+		return ""
+	var rounds := int(st.get("rounds", 0))
+	var stars := Difficulty.stars_of_steps(rounds)
+	var tier := Difficulty.tier_of_peak(rounds)
+	var tier_text := Difficulty.tier_short(tier) if tier != "" else "（未定档）"
+	return "难度：%s（%d/5 星） ｜ 档位（按推理轮数近似）：%s ｜ 推理 %d 轮" % [
+		Difficulty.stars_text(stars), stars, tier_text, rounds]
 
 
 ## 验证结论 → 小白版一句话（技术原文仍显示在下一行）。
@@ -2755,7 +3296,20 @@ func _on_help_tab_changed(_idx: int) -> void:
 	_help_layer.call("set_page_items", _help_page_items())
 
 
+## 「试玩」按钮：整场景切换（等同正式游戏，HUD 里有「回编辑器」）。
 func _playtest() -> void:
+	if not _prepare_play_session():
+		return
+	# 留下回程（2026-10-02 用户反馈："点完试玩就回不来" —— 游戏侧 HUD 唯一的出口是「关卡列表」→ 选关页）。
+	# 游戏 HUD 与结算层见到它非空就多显示一个「回编辑器」；正式发售的游戏里它一直是空串。
+	GameSession.playtest_return = PLAYTEST_RETURN
+	get_tree().change_scene_to_file("res://ui/board_view.tscn")
+
+
+## 试玩前的公共准备：校验 → 注册规则 → **显式存一手** → 写试玩文件 → 启动会话。
+## 【为什么要先存一手】自动存档只在"改动后空闲 1.2 秒"才写；`_playtest` 会切场景销毁编辑器节点，
+## 而 `_enter_playtest`（Tab 秒切）则留在本场景 —— 两条路都先把改动落盘/落内存，切回必然不丢。
+func _prepare_play_session() -> bool:
 	var rep := doc.validate()
 	if not bool(rep["ok"]):
 		var first := ""
@@ -2763,28 +3317,67 @@ func _playtest() -> void:
 			first = str((it as Dictionary)["text"])
 			break
 		_toast("先修好这些问题再试玩：%s" % first, true)
-		return
+		return false
 	var reg := doc.register_rule()
 	if not bool(reg["ok"]):
 		_toast("规则注册失败：%s" % str(reg["reason"]), true)
-		return
-	# 【为什么要先存一手】自动存档只在"改动后空闲 1.2 秒"才写；而试玩会直接切场景把编辑器节点销毁。
-	# 小白实测路径是"画完立刻点试玩" ⇒ 最后那 1 秒内的改动会丢。这里显式存一次。
+		return false
 	_write_autosave()
 	DirAccess.make_dir_recursive_absolute(EDITOR_DIR)
 	var f := FileAccess.open(PLAY_PATH, FileAccess.WRITE)
 	if f == null:
 		_toast("无法写入试玩文件", true)
-		return
+		return false
 	f.store_string(JSON.stringify(doc.to_level_json(), "  "))
 	f.close()
 	if not GameSession.start_level(PLAY_PATH):
 		_toast("试玩加载失败（关卡数据被加载器拒绝）", true)
+		return false
+	return true
+
+
+# ==================== Tab 编辑↔试玩秒切（文档「二」） ====================
+
+## Tab：**不切场景**，把棋盘作为一个覆盖层内嵌进编辑器 ⇒ 秒切、编辑器状态（撤销栈/文档/面板）
+## 原样留在内存里，切回连 1 ms 都不用等。真正的游戏（HUD/结算/回程）全由 `board_view.tscn` 承担。
+## 平台没接好/加载失败时退化成整场景切换（绝不让 Tab "点了没反应"）。
+func _toggle_playtest() -> void:
+	if _play_overlay != null and is_instance_valid(_play_overlay):
+		_exit_playtest()
+	else:
+		_enter_playtest()
+
+
+func _enter_playtest() -> void:
+	if not _prepare_play_session():
 		return
-	# 留下回程（2026-10-02 用户反馈："点完试玩就回不来" —— 游戏侧 HUD 唯一的出口是「关卡列表」→ 选关页）。
-	# 游戏 HUD 与结算层见到它非空就多显示一个「回编辑器」；正式发售的游戏里它一直是空串。
 	GameSession.playtest_return = PLAYTEST_RETURN
-	get_tree().change_scene_to_file("res://ui/board_view.tscn")
+	var scene: PackedScene = load("res://ui/board_view.tscn")
+	if scene == null:
+		# 退化路径：内嵌不了就照旧整场景切（行为与「试玩」按钮一致）
+		get_tree().change_scene_to_file("res://ui/board_view.tscn")
+		return
+	var layer := CanvasLayer.new()
+	layer.name = "内嵌试玩"
+	layer.layer = 50                      # 压在编辑器所有层之上
+	layer.add_child(scene.instantiate())
+	add_child(layer)
+	_play_overlay = layer
+	# 状态机切到"试玩态"：作弊信息（雷/线索）**强制隐藏**，且这是唯一判据
+	_view_state.set_mode(VIEW_STATE.MODE_PLAY)
+	_apply_cheat_visibility()
+	_toast("已进入试玩（再按 Tab 回到编辑，改动都在）", false, 4.0)
+
+
+func _exit_playtest() -> void:
+	if _play_overlay != null and is_instance_valid(_play_overlay):
+		_play_overlay.queue_free()
+	_play_overlay = null
+	GameSession.playtest_return = ""
+	_view_state.set_mode(VIEW_STATE.MODE_EDIT)
+	_apply_cheat_visibility()
+	_refresh_all()
+	_toast("已回到编辑（改动没有丢）")
 
 
 func _back_to_select() -> void:
@@ -2795,16 +3388,20 @@ func _back_to_select() -> void:
 # ==================== 自动保存（原子写） ====================
 
 func _write_autosave() -> void:
+	# 【PerfLedger 接线 ①】上报本次"序列化 + 原子写盘"的实测耗时（含失败路径，别把失败算成 0）。
+	var _auto_t0 := Time.get_ticks_msec()
 	DirAccess.make_dir_recursive_absolute(EDITOR_DIR)
 	var tmp := AUTOSAVE_PATH + ".tmp"
 	var f := FileAccess.open(tmp, FileAccess.WRITE)
 	if f == null:
+		_perf.report_ms(PERF_LEDGER.JOB_AUTOSAVE, float(Time.get_ticks_msec() - _auto_t0))
 		return
 	f.store_string(JSON.stringify(doc.to_level_json(), "  "))
 	f.close()
 	# 三段式原子写：先写 tmp 再改名，避免断电/崩溃留下半截文件
 	DirAccess.rename_absolute(tmp, AUTOSAVE_PATH)
 	_dirty = false
+	_perf.report_ms(PERF_LEDGER.JOB_AUTOSAVE, float(Time.get_ticks_msec() - _auto_t0))
 
 
 func _load_autosave_if_any() -> void:
@@ -2833,26 +3430,753 @@ func _on_theme_settled() -> void:
 	_refresh_all()
 
 
-func _unhandled_key_input(event: InputEvent) -> void:
-	if not (event is InputEventKey) or not event.pressed or event.echo:
+# ==================== 快捷键全套（文档「二」） ====================
+#
+# 【为什么用 `_input` 而不是 `_unhandled_key_input`】两件事必须**抢在 GUI 之前**：
+#   ① Tab 秒切 —— 不抢的话 Godot 会把它当"焦点导航"，焦点在控件之间乱跳，秒切根本不触发；
+#   ② Alt+点击吸管 —— 不抢的话画布会先把它当"画笔落一格"（`editor_canvas._gui_input` 不看修饰键）。
+# 键盘监听归编辑器（界面层），画布只收结果（与 `set_pan_mode` 的分工一致）。
+# 【纪律】焦点在文本框里时**一律不抢**：否则在「关卡名字」里打 `b` 会切工具、打 `1` 会换格型。
+
+func _input(event: InputEvent) -> void:
+	# 【试玩态】只保留一个属于编辑器的键：Tab（回编辑）。其余键鼠**一律不抢** ——
+	# 内嵌的 `board_view` 要用空格/R/方向键（翻开、重开、移动），编辑器若把它们吃掉，
+	# 试玩里按 R 会变成"在覆盖层背后随机布雷"（真 bug，不是理论风险）。Tab 要抢：
+	# 否则游戏侧没人处理 Tab，玩家回不到编辑态。
+	if _view_state.is_play():
+		if event is InputEventKey and (event as InputEventKey).pressed \
+				and not (event as InputEventKey).echo \
+				and _bindings.action_for_event(event as InputEventKey) == "playtest_toggle":
+			_toggle_playtest()
+			get_viewport().set_input_as_handled()
+		return
+	if event is InputEventMouseButton:
+		if _handle_mouse_shortcut(event as InputEventMouseButton):
+			get_viewport().set_input_as_handled()
+		return
+	if not (event is InputEventKey):
 		return
 	var k := event as InputEventKey
-	if k.ctrl_pressed and k.keycode == KEY_Z:
-		_undo_once()
+	if k.echo:
+		return
+	var action := _bindings.action_for_event(k)
+	# 空格**抬起**必须在文本焦点之前处理：否则"按空格进平移 → 点进输入框 → 松空格"会让平移态卡住不恢复。
+	if not k.pressed and action == "pan_mode":
+		if canvas != null:
+			canvas.set_pan_mode(false)
 		get_viewport().set_input_as_handled()
-	elif k.ctrl_pressed and k.keycode == KEY_Y:
-		_redo_once()
+		return
+	if _text_focus_active():
+		return
+	if action == "":
+		return
+	if action == "pan_mode":
+		# 空格是**按住/抬起**两态：按住 = 左键拖动变成平移，抬起恢复（见 `canvas.set_pan_mode`）
+		if canvas != null:
+			canvas.set_pan_mode(k.pressed)
 		get_viewport().set_input_as_handled()
-	elif k.ctrl_pressed and k.keycode == KEY_S:
-		_save()
+		return
+	if not k.pressed:
+		return
+	if action == "help" and _help_layer != null:
+		_close_help()                        # F1 = 上下文帮助开关（开着再按就收起）
 		get_viewport().set_input_as_handled()
-	# 选区的复制/粘贴走快捷键（P6h）：用户的抱怨是"选完还得跑去左栏点按钮"太绕
-	elif k.ctrl_pressed and k.keycode == KEY_C:
-		_copy_selection()
-		get_viewport().set_input_as_handled()
-	elif k.ctrl_pressed and k.keycode == KEY_V:
-		_paste_selection()
-		get_viewport().set_input_as_handled()
+		return
+	_dispatch(action)
+	get_viewport().set_input_as_handled()
+
+
+## Alt+点击吸管：吸取该格的格型作为当前画笔（不改任何数据）。
+func _handle_mouse_shortcut(mb: InputEventMouseButton) -> bool:
+	if not mb.pressed or canvas == null or doc == null:
+		return false
+	if not _bindings.matches_mouse("eyedropper", mb):
+		return false
+	return _eyedropper_at(canvas.pos_at(canvas.get_local_mouse_position()))
+
+
+## 焦点是否在文本控件上（在就一律不抢按键 —— 见上面的纪律）。
+func _text_focus_active() -> bool:
+	var vp := get_viewport()
+	if vp == null:
+		return false
+	var fo := vp.gui_get_focus_owner()
+	return fo is LineEdit or fo is TextEdit
+
+
+## 快捷键动作分发（唯一入口：键盘、按钮、测试都走它）。
+func _dispatch(action: String) -> void:
+	if action.begins_with("digit_"):
+		_digit(int(action.substr(6)))
+		return
+	match action:
+		"playtest_toggle": _toggle_playtest()
+		"panel_focus": _cycle_panel_tab()
+		"grid_toggle": _toggle_grid()
+		"symmetry_cycle": _cycle_symmetry()
+		"cheat_toggle": _toggle_cheats()
+		"tool_brush": _set_tool(EditorCanvas.Tool.PAINT)
+		"tool_erase": _set_tool(EditorCanvas.Tool.ERASE)
+		"tool_pan": _set_tool(EditorCanvas.Tool.PAN)
+		"tool_select": _set_tool(EditorCanvas.Tool.SELECT)
+		# 文档语义：M=放雷、S=强制安全格（= 初始已翻开）。功能不新造数据结构，复用现成格型。
+		"kind_mine": _set_kind(EditorCanvas.KIND_MINE)
+		"kind_safe": _set_kind(EditorCanvas.KIND_REVEAL)
+		"undo": _undo_once()
+		"redo": _redo_once()
+		"copy": _copy_selection()
+		"cut": _cut_selection()
+		"paste": _paste_selection()
+		"duplicate": _duplicate_selection()
+		"save": _save()
+		"rotate_selection": _rotate_selection()
+		"mirror_selection": _mirror_selection()
+		"random_mines": _random_mines()
+		"reset_view": _reset_view()
+		"help": _toggle_help()
+		_: pass
+
+
+## 数字直选 1~9：① ~ ⑦ = 工具（按 `EditorCanvas.Tool` 顺序），⑧⑨ = 最常用的两个格型。
+## 【为什么是"工具+格型"而不是"数字 N 格型"】本仓 `EditorDoc.revealed` 的值恒为 null（线索数字由
+## `preview_clues()` 重算，见 core/editor_doc.gd:57）⇒ **没有**"每格存一个数字"的数据结构；
+## 文档要的"1~9 直接刷"在此落成"1~9 直选画笔/格型槽位"，不新造字段（团队口径）。
+func _digit(n: int) -> void:
+	match n:
+		1: _set_tool(EditorCanvas.Tool.PAINT)
+		2: _set_tool(EditorCanvas.Tool.ERASE)
+		3: _set_tool(EditorCanvas.Tool.RECT_FILL)
+		4: _set_tool(EditorCanvas.Tool.SELECT)
+		5: _set_tool(EditorCanvas.Tool.PAN)
+		6: _set_tool(EditorCanvas.Tool.LINE)
+		7: _set_tool(EditorCanvas.Tool.BUCKET)
+		8: _set_kind(EditorCanvas.KIND_MINE)
+		9: _set_kind(EditorCanvas.KIND_OBSTACLE)
+		_: pass
+
+
+## 切工具并**同步左栏互斥按钮的高亮**（否则按键切了、界面还亮着旧的，界面在骗人）。
+func _set_tool(p_tool: int) -> void:
+	if canvas == null:
+		return
+	canvas.tool = p_tool
+	for i in _tool_btns.size():
+		(_tool_btns[i] as Button).button_pressed = (i == p_tool)
+	_toast("工具：%s" % _tool_name(p_tool))
+
+
+func _tool_name(t: int) -> String:
+	var names := ["画笔", "橡皮", "矩形填充", "区域选择", "平移", "直线", "油漆桶"]
+	return names[t] if t >= 0 and t < names.size() else "?"
+
+
+func _set_kind(p_kind: String) -> void:
+	if canvas == null:
+		return
+	canvas.paint_kind = p_kind
+	var idx := _kind_index(p_kind)
+	for i in _kind_btns.size():
+		(_kind_btns[i] as Button).button_pressed = (i == idx)
+	_toast("格型：%s" % _kind_name(p_kind))
+
+
+func _kind_index(k: String) -> int:
+	match k:
+		EditorCanvas.KIND_MINE: return 0
+		EditorCanvas.KIND_OBSTACLE: return 1
+		EditorCanvas.KIND_REVEAL: return 2
+		EditorCanvas.KIND_CLEAR: return 3
+	return -1
+
+
+func _kind_name(k: String) -> String:
+	match k:
+		EditorCanvas.KIND_MINE: return "地雷"
+		EditorCanvas.KIND_OBSTACLE: return "障碍"
+		EditorCanvas.KIND_REVEAL: return "初始已翻开"
+		EditorCanvas.KIND_CLEAR: return "清空该格"
+	return "?"
+
+
+## G：网格线开关（走画布现成的 `set_show_grid`）。
+func _toggle_grid() -> void:
+	if canvas == null:
+		return
+	var on := not canvas.show_grid
+	canvas.set_show_grid(on)
+	if _grid_btn != null:
+		_grid_btn.button_pressed = on
+	_toast("网格线：%s" % ("开" if on else "关"))
+
+
+## Ctrl+G：对称模式循环 关 → 竖轴 → 横轴 → 四象。
+func _cycle_symmetry() -> void:
+	_sym_mode = (_sym_mode + 1) % 4
+	_refresh_sym_btn()
+	_toast("对称：%s" % _sym_label(_sym_mode))
+
+
+func _sym_label(m: int) -> String:
+	match m:
+		1: return "竖轴镜像"
+		2: return "横轴镜像"
+		3: return "四象（双轴 + 对角）"
+	return "关"
+
+
+func _refresh_sym_btn() -> void:
+	if _sym_btn != null:
+		_sym_btn.text = "对称：%s" % _sym_label(_sym_mode)
+
+
+## 对称镜像目标格（纯函数：只读 `doc.cols/rows` 与 `_sym_mode`，可单测）。
+func _symmetry_cells(pos: Vector2i) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	if doc == null:
+		return out
+	var mx := doc.cols - 1 - pos.x
+	var my := doc.rows - 1 - pos.y
+	var cand: Array[Vector2i] = []
+	match _sym_mode:
+		1: cand = [Vector2i(mx, pos.y)]
+		2: cand = [Vector2i(pos.x, my)]
+		3: cand = [Vector2i(mx, pos.y), Vector2i(pos.x, my), Vector2i(mx, my)]
+		_: cand = []
+	for p in cand:
+		if p != pos and not out.has(p):
+			out.append(p)
+	return out
+
+
+## 把刚改的一格镜像到对称位置。**只服务单格手势**（画笔/橡皮）：矩形填充 / 直线 / 油漆桶
+## 各有批量语义，镜像它们会让"一步撤销"变成一大片、且与用户的预期（画一片矩形）冲突，故明确不做。
+## 返回实际镜像到的格（调用方要顺手刷新这些格的线索预览）。判界一律问 `doc.grid().in_board`。
+func _apply_symmetry(pos: Vector2i) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	if _sym_mode == 0 or canvas == null or doc == null:
+		return out
+	if canvas.tool != EditorCanvas.Tool.PAINT and canvas.tool != EditorCanvas.Tool.ERASE:
+		return out
+	var kind := canvas.cell_kind(pos)
+	for p in _symmetry_cells(pos):
+		if doc.grid().in_board(p):
+			canvas.apply_kind(p, kind)     # 唯一写入口：自带 diff 记账（见 editor_canvas.apply_kind）
+			out.append(p)
+	return out
+
+
+## 编辑/试玩两态的"作弊信息"总闸：**只读统一状态机**，不在这里自己拼条件。
+func _apply_cheat_visibility() -> void:
+	var on := _view_state.is_cheat_visible()
+	if _cheat_btn != null:
+		_cheat_btn.button_pressed = on
+		# 文案写"当前状态"而不是"点了会怎样"：开关按钮的按下态本身就是"开"，文案再写命令会互相打架。
+		_cheat_btn.text = "雷/线索：显示（编辑态）" if on else "雷/线索：隐藏（编辑态）"
+	# 画布目前没有"显雷"接口（`editor_canvas.gd:_draw` 恒从 `doc.mine_set()` 画雷）⇒
+	# 有则转发（duck-typing），没有就先把状态记在统一状态机里、由状态栏如实反映。
+	if canvas != null and canvas.has_method("set_show_mines"):
+		canvas.call("set_show_mines", on)
+	# 热力图归**同一个判据**：试玩态强制隐藏（本文件不许自己拼 `mode == ...`）。
+	_apply_hotmap_visibility()
+
+
+func _toggle_cheats() -> void:
+	_view_state.toggle_cheats()
+	_apply_cheat_visibility()
+	_toast("已隐藏雷/线索（编辑态）" if not _view_state.cheats_on else "已显示雷/线索（编辑态）", false, 3.0)
+
+
+## Ctrl+Tab：切到右侧下一块面板（Tab 已被秒切占用，焦点切换只能走 Ctrl+Tab）。
+func _cycle_panel_tab() -> void:
+	var tabs := _right_tabs()
+	if tabs == null or tabs.get_tab_count() <= 0:
+		return
+	tabs.current_tab = (tabs.current_tab + 1) % tabs.get_tab_count()
+	# 不 `grab_focus()`：TabContainer 默认 focus_mode = NONE，抓焦点会被引擎拒（真机/CI 都会报错）。
+	# 快捷键由 `_input` 全局分发，本来就不依赖焦点在容器上。
+	_toast("面板：%s" % tabs.get_tab_title(tabs.current_tab))
+
+
+## Ctrl+0：重置视图（缩放与平移归位；编辑内容不动）。【2026-10-03】原 Ctrl+R 让给「选区镜像」。
+func _reset_view() -> void:
+	if canvas == null:
+		return
+	canvas.zoom = 1.0
+	canvas.pan = Vector2.ZERO
+	canvas.queue_redraw()
+	_toast("视图已重置")
+
+
+# ==================== 选区旋转 / 镜像（文档：R=选区旋转、Ctrl+R=镜像） ====================
+#
+# 【选区几何口径】与 `_cells_in` 一致：`Rect2i(P, S)` 覆盖 `P .. P+S`（共 (S.x+1)×(S.y+1) 格）。
+# 【为什么必须"格型守恒"】旋转/镜像是**位置重排**，格型多重集必须一格不增不减；所以：
+#   · 只做 in_board 格（判界一律 `doc.grid().in_board`）；
+#   · 若目标位置会越出盘面 ⇒ **整块不动**并提示（绝不裁剪，裁剪就是丢格型）。
+# 【为什么先清后写】旋转后目标块与原块可能不同（非方形矩形），先把"原块 ∪ 新块"清空再落格型，
+# 避免旧格残留导致格型数变多。
+
+## 【关键判界口径】"可寻址格" = 盘内格 **或** 障碍格。
+##
+## 为什么不能用裸 `in_board`：`EditorDoc` 在有障碍时**强制产出邻接表**（`editor_doc.gd:323`
+## "有障碍时必须强制产出邻接表：RectGrid 没有'格不存在'的表示法"），障碍格被 `_carve_holes`
+## 挖掉 ⇒ `grid().in_board(障碍格) == false`。但障碍格在坐标系里**仍是可写的格**（`.obstacles`
+## 就是证据）。旋转/镜像若按裸 `in_board` 判，就会：① 把选区里的障碍漏掉（格型不守恒）；
+## ② 目标格恰好是障碍时误判"越界"而整块拒绝 —— 实测就是这条把 `R=旋转` 钉成空操作。
+## 形状盘/异形盘上真正的**洞格**既不在盘内、也不是障碍 ⇒ 仍被正确排除（纪律没有被削弱）。
+func _addressable(p: Vector2i) -> bool:
+	return doc.grid().in_board(p) or doc.obstacles.has(p)
+
+
+## 选区覆盖块 → {相对坐标: 格型}（口径与 `_cells_in` 相同，但判界走 `_addressable`）。
+func _kind_map_in(rect: Rect2i) -> Dictionary:
+	var out: Dictionary = {}
+	for y in range(rect.position.y, rect.position.y + rect.size.y + 1):
+		for x in range(rect.position.x, rect.position.x + rect.size.x + 1):
+			var p := Vector2i(x, y)
+			if _addressable(p):
+				out[p - rect.position] = _kind_of(p)
+	return out
+
+
+## 清空一块选区覆盖格（判界走 `_addressable`，见其注释）。
+func _clear_block(rect: Rect2i) -> void:
+	for y in range(rect.position.y, rect.position.y + rect.size.y + 1):
+		for x in range(rect.position.x, rect.position.x + rect.size.x + 1):
+			var p := Vector2i(x, y)
+			if _addressable(p):
+				_apply_kind_at(p, EditorCanvas.KIND_CLEAR)
+
+
+## R：选区内容整体旋转 90°（顺时针）。非方形选区旋转后块变成 (h×w) 仍锚在左上角。
+func _rotate_selection() -> void:
+	if canvas == null or doc == null:
+		return
+	var sel := canvas.selection
+	if sel.size == Vector2i.ZERO:
+		_toast("先框选一块区域（区域选择工具），再旋转", true)
+		return
+	var w := sel.size.x + 1
+	var h := sel.size.y + 1
+	var src := _kind_map_in(sel)
+	var dst: Dictionary = {}
+	for rel in src:
+		var r: Vector2i = rel
+		# 顺时针 90°：rel' = (h-1-rel.y, rel.x)（新块 h×w）
+		var p := sel.position + Vector2i(h - 1 - r.y, r.x)
+		if not _addressable(p):
+			_toast("旋转后的区域会超出盘面——先框小一点或挪进盘内", true)
+			return
+		dst[p] = str(src[rel])
+	var new_sel := Rect2i(sel.position, Vector2i(h - 1, w - 1))
+	_push_undo(false)
+	_clear_block(sel)
+	_clear_block(new_sel)
+	for p in dst:
+		_apply_kind_at(p, str(dst[p]))
+	canvas.set_selection(new_sel)
+	_sync_declared_total()
+	_mark_dirty()
+	_refresh_all()
+	_toast("选区已旋转 90°（%d 格格型不变）" % dst.size())
+
+
+## Ctrl+R：选区内容镜像。默认**左右翻转**（水平镜像）；当前对称模式为「横轴镜像」时改**上下翻转**，
+## 与文档"可按当前对称轴或默认水平"一致。选区块尺寸不变 ⇒ 只需原位重排。
+func _mirror_selection() -> void:
+	if canvas == null or doc == null:
+		return
+	var sel := canvas.selection
+	if sel.size == Vector2i.ZERO:
+		_toast("先框选一块区域（区域选择工具），再镜像", true)
+		return
+	var w := sel.size.x + 1
+	var h := sel.size.y + 1
+	var left_right := _sym_mode != 2      # _sym_mode==2 是「横轴镜像」⇒ 改上下翻转
+	var src := _kind_map_in(sel)
+	var dst: Dictionary = {}
+	for rel in src:
+		var r: Vector2i = rel
+		var nr := Vector2i(w - 1 - r.x, r.y) if left_right else Vector2i(r.x, h - 1 - r.y)
+		var p := sel.position + nr
+		if not _addressable(p):
+			_toast("镜像后的区域会超出盘面——先框小一点或挪进盘内", true)
+			return
+		dst[p] = str(src[rel])
+	_push_undo(false)
+	_clear_block(sel)
+	for p in dst:
+		_apply_kind_at(p, str(dst[p]))
+	_sync_declared_total()
+	_mark_dirty()
+	_refresh_all()
+	_toast("选区已%s镜像（%d 格格型不变）" % ["左右" if left_right else "上下", dst.size()])
+
+
+## Ctrl+X：剪切选区（复制 + 清空原格）。
+func _cut_selection() -> void:
+	if canvas.selection.size == Vector2i.ZERO:
+		_toast("先框选一个区域（区域选择工具）")
+		return
+	_clipboard_cells = _cells_in(canvas.selection)
+	_push_undo(false)
+	for item in _clipboard_cells:
+		var p: Vector2i = canvas.selection.position + (item["rel"] as Vector2i)
+		if doc.grid().in_board(p):
+			_apply_kind_at(p, EditorCanvas.KIND_CLEAR)
+	_sync_declared_total()
+	_mark_dirty()
+	_refresh_all()
+	_toast("已剪切 %d 格（可粘贴到别处）" % _clipboard_cells.size())
+
+
+## Ctrl+D：原地复制一份（往右下偏移 1 格），常用作图手势。
+func _duplicate_selection() -> void:
+	if canvas.selection.size == Vector2i.ZERO:
+		_toast("先框选一个区域（区域选择工具）")
+		return
+	var cells := _cells_in(canvas.selection)
+	if cells.is_empty():
+		return
+	_push_undo(false)
+	for item in cells:
+		var src: Vector2i = canvas.selection.position + (item["rel"] as Vector2i)
+		var dst := src + Vector2i(1, 1)
+		if doc.grid().in_board(dst):
+			_apply_kind_at(dst, str(item["kind"]))
+	_sync_declared_total()
+	_mark_dirty()
+	_refresh_all()
+	_toast("已复制选区一份（右下偏移 1 格）")
+
+
+## Alt+点击吸管：把该格的格型吸成当前画笔。返回是否吸到（供 `_input` 判断要不要吃掉事件）。
+func _eyedropper_at(pos: Vector2i) -> bool:
+	if canvas == null or doc == null or not doc.grid().in_board(pos):
+		return false
+	_set_kind(canvas.cell_kind(pos))
+	return true
+
+
+## 油漆桶结果提示：截断时**必须说清"仅染了前 N 格"**（否则用户以为整片都染了）。
+func _on_bucket_reported(result: Dictionary) -> void:
+	var filled := int(result.get("filled", 0))
+	if bool(result.get("truncated", false)):
+		_toast("油漆桶：区域太大，仅染了前 %d 格（%s）" % [filled, str(result.get("reason", ""))], true, 5.0)
+	else:
+		_toast("油漆桶：已染 %d 格" % filled)
+
+
+## 「本盘问题」里带格坐标的条目 → 可点按钮，点了**把视口定位到那一格**。
+func _jump_button(text: String, pos: Vector2i) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.flat = true
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.clip_text = true
+	b.custom_minimum_size = Vector2(0, 22)
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b.add_theme_font_size_override("font_size", 13)
+	b.add_theme_color_override("font_color", _label_color())
+	b.tooltip_text = "点它：把棋盘定位到这一格"
+	b.set_meta("ed_jump_cell", pos)
+	b.pressed.connect(func() -> void: _focus_cell(pos))
+	return b
+
+
+## 把视口定位到某格：抬缩放（看得清）→ 居中（复用画布现成的 `center_on_cell`，不另写坐标数学）。
+## 【可测性】`center_on_cell` 的几何是纯函数：定位后该格中心 = 画布中心（测试直接断言这一点）。
+func _focus_cell(pos: Vector2i) -> void:
+	if canvas == null or doc == null:
+		return
+	if not doc.grid().in_board(pos):
+		_toast("这一格不在盘上", true)
+		return
+	canvas.zoom = maxf(canvas.zoom, 1.5)
+	canvas.center_on_cell(pos)
+	canvas.hover = pos
+	canvas.queue_redraw()
+	_toast("已定位到格 (%d,%d)" % [pos.x, pos.y])
+
+
+# ==================== 猜点热力图（HotMap 接线） ====================
+#
+# 分工：推理算法全在 `core/hotmap.gd`（纯逻辑、已单测）；本文件只做三件事——
+#   ① 一个开关（左栏「显示」分组）；② 把结果交给画布上的叠加层；③ 把不可用/超限的理由**说出来**。
+# 判据唯一：可见性只问 `EditorViewState.is_cheat_visible()`（试玩态强制隐藏），本文件不自拼条件。
+
+## 热力图可见性 = **用户开关** × **降级档** × 统一状态机（试玩态恒不可见）——全文件只此一处判"该不该显示"。
+## 【PerfLedger 接线 ② + 用户开关/降级档分开呈现】模块作者明确要求：`restore_*` 会**无条件**把
+## `is_enabled("hotmap")` 置回 true（见 `core/perf_ledger.gd:140-142`，它自己也承认会覆盖用户手动关闭）。
+## 所以本文件把两者**分开**：
+##   · `_hotmap_on` = **用户的意图**（点左栏开关才算数，降级动作**从不**改它）；
+##   · `_perf.is_enabled("hotmap")` = **降级档**这一侧（由 tick/restore 驱动）。
+## 实际可见 = 两者都为真。⇒ 用户手动关掉后，降级恢复（restore_hotmap）打开的是降级档那一侧，
+## 而用户意图仍是"关" ⇒ **不会**被私自打开。
+func _hotmap_perf_allowed() -> bool:
+	return _perf == null or _perf.is_enabled(PERF_LEDGER.JOB_HOTMAP)
+
+
+func _apply_hotmap_visibility() -> void:
+	var perf_allows := _hotmap_perf_allowed()
+	if _hotmap_btn != null:
+		# 按钮的按下态只跟**用户意图**：点它是切用户开关，不该被降级档"顶"回去。
+		_hotmap_btn.button_pressed = _hotmap_on
+		if not _hotmap_on:
+			_hotmap_btn.text = "猜点热力图：关"
+		elif perf_allows:
+			_hotmap_btn.text = "猜点热力图：开"
+		else:
+			_hotmap_btn.text = "猜点热力图：开（性能降级，暂不显示）"
+	if canvas == null:
+		return
+	# 显隐只切画布那一层的 `visible`（**保留 cells**）：试玩态 / 性能降级 / 用户手动关都走这里，
+	# 关掉不丢结果 ⇒ 再打开无需重跑求解器（见 `editor_canvas.set_overlay_visible` 的契约）。
+	var cells: Dictionary = canvas.get_overlay(HOTMAP_OVERLAY).get("cells", {}) as Dictionary
+	var on := _hotmap_on and perf_allows and _view_state.is_cheat_visible() and not cells.is_empty()
+	canvas.set_overlay_visible(HOTMAP_OVERLAY, on)
+
+
+## 降级 / 回爬动作落到界面。本文件只影响热力图（verify 频率 / 自动保存节奏是"读参数"式接线：
+## 见 `_process` 与 `rate_of`；无需在这里改控件）。
+func _apply_perf_actions(actions: Array) -> void:
+	for a in actions:
+		var act := str(a)
+		if act == PERF_LEDGER.ACT_DISABLE_HOTMAP:
+			# 降级关掉热力图：只改可见性，**不动** `_hotmap_on`（用户意图），并在数据仍在时说明原因。
+			_apply_hotmap_visibility()
+			_show_hotmap_note("性能降级：热力图已暂时隐藏（负载回落后自动恢复）。")
+			_toast(PERF_LEDGER.action_reason(act), false, 4.0)
+		elif act == PERF_LEDGER.ACT_RESTORE_HOTMAP:
+			# 回爬重开热力图：只对**用户本来就想看**的情况恢复；用户手动关着就保持不显示。
+			# 判定与"点开关打开"**共用 `_open_hotmap_data`**：数据还在就只恢复可见（不重跑），
+			# 数据在降级期间被盘面改动作废过才重算 ⇒ **绝不会把过期热力图显示出来**。
+			if _hotmap_on:
+				_open_hotmap_data()
+			else:
+				_apply_hotmap_visibility()
+			_toast(PERF_LEDGER.action_reason(act), false, 4.0)
+		# 其余动作（降校验频率 / 延后保存 / 恢复它们）由 `_process` + `rate_of` 直接生效，无需 UI 处理。
+
+
+func _show_hotmap_note(text: String) -> void:
+	if _hotmap_note == null:
+		return
+	_hotmap_note.text = text
+	_hotmap_note.visible = text != ""
+
+
+func _apply_hot_overlay(cells: Dictionary, max_level: int) -> void:
+	if canvas == null:
+		return
+	canvas.set_overlay(HOTMAP_OVERLAY, cells, {"max_level": max_level})
+	_apply_hotmap_visibility()
+
+
+## 清掉热力图的**数据**（盘面改动 / 算不出来时才用；"用户关掉"只隐藏、不清数据）。
+func _clear_hot_overlay() -> void:
+	if canvas == null:
+		return
+	canvas.clear_overlay(HOTMAP_OVERLAY)
+	_apply_hotmap_visibility()
+
+
+## 把热力图数据"弄出来"：用户点开关打开 / 性能降级回爬**共用这一份判定**。
+## 数据还在（盘面自上次计算后没变，作废只由 `_invalidate_derived_views` 负责）⇒ **只恢复可见、不重跑求解器**；
+## 数据不存在（盘面改过 / 上次算不出来）⇒ 才现算。两条路都不允许显示过期热力图。
+func _open_hotmap_data() -> void:
+	if canvas != null and canvas.has_overlay(HOTMAP_OVERLAY):
+		_apply_hotmap_visibility()
+		return
+	_refresh_hotmap()
+
+
+## 开/关热力图。关闭时**只隐藏**（保留 cells ⇒ 再打开沿用上次结果、不重跑求解器）。
+## 打开时：数据还在就直接显示；否则才**现算一次**（HotMap.build 会跑求解器）。
+func _toggle_hotmap() -> void:
+	_hotmap_on = not _hotmap_on
+	_apply_hotmap_visibility()
+	if not _hotmap_on:
+		_show_hotmap_note("")
+		_toast("已关闭热力图")
+		return
+	# 降级档正压着热力图：明说"为什么点了没显示"，不许静默（负载回落后由 `_apply_perf_actions` 重算显示）。
+	if not _hotmap_perf_allowed():
+		_show_hotmap_note("热力图已开启，但当前性能降级中暂不显示（负载回落后自动恢复）。")
+		_toast("热力图已开启，但当前性能降级中暂不显示", false, 4.0)
+		return
+	# 数据还在就只恢复可见、不重跑求解器；被作废过才重算（判定与降级回爬共用同一份）。
+	_open_hotmap_data()
+
+
+## 计算并应用热力图。`ok=false` / 无格 ⇒ 一律给**可读提示**（绝不静默什么都不发生）。
+func _refresh_hotmap() -> void:
+	if doc == null:
+		return
+	_hotmap_builds += 1
+	var r: Dictionary = HOTMAP.build(doc)
+	if not bool(r["ok"]):
+		_clear_hot_overlay()
+		_show_hotmap_note("热力图不可用：%s" % str(r["reason"]))
+		_toast("热力图不可用：%s" % str(r["reason"]), true, 6.0)
+		return
+	var cells: Dictionary = r["cells"]
+	if cells.is_empty():
+		_clear_hot_overlay()
+		_show_hotmap_note("热力图没有可显示的格：%s" % str(r["reason"]))
+		_toast("热力图没有可显示的格", true)
+		return
+	_apply_hot_overlay(cells, int(r["max_level"]))
+	_show_hotmap_note("热力图已显示：红 = 必须猜的格，颜色越深 = 越晚推出。%s" % str(r["reason"]))
+
+
+## 文档一变：热力图 / 回放这些**按当时盘面算出来**的派生视图立刻作废。
+## 这里**不重算**（HotMap / ProofLog 都会跑求解器，拖动时重算会卡死编辑器），只清掉并说清下一步。
+func _invalidate_derived_views() -> void:
+	# 热力图数据**与开关无关**地作废：即使此刻关着（只是隐藏、数据仍在）也必须清掉，
+	# 否则再打开会显示过期结果（"关掉不丢数据"必须靠这一步保住正确性）。
+	if canvas != null and canvas.has_overlay(HOTMAP_OVERLAY):
+		_clear_hot_overlay()
+		if _hotmap_on:
+			_show_hotmap_note("盘面已改动，旧热力图已清除——再点一次左栏「猜点热力图」重算。")
+	if _replay_model != null and int(_replay_model.step_count()) > 0:
+		_clear_replay_rows()
+		_replay_model.load({})            # 旧链作废，不拿旧结论骗人
+		_show_replay_banner(false, "")
+		if _replay_note != null:
+			_replay_note.text = "盘面已改动，旧推理链已清除——再点一次「生成推理链回放」。"
+
+
+# ==================== 推理链回放（ReplayModel 接线） ====================
+#
+# 分工：窗口计算/读取在 `core/replay_model.gd`（纯算术、已单测）与 `core/proof_log.gd`（产链）。
+# 本文件只做**虚拟化渲染**：总高 = 步数 × 行高，只实例化 `visible_range()` 给的行；
+# 点某行 ⇒ 复用既有 `_focus_cell`（问题面板点击跳转同一套换算）定位到 `cells[0]`。
+
+## 点「生成推理链回放」：先把"正在…"画出去，再算（与 `_on_verify` 同一手法，避免"点了没反应"）。
+func _on_replay_build() -> void:
+	if doc == null:
+		return
+	if _replay_btn != null:
+		_replay_btn.disabled = true
+	if _replay_note != null:
+		_replay_note.text = "正在推导推理链…（棋盘越大越慢，请稍等）"
+	await get_tree().process_frame
+	_set_replay_log(PROOF_LOG.build(doc.to_level_json()))
+	if _replay_btn != null:
+		_replay_btn.disabled = false
+
+
+## 载入一份证明日志并渲染。截断必须**如实透出**（顶部 banner），不许把"只剩前 N 步"当完整链。
+func _set_replay_log(log: Dictionary) -> void:
+	if _replay_model == null:
+		_replay_model = REPLAY.new()
+	var r: Dictionary = _replay_model.load(log)
+	if not bool(r["ok"]):
+		_clear_replay_rows()
+		_show_replay_banner(false, "")
+		if _replay_note != null:
+			_replay_note.text = "回放不可用：%s" % str(r["reason"])
+		return
+	_show_replay_banner(bool(r["truncated"]), _replay_banner_text(r))
+	if _replay_note != null:
+		_replay_note.text = "共 %d 步（点一行定位到那一步的结论格）" % int(_replay_model.step_count())
+	if _replay_scroll != null:
+		_replay_scroll.scroll_vertical = 0
+	_rebuild_replay_rows()
+
+
+func _replay_banner_text(r: Dictionary) -> String:
+	if not bool(r["truncated"]):
+		return ""
+	return "⚠ 日志已截断：仅保留前 %d 步，丢弃 %d 步（%s）" % [
+		int(r["kept_steps"]), int(r["dropped_steps"]), str(r["reason"])]
+
+
+func _show_replay_banner(on: bool, text: String) -> void:
+	if _replay_banner == null:
+		return
+	_replay_banner.visible = on
+	_replay_banner.text = text
+
+
+func _clear_replay_rows() -> void:
+	if _replay_rows == null:
+		return
+	for c in _replay_rows.get_children():
+		_replay_rows.remove_child(c)      # 立刻脱离树：再取 child_count 时不会把"待回收"算进来
+		c.queue_free()
+	_replay_rows.custom_minimum_size = Vector2(0, 0)
+
+
+## 按当前滚动位置重建可见行。`scroll_y` / `viewport_h` 留作显式参数：测试可在无布局环境里
+## 直接喂确定值（滚动条在 headless 下未必真的算过 max，不能让判定依赖它）。
+func _rebuild_replay_rows(scroll_y := -1.0, viewport_h := -1.0) -> void:
+	if _replay_rows == null or _replay_model == null or _replay_scroll == null:
+		return
+	for c in _replay_rows.get_children():
+		_replay_rows.remove_child(c)
+		c.queue_free()
+	var total := int(_replay_model.step_count())
+	_replay_rows.custom_minimum_size = Vector2(0, float(total) * _replay_row_h)
+	if total <= 0:
+		return
+	var sy := float(_replay_scroll.scroll_vertical) if scroll_y < 0.0 else scroll_y
+	var vh := _replay_scroll.size.y if viewport_h < 0.0 else viewport_h
+	# 窗口计算全在 ReplayModel 里（纯算术、已单测）——UI 只按它给的行区间实例化。
+	var win: Dictionary = _replay_model.visible_range(sy, vh, _replay_row_h, 2)
+	var first := int(win["first"])
+	var last := int(win["last"])
+	for i in range(first, last + 1):
+		var at: Dictionary = _replay_model.step_at(i)
+		if not bool(at["ok"]):
+			continue
+		_replay_rows.add_child(_replay_row(i, at["step"]))
+
+
+## 一行 = 一个可点按钮：正文 = `describe()` 的 title ＋ evidence（依据/规则/说明）；
+## 取不到的字段由 describe 记进 missing，这里不编内容（悬停给完整串，窄面板下裁掉的部分能看全）。
+func _replay_row(index: int, step: Dictionary) -> Button:
+	var d: Dictionary = _replay_model.describe(step)
+	var title := str(d["title"])
+	var ev := str(d["evidence"])
+	var row := Button.new()
+	if ev == "":
+		row.text = "%d. %s" % [index + 1, title]
+	else:
+		row.text = "%d. %s ｜ %s" % [index + 1, title, ev]
+	row.flat = true
+	row.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	row.clip_text = true
+	row.custom_minimum_size = Vector2(84, _replay_row_h)
+	row.size = Vector2(maxf(_replay_rows.size.x, 84.0), _replay_row_h)
+	row.position = Vector2(0.0, float(index) * _replay_row_h)
+	row.add_theme_font_size_override("font_size", 12)
+	row.tooltip_text = row.text
+	row.pressed.connect(func() -> void: _replay_focus_step(index))
+	return row
+
+
+func _on_replay_scrolled(value: float) -> void:
+	_rebuild_replay_rows(float(value))
+
+
+## 点回放某一行 ⇒ 定位到该步的**结论格**（`describe().cells[0]`，顺序契约见 replay_model.gd）。
+## 复用既有 `_focus_cell`（问题面板点击跳转同一套换算），不新写一套坐标数学。
+func _replay_focus_step(index: int) -> void:
+	if _replay_model == null:
+		return
+	var at: Dictionary = _replay_model.step_at(index)
+	if not bool(at["ok"]):
+		_toast("这一步不在日志里：%s" % str(at["reason"]), true)
+		return
+	var d: Dictionary = _replay_model.describe(at["step"])
+	var cells: Array = d["cells"]
+	if cells.is_empty():
+		_toast("第 %d 步没有可定位的格子（日志缺 pos/sources）" % (index + 1), true)
+		return
+	var target: Vector2i = cells[0]
+	_focus_cell(target)
 
 
 ## ttl：停留秒数。默认 2 秒对短提示够用；但"去哪儿找文件 / 分享包是什么"这类要读完的信息

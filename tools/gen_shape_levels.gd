@@ -112,6 +112,8 @@ const MAX_MINES_BUMP := 4
 const TextureMarks := preload("res://tools/texture_marks.gd")
 ## 主题配色规则源（palette.theme）。2026-09-24 接入（此前只在 spec 显式声明时才写）。
 const ThemeMarks := preload("res://tools/theme_marks.gd")
+## 全局约束门控的统一落盘口径（2026-10-03）：异形盘上被丢弃的全局规则不得回写成关卡自述。
+const GenCommon := preload("res://tools/gen_common.gd")
 ## 进程隔离通用封装（防 CP-SAT 单次 Solve 挂死；用法见该文件头）。
 const ChildIso := preload("res://tools/child_isolation.gd")
 const TOOL_RES_PATH := "res://tools/gen_shape_levels.gd"
@@ -985,6 +987,13 @@ func _gen_one(spec: Dictionary) -> bool:
 			file_name, mini(MAX_MINES_BUMP, max_mines - mine_count) + 1, MAX_TRIES, tries, max_mines,
 			REQUIRED_TIER, best_peak])
 		return false
+
+	# 全局约束门控收口（2026-10-03）：异形盘（本族全是 mask / holed / hex 拓扑）会丢弃
+	# GEO_RECT_ONLY 的全局约束 ⇒ 产物必须写**实际生效**集。此前这里直接回写 SPEC 的 globals，
+	# 于是 ani_* 等关卡自述带 s2、实际没建（见 tools/gen_common.gd 头注释）。
+	# 换 seed 循环在成功候选后立即 break ⇒ gen.last_call_stats 即成功那次的门控记录。
+	var eff := GenCommon.writeback_globals(gen, globals, file_name)
+	globals = eff["global_rules"]
 
 	# 3. 写**暂存文件**（TM5：不直接改 res://levels/；补中文名；seed 由生成器写入 = 实际用时 seed）
 	level["name"] = str(spec["name"])

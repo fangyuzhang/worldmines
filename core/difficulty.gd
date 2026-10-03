@@ -151,3 +151,62 @@ static func tier_text(tier: String) -> String:
 static func tier_short(tier: String) -> String:
 	var w: Dictionary = PEAK_WINDOWS.get(tier, {})
 	return str(w.get("label", tier)) if not w.is_empty() else str(tier)
+
+
+# ==================== 1~5 星评分（W5，2026-10-03） ====================
+#
+# 【为什么是"推理步骤"而不是"雷数/密度"】雷多 ≠ 难：5×5 摆 10 颗雷若一步推完，玩家体验是简单；
+# 而"每步只能挤出一格、要十几轮"的盘才折磨人。故星级只吃**推理步骤数**
+#（= 序贯演绎的轮数/步数，如 `EditorVerify` stats["rounds"]、生成期 stats 的等价量）。
+# 旧三档口径（TIERS / PEAK_WINDOWS / tier_of*）一律不动——星级是**叠加**在其上的更细粒度评分，
+# 旧字段照旧，调用方要用星级时读新增的 `stars` / 调 `stars_of_steps`。
+
+## 各星阈值（左闭）：steps≥2→2星，≥4→3星，≥7→4星，≥11→5星；steps≤1→1星。
+## 阈值按实测密度取整，改这里等于改全仓星级口径（请同步 test_difficulty_stars.gd）。
+const STAR_STEPS: Array[int] = [2, 4, 7, 11]
+
+
+## 推理步骤数 → 1~5 星。单调不减、恒被夹在 [1,5]（steps 为负也返回 1，绝不给 0 星）。
+static func stars_of_steps(steps: int) -> int:
+	var s := 1
+	for b in STAR_STEPS:
+		if steps >= b:
+			s += 1
+	return clampi(s, 1, 5)
+
+
+## 三档 → 星级**起点**（桥接老调用方：手上只有 tier/peak、没有 steps 时也能给出星级）。
+## easy→2 / normal→3 / hard→4；未知档返回 0（= 不给星，而非假装 1 星）。
+## 注意：这是回退桥接，**不是**第二事实源——难度真值仍以 PEAK_WINDOWS 为准。
+const TIER_BASE_STARS := {"easy": 2, "normal": 3, "hard": 4}
+
+
+static func stars_of_tier(tier: String) -> int:
+	return int(TIER_BASE_STARS.get(tier, 0))
+
+
+## 星级显示文案（实心/空心星）。0 星（未知）返回全空心。
+static func stars_text(stars: int) -> String:
+	var n := clampi(stars, 0, 5)
+	return "★".repeat(n) + "☆".repeat(5 - n)
+
+
+## 读画像取星级：优先 profile["inference_steps"]（有则按步骤数）；否则按三档桥接；
+## 都没有返回 0（未知）。**不改动传入的 dp**。
+static func stars_of_profile(dp: Dictionary) -> int:
+	if dp.is_empty():
+		return 0
+	if dp.has("inference_steps"):
+		return stars_of_steps(int(dp.get("inference_steps", 0)))
+	return stars_of_tier(tier_of_profile(dp))
+
+
+## 给画像补一个 `stars` 字段（返回副本，旧字段原样保留）：`inference_steps` 有则按其算，
+## 否则回退三档桥接。这是"旧字段不动、新增星级字段"的落地入口。
+static func with_stars(dp: Dictionary, inference_steps: int = -1) -> Dictionary:
+	var out := dp.duplicate(true)
+	var steps := inference_steps
+	if steps < 0 and dp.has("inference_steps"):
+		steps = int(dp["inference_steps"])
+	out["stars"] = stars_of_steps(steps) if steps >= 0 else stars_of_profile(dp)
+	return out

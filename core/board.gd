@@ -37,6 +37,10 @@ signal flood_planned(origin: Vector2i, cells: Array[Vector2i], zero_flood: bool)
 var grid: GridInterface = null
 var total_mines: int = 0
 var state: int = GameState.PLAYING
+## 复合格注册表（可选；null = 本盘无复合格）。**由调用方在 load_level 之后设置**
+##（Board 不读关卡 JSON 的 `custom.mega_cells`，其落盘/读取归 EditorDoc，见 core/editor_doc.gd）。
+## 用途：把复合格当「逻辑一格」参与求解，映射口径见 core/solver/mega_solver.gd。
+var mega: MegaCell = null
 ## 胜负判定（P6 胜负原语化）。默认经典扫雷（GDD R10）；自定义模式可替换为其它实现。
 ## 这是把硬编码判胜/判负抽出的策略对象——见 core/win_condition.gd。
 var win_condition: WinConditionPlugin = WinConditionPlugin.new()
@@ -124,6 +128,7 @@ func load_level(level: Dictionary) -> void:
         rule_clue_id = ""
         rule_global_ids = []
         proven_mines = {}  # 新关卡：确证雷集必须清空，否则会带着上一局的结论推理
+        mega = null  # 复合格属关卡内容但 Board 不读它：新关卡清空，调用方 load_level 后按需设置
 
         # ★ P3 自举式规则：读取 rule_level / clue_rule / global_rules 字段。
         # 规则由 RuleRegistry 解析（内置 + mod 注册同源）；命中即优先于 variant/def。
@@ -299,6 +304,73 @@ func _compute_clues() -> void:
                         cell.value = _clue_value_dispatch(mine_set, pos, size)
                 if clue_variant2 >= 0:
                         cell.value2 = ClueEngine.compute(clue_variant2, mine_set, pos, size)
+        # 【复合格显示口径】有复合格时，把上述「逐基础格」的线索改写为「逻辑单元」口径
+        #（见 `_apply_mega_clue_overrides` 的口径注释）。无复合格 ⇒ 本分支不执行、行为逐位不变。
+        if mega != null:
+                _apply_mega_clue_overrides()
+
+
+## 【复合格显示口径 · 唯一折算点】把线索值按「逻辑单元」重写（口径见 core/solver/mega_solver.gd）：
+##   · 逻辑单元 = 一个复合格（雷数 ≤ 1）或一个未合并的基础格；单元身份由其**锚点**代表。
+##   · 锚点 = `MegaCell.internal_cells()` 的**规范序首格**（(x,y) 字典序最小），
+##     与 `MegaSolver.build` 的 `anchors` 完全同源（复用同一 `internal_cells` 顺序）。
+##   · 数字标在**锚点格**上：值 = 该单元的邻居单元中「含雷」的单元个数——相邻复合格
+##     不论被命中几个内部格，都只计 1；这与求解器 `MegaSolver.build` 的 `clues` **同一口径**。
+##   · 单元的**非锚点成员**统一置哨兵 -1（board_view 对负值不绘制任何文本）——
+##     它们与锚点同属一个逻辑格，绝不各自显示一个互相矛盾的数字。
+##
+## 复用而非另写：邻接折算取自 `MegaSolver.build` 的 `neighbors`/`unit_at`，
+##「单元是否有雷」取自 `MegaSolver.unit_has_mine`。因此
+##「Board 在本盘显示的复合格数字」== `MegaSolver.build(...).clues[锚点]`（交叉一致断言见
+## test/unit/test_board_mega_clues.gd）。
+##
+## 若 `MegaSolver` 明确拒绝建模（非经典线索窗口 / 全局约束 / 共格嵌套），本函数**不改写**并告警：
+## 那种盘面上求解器本身不可用，硬塞一个「单元数字」只会制造显示与求解的分叉。
+func _apply_mega_clue_overrides() -> void:
+        if grid == null:
+                return
+        var scr: Variant = load("res://core/solver/mega_solver.gd")
+        if scr == null:
+                push_warning("复合格线索折算跳过：MegaSolver 脚本不可用")
+                return
+        var model: Dictionary = scr.build(self, mega, {})
+        if not bool(model.get("ok", false)):
+                push_warning("复合格线索折算跳过（MegaSolver.build 拒绝）：%s" % str(model.get("reason", "")))
+                return
+        var neighbors: Dictionary = model["neighbors"]
+        var unit_at: Dictionary = model["unit_at"]
+        var anchors: Array = model["anchors"]
+        for a: Vector2i in anchors:
+                var cell: Cell = grid.get_cell(a)
+                if cell == null or cell.is_mine:
+                        continue
+                var n := 0
+                for nb: Vector2i in neighbors[a]:
+                        if scr.unit_has_mine(self, unit_at[nb]):
+                                n += 1
+                cell.value = n
+        var non_anchor: Array = model["non_anchor_cells"]
+        for c: Vector2i in non_anchor:
+                var ncell: Cell = grid.get_cell(c)
+                if ncell != null and not ncell.is_mine:
+                        ncell.value = -1
+
+
+## 【复合格显示口径的触发入口】在 `mega` 已登记后按逻辑单元重算线索（= 再跑一次 `_compute_clues`）。
+##
+## ⚠ **契约（调用方必须遵守）**：设置 `board.mega = <MegaCell>` 之后**必须**调用本方法，
+##   否则线索仍是**逐基础格**口径（不是复合格「一格一个数字」）——`mega` 只是登记了合并关系，
+##   并不会自己触发重算。忘记调用的症状 = 复合格区域按基础格各显一个数字、且与求解器口径不一致；
+##   该失败模式由 `test/unit/test_board_mega_clues.gd::test_forgetting_refresh_keeps_base_clues` 钉住。
+##
+## 为什么是**显式**方法、而不是在 `mega = ...` 赋值时自动重算：
+##   · `load_level` 内部会把 `mega` 复位为 null（且此复位发生在 grid 建好之前）；
+##   · 既有测试 `test_solver_mega_cell.gd::test_naive_per_base_counting_counterexample`
+##     以「只设置 mega、不触发重算」为前提，用 `get_player_constraint` 钉住「逐基础格口径」的反例
+##     （该格返回 0，而单元聚合口径为 1）——那是**长期保留的反面证据**，自动重算等于把它删掉。
+##   · 故约定的接线方式：`board.mega = <MegaCell>` 之后由调用方调用本方法。
+func refresh_mega_clues() -> void:
+        _compute_clues()
 
 
 ## 拓扑邻域雷计数（异形棋盘线索：等价 classic 的「周围格」，窗口来自邻接表）。
@@ -720,6 +792,18 @@ func apply_cell_states(changes: Dictionary) -> void:
 ## 内部委托 _check_win（PLAYING 态守卫 + win_condition 策略）。
 func evaluate_win() -> void:
         _check_win()
+
+
+## 【复合格 → 单变量】用当前 `mega` 注册表建立求解映射（口径见 core/solver/mega_solver.gd）：
+## 复合格 = 一个布尔变量（雷数 0/1），非锚点成员固定安全，邻接按 `MegaCell.adjacency()` 折算。
+## 无复合格时退化为「每基础格一个变量」，与既有求解口径逐点一致（回归见
+## test/unit/test_solver_mega_cell.gd）。返回 {ok, reason, ...}；opts 透传给 MegaSolver.build。
+## 延迟 load 而非 preload：本文件是人工锁死入口，避免新模块的解析问题波及全仓。
+func build_mega_model(opts: Dictionary = {}) -> Dictionary:
+        var scr: Variant = load("res://core/solver/mega_solver.gd")
+        if scr == null:
+                return {"ok": false, "reason": "MegaSolver 脚本不可用（res://core/solver/mega_solver.gd）"}
+        return scr.build(self, mega, opts)
 
 
 ## 统计信息（供 HUD / 统计使用）。

@@ -58,6 +58,8 @@ const TextureMarks := preload("res://tools/texture_marks.gd")
 ## 主题配色规则源（palette.theme）。2026-09-24 接入：本族是变体关，
 ## theme 缺失时整族退化成同一套灰紫底盘（这正是盘点时发现的缺口）。
 const ThemeMarks := preload("res://tools/theme_marks.gd")
+## 全局约束门控的统一落盘口径（2026-10-03）：异形盘上被丢弃的全局规则不得回写成关卡自述。
+const GenCommon := preload("res://tools/gen_common.gd")
 
 ## 单关**累计**生成时间上限（看门狗）。2026-09-23 审计 #4 补齐，与 gen_shape_levels.gd 同口径。
 ## 理由：CP-SAT 的 max_time_in_seconds 只约束求解阶段，实测 >100 格 + 变体规则时 Solve()
@@ -430,6 +432,12 @@ func _gen_one(c: Dictionary) -> bool:
 			push_error("%s: %d 次尝试（换 seed %d × 加雷 %d）无一达到峰值 ≥ %d（最高 %d）" % [
 				file_name, tries, MAX_TRIES, MAX_MINES_BUMP + 1, MIN_PEAK, best_peak])
 		return false
+
+	# 全局约束门控收口（2026-10-03）：本族全是异形拓扑 ⇒ S/Z 轴等 GEO_RECT_ONLY 全局约束
+	# 会被生成器丢弃。产物 global_rules（以及下面据此解析的变体轴纹理徽记）必须写**实际生效**集。
+	# 换 seed 循环在成功候选后立即 break ⇒ gen.last_call_stats 即成功那次的门控记录。
+	var eff := GenCommon.writeback_globals(gen, [str(c["rule"])], file_name)
+	level["global_rules"] = eff["global_rules"]
 
 	# 落盘字段：中文名 / 形状标签 / 描述 / 圈层配色
 	# 名字带序号后缀（仅定向模式 count>1 时）：同变体同形状产多关时卡片标题要能区分。

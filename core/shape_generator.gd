@@ -12,6 +12,8 @@
 #   (d) build_from_mask  —— mask 驱动（T7，原创能力）：ASCII 轮廓（#/X/1 = 有格）按 style
 #       语义建成同族形状——「任意轮廓图案」（具象剪影 / 对称花纹 / 分形符号）成为可玩棋盘。
 #       与 (a)/(b)/(c) 的同形交叉验证（两条独立路径逐字节一致）见 test_shape_generator.gd。
+#   (j)~(l) build_circle / build_star / build_sector —— 参数化轮廓族：圆 / 星形 / 扇形（整数格
+#       栅格化；与 (a)~(i) **同一接口**，见文件后段「(j)~(l) 参数化轮廓族」一节）。
 #
 # 不变量（三族共同，test_shape_generator.gd 逐项断言）：
 #   · 坐标全部为**非负整数**——board.gd 直接 setup_from_topo() 且**不做** normalized，
@@ -727,6 +729,215 @@ static func _sort_poly_ccw(poly: PackedVector2Array, c: Vector2) -> PackedVector
 	return out
 
 
+## ==== (j)~(l) 参数化轮廓族：圆 / 星形 / 扇形 ====
+##
+## 接口与 (a)~(i) 完全一致：`build_*(...) -> {positions, adjacency, style, params}`，
+## 参数非法一律 push_error + 空拓扑（不静默产半成品），`style`/`params` 同为展示用字段。
+## 邻接复用 `_graph_from_dirs(cells, MOORE8)`：与 holed_grid 同为 Moore 8 邻（即
+## `grid_interface.gd` 的 8 邻域口径），故既有不变量（非负 / 对称 / 无自环 / 无重复 / 端点闭合）
+## 原样成立——**本段不碰既有 9 族任何一行**。
+##
+## 栅格化口径（坐标离散化）：格 = **整数** (x, y)，格心即该整数点（x = 列、y = 行）。
+## 圆心 / 星心 / 扇形顶点一律取 (radius, radius) ⇒ 整个形状落在 [0, 2*radius]² 内，
+## 坐标天然非负（board.gd 直接 setup_from_topo、不做 normalized，负坐标会让 CP-SAT 索引越界）。
+##
+## 数据爆炸闸门（文档 A/C 类）：**生成前**先用闭式上界估算格数，再交
+## `EditorDoc.check_cell_budget()`（DEFAULT 500 / MAX 5000 两档，单一真源——本模块只读不改）。
+## 估算取上界而非精确值（与 `EditorDoc.estimate_cells` 同性质）：宁可在门槛附近保守拒绝，
+## 也绝不先把超大格集建出来再判。超 MAX ⇒ 拒绝生成，原因同时写进 `error` 字段与 push_error。
+
+
+## (j) 圆：以 (radius, radius) 为心、radius 为半径的**内接正 precision 边形**在整数格上栅格化。
+##
+## 为什么是"内接正 n 边形"而不是直接判 dist ≤ radius：`precision` 就是精度旋钮（边数越多越接近
+## 正圆），内接保证形状恒在半径内、格集随 precision 单调收敛，且与 (k)/(l) 共用同一套多边形判据。
+## 参数：radius ≥ 1（整数，格为单位）；precision ≥ 3（内接边形边数，默认 24）。
+static func build_circle(radius: int, precision: int = 24) -> Dictionary:
+	if radius <= 0:
+		return _reject("build_circle", "radius 必须为正整数（收到 %d）：半径以格为单位，须 ≥ 1" % radius)
+	if precision < 3:
+		return _reject("build_circle", "precision 必须 ≥ 3（收到 %d）：圆按内接正 precision 边形栅格化" % precision)
+	var why := _budget_reason(_disk_upper_bound(float(radius)))
+	if why != "":
+		return _reject("build_circle", why)
+	var c := Vector2(float(radius), float(radius))
+	var poly := _regular_polygon_pts(c, float(radius), precision, -90.0)
+	return _outline_topo(_rasterize_polygon(poly), "circle", {"radius": radius, "precision": precision})
+
+
+## (k) 星形：points 个角（= 2*points 个顶点的星形多边形）在整数格上栅格化。
+##
+## 顶点从正上方（-90°）起、外半径 / 内半径交替 ⇒ 角数恒为 points（test 逐角复核）。
+## 参数：points ≥ 3（角数）；outer_radius ≥ 1（外半径，格）；inner_ratio ∈ (0,1)（内/外半径比）。
+static func build_star(points: int, outer_radius: int, inner_ratio: float = 0.5) -> Dictionary:
+	if points < 3:
+		return _reject("build_star", "points（角数）必须 ≥ 3（收到 %d）：不足 3 角不成星形" % points)
+	if outer_radius <= 0:
+		return _reject("build_star", "outer_radius 必须为正整数（收到 %d）：外半径以格为单位，须 ≥ 1" % outer_radius)
+	if not is_finite(inner_ratio) or inner_ratio <= 0.0 or inner_ratio >= 1.0:
+		return _reject("build_star", "inner_ratio（内/外半径比）必须是 (0,1) 内的有限数（收到 %s）" % str(inner_ratio))
+	var why := _budget_reason(_disk_upper_bound(float(outer_radius)))
+	if why != "":
+		return _reject("build_star", why)
+	var c := Vector2(float(outer_radius), float(outer_radius))
+	var poly := _star_polygon_pts(c, float(outer_radius), inner_ratio, points)
+	return _outline_topo(_rasterize_polygon(poly), "star",
+			{"points": points, "outer_radius": outer_radius, "inner_ratio": inner_ratio})
+
+
+## (l) 扇形：以 (radius, radius) 为顶点、张角 [start_deg, end_deg]、半径 radius 的楔形。
+##
+## 判据 = 精确极坐标（dist ≤ radius 且 start_deg ≤ 角度 ≤ end_deg），顶点格（dist = 0）恒含
+## （顶点处角度未定义，但它就是扇形本身的尖角）。角度口径与屏幕行坐标一致：
+## 0° = +x 方向、向 +y（行向下）为正。范围须满足 0 ≤ start_deg < end_deg ≤ 360（不跨 0°）。
+static func build_sector(radius: int, start_deg: float, end_deg: float) -> Dictionary:
+	if radius <= 0:
+		return _reject("build_sector", "radius 必须为正整数（收到 %d）：半径以格为单位，须 ≥ 1" % radius)
+	if not is_finite(start_deg) or not is_finite(end_deg):
+		return _reject("build_sector", "start_deg / end_deg 必须是有限数（收到 %s / %s）" % [str(start_deg), str(end_deg)])
+	if start_deg < 0.0 or end_deg > 360.0 or start_deg >= end_deg:
+		return _reject("build_sector", "角度范围须满足 0 ≤ start_deg < end_deg ≤ 360（收到 %s → %s）" % [str(start_deg), str(end_deg)])
+	var why := _budget_reason(_disk_upper_bound(float(radius)) * (end_deg - start_deg) / 360.0)
+	if why != "":
+		return _reject("build_sector", why)
+	var c := Vector2(float(radius), float(radius))
+	var box := _verts_bbox(_sector_scan_verts(c, float(radius), start_deg, end_deg), 1)
+	var cells := {}
+	for y in range(box.position.y, box.end.y):
+		for x in range(box.position.x, box.end.x):
+			if _sector_contains(c, float(radius), start_deg, end_deg, Vector2(float(x), float(y))):
+				cells[Vector2i(x, y)] = true
+	return _outline_topo(cells, "sector", {"radius": radius, "start_deg": start_deg, "end_deg": end_deg})
+
+
+# ---------- (j)~(l) 栅格化与闸门内部实现 ----------
+
+## 圆盘格数的闭式上界：整数点在半径 R 的圆盘内 ⇒ 以每点为中心的单位方格之并 ⊆ 半径 R+0.5 的圆盘
+## ⇒ 点数 ≤ π(R+0.5)² < π(R+1)²。再 +1 兜住取整。返回 float——调用方先比阈值再取整，
+## 避免荒谬半径下 float→int 溢出把"超限"反转成"通过"。
+static func _disk_upper_bound(radius: float) -> float:
+	return PI * (radius + 1.0) * (radius + 1.0) + 1.0
+
+
+## 预算闸门：**直接复用** `EditorDoc.check_cell_budget` 的两档口径（单一真源，勿在此另立魔数）。
+## 返回 "" = 放行（含 warn 档：照做但应提示）；否则返回可读原因（block 档）。先钳到 int64 安全区防溢出。
+static func _budget_reason(estimate: float) -> String:
+	var est := int(clampf(estimate, 0.0, 9.0e18))
+	var rep: Dictionary = EditorDoc.check_cell_budget(est)
+	if bool(rep.get("ok", true)):
+		return ""
+	return str(rep.get("reason", ""))
+
+
+## 拒绝生成的统一返回：空 positions/adjacency + `error` 可读原因（push_error 同步写控制台）。
+## 与既有族的 `_empty()` 相比多带 `error` ⇒「为什么被拒」可被程序读取（测试 / UI 都能取）。
+static func _reject(label: String, reason: String) -> Dictionary:
+	push_error("ShapeGenerator.%s: %s" % [label, reason])
+	return {"positions": [], "adjacency": [], "error": reason}
+
+
+## 格集 → 拓扑（Moore 8 邻，与 holed_grid 同款）+ 展示用 style/params。三族共用。
+static func _outline_topo(cells: Dictionary, style: String, params: Dictionary) -> Dictionary:
+	var topo := _graph_from_dirs(cells, MOORE8)
+	topo["style"] = style
+	topo["params"] = params
+	return topo
+
+
+## 顶点集的整数扫描窗（floor/ceil ± margin）。margin ≥ 1 兜住弧线在采样点之间的凸出。
+static func _verts_bbox(verts: PackedVector2Array, margin: int) -> Rect2i:
+	if verts.is_empty():
+		return Rect2i(0, 0, 0, 0)
+	var min_x := 1 << 30
+	var min_y := 1 << 30
+	var max_x := -(1 << 30)
+	var max_y := -(1 << 30)
+	for v: Vector2 in verts:
+		min_x = mini(min_x, floori(v.x) - margin)
+		min_y = mini(min_y, floori(v.y) - margin)
+		max_x = maxi(max_x, ceili(v.x) + margin)
+		max_y = maxi(max_y, ceili(v.y) + margin)
+	return Rect2i(Vector2i(min_x, min_y), Vector2i(max_x - min_x + 1, max_y - min_y + 1))
+
+
+## 多边形 → 格集（格心落在多边形内即收录；射线 / 奇偶判据，凹凸皆可）。
+static func _rasterize_polygon(poly: PackedVector2Array) -> Dictionary:
+	var box := _verts_bbox(poly, 1)
+	var cells := {}
+	for y in range(box.position.y, box.end.y):
+		for x in range(box.position.x, box.end.x):
+			if _poly_contains(poly, Vector2(float(x), float(y))):
+				cells[Vector2i(x, y)] = true
+	return cells
+
+
+## 点是否在多边形内（射线法 / 奇偶规则）。边界点的判定不影响栅格化（两侧口径都合法）。
+static func _poly_contains(poly: PackedVector2Array, p: Vector2) -> bool:
+	var inside := false
+	var n := poly.size()
+	var j := n - 1
+	for i in n:
+		var pi: Vector2 = poly[i]
+		var pj: Vector2 = poly[j]
+		if (pi.y > p.y) != (pj.y > p.y):
+			var den := pj.y - pi.y
+			if is_zero_approx(den):
+				den = 1e-9
+			if p.x < (pj.x - pi.x) * (p.y - pi.y) / den + pi.x:
+				inside = not inside
+		j = i
+	return inside
+
+
+## 正 n 边形顶点（外接半径 radius，起始角 start_deg，逆时针）。
+static func _regular_polygon_pts(c: Vector2, radius: float, n: int, start_deg: float) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for k in n:
+		var a := deg_to_rad(start_deg + 360.0 * float(k) / float(n))
+		out.append(c + Vector2(radius * cos(a), radius * sin(a)))
+	return out
+
+
+## 星形多边形顶点：2*points 个，外/内半径交替，起始角 -90°（正上方一个尖角）。
+static func _star_polygon_pts(c: Vector2, outer: float, inner_ratio: float, points: int) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var inner := outer * inner_ratio
+	for k in points * 2:
+		var r := outer if (k % 2) == 0 else inner
+		var a := deg_to_rad(-90.0 + 360.0 * float(k) / float(points * 2))
+		out.append(c + Vector2(r * cos(a), r * sin(a)))
+	return out
+
+
+## 扇形扫描窗的顶点（顶点 + 弧上每 1° 采样 + 两端点）：窄扇形不会退化成扫整个方阵。
+static func _sector_scan_verts(c: Vector2, radius: float, a0: float, a1: float) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	out.append(c)
+	var steps := ceili(a1 - a0) + 1
+	for i in steps + 1:
+		var a := minf(a0 + float(i), a1)
+		var rad := deg_to_rad(a)
+		out.append(c + Vector2(radius * cos(rad), radius * sin(rad)))
+	return out
+
+
+## 扇形判据：dist ≤ radius 且角度落在 [a0, a1]；顶点格（dist = 0）恒含。
+static func _sector_contains(c: Vector2, radius: float, a0: float, a1: float, p: Vector2) -> bool:
+	var d := p - c
+	var d2 := d.length_squared()
+	if d2 <= 0.0:
+		return true
+	if d2 > radius * radius:
+		return false
+	var ang := _angle_deg(d)
+	return ang >= a0 and ang <= a1
+
+
+## 向量角度：0° = +x，向 +y（行方向，屏幕向下）为正，归一到 [0,360)。
+static func _angle_deg(d: Vector2) -> float:
+	return fposmod(rad_to_deg(atan2(d.y, d.x)), 360.0)
+
+
 ## 便利入口（供上层接线用）：按 kind + params 直接产出可用的 AdjacencyGrid。
 ## kind / params：
 ##   "holed_grid" —— {"rows":R, "cols":C, "holes":[...]}（holes 可省）
@@ -737,6 +948,9 @@ static func _sort_poly_ccw(poly: PackedVector2Array, c: Vector2) -> PackedVector
 ##   "trihex"     —— {"cols":C, "rows":R}（3.6.3.6 三角+六边）
 ##   "t31212"     —— {"cols":C, "rows":R}（3.12.12 十二边+三角）
 ##   "ring"       —— {"sectors":[n0,n1,...]}（同心环盘；可选 step_deg/r0/dr）
+##   "circle"     —— {"radius":R, "precision":N}（圆；(j) 参数化轮廓族，precision 可省默认 24）
+##   "star"       —— {"points":K, "outer_radius":R, "inner_ratio":q}（星形；(k) 参数化轮廓族）
+##   "sector"     —— {"radius":R, "start_deg":a0, "end_deg":a1}（扇形；(l) 参数化轮廓族）
 ##   "mask"       —— {"style":S, "mask":[...]}（S ∈ holed_grid/hex/t488；mask = build_from_mask
 ##                    的 ASCII 轮廓；落盘 params = {"mask": mask}，供 JSON 审计）
 ## 形状为空、参数非法（build_* 已 push_error）、kind 未注册 → push_error 并返回 null
@@ -763,6 +977,17 @@ static func to_adjacency_grid(kind: String, params: Dictionary) -> AdjacencyGrid
 		"iso_cubes":
 			topo = build_iso_cubes(int(params.get("cols", 0)), int(params.get("rows", 0)),
 					params.get("holes", []))
+		"circle":
+			# (j) 圆：precision 可省，缺省 24（与 build_circle 的签名默认一致）。
+			topo = build_circle(int(params.get("radius", 0)), int(params.get("precision", 24)))
+		"star":
+			# (k) 星形：inner_ratio 可省，缺省 0.5（与 build_star 的签名默认一致）。
+			topo = build_star(int(params.get("points", 0)), int(params.get("outer_radius", 0)),
+					float(params.get("inner_ratio", 0.5)))
+		"sector":
+			# (l) 扇形：角度缺省 start=0 / end=90（缺参数时 start>=end，build_sector 会给可读 error）。
+			topo = build_sector(int(params.get("radius", 0)),
+					float(params.get("start_deg", 0.0)), float(params.get("end_deg", 90.0)))
 		"mask":
 			# mask 族（T7）：style + mask 两个字段 → build_from_mask；落盘 params = {"mask": mask}
 			# 让产物 JSON 自带图案审计（人可读、可复核）。
@@ -773,7 +998,7 @@ static func to_adjacency_grid(kind: String, params: Dictionary) -> AdjacencyGrid
 			var mask_arr: Array = mask_v
 			topo = build_from_mask(str(params.get("style", "")), mask_arr, {"mask": mask_arr})
 		_:
-			push_error("ShapeGenerator.to_adjacency_grid: 未注册的形状 kind \"%s\"（可用：holed_grid/hex/t488/iso_cubes/tri_grid/trihex/t31212/ring/mask）" % kind)
+			push_error("ShapeGenerator.to_adjacency_grid: 未注册的形状 kind \"%s\"（可用：holed_grid/hex/t488/iso_cubes/tri_grid/trihex/t31212/ring/circle/star/sector/mask）" % kind)
 			return null
 	var positions: Array = topo["positions"]
 	if positions.is_empty():

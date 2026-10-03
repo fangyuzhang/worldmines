@@ -920,6 +920,52 @@ func _e2e_rmrf(path: String) -> void:
 	DirAccess.remove_absolute(path)
 
 
+func test_paste_and_copy_never_touch_cells_outside_the_board() -> void:
+	# 审查遗留（A3 同族，真 bug）：`_paste_selection` / `_cells_in` 原来用**包围盒**判界
+	# （`p.x < doc.cols and p.y < doc.rows`）⇒ 形状盘会把洞格写进去；更糟的是**负数坐标也算通过**
+	# （`-1 < cols` 为真）⇒ 往左上角粘贴会写到盘外。这里用"环形盘"（中间是洞）钉住不变量：
+	# 粘贴一大片（含负坐标）之后，**所有格型键必须都在 all_positions() 里**。
+	var ed := await _make_editor()
+	var d := _doc5()
+	d.shape_kind = "ring"
+	d.shape_params = {"outer": 3, "inner": 1}
+	_bind(ed, d)
+	var on_board := {}
+	for p in d.grid().all_positions():
+		on_board[p] = true
+	var clip: Array = []
+	for y in range(-1, 6):
+		for x in range(-1, 6):
+			clip.append({"rel": Vector2i(x, y), "kind": EditorCanvas.KIND_OBSTACLE})
+	ed.set("_clipboard_cells", clip)
+	ed.call("_paste_selection")
+	var off: Array[String] = []
+	for p in d.obstacles:
+		if not on_board.has(p):
+			off.append(str(p))
+	assert_eq(off.size(), 0, "粘贴写到了盘外/洞格：%s" % str(off.slice(0, 8)))
+	assert_gt(d.obstacles.size(), 0, "至少应写入盘内格（否则这条用例是空转、等于没测）")
+	# 复制侧同样按网格判界：直接问 `_copy_selection` 背后的 `_cells_in`，把相对坐标换回绝对坐标核对
+	var rect := Rect2i(Vector2i(-1, -1), Vector2i(8, 8))
+	var copied: Array = ed.call("_cells_in", rect)
+	assert_gt(copied.size(), 0, "这个矩形范围内应有可复制的盘内格")
+	for item in copied:
+		assert_true(on_board.has(rect.position + (item["rel"] as Vector2i)),
+			"复制的相对格换回绝对坐标后必须在盘内：%s" % str(item["rel"]))
+
+
+func test_help_layer_close_path_is_covered() -> void:
+	# 审查 B10：说明层的**关闭路径**此前零覆盖（只测过"能打开"）。这里钉住 `_close_help()` 的收尾，
+	# 它必须把层释放并置空 —— 否则下次打开会叠一层、旧卡片残留。
+	var ed := await _make_editor()
+	_bind(ed, _doc5())
+	assert_true(_press(ed, "说明"), "应能打开「说明」")
+	assert_not_null(ed.get("_help_layer"), "打开后说明层应存在")
+	ed.call("_close_help")
+	assert_eq(ed.get("_help_layer"), null, "关闭后说明层必须被释放并置空")
+	assert_false((ed.get("_help_btn") as Button).button_pressed, "关闭后「说明」按钮要弹起（状态不能骗人）")
+
+
 func test_forge_geometry_centers_inside_the_parent_window() -> void:
 	# 审查 B7：子窗口**默认嵌入**父视口 ⇒ `Window.position` 已是相对视口，再加一次父窗口屏幕位置就偏一次。
 	# 几何抽成纯函数后在这里钉住两种情形。

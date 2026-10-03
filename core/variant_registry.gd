@@ -49,7 +49,10 @@ static func definitions() -> Dictionary:
 	}
 
 
-## 全部 14 个内置变体码（含经典）。
+## 全部 **15** 个内置变体码（含经典 classic）。
+## 【2026-10-03 注释纠偏】旧注释写"14 个"是**漏算 classic**：`definitions()`/`all_codes()` 实测都返回 15 项
+## （证据：`test/unit/test_variant_grid_matrix.gd` 交叉校验 + `variant_grid_matrix.gd` 的 15 变体矩阵）。
+## 本行由主 Agent 直接修（同一任务两次派给子 Agent 都被运行时中断、未落地）。
 static func all_codes() -> Array[String]:
 	return [V_CLASSIC, V_MX, V_RL, V_PF, V_QD, V_DT, V_EP, V_4C, V_4N, V_CLOCK, V_HV, V_FR, V_LOOP_RUNS, V_DIST_SUM, V_SC]
 

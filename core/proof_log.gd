@@ -20,9 +20,30 @@ const DIR := "user://proof"
 ## 单关最大推导轮数（防极端盘面下无限循环；一轮可含多个结论格）。
 const MAX_ROUNDS := 500
 
+## ==================== 单份日志的体积上限（数据侧，2026-10-03）====================
+#
+# 【为什么要有】此前只有 MAX_ROUNDS=500 的**轮数**限制，没有任何步数/字节上限：
+# 一轮可含"整盘结论"（最坏 ≈ 格数），于是 500 轮 × 上千格可以撑出几十万步的日志，
+# 落盘 JSON 与回放内存双双失控（编辑器回放 UI 没有虚拟化，本轮只治数据侧、不动 UI）。
+#
+# 【取值依据】
+#   · MAX_STEPS = 5000：真实关卡单份链实测在"几十~一两百步"量级（`test_proof_log` 的 5x5 关仅数步），
+#     5000 步已远大于任何能通过加载器上限（`WrapTopology.MAX_CELLS` = 4096 格）的真实关卡，
+#     又足够小以免内存被撑爆。
+#   · MAX_BYTES = 2 MiB：每步 ≈ 100~200B（pos + state + rule_id + precondition_signature 的 64 位 hex），
+#     5000 步 ≈ 0.5~1MB；2MiB 留足余量，同时是单份日志的硬天花板。
+#
+# 【兼容旧数据】`truncated` / `kept_steps` / `dropped_steps` / `truncated_reason` 都是**新增可选字段**：
+# 旧日志读回后没有它们 ⇒ 读侧一律按 `bool(log.get("truncated", false))` 取默认 false（正常日志）。
+# 正常日志会**显式写入** `truncated = false`，便于调用方无脑读。
+const MAX_STEPS := 5000
+const MAX_BYTES := 2 * 1024 * 1024
+
 
 ## 从关卡数据推导完整证明链。
-## 返回 { "solved": bool, "rounds": int, "steps": Array[Dictionary], "reason": String }
+## 返回 { "solved": bool, "rounds": int, "steps": Array[Dictionary], "reason": String,
+##        "cert_hash": String, "truncated": bool, ["kept_steps"/"dropped_steps"/"truncated_reason"] }。
+## 尾部字段只在 `truncated == true` 时附带（见 MAX_STEPS / MAX_BYTES 的注释）。
 static func build(level: Dictionary, max_rounds: int = MAX_ROUNDS) -> Dictionary:
 	var out := {"solved": false, "rounds": 0, "steps": [], "reason": ""}
 	if level.is_empty():
@@ -37,6 +58,7 @@ static func build(level: Dictionary, max_rounds: int = MAX_ROUNDS) -> Dictionary
 	var all_steps: Array = []
 	var solver := HintSolver.new()
 	var rounds := 0
+	var hit_step_cap := false
 	while rounds < max_rounds:
 		if b.state != Board.GameState.PLAYING:
 			break
@@ -48,6 +70,10 @@ static func build(level: Dictionary, max_rounds: int = MAX_ROUNDS) -> Dictionary
 		var sig := signature(b)
 		var applied := 0
 		for st in steps:
+			# 步数硬上限：到达即停止收集并标记截断（只保留**前缀**，后面不再追加 ⇒ 步序不乱）。
+			if all_steps.size() >= MAX_STEPS:
+				hit_step_cap = true
+				break
 			var step := st as ReasoningStep
 			var cell: Cell = b.grid.get_cell(step.pos)
 			if cell == null or cell.state != Cell.State.HIDDEN:
@@ -68,6 +94,8 @@ static func build(level: Dictionary, max_rounds: int = MAX_ROUNDS) -> Dictionary
 			if b.state != Board.GameState.PLAYING:
 				break
 		rounds += 1
+		if hit_step_cap:
+			break
 		if applied == 0:
 			out["reason"] = "本轮无可应用结论（疑似重复结论）"
 			break
@@ -79,7 +107,61 @@ static func build(level: Dictionary, max_rounds: int = MAX_ROUNDS) -> Dictionary
 		out["reason"] = "已推出全部格子"
 	# cert_hash：盘面内容哈希 ‖ 认证结果（GDD 13 号 §13.3，防「盘面被篡改却沿用旧认证」）
 	out["cert_hash"] = (_canonical_level_hash(level) + "|" + str(out["solved"])).sha256_text()
+	# 体积上限（步数 + 字节）：统一走 `apply_limits` 砍尾部、留前缀；截断信息写进日志。
+	var limited := apply_limits(all_steps, {"solved": out["solved"], "cert_hash": out["cert_hash"]})
+	out["steps"] = limited["steps"]
+	out["truncated"] = bool(limited["truncated"]) or hit_step_cap
+	if out["truncated"]:
+		out["kept_steps"] = int(limited["kept_steps"])
+		out["dropped_steps"] = int(limited["dropped_steps"])
+		var why := str(limited["truncated_reason"])
+		if why == "":
+			why = "步数上限 %d" % MAX_STEPS
+		out["truncated_reason"] = why
+		if str(out["reason"]) == "":
+			out["reason"] = "日志已截断（%s）：仅保留前 %d 步" % [why, int(out["kept_steps"])]
 	return out
+
+
+## 应用单份日志的体积上限，返回 `{steps, truncated, kept_steps, dropped_steps, truncated_reason}`。
+## 【纯函数】不改入参 `steps`；截断**只砍尾部** ⇒ 保留的必定是**前缀**，步序与内容都不重排
+##（回放与 `verify()` 都依赖"前 N 步 == 原链的前 N 步"这一点）。
+## `extra` 用于把日志里除 steps 外的字段一并计入字节数（`build()` 传 solved/cert_hash）。
+static func apply_limits(steps: Array, extra: Dictionary = {}) -> Dictionary:
+	var total := steps.size()
+	var kept: Array = steps
+	var reason := ""
+	if kept.size() > MAX_STEPS:
+		kept = kept.slice(0, MAX_STEPS)
+		reason = "步数上限 %d" % MAX_STEPS
+	var base := extra.duplicate()
+	base["steps"] = kept
+	if _log_bytes(base) > MAX_BYTES:
+		reason = "字节上限 %d" % MAX_BYTES
+		# 二分找"最长的可行前缀"：JSON 大小随前缀单调不减 ⇒ 单调可二分，O(log n) 次序列化
+		var lo := 0
+		var hi := kept.size()
+		while lo < hi:
+			var mid := int((lo + hi + 1) / 2)
+			var cand := extra.duplicate()
+			cand["steps"] = kept.slice(0, mid)
+			if _log_bytes(cand) <= MAX_BYTES:
+				lo = mid
+			else:
+				hi = mid - 1
+		kept = kept.slice(0, lo)
+	return {
+		"steps": kept,
+		"truncated": reason != "",
+		"kept_steps": kept.size(),
+		"dropped_steps": total - kept.size(),
+		"truncated_reason": reason,
+	}
+
+
+## 一份日志（或其中一部分）序列化后的 UTF-8 字节数——`MAX_BYTES` 的度量口径。
+static func _log_bytes(d: Dictionary) -> int:
+	return JSON.stringify(d).to_utf8_buffer().size()
 
 
 ## 关卡路径 → 存档 key（去掉目录与扩展名，并过滤 Windows 非法字符）。
@@ -131,15 +213,20 @@ static func load_log(key: String) -> Dictionary:
 
 ## 可复验性检验：重新推导一遍，与存档逐步比对（含结论格与结论类型）。
 ## 返回 { "ok": bool, "reason": String, "expected": int, "actual": int }
+##
+## 截断日志（`truncated == true`）只保证"前缀"：此时比到存档的步数为止，不因"存档少了尾巴"判红；
+## 旧日志没有 `truncated` 字段 ⇒ 取默认 false，走原「逐步全比」路径（向后兼容）。
 static func verify(log: Dictionary, level: Dictionary) -> Dictionary:
 	if log.is_empty():
 		return {"ok": false, "reason": "证明日志为空", "expected": 0, "actual": 0}
 	var saved: Array = log.get("steps", [])
+	var truncated := bool(log.get("truncated", false))
 	var fresh := build(level)
 	var now: Array = fresh.get("steps", [])
 	if saved.size() != now.size():
-		return {"ok": false, "reason": "步数不一致（存档 %d vs 重算 %d）" % [saved.size(), now.size()],
-			"expected": saved.size(), "actual": now.size()}
+		if not truncated or saved.size() > now.size():
+			return {"ok": false, "reason": "步数不一致（存档 %d vs 重算 %d）" % [saved.size(), now.size()],
+				"expected": saved.size(), "actual": now.size()}
 	for i in saved.size():
 		var a: Dictionary = saved[i]
 		var c: Dictionary = now[i]
@@ -151,6 +238,9 @@ static func verify(log: Dictionary, level: Dictionary) -> Dictionary:
 		if not _same_pos(a.get("pos", []), c.get("pos", [])):
 			return {"ok": false, "reason": "第 %d 步坐标不一致" % (i + 1),
 				"expected": saved.size(), "actual": now.size()}
+	if truncated and saved.size() < now.size():
+		return {"ok": true, "reason": "前 %d 步一致（存档已截断）" % saved.size(),
+			"expected": saved.size(), "actual": now.size()}
 	return {"ok": true, "reason": "逐步一致", "expected": saved.size(), "actual": now.size()}
 
 

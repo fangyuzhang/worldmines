@@ -11,6 +11,22 @@
 extends GutTest
 
 
+func test_snapshot_keeps_shape_params() -> void:
+	# 【W1 前置修复 2026-10-03】`load_from()` 会把 `shape_kind/shape_params` 清零，而快照原来没带它们
+	# ⇒ "换形状后按撤销"会**悄悄退回方阵**（用户手工改的格子与形状定义一起丢）。
+	var d := EditorDoc.new(9, 9)
+	d.mines.append(Vector2i(4, 4))
+	d.shape_kind = "ring"
+	d.shape_params = {"outer": 3, "inner": 1}
+	var snap := d.snapshot()
+	d.shape_kind = ""
+	d.shape_params = {}
+	assert_true(d.restore(snap), "恢复应成功")
+	assert_eq(d.shape_kind, "ring", "撤销必须恢复到原形状类型")
+	assert_eq(int(d.shape_params.get("inner", -1)), 1, "形状参数也要一起恢复：%s" % str(d.shape_params))
+	assert_true(d.mines.has(Vector2i(4, 4)), "盘面本身也要照旧恢复")
+
+
 func test_neighbor_degree_limits_warn_and_block() -> void:
 	# 【清单·数据爆炸 B】单格邻居 >30 警告、>80 阻止。形状盘最容易中招：作者写一张大偏移表时
 	# 不会意识到自己在造一个"读不出数字"的格子。

@@ -51,11 +51,13 @@ func test_scene_builds_canvas_and_three_panels() -> void:
 		assert_eq((tabs[0] as TabContainer).get_tab_count(), 4, "应有属性 / AI 帮我写 / 规则 / 验证 四页")
 	var panels := (ed as Node).find_children("*", "PanelContainer", true, false)
 	assert_true(panels.size() >= 1, "应有底部状态栏")
-	# 属性页的关键控件都在（形状下拉是"从零画六边形/三角"的入口）
+	# 属性页的关键控件都在（形状下拉是"从零画六边形/三角/圆/星/扇"的入口）
 	assert_not_null(ed.get("_shape_opt"), "应有形状下拉")
 	assert_not_null(ed.get("_shape_size"), "应有形状尺寸控件")
 	assert_not_null(ed.get("_issues_box"), "应有「本盘问题」清单")
-	assert_eq((ed.get("_shape_opt") as OptionButton).item_count, 3, "形状下拉应有 方阵/六边形/三角 三项")
+	# 2026-10-03：形状下拉从 3 项扩到 6 项（新增圆 / 星 / 扇——参数化轮廓族）。
+	assert_eq((ed.get("_shape_opt") as OptionButton).item_count, 6,
+			"形状下拉应有 方阵/六边形/三角/圆/星/扇 六项")
 	# 零代码页（AI 帮我写）：小白路径的每个环节都要在，坏一环就等于这条路径断了
 	assert_not_null(ed.get("_idea_edit"), "应有「想法」输入框")
 	assert_not_null(ed.get("_ai_text"), "应有粘贴 AI 回复的框")

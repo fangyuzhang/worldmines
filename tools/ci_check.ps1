@@ -13,12 +13,43 @@
 # phantom parse errors ("Missing closing '}'"). Keep Chinese explanations in docs.
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File tools/ci_check.ps1
+#         powershell -ExecutionPolicy Bypass -File tools/ci_check.ps1 -NoLock   # troubleshooting only
 # Env:    GODOT_EXE (engine path), SKIP_GUT=1 (build + preset only)
+#
+# [2026-10-03 flake fix] Concurrent gate runs used to fight over the shared user:// save dir
+# (Godot has no --user-data-dir), so the stateful GUT files (test_save_coordinator,
+# test_game_session_logic, test_probe40_gameplay) went red ONLY when two runs overlapped -- green
+# when run alone. The whole gate body below is now wrapped in a cross-process mutex
+# (tools/ci_lock.ps1): a second run WAITS for the first instead of racing it.
+# -NoLock bypasses the mutex (troubleshooting only; do not use it for concurrent runs).
+param(
+    # Troubleshooting only: skip the cross-process mutex (see tools/ci_lock.ps1).
+    [switch]$NoLock
+)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 $godot = if ($env:GODOT_EXE) { $env:GODOT_EXE } else { 'D:\Godot.NET\Godot_v4.7.2-stable_mono_win64\Godot_v4.7.2-stable_mono_win64_console.exe' }
 $fail = @()
+$ciExit = 1
+$ciLock = $null
+if (-not $NoLock) { . (Join-Path $PSScriptRoot 'ci_lock.ps1') }
+# 本次门禁的**起始时刻**：供"跑前快照"类判定使用（见下方 collected 守卫）。
+# 为什么不数分片日志：`tools/_shard_*.log` 会残留**其它 PID** 的旧文件，取"最早"会把基准
+# 拉到很早以前（2026-10-03 实测因此把队友近半小时新增的 17 个测试文件全排除，反而制造假红）。
+$ciRunStart = Get-Date
+
+# Everything below runs while holding tools/.ci_lock (unless -NoLock). The try/finally guarantees
+# the lock is released on a normal exit, on a thrown error, and on Ctrl+C -- never left behind.
+# Thresholds: wait at most 900s (hard error after that); treat a lock as stale if its holder is
+# dead / its PID was reused / it is garbled for >15s / it is older than 1200s (longer than any
+# legitimate run, so a killed gate is recovered in seconds instead of blocking the 900s wait).
+try {
+if (-not $NoLock) {
+    $ciLock = Enter-CiLock -Path (Join-Path $PSScriptRoot '.ci_lock') -TimeoutSeconds 900 -MaxLockAgeSeconds 1200
+} else {
+    Write-Host '[ci_lock] -NoLock given: cross-process mutex skipped (troubleshooting only)'
+}
 
 Write-Host '=== [1/3] dotnet build ==='
 $sln = Get-ChildItem -Path $root -Filter *.sln -File | Select-Object -First 1
@@ -69,7 +100,9 @@ if (-not $env:SKIP_GUT) {
         # 【提速 2026-10-03】原来是单进程串行跑全套（实测 unit 211.6s / ui 199.6s = 门禁 96% 的时间，
         # 而 12 核只用了 1 核）。改成**并行分片**：碰 `user://`/ModAPI 的用例文件收进单独串行片，
         # 其余按文件大小贪心平摊到多核 ⇒ 合成一份与串行同格式的日志，下面的判定逻辑完全不用改。
-        & powershell -NoProfile -ExecutionPolicy Bypass -File tools/gut_shards.ps1 -Dir res://test/unit -Shards 6 -Log tools/_ci_gut.log -Godot $godot
+        # 【C 实测调参 2026-10-03】同一套件同一台机：6 片 134 s / 8 片 109.9 s / **10 片 92.3 s**
+        # （用例数恒为 1067、全过）⇒ 采用 10 片。（再多的片数未实测；每片有 ~3-5 s 引擎启动固定开销。）
+        & powershell -NoProfile -ExecutionPolicy Bypass -File tools/gut_shards.ps1 -Dir res://test/unit -Shards 10 -Log tools/_ci_gut.log -Godot $godot
         $ErrorActionPreference = $prev
         Get-Content tools/_ci_gut.log | Select-String -Pattern 'Scripts|Tests|Passing|Failing|Asserts|All tests passed|pending' | Select-Object -Last 8
         # 【P0-2】玩家侧端到端套件（test/ui）**也要进闸**：它一直在 CI 之外 ⇒ 2026-10-02 一跑就抓到
@@ -147,12 +180,25 @@ if (-not $env:SKIP_GUT) {
         # still printed GREEN with exactly the previous test count.
         # Two independent checks: (1) every test_*.gd on disk must be collected by GUT;
         # (2) no parse error anywhere in the log.
-        $onDisk = (Get-ChildItem test/unit/test_*.gd -File | Measure-Object).Count
+        # 【2026-10-03 修竞态】原来直接数**当前**磁盘文件数 ⇒ 多 Agent 并行开发时，队友在本次
+        # 跑途**新加**的测试文件会让这条守卫制造**假红**（实测 `gut(collected 172 != files 175)`，
+        # domino-model / estimator-fix / replay-model 三位都独立撞过）。
+        # 改为按**本次跑的起始时刻**过滤：只统计"跑之前就存在"的测试文件 —— 守卫本意
+        #（有文件存在却没被 GUT 收集 ⇒ 真有问题）完全保留；跑完才出现的文件不算本轮的事。
+        $onDiskFiles = @(Get-ChildItem test/unit/test_*.gd -File)
+        if ($null -ne $ciRunStart) {
+            $onDiskFiles = @($onDiskFiles | Where-Object { $_.CreationTime -lt $ciRunStart })
+        }
+        $onDisk = $onDiskFiles.Count
         $collected = [regex]::Match($gutRaw, 'Scripts\s+(\d+)')
         if (-not $collected.Success) {
             $fail += 'gut(script count missing)'
-        } elseif ([int]$collected.Groups[1].Value -ne $onDisk) {
-            $fail += "gut(collected $($collected.Groups[1].Value) != files $onDisk)"
+        } elseif ([int]$collected.Groups[1].Value -lt $onDisk) {
+            # 【2026-10-03 修语义】只判"**收到的比应有的少**"：那才是本守卫要抓的
+            #（文件在盘上、GUT 却没收集 ⇒ 解析失败被静默跳过）。反过来"收到得更多"只可能
+            # 是并发队友在我快照之后、GUT 枚举之前新加了测试文件 ⇒ **不是失败**
+            #（实测出现过 `collected 185 != files 184` 的反向假红，canvas-overlay 撞到）。
+            $fail += "gut(collected $($collected.Groups[1].Value) < files $onDisk)"
         }
         if ($gutRaw -match 'SCRIPT ERROR: Parse Error') { $fail += 'gut(parse error)' }
     }
@@ -189,8 +235,22 @@ if ($env:GOLDEN_CASES) {
 if ($fail.Count -gt 0) {
     Write-Host ''
     Write-Host "CI FAILED: $($fail -join ', ')"
-    exit 1
+    $ciExit = 1
+} else {
+    Write-Host ''
+    Write-Host 'CI GREEN (build + GUT + preset health)'
+    $ciExit = 0
 }
-Write-Host ''
-Write-Host 'CI GREEN (build + GUT + preset health)'
-exit 0
+} catch {
+    if ($_.Exception.Message -match '\[ci_lock\]') {
+        Write-Host ''
+        Write-Host ("CI FAILED (lock): " + $_.Exception.Message)
+        $ciExit = 3
+    } else {
+        $ciExit = 1
+        throw
+    }
+} finally {
+    if ($null -ne $ciLock) { Exit-CiLock -Lock $ciLock }
+}
+exit $ciExit

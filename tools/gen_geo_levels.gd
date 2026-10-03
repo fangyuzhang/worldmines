@@ -49,6 +49,8 @@ const MAX_MINES_BUMP := 3
 const TextureMarks := preload("res://tools/texture_marks.gd")
 ## 主题配色规则源（palette.theme：变体轴 / 形状族的唯一映射表）。2026-09-24 接入。
 const ThemeMarks := preload("res://tools/theme_marks.gd")
+## 全局约束门控的统一落盘口径（2026-10-03）：异形盘上被丢弃的全局规则不得回写成关卡自述。
+const GenCommon := preload("res://tools/gen_common.gd")
 
 ## 单关**累计**生成时间上限（看门狗）。2026-09-23 审计 #4 补齐，与 gen_shape_levels.gd 同口径。
 ## 理由：CP-SAT 的 max_time_in_seconds 只约束求解阶段，实测 >100 格 + 变体规则时 Solve()
@@ -372,6 +374,15 @@ func _gen_one(spec: Dictionary) -> bool:
 	if level.is_empty():
 		push_error("%s: %d 次尝试无一达到峰值 >= %d（最高 %d）" % [file_name, tries, MIN_PEAK, best_peak])
 		return false
+
+	# 全局约束门控收口（2026-10-03）：本族几何全是异形拓扑 ⇒ S/Z/dt 等 GEO_RECT_ONLY
+	# 全局约束会被生成器丢弃。产物 global_rules 必须写**实际生效**集；下方据此解析的
+	# 变体轴（纹理徽记 / theme）也一并按生效集走，不按 SPEC 原始请求。
+	# 换 seed 循环在成功候选后立即 break ⇒ gen.last_call_stats 即成功那次的门控记录。
+	var eff := GenCommon.writeback_globals(gen, globals, file_name)
+	globals = eff["global_rules"]
+	level["global_rules"] = globals
+	variant = str(globals[0]) if not globals.is_empty() else ""
 
 	level["name"] = str(spec["name"])
 	level["desc"] = str(spec["desc"])

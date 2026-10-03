@@ -117,3 +117,6 @@ tools/_archive/
 /assets/fonts/crayon/LXGWWenKai-Regular.ttf
 /assets/fonts/crayon/LXGWWenKai-Regular.ttf.import
 
+
+# 门禁互斥锁（瞬时文件，绝不该提交）
+tools/.ci_lock

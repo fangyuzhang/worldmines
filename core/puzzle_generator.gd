@@ -356,6 +356,18 @@ static func def_to_rule(engine: DefEngine, def_name: String, is_clue: bool) -> S
 # 唯一解删线索走 C# CP-SAT 快速计数（不可用时回退 GDScript 枚举）；
 # 纯逻辑可解验证走 BruteForceOracle + RuleOracle 黑盒判定（既有管线零改动）。
 
+## 异形拓扑门控的**唯一判据**（线索型 / 全局约束型同口径）：规则声明 supports_topology() 才可用。
+## has_method 守卫兜住「旧契约鸭子类型规则」（CONTRACT 未含 supports_topology）：
+## 无该方法者按「未声明」处理 ⇒ 与今天一样不可用（第三方 mod 不声明时行为零变化）。
+static func _rule_topology_ok(rule: Object) -> bool:
+	return rule != null and rule.has_method("supports_topology") and bool(rule.call("supports_topology"))
+
+
+## 异形盘上「丢弃全局约束」的用户可读原因（告警 / last_call_stats.gated_globals / 矩阵文案共用一份口径）。
+static func _global_topology_gate_reason() -> String:
+	return "该全局规则未声明拓扑能力或依赖矩形几何（geometry_kind=GEO_RECT_ONLY）；异形盘上按包围盒行列强算会得到另一个约束（盘外格按常量 0 参与，core/rule_builder.gd:56-59），故回退「无该约束」（等价于未勾选）"
+
+
 ## 从规则注册表生成关卡。
 ## clue_rule_id: 线索规则 id（恰一个）；global_rule_ids: 全局规则 id 列表（可空）。
 ## 规则来源：内置（RuleRegistry.default()）+ mod 注册（entry.on_load 里
@@ -380,16 +392,26 @@ static func precheck_rules(clue_rule_id: String, global_rule_ids: Array, size: V
 		if g == null or g.get_kind() != RulePlugin.KIND_GLOBAL:
 			return {"ok": false, "reason": "未知全局规则 %s" % str(gid)}
 		globals.append(g)
-	# 异形拓扑门控（与 generate_with_rules 同口径）：只依赖邻域的规则（supports_topology）原样使用，
-	# 其余回退 classic 并**大声告警**（禁止静默降级）。默认 geometry_kind() = GEO_RECT_ONLY
-	# ⇒ 未声明的第三方规则行为与今天逐位一致。has_method 守卫兜住「旧契约鸭子类型规则」
-	#（CONTRACT 未含 supports_topology）：无该方法者按「未声明」处理，与今天一样回退 classic。
+	# 异形拓扑门控（与 generate_with_rules 同口径，判据 = _rule_topology_ok）：只依赖邻域的规则
+	#（supports_topology）原样使用，其余回退 classic 并**大声告警**（禁止静默降级）。
+	# 默认 geometry_kind() = GEO_RECT_ONLY ⇒ 未声明的第三方规则行为与今天逐位一致。
 	if topology != null:
-		var topo_ok: bool = clue_rule.has_method("supports_topology") and bool(clue_rule.call("supports_topology"))
-		if not topo_ok:
+		if not _rule_topology_ok(clue_rule):
 			push_warning("PuzzleGenerator.precheck_rules: 异形拓扑忽略线索规则 %s（该规则未声明拓扑能力或依赖矩形几何），回退 classic，线索值按拓扑邻域计数" % clue_rule_id)
 			clue_rule = reg.resolve(&"classic")
 			clue_rule_id = "classic"
+		# 全局约束同口径（2026-10-03）：全局规则没有「经典」可替换 ⇒ 安全回退 = 丢弃该约束
+		#（等价于未勾选）+ 告警。不丢的话 RuleOracle 会按包围盒行列强算（core/rule_builder.gd:56-59），
+		# 判据层与生成期（已同步同一门控）就会给出两个不同的结论。
+		var kept_globals: Array = []
+		for i in globals.size():
+			var g: Object = globals[i]
+			if _rule_topology_ok(g):
+				kept_globals.append(g)
+			else:
+				push_warning("PuzzleGenerator.precheck_rules: 异形拓扑忽略全局规则 %s：%s" % [
+					str(global_rule_ids[i]), _global_topology_gate_reason()])
+		globals = kept_globals
 	var cols := size.x
 	var rows := size.y
 	var n := topology.cell_count() if topology != null else cols * rows
@@ -439,8 +461,7 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 	# 故 classic 逐位不变）；声明 GENERIC 但语义非邻域计数的规则必须覆写 compute_clue_topo。
 	# has_method 守卫兜住「旧契约鸭子类型规则」（CONTRACT 未含 supports_topology）。
 	if topology != null:
-		var topo_ok: bool = clue_rule.has_method("supports_topology") and bool(clue_rule.call("supports_topology"))
-		if not topo_ok:
+		if not _rule_topology_ok(clue_rule):
 			push_warning("PuzzleGenerator: 异形拓扑忽略线索规则 %s（该规则未声明拓扑能力或依赖矩形几何），回退 classic（线索值 = 拓扑邻域计数）" % clue_rule_id)
 			clue_rule = reg.resolve(&"classic")
 		if clue_rule == null:
@@ -449,12 +470,32 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 		# 造成「关卡自述」与「实际语义」分叉（Board 异形分支虽按邻接表算值不受影响，
 		# 但 rule_clue_id 会误导后续复用与工坊展示）。
 		clue_rule_id = "classic"
+	# 全局约束门控（2026-10-03 补齐，与线索型**同一判据** `supports_topology()`）：
+	# 此前这里只 gate 线索规则，于是 mx/rl/pf/qd/dt/ep/4c 这些全局约束型在洞盘 / 环绕盘上
+	# 被**真的构建** —— 而 RuleBuilder 在邻接表盘上把盘外格按常量 0 代入
+	#（core/rule_builder.gd:56-59），约束按包围盒行列强算 ⇒ 得到的是**另一个**约束
+	#（如「左右镜像」退化成「镜像列是洞的格必为 0」）。运行期语义错误，且判据层/生成期分叉。
+	# 全局规则没有「经典」可替换 ⇒ 安全回退 = **丢弃该约束**（等价于未勾选）+ 大声告警；
+	# 落盘名单 global_rule_ids 同步 = 与上面 clue_rule_id 同步同一理由：
+	# 不许关卡自述带一个实际没生效的约束（复用 / 工坊 / 规则图例都会按自述走）。
 	var globals: Array = []
+	var gated_globals: Dictionary = {}
 	for gid in global_rule_ids:
 		var g: Object = reg.resolve(StringName(str(gid)))
 		if g == null or g.get_kind() != RulePlugin.KIND_GLOBAL:
 			return {}
+		if topology != null and not _rule_topology_ok(g):
+			var why := _global_topology_gate_reason()
+			push_warning("PuzzleGenerator: 异形拓扑忽略全局规则 %s：%s；落盘 global_rules 已同步（关卡不再声称它生效）" % [str(gid), why])
+			gated_globals[str(gid)] = why
+			continue
 		globals.append(g)
+	if not gated_globals.is_empty():
+		var kept_ids: Array = []
+		for gid in global_rule_ids:
+			if not gated_globals.has(str(gid)):
+				kept_ids.append(gid)
+		global_rule_ids = kept_ids
 	var cols := size.x
 	var rows := size.y
 	# 异形拓扑（A2）：格子总数 = 拓扑 cell_count（不含洞格）；坐标范围 = 包围盒。
@@ -468,7 +509,11 @@ func generate_with_rules(clue_rule_id: String, global_rule_ids: Array, size: Vec
 		"t_place_ms": 0, "t_prune_ms": 0, "t_verify_ms": 0, "prune_tries": 0, "prune_ok": 0,
 		# A1-ii（2026-09-27）可观测：prune 因「全量集卡住 ⇒ 必为 no-op」被整体短路的次数
 		#（prune_skipped = 被跳过的 prune 调用数；prune_skip_stuck = 其中因卡住而跳过的）。
-		"prune_skip_stuck": 0, "prune_skipped": 0, "t_prune_pre_ms": 0}
+		"prune_skip_stuck": 0, "prune_skipped": 0, "t_prune_pre_ms": 0,
+		# 全局约束门控可读原因（2026-10-03）：{规则 id: 为何在异形盘上被丢弃}。
+		# 与「阶段失败计数」同性质的**可观测通道**（批量工具按 .get() 读，新增键不改既有字段语义）：
+		# 上层不必解析 push_warning 才知道「勾的全局约束没生效、为什么」。
+		"gated_globals": gated_globals}
 
 	for attempt in attempts:
 		# 种子派生：每 attempt 独立确定性随机流（同 seed+attempt 必同盘，可复现）。

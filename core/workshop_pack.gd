@@ -7,11 +7,15 @@ extends RefCounted
 ##   manifest.json       —— 元数据（schema 由 `core/manifest_parser.gd:30 validate` 定义，本文件写完必须自校一次）
 ##   entry.gd            —— GDScript 入口：把随包携带的规格注册进 RuleRegistry（契约：钩子 return true）
 ##   board.json          —— 自行声明的棋盘拓扑（仅当用了环绕/自定义邻域/障碍）
-##   levels/<slug>.json  —— 关卡本体（`Board.load_level` 直接能吃）
+##   levels/<...>.json   —— 关卡**结果层**（游戏只读它；`Board.load_level` 直接能吃）
+##   design/<...>.json   —— 关卡**设计层**（编辑器才读；坏了游戏照样玩，只是不能再编辑）
 ##   preview.png         —— 预览图（程序化画，不依赖截图与 UI）
 ## 之所以照抄 mod 目录布局：本仓**已有**的安装/加载链路（`ModAPI.install_from_dir` →
 ## `manifest_parser` → `ModAPI.get_board` → `LevelLoader`）不用改一行就能吃它，
 ## 而"另发明一种包格式"要多写一条只被自己使用的加载路径。
+##
+## 【2026-10-03 分层（文档「八」）】`levels/` 与 `design/` 同构并列（同相对路径、同集结构），
+## 目录名取自 `LevelSets.LEVELS_DIR` / `LevelSets.DESIGN_DIR`（单一真源，写入方与读取方共用）。
 ##
 ## 【不联网、不假装】本文件只落盘；上传是 `core/steam_workshop.gd` 的**占位**接口，
 ## 当前一律返回"已生成本地 workshop 包，请手动上传"，绝不返回假成功。
@@ -22,7 +26,10 @@ extends RefCounted
 const MANIFEST_NAME := "manifest.json"
 const ENTRY_NAME := "entry.gd"
 const BOARD_NAME := "board.json"
+## 结果层 / 设计层目录名。必须与 `LevelSets` 同口径（测试里有一条断言钉住），
+## 否则就会出现"打包写 design/、读取方找 levels/"这种分叉。
 const LEVELS_DIR := "levels"
+const DESIGN_DIR := "design"
 ## 随包携带的图文教程（P6）：安装后落在 `user://mods/<id>/tutorial/`，
 ## `core/tutorial.gd` 会去那里找 ⇒ 自创变体进游戏后点书本图标就能看到图例。
 const TUTORIAL_DIR := "tutorial"
@@ -75,6 +82,59 @@ static func _walk(root: String, rel: String, ext: String, out: Array[String]) ->
 	for sub in d.get_directories():
 		var s_s := str(sub)
 		_walk(root, s_s if rel == "" else rel.path_join(s_s), ext, out)
+
+
+## `levels/<大小>/<档位>.json` → `design/<大小>/<档位>.json`（与结果层同构，只换根目录）。
+static func _design_name(levels_name: String) -> String:
+	var rel := levels_name
+	if rel.begins_with(LEVELS_DIR + "/"):
+		rel = rel.substr(LEVELS_DIR.length() + 1)
+	return "%s/%s" % [DESIGN_DIR, rel]
+
+
+## 集文件文本 → 结果层集 / 设计层集（同顶层元数据、同集结构）。不是集文件 ⇒ `{ok:false}`（调用方原样随包）。
+static func _layer_set_text(text: String) -> Dictionary:
+	var parsed: Variant = SpecHelper.parse_json_safe(text)
+	if not (parsed is Dictionary):
+		return {"ok": false}
+	var d: Dictionary = parsed
+	if not (d.get("levels", null) is Array):
+		return {"ok": false}
+	var levels: Array = []
+	var designs: Array = []
+	for lv in (d["levels"] as Array):
+		if not (lv is Dictionary):
+			return {"ok": false}
+		var env: Dictionary = lv if LevelSets.is_envelope(lv as Dictionary) else LevelSets.envelope(lv as Dictionary)
+		var play := LevelSets.playable(env)
+		if play.is_empty():
+			return {"ok": false}   # 这一关转不成可开局的形态 ⇒ 整份原样随包（不写出坏结果层）
+		levels.append(play)
+		designs.append(LevelSets.design_of(env))
+	var head := d.duplicate(true)
+	head.erase("levels")
+	head["version"] = LevelFormat.CURRENT_VERSION
+	head["count"] = levels.size()
+	var rset := head.duplicate(true)
+	rset["levels"] = levels
+	var dset := head.duplicate(true)
+	dset["levels"] = designs
+	return {"ok": true, "result": JSON.stringify(rset, "  "), "design": JSON.stringify(dset, "  ")}
+
+
+## 体积预估（走近 `LevelFormat.estimate_bytes`；以"每关一次"累加，集文件顶层不计）。
+static func _estimate_set_text(text: String) -> int:
+	var parsed: Variant = SpecHelper.parse_json_safe(text)
+	if not (parsed is Dictionary):
+		return 0
+	var d: Dictionary = parsed
+	if not (d.get("levels", null) is Array):
+		return LevelFormat.estimate_bytes(d)
+	var total := 128
+	for lv in (d["levels"] as Array):
+		if lv is Dictionary:
+			total += LevelFormat.estimate_bytes(lv as Dictionary)
+	return total
 
 
 ## 默认输出目录（编辑器"生成包"的落点）。
@@ -157,17 +217,37 @@ static func build(doc: EditorDoc, opts: Dictionary = {}) -> Dictionary:
 	manifest = mv["manifest"]
 
 	var level := doc.to_level_json()
+	var env := LevelSets.envelope(level)
 	var topo := doc.topology()
 	var files: Array = [
 		{"name": MANIFEST_NAME, "text": JSON.stringify(manifest, "  ")},
 		{"name": ENTRY_NAME, "text": _entry_script(doc, pack_id)},
 	]
-	# 批量关卡集（`<大小>/<档位>.json`）：分类随包走。没有 levels_dirs 时退回"单关"布局（老行为不变）。
-	# （`batch_files` 已提到函数开头算好：批量模式要靠"真收到文件"判定，见上面 A5 的修复。）
+	# 【分层落盘】结果层（`levels/...`，游戏只读它）+ 设计层（`design/...`，编辑器才读）。
+	# 结果层用 `LevelSets.playable` 转成 Board/LevelLoader 直接能吃的形态：若直接写 `to_result_layer`
+	# 的 cells，`LevelLoader` 会因"mines 与 total_mines 不符"把包内关卡拒载。
+	var est_bytes := 0
 	if batch_files.is_empty():
-		files.append({"name": "%s/%s" % [LEVELS_DIR, level_name], "text": JSON.stringify(level, "  ")})
+		est_bytes = LevelFormat.estimate_bytes(level)
+		files.append({"name": "%s/%s" % [LEVELS_DIR, level_name],
+			"text": JSON.stringify(LevelSets.playable(env), "  ")})
+		files.append({"name": "%s/%s" % [DESIGN_DIR, level_name],
+			"text": JSON.stringify(env["design"], "  ")})
 	else:
-		files.append_array(batch_files)
+		# 批量关卡集（`<大小>/<档位>.json`）：分类随包走，且**同样分层**（levels/ 与 design/ 同构并列）。
+		# （`batch_files` 已提到函数开头算好：批量模式要靠"真收到文件"判定，见上面 A5 的修复。）
+		for bf in batch_files:
+			var fd: Dictionary = bf
+			var lname := str(fd["name"])
+			var text := str(fd.get("text", ""))
+			est_bytes += _estimate_set_text(text)
+			var layered := _layer_set_text(text)
+			if bool(layered["ok"]):
+				files.append({"name": lname, "text": str(layered["result"])})
+				files.append({"name": _design_name(lname), "text": str(layered["design"])})
+			else:
+				# 不是集文件（例如作者手放的平铺单关）：原样随包，不擅自丢他的文件
+				files.append(bf)
 	files.append_array(_dir_files(opts.get("tutorial_dirs", []), TUTORIAL_DIR, ".txt"))
 	# 棋盘拓扑与预览图描述的是**当前盘**这一张：批量包里不该混进来（那会让玩家看到一张
 	# 与分类关卡无关的图/盘）。两者都只在单关包里写。
@@ -209,7 +289,8 @@ static func build(doc: EditorDoc, opts: Dictionary = {}) -> Dictionary:
 	for e in entries:
 		if not back.has(e):
 			return {"ok": false, "reason": "zip 缺少条目 %s（回读核对失败）" % e, "path": zip_path, "entries": [], "id": pack_id}
-	return {"ok": true, "reason": "", "path": zip_path, "entries": entries, "id": pack_id}
+	return {"ok": true, "reason": "", "path": zip_path, "entries": entries, "id": pack_id,
+		"est_bytes": est_bytes}
 
 
 ## 程序化预览图（不截图、不依赖 UI ⇒ 无头环境也能生成）。

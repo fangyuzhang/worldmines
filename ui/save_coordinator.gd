@@ -235,3 +235,129 @@ static func clear_all_drawings() -> void:
             dir.remove(fname)
         fname = dir.get_next()
     dir.list_dir_end()
+
+
+# ============ 历史快照：全局磁盘配额 + 内容哈希去重（v3.4 / 数据爆炸 F） ============
+#
+# 快照 = 整份关卡 JSON 的历史副本，独立于存档主流程（MAIN/TEMP/.bak 的语义一律不动）。
+# 三条硬约束：
+#   1) 内容哈希去重：JSON 规范化（键排序）后取 md5，**文件名即哈希** ⇒ 相同内容再存 =
+#      命中已有文件、不再落盘（挂机反复保存不会堆一堆相同快照）。
+#   2) 全局配额：整个 user://snapshots 目录的字节总量超限 → 按写入序号从旧到新删。
+#      配额是**全局**的，不按关卡分份。
+#   3) 绝不碰主流程文件：本子系统只读写 SNAPSHOT_DIR 内的 *.json；MAIN/TEMP/.bak 不在该目录，
+#      物理上不可能被误删（clear_snapshots 也只删目录内文件）。
+
+const SNAPSHOT_DIR := "user://snapshots"
+## 全局配额依据：单份对局存档（revealed/flagged/mine_positions/metadata）通常 < 50KB；
+## 快照存整份关卡 JSON（多为几 KB~几十 KB，大关卡也 < 200KB）。取 8 MiB ≈
+## 可留 ~160 份 50KB / 数百份小关卡，足以覆盖"最近少量历史 + 崩溃回滚"，
+## 又给 user:// 一个明确上限（不是每关卡一份，故不会随关卡数线性膨胀）。
+const SNAPSHOT_QUOTA_BYTES := 8 * 1024 * 1024
+## 可注入配额（单测把配额调小以验证淘汰逻辑，避免真写 8 MiB）。
+static var snapshot_quota_bytes: int = SNAPSHOT_QUOTA_BYTES
+
+
+## 写一份快照；返回落盘路径（内容去重命中 = 返回已有路径）。写入失败返回 ""。
+## 只操作 SNAPSHOT_DIR 内的文件，不触碰 MAIN/TEMP/.bak。
+static func write_snapshot(data: Dictionary) -> String:
+    return write_snapshot_to(SNAPSHOT_DIR, data)
+
+
+## write_snapshot 的可指定目录版本（单测隔离用）。
+static func write_snapshot_to(dir_path: String, data: Dictionary) -> String:
+    # 键排序保证「内容相同、键序不同」得到同一哈希 ⇒ 跨机器/跨次调用去重结果一致。
+    var json := JSON.stringify(data, "", true)
+    var hash := json.md5_text()
+    var existing := _find_snapshot_by_hash(dir_path, hash)
+    if existing != "":
+        return existing  # 内容完全相同 → 不重复落盘
+    DirAccess.make_dir_recursive_absolute(dir_path)
+    var path := "%s/%010d_%s.json" % [dir_path, _next_snapshot_seq(dir_path), hash]
+    var f := FileAccess.open(path, FileAccess.WRITE)
+    if f == null:
+        push_error("快照写入失败: " + path)
+        return ""
+    f.store_string(json)
+    f.close()
+    prune_snapshots(dir_path)
+    return path
+
+
+## 全局配额淘汰：总量超限时从最旧（序号最小）开始删，至少保留最新一份。
+## 返回删除的份数。只删目录内的快照文件。
+static func prune_snapshots(dir_path: String = SNAPSHOT_DIR) -> int:
+    var files := list_snapshots(dir_path)  # 已按文件名（= 写入序号）升序，最旧在前
+    var total := snapshot_total_bytes(dir_path)
+    var removed := 0
+    var i := 0
+    # 条件 `i < files.size() - 1` + `files.size() - removed > 1` 双重保证最新一份永不被删。
+    while total > snapshot_quota_bytes and files.size() - removed > 1 and i < files.size() - 1:
+        var p: String = files[i]
+        var sz := _file_size(p)
+        if DirAccess.remove_absolute(p) == OK:
+            total -= sz
+            removed += 1
+        i += 1
+    return removed
+
+
+## 目录内快照路径，按写入序号（文件名前缀）升序 = 最旧 → 最新。
+static func list_snapshots(dir_path: String = SNAPSHOT_DIR) -> PackedStringArray:
+    var out := PackedStringArray()
+    var dir := DirAccess.open(dir_path)
+    if dir == null:
+        return out
+    dir.list_dir_begin()
+    var fname := dir.get_next()
+    while fname != "":
+        if not dir.current_is_dir() and fname.ends_with(".json"):
+            out.append(dir_path + "/" + fname)
+        fname = dir.get_next()
+    dir.list_dir_end()
+    out.sort()  # 文件名前缀为零填充序号 ⇒ 字典序 = 写入序
+    return out
+
+
+## 目录内快照字节总量（配额判据）。
+static func snapshot_total_bytes(dir_path: String = SNAPSHOT_DIR) -> int:
+    var total := 0
+    for p in list_snapshots(dir_path):
+        total += _file_size(p)
+    return total
+
+
+## 清空目录内全部快照（只删 SNAPSHOT_DIR 内的 *.json，不影响主档）。
+static func clear_snapshots(dir_path: String = SNAPSHOT_DIR) -> void:
+    for p in list_snapshots(dir_path):
+        DirAccess.remove_absolute(p)
+
+
+static func _file_size(path: String) -> int:
+    var f := FileAccess.open(path, FileAccess.READ)
+    if f == null:
+        return 0
+    var n := f.get_length()
+    f.close()
+    return n
+
+
+## 文件名 `<010 位序号>_<md5>.json`；命中同哈希文件即返回其路径（= 去重）。
+static func _find_snapshot_by_hash(dir_path: String, hash: String) -> String:
+    for p in list_snapshots(dir_path):
+        var base := p.get_file().get_basename()
+        var us := base.find("_")
+        if us >= 0 and base.substr(us + 1) == hash:
+            return p
+    return ""
+
+
+## 下一个写入序号 = 目录内最大序号 + 1（跨次运行仍单调，保证"最旧"可判定）。
+static func _next_snapshot_seq(dir_path: String) -> int:
+    var max_seq := 0
+    for p in list_snapshots(dir_path):
+        var base := p.get_file().get_basename()
+        var us := base.find("_")
+        if us > 0:
+            max_seq = maxi(max_seq, int(base.substr(0, us)))
+    return max_seq + 1

@@ -27,15 +27,36 @@ const UNDO_LIMIT := 50
 
 ## 存档格式版本。
 ##   v1（无 v 字段）= 屏幕坐标 —— 棋盘坐标改造后无法对齐；
-##   v2 = 棋盘坐标（随棋盘缩放/换分辨率，当前格式）。
+##   v2 = 棋盘坐标（浮点直存，随棋盘缩放/换分辨率）；
+##   v3 = 棋盘坐标 + 整数量化（"quant" 字段给出步长，读回按步长反量化）。
 ## 为什么要显式写版本号：v1 笔迹在新格式下会整体错位，而**错位笔记比没有笔记更危险**
 ## （玩家会照着错误位置推理）。宁可丢弃旧笔记并明确告知。
-const SAVE_VERSION := 2
+const SAVE_VERSION := 3
+## 可读的最低版本：v1 是屏幕坐标（无法对齐棋盘，丢弃并告警）；v2 起是棋盘坐标，必须继续可读。
+const MIN_COMPATIBLE_VERSION := 2
 
 ## 采样节流：与上一个采样点的屏幕距离小于该值则不入笔。
 ## 鼠标/触控可以以 kHz 频率发 motion 事件，不节流会攒出上万个点，
 ## 而 _draw() 是逐连线 + 逐点画圆，直接决定每帧开销。
 const MIN_SAMPLE_DIST := 2.5
+
+## 单笔点数硬上限。上面的采样节流只能把点数压到「拖动距离 / MIN_SAMPLE_DIST」，
+## 一次长距离涂鸦（如一屏来回 5000px）仍可攒到 2000+ 点；落笔前 _draw() 每帧重绘全部点，
+## 点数直接决定每帧开销与落盘体积，必须另有硬上限。
+## 取 2000：正常一次手绘 < 500 点，此值不会误伤手感；而 2000 点的 polyline + 圆点
+## 在 60fps 下仍是毫秒量级，是"可接受的最坏单笔"。
+const MAX_STROKE_POINTS := 2000
+
+## 抽稀容差（单位 = 棋盘坐标）。棋盘坐标口径见 board_view._unit_px() 与文件头：
+## **1 棋盘单位 = 1 格**（矩形/蜂窝/自定义盘同构），不新造概念。
+## 取格宽的 5%（= 0.05 格）：小于此幅度的抖动在单格内视觉不可辨、可抹掉，
+## 又不至于把一格内的转折形状改走样（对应"格宽的 5% 左右"）。
+const BOARD_UNIT_PER_CELL := 1.0
+const SIMPLIFY_EPSILON := BOARD_UNIT_PER_CELL * 0.05
+
+## 落盘坐标量化步长。原落盘坐标精度约定 1e-4：按步长取整后最大误差 = 步长/2 = 5e-5 ≤ 1e-4，
+## 与原精度兼容；落盘存整数格点而非浮点 ⇒ 同一笔画跨机器/跨次加载结果逐位一致。
+const QUANT_STEP := 1e-4
 
 ## 棋盘坐标换算钩子（board_view 注入）。空 Callable = 不透换（屏幕坐标即棋盘坐标）。
 var board_to_screen := Callable()
@@ -180,6 +201,10 @@ func _gui_input(event: InputEvent) -> void:
 			# 采样节流：够远才记点（屏幕距离比较，与坐标系换算出耦）
 			if (event.position - last).length() >= MIN_SAMPLE_DIST:
 				pts.append(_to_board(event.position))
+				# 硬上限：超限当场抽稀。否则长时间涂鸦会在落笔前就攒到上万点，
+				# _draw() 每帧重绘全部点 → 帧率崩，且收笔时一次性抽稀会有可感卡顿。
+				if pts.size() > MAX_STROKE_POINTS:
+					_active_stroke["points"] = enforce_stroke_limit(pts)
 				queue_redraw()
 		elif _mode == _Mode.ERASE:
 			_erase_at(_to_board(event.position))
@@ -217,6 +242,8 @@ func _start_draw(pos: Vector2) -> void:
 func _finish_draw() -> void:
 	if _active_stroke.is_empty():
 		return
+	# 收笔兜底：正常笔迹（≤ 上限）原样保留手感；仅超长输入走 Douglas-Peucker 抽稀。
+	_active_stroke["points"] = enforce_stroke_limit(_active_stroke["points"])
 	_push_undo({"op": "add", "strokes": [_active_stroke]})
 	_redo_stack.clear()
 	_active_stroke = {}
@@ -446,6 +473,92 @@ func has_strokes() -> bool:
 	return not strokes.is_empty()
 
 
+# ============ 点数上限 / 抽稀 / 坐标量化（纯函数，便于单测） ============
+
+## Douglas-Peucker 抽稀（纯函数）：保留「首尾 + 偏离超容差的拐点」。
+## epsilon <= 0 或点数 ≤ 2 时原样返回副本（不被调用方改动串味）。
+static func simplify_stroke(points: PackedVector2Array, epsilon: float) -> PackedVector2Array:
+	var n := points.size()
+	if n <= 2 or epsilon <= 0.0:
+		return points.duplicate()
+	var keep := PackedByteArray()
+	keep.resize(n)  # resize 后默认全 0
+	keep[0] = 1
+	keep[n - 1] = 1
+	# 显式栈代替递归：单笔可达数千点，递归深度最坏 = 点数，会爆栈。
+	var stack: Array = [[0, n - 1]]
+	while not stack.is_empty():
+		var seg: Array = stack.pop_back()
+		var i: int = seg[0]
+		var j: int = seg[1]
+		if j <= i + 1:
+			continue
+		var max_d := -1.0
+		var max_i := -1
+		for k in range(i + 1, j):
+			var d := _point_segment_distance(points[k], points[i], points[j])
+			if d > max_d:
+				max_d = d
+				max_i = k
+		if max_d > epsilon and max_i > i:
+			keep[max_i] = 1
+			stack.append([i, max_i])
+			stack.append([max_i, j])
+	var out := PackedVector2Array()
+	for i in n:
+		if keep[i] == 1:
+			out.append(points[i])
+	return out
+
+
+## 点到**线段**的最短距离（DP 的偏离度量）。比"到无限直线"稳：端点附近不会放大误差。
+static func _point_segment_distance(p: Vector2, a: Vector2, b: Vector2) -> float:
+	var ab := b - a
+	var l2 := ab.length_squared()
+	if l2 <= 0.000000000001:
+		return p.distance_to(a)
+	var t := clampf((p - a).dot(ab) / l2, 0.0, 1.0)
+	return p.distance_to(a + ab * t)
+
+
+## 硬上限：点数 ≤ MAX 时原样返回；否则按 SIMPLIFY_EPSILON 抽稀，
+## 仍超限则逐步放大容差（极端"每点都偏离"的输入），最后等距抽样兜底。恒保首尾点。
+static func enforce_stroke_limit(points: PackedVector2Array) -> PackedVector2Array:
+	if points.size() <= MAX_STROKE_POINTS:
+		return points
+	var eps := SIMPLIFY_EPSILON
+	var out := simplify_stroke(points, eps)
+	while out.size() > MAX_STROKE_POINTS and eps < 1000.0:
+		eps *= 2.0
+		out = simplify_stroke(points, eps)
+	if out.size() > MAX_STROKE_POINTS:
+		out = _decimate_keep_ends(out, MAX_STROKE_POINTS)
+	return out
+
+
+## 最后兜底：等距抽样到 limit 点并强制保留首尾（DP 在"逐点都超容差"时也压不下来）。
+static func _decimate_keep_ends(points: PackedVector2Array, limit: int) -> PackedVector2Array:
+	var n := points.size()
+	if n <= limit or limit < 2:
+		return points
+	var out := PackedVector2Array()
+	var span := float(n - 1) / float(limit - 1)
+	for i in limit:
+		out.append(points[mini(int(round(float(i) * span)), n - 1)])
+	out[limit - 1] = points[n - 1]
+	return out
+
+
+## 坐标量化（落盘用）：棋盘坐标 → 步长 QUANT_STEP 的整数格点（四舍五入）。
+static func quantize_point(p: Vector2) -> Vector2i:
+	return Vector2i(roundi(p.x / QUANT_STEP), roundi(p.y / QUANT_STEP))
+
+
+## 反量化：整数格点 → 棋盘坐标。与 quantize_point 的往返误差 ≤ QUANT_STEP/2。
+static func dequantize_point(q: Vector2i) -> Vector2:
+	return Vector2(float(q.x) * QUANT_STEP, float(q.y) * QUANT_STEP)
+
+
 # ============ 渲染 ============
 
 func _draw() -> void:
@@ -476,7 +589,10 @@ func get_save_data() -> Dictionary:
 	for s in strokes:
 		var pts: Array = []
 		for p in s["points"]:
-			pts.append([p.x, p.y])
+			# 落盘量化：棋盘坐标 → 整数格点（见 QUANT_STEP）。整数在 JSON 里精确无损，
+			# 跨机器/跨次加载逐位一致；读回时按 "quant" 步长反量化。
+			var q := quantize_point(p)
+			pts.append([q.x, q.y])
 		out.append({
 			"points": pts,
 			"color": (s["color"] as Color).to_html(),
@@ -485,6 +601,7 @@ func get_save_data() -> Dictionary:
 		})
 	return {
 		"v": SAVE_VERSION,
+		"quant": QUANT_STEP,  # 量化步长；旧档（v2）无此键 = 坐标为浮点直存，按浮点读
 		"strokes": out,
 		"current_color": current_color,
 		"current_size": current_size,
@@ -505,15 +622,21 @@ func load_save_data(data: Dictionary) -> void:
 	_legacy_discarded = false
 	if data.is_empty():
 		return
-	if int(data.get("v", 1)) < SAVE_VERSION:
+	if int(data.get("v", 1)) < MIN_COMPATIBLE_VERSION:
 		_legacy_discarded = true
 		changed.emit()
 		return
+	var quant := float(data.get("quant", 0.0))
 	for sd in data.get("strokes", []):
 		var pts := PackedVector2Array()
 		for p in sd.get("points", []):
 			if p is Array and p.size() == 2:
-				pts.append(Vector2(float(p[0]), float(p[1])))
+				if quant > 0.0:
+					# v3：整数格点 → 按步长反量化（跨机器/跨次加载逐位一致）
+					pts.append(dequantize_point(Vector2i(int(p[0]), int(p[1]))))
+				else:
+					# v2：浮点坐标直存，旧档原样读回（向后兼容）
+					pts.append(Vector2(float(p[0]), float(p[1])))
 		if pts.is_empty():
 			continue
 		strokes.append({
