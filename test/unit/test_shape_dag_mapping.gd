@@ -2,13 +2,24 @@
 #
 # 为什么必须单独钉：DAG 的形状词汇表与 core/shape_generator.gd 的构建器**看着能对上、实际有两处
 # 对不上**，而"就近挑一个 build_*"的后果是静默的（错几何/空几何都能混进关卡且不报错）。故钉死：
-#   ① 有词汇、没生成器：ngon 必须 ok=false + 可读原因，绝不静默出空几何；
+#   ① 有词汇、没生成器：必须 ok=false + 可读原因，绝不静默出空几何（本轮该桶剩 rect / freehand / text；
+#      ngon / ring 已因新生成器而**接线**，见下方契约变更说明）；
 #   ② 同名不同义：DAG "ring" = annulus（单个内圆挖空形状），build_ring = 同心环盘（多格 + 角向闭环，
-#      返回 positions/adjacency）⇒ 映射**不得**指向 build_ring，并把它标成 forbidden_builder；
-#   ③ 真能对上的三个必须逐字对上：circle / star / sector → build_circle / build_star / build_sector；
+#      返回 positions/adjacency）⇒ 映射只准指向 build_annulus，**任何**形状都不得被映射到 build_ring；
+#   ③ 真能对上的必须逐字对上：circle / star / sector → build_circle / build_star / build_sector
+#      （本轮新增 ngon → build_ngon）；
 #   ④ 未知 / 空 / 垃圾形状有兜底：ok=false + 原因，不崩、不出空几何；
 #   ⑤ 全词汇表扫一遍：返回契约恒为 {ok, kind, reason, builder_name}，且**任何**形状都不会被映射到
 #      build_ring；ok 与 builder_name / reason 的耦合关系恒成立。
+#
+# 【2026-10-03 契约变更 · 主 Agent 授权】本文件仅翻转**因本次新增生成器而过期**的两条期望：
+#   · 旧 ①「ngon ⇒ ok=false + 原因」⟵ 生成器 core/shape_generator.gd:846 build_ngon 已落地
+#     ⇒ 若继续拒绝，就是"生成器存在、映射却说没有"的接线缺口 ⇒ 现期望 ok=true 且 builder_name
+#     == "build_ngon"（见 test_ngon_maps_to_build_ngon）。
+#   · 旧 ②「ring ⇒ ok=false + forbidden_builder="build_ring"」⟵ 生成器 core/shape_generator.gd:869
+#     build_annulus 已落地 ⇒ 现期望 ok=true 且 builder_name == "build_annulus"；**防顶替的实质不放松**：
+#     改判据后仍逐字断言"不是 build_ring"（见 test_ring_maps_to_annulus_never_to_build_ring）。
+#   文件内 ③④⑤ 及其它断言一律未动。
 #
 # 用 preload 而非全局类名（与 test_shape_dag.gd 同因）：非编辑器运行时全局类缓存可能还没有新类名。
 extends GutTest
@@ -17,21 +28,27 @@ const ShapeDagScript := preload("res://core/shape_dag.gd")
 const FOUR_KEYS := ["ok", "kind", "reason", "builder_name"]
 
 
-func test_ngon_is_explicitly_unsupported_with_reason() -> void:
+## 【2026-10-03 翻转旧期望】旧：ngon 无生成器 ⇒ ok=false。失效原因：2026-10-03 新增
+## core/shape_generator.gd:846 `build_ngon(sides, radius, tier)` ⇒ 映射必须收口。新期望钉住新行为。
+func test_ngon_maps_to_build_ngon() -> void:
 	var r: Dictionary = ShapeDagScript.primitive_to_builder("ngon")
-	assert_false(bool(r["ok"]), "ngon 无生成器 ⇒ 必须显式未支持，禁止静默出空几何")
-	assert_eq(str(r["builder_name"]), "", "未支持不得给出构建器名（否则会被拿去调用）")
-	assert_ne(str(r["reason"]).strip_edges(), "", "拒绝必须带可读原因")
-	assert_true(str(r["reason"]).contains("ngon"), "原因要点名形状：%s" % r["reason"])
+	assert_true(bool(r["ok"]), "ngon 生成器已落地（shape_generator.gd:846）⇒ 必须映射成功，禁止再报未支持")
+	assert_eq(str(r["kind"]), "builder", "成功映射的 kind 应为 builder")
+	assert_eq(str(r["builder_name"]), "build_ngon", "ngon 唯一语义一致的构建器就是 build_ngon")
+	assert_eq(str(r["reason"]), "", "ok=true 不应带原因")
 
 
-func test_ring_mapping_never_falls_back_to_build_ring() -> void:
+## 【2026-10-03 翻转旧期望】旧：ring 无 annulus 构建器 ⇒ ok=false + forbidden_builder="build_ring"。
+## 失效原因：2026-10-03 新增 core/shape_generator.gd:869 `build_annulus(outer, inner, precision, tier)`。
+## 防顶替的**实质不放松**：新期望要求映射到 build_annulus，并逐字断言**不是** build_ring
+## （同名不同义：环盘多格 + 角向闭环，几何与数据结构都不同）。
+func test_ring_maps_to_annulus_never_to_build_ring() -> void:
 	var r: Dictionary = ShapeDagScript.primitive_to_builder("ring")
-	assert_false(bool(r["ok"]), "annulus 语义在本仓无构建器 ⇒ 必须显式失败")
+	assert_true(bool(r["ok"]), "annulus 生成器已落地（shape_generator.gd:869）⇒ 必须映射成功")
+	assert_eq(str(r["kind"]), "builder", "成功映射的 kind 应为 builder")
+	assert_eq(str(r["builder_name"]), "build_annulus", "ring=annulus 必须映射到 build_annulus")
 	assert_ne(str(r["builder_name"]), "build_ring", "ring=annulus 与 build_ring 同名不同义，禁止顶替")
-	assert_eq(str(r.get("forbidden_builder", "")), "build_ring", "必须把 build_ring 标成禁止的顶替者")
-	assert_true(str(r["reason"]).contains("build_ring"), "原因要写清为什么不能用 build_ring：%s" % r["reason"])
-	assert_true(str(r["reason"]).contains("annulus"), "原因要点明真实语义是 annulus")
+	assert_eq(str(r["reason"]), "", "ok=true 不应带原因")
 
 
 func test_verified_shapes_map_to_matching_builders() -> void:

@@ -10,12 +10,17 @@
 #   本文件把「变体 × 网格族」钉成一张**数据表 + 三态查询**，门禁直接消费它，不必各自猜。
 #
 # 【网格族来自代码，不凭想象】
-#   12 族 = `core/shape_generator.gd` 的 `to_adjacency_grid(kind, ...)` 全部 kind
+#   14 族 = `core/shape_generator.gd` 的 `to_adjacency_grid(kind, ...)` 的 kind
 #   （holed_grid / hex / t488 / iso_cubes / tri_grid / trihex / t31212 / ring / mask，
-#   加 (j)~(l) 参数化轮廓族 circle / star / sector），
+#   加 (j)~(n) 参数化轮廓族 circle / star / sector / ngon / annulus），
 #   与 HANDOFF 的形状族表、`ui/variant_catalog.gd:416-424` 的形状卡片同源。
-#   其中 circle / star / sector 与 holed_grid 同为「整数格上的 Moore 8 邻子集」——坐标轴仍是
-#   包围盒行列，只是盘内格不铺满；故全局约束型在这三族上的三态与 holed_grid 同判（见下）。
+#   【2026-10-03 登记完成】`ngon` / `annulus` 随生成器落地（core/shape_generator.gd:846 / :869）
+#   与 `to_adjacency_grid` 的注册（:1155 / :1159）一并接入本矩阵；同轮补齐了
+#   core/editor_doc.gd:estimate_cells 的对应估算（复用同一批纯几何原语，逐族对拍真实格数），
+#   避免出现"能建盘、却估不出格数（退化成方阵口径）"的错配。
+#   其中 circle / star / sector / ngon / annulus 与 holed_grid 同为「整数格上的 Moore 8 邻子集」
+#   ——坐标轴仍是包围盒行列，只是盘内格不铺满（annulus 另有洞格）；
+#   故全局约束型在这五族上的三态与 holed_grid 同判（见下）。
 #   另加两个基线/结构族（都是仓库里真实走得到的盘）：
 #     · `rect`      —— 默认矩形盘：关卡无 `topology` ⇒ RectGrid（core/board.gd:164-171 else 分支）；
 #     · `rect_wrap` —— 环绕矩形盘：WrapTopology.build 产出邻接表（core/wrap_topology.gd:51-108）
@@ -55,7 +60,8 @@ const OK := "OK"
 const DEGRADED := "DEGRADED"
 const DISABLED := "DISABLED"
 
-# 网格族。前两个是结构基线，其余 12 个与 ShapeGenerator.to_adjacency_grid 的 kind 一一对应。
+# 网格族。前两个是结构基线，其余 14 个与 ShapeGenerator.to_adjacency_grid 的 kind 一一对应
+# （2026-10-03 新增的 ngon / annulus 见文件头说明，**已登记**）。
 const RECT := "rect"
 const RECT_WRAP := "rect_wrap"
 const HOLED_GRID := "holed_grid"
@@ -69,10 +75,12 @@ const RING := "ring"
 const CIRCLE := "circle"
 const STAR := "star"
 const SECTOR := "sector"
+const NGON := "ngon"
+const ANNULUS := "annulus"
 const MASK := "mask"
 
 const ALL_KINDS: Array = [RECT, RECT_WRAP, HOLED_GRID, HEX, T488, ISO_CUBES,
-		TRI_GRID, TRIHEX, T31212, RING, CIRCLE, STAR, SECTOR, MASK]
+		TRI_GRID, TRIHEX, T31212, RING, CIRCLE, STAR, SECTOR, NGON, ANNULUS, MASK]
 
 # 「整数格上 Moore 8 邻的子集」= 缺格族：坐标轴仍是包围盒行列，但盘内格不铺满。
 # 用途有二（都是**族等价类**，不是三态判据本身）：
@@ -82,7 +90,11 @@ const ALL_KINDS: Array = [RECT, RECT_WRAP, HOLED_GRID, HEX, T488, ISO_CUBES,
 #      由 test_variant_grid_matrix 断言，防四族在三态上漂移。
 # 【2026-10-03 门控补齐后】线索型与全局约束型在本族与其余异形族**同判**（一律 DISABLED）：
 # 生成期异形门控的判据是 rules 自己的 supports_topology()，与网格族无关。
-const BBOX_SUBSET_KINDS: Array = [HOLED_GRID, CIRCLE, STAR, SECTOR]
+# 【2026-10-03 登记 ngon / annulus 后一并纳入本族】依据是几何来源而非名字：
+# `build_ngon` / `build_annulus` 都走 `_outline_topo(_rasterize_polygon(...))`
+# （core/shape_generator.gd:861 / :890 → :967），而 `_outline_topo` = `_graph_from_dirs(cells, MOORE8)`
+# ⇒ 两者都是「整数格 + Moore 8 邻的子集」，与 circle / star / sector 同一几何族（annulus 还带洞格）。
+const BBOX_SUBSET_KINDS: Array = [HOLED_GRID, CIRCLE, STAR, SECTOR, NGON, ANNULUS]
 
 # `mask` 是轮廓容器族：几何由 style 决定，取值 ⊆ ShapeGenerator.MASK_STYLES
 #（core/shape_generator.gd:53-54）。本表按这 3 族取**最保守者**（由 test 与常量交叉校验）。

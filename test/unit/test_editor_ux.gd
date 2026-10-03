@@ -379,13 +379,18 @@ func test_verify_writes_a_working_message_before_it_computes() -> void:
 
 func test_shortcuts_are_written_on_screen() -> void:
 	# 实测：Ctrl+Z / Ctrl+Y / Ctrl+S 一直有效，但界面上一个字都没提过（小白根本不会知道）。
+	# 【2026-10-03 取法修正】原实现取「**最后一个**含 Ctrl+Z 的 Label」（`found` 被循环覆盖）再要求
+	# **同一个** Label 里也有 Ctrl+S —— 只要别处也提到 Ctrl+Z 就假红：新增的「形状组合」说明里有
+	#「（可 Ctrl+Z 撤销）」，被它抢先命中，而它没有 Ctrl+S（功能本身没问题）。
+	# 本用例的意图是「这三个快捷键都要能在界面上看见」，不是「必须挤在同一行」⇒ 改为
+	# **全界面 Label 文本并集**判定，并顺带把 Ctrl+Y 也钉全（原先只钉了 Z/S 两个）。
 	var ed := await _make_editor()
-	var found := ""
+	var all := ""
 	for lab in (ed as Node).find_children("*", "Label", true, false):
-		if (lab as Label).text.find("Ctrl+Z") != -1:
-			found = (lab as Label).text
-	assert_true(found != "", "左栏提示里必须写出快捷键（Ctrl+Z 撤销 / Ctrl+Y 重做 / Ctrl+S 保存）")
-	assert_true(found.find("Ctrl+S") != -1, "保存快捷键也要写出来：%s" % found)
+		all += (lab as Label).text + "\n"
+	for key in ["Ctrl+Z", "Ctrl+Y", "Ctrl+S"]:
+		assert_true(all.find(str(key)) != -1,
+			"界面上必须写出快捷键 %s（撤销 / 重做 / 保存）—— 否则新手根本不知道有这些操作" % str(key))
 
 
 # ==================== 布局稳定性 / 图标化（用户报告，2026-10-02） ====================

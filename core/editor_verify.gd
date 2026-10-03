@@ -101,9 +101,17 @@ static func _prepare(doc: EditorDoc) -> Dictionary:
 	return {"ok": true, "rule": rule, "globals": globals, "topo": topo, "values": pv["values"]}
 
 
-## 主入口。返回 `{state, label, reason, stats, issues}`。
-## issues 非空 = 因为这个原因没能给出结论（UI 应在验证面板里逐条显示，不要只打控制台）。
+## 主入口。返回 `{state, label, reason, stats, issues, variant_grid_issues}`。
+## issues 非空 = 因为这个原因（没能给出结论，**或**变体×网格族被禁用 / 退化）——UI 应在验证面板里
+## 逐条显示，不要只打控制台。每条都是 `{code, text, pos, level}`（与 `EditorDoc.validate()` 同结构）；
+## 变体×网格族条目另有一份单独拷贝在 `variant_grid_issues` 键下（code 前缀 `variant_grid_`）。
 static func verify(doc: EditorDoc, opts: Dictionary = {}) -> Dictionary:
+	var res := _verify_body(doc, opts)
+	_attach_variant_grid(doc, res)
+	return res
+
+
+static func _verify_body(doc: EditorDoc, opts: Dictionary = {}) -> Dictionary:
 	var prep := _prepare(doc)
 	if not bool(prep["ok"]):
 		return _out(str(prep["state"]), str(prep["reason"]), {}, prep["issues"])
@@ -245,6 +253,12 @@ static func verify(doc: EditorDoc, opts: Dictionary = {}) -> Dictionary:
 ## 否则 → 需要猜测，reason 逐岛列"第 N 号岛需要盲猜 K 次"。
 ## 【单岛】直接复用 `verify()`（行为与旧口径逐一一致），只补一条岛摘要。
 static func verify_islands(doc: EditorDoc, opts: Dictionary = {}) -> Dictionary:
+	var res := _verify_islands_body(doc, opts)
+	_attach_variant_grid(doc, res)
+	return res
+
+
+static func _verify_islands_body(doc: EditorDoc, opts: Dictionary = {}) -> Dictionary:
 	var prep := _prepare(doc)
 	if not bool(prep["ok"]):
 		return _out(str(prep["state"]), str(prep["reason"]), {}, prep["issues"])
@@ -659,3 +673,89 @@ static func _fallback_cheap_enough(spec: Dictionary) -> bool:
 
 static func _out(state: String, reason: String, stats: Dictionary, issues: Array) -> Dictionary:
 	return {"state": state, "label": state_label(state), "reason": reason, "stats": stats, "issues": issues}
+
+
+# ==================== 变体 × 网格族矩阵消费（W9 门禁） ====================
+#
+# 【为什么放在验证器】`VariantGridMatrix` 自称「勾选即时禁用」的唯一事实源，但全仓实测
+# **没有任何生产代码消费它**（只有 test/unit/test_variant_grid_matrix.gd 等测试与
+# tools/ci_quick.ps1 的文件名映射在读它）⇒ 一份「变体 × 异形盘」不兼容的关卡照样能被验证器
+# 判成"可解"，而运行期该变体其实会被生成期回退 / 丢弃（core/puzzle_generator.gd:463-498）
+# ——「结论对了、关不对」。本段让验证器成为该表的**第一个生产消费者**：把「当前变体 ×
+# 当前网格族」的被禁 / 退化组合翻成可读问题条目，结构与 `EditorDoc.validate()` 的条目一致
+# （{code, text, pos, level}），UI 可直接并入问题列表。
+#
+# 【不臆造（保守：证明不了就不下结论）】矩阵只覆盖 `VariantRegistry` 的内置变体与仓库里真实存在
+# 的网格族。故两条"取不到就跳过"：① 规则 id 不在注册表（AI 自定义 spec）——矩阵对它无话可说，
+# 硬查只会误报"未登记变体"；② 网格族取不到（外部拓扑 foreign_topology / 未登记 shape_kind）——
+# 同上。这不是漏检：**能判的组合一律判**。
+
+## 当前文档的网格族（用 `VariantGridMatrix` 的口径）。取不到（空文档 / 外部拓扑 / 未登记族）→ ""。
+static func grid_kind_of(doc: EditorDoc) -> String:
+	if doc == null:
+		return ""
+	if doc.shape_kind != "":
+		return doc.shape_kind if VariantGridMatrix.is_known_grid_kind(doc.shape_kind) else ""
+	if not doc.foreign_topology.is_empty():
+		return ""     # 外部拓扑：族名不在矩阵名单里，不猜（宁缺勿错）
+	return VariantGridMatrix.RECT_WRAP if doc.wrap else VariantGridMatrix.RECT
+
+
+## 当前生效的变体 id（线索规则 + 全局规则），只保留矩阵覆盖的内置变体（在注册表名单内），保序去重。
+static func active_variant_ids(doc: EditorDoc) -> Array[String]:
+	var out: Array[String] = []
+	if doc == null:
+		return out
+	var known := VariantRegistry.all_codes()
+	var ids: Array[String] = [doc.rule_id_effective()]
+	for g in doc.global_rule_ids:
+		ids.append(str(g))
+	for id in ids:
+		var s := str(id)
+		if s == "" or not known.has(s) or out.has(s):
+			continue
+		out.append(s)
+	return out
+
+
+## 变体 × 网格族兼容问题。支持的组合不产条目；被禁（DISABLED）产 error、退化（DEGRADED）产 warn，
+## 理由直接取矩阵的 `reason()`（可读、非空）。条目结构同 `EditorDoc.validate()`：{code, text, pos, level}。
+static func variant_grid_issues(doc: EditorDoc) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if doc == null:
+		return out
+	var kind := grid_kind_of(doc)
+	if kind == "":
+		return out
+	for vid in active_variant_ids(doc):
+		var st := VariantGridMatrix.status(vid, kind)
+		if st == VariantGridMatrix.OK:
+			continue
+		var why := VariantGridMatrix.reason(vid, kind).strip_edges()
+		if why == "":
+			why = "矩阵未给出理由（状态 %s）" % st
+		var degraded := st == VariantGridMatrix.DEGRADED
+		out.append({
+			"code": "variant_grid_%s" % st.to_lower(),
+			"text": "变体「%s」在网格族「%s」上%s：%s" % [
+				vid, kind, "仅退化可用" if degraded else "不生效（会被生成期回退 / 丢弃）", why],
+			"pos": Vector2i(-1, -1),
+			"level": EditorDoc.ISSUE_WARN if degraded else EditorDoc.ISSUE_ERROR,
+		})
+	return out
+
+
+## 把矩阵消费结果挂进验证结果：单独键 `variant_grid_issues`（便于 UI / 测试直接取）+ 合并进
+## `issues`（统一问题流）。**幂等**：先剔除旧的 `variant_grid_*` 条目再重挂——`verify_islands()`
+## 的单岛路径会内部再调一次 `verify()`，不去重就会同一问题出现两遍。
+static func _attach_variant_grid(doc: EditorDoc, res: Dictionary) -> void:
+	var vg := variant_grid_issues(doc)
+	res["variant_grid_issues"] = vg
+	var merged: Array = []
+	for it in res.get("issues", []):
+		if str((it as Dictionary).get("code", "")).begins_with("variant_grid_"):
+			continue
+		merged.append(it)
+	for it in vg:
+		merged.append(it)
+	res["issues"] = merged

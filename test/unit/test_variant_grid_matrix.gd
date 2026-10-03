@@ -22,9 +22,15 @@ const M := preload("res://core/variant_grid_matrix.gd")
 ## （该方法没有 kinds() 访问器，故在此列举；漂移时 ⑥ 会红）。
 ## 2026-10-03：新增 (j)~(l) 参数化轮廓族 circle / star / sector 后，名单随代码同步扩充——
 ## 这是**契约变更**（族数 9 → 12），不是放松断言：⑥ 仍要求矩阵族与生成入口双向一一对应。
+## 【2026-10-03 二次追加（team-lead 授权，属"期望过期"而非放松）】再补 (m) ngon / (n) annulus：
+## `core/shape_generator.gd` 已落地 `build_ngon`（:846）与 `build_annulus`（:869），且
+## `to_adjacency_grid` 已把这两个 kind 接进 match（:1155 / :1159）；矩阵侧同轮登记（
+## core/variant_grid_matrix.gd 的 ALL_KINDS / BBOX_SUBSET_KINDS）。
+## 旧期望失效的原因：⑥ 的第二段要求"矩阵不得多出未对应任何生成入口的族"⇒ 生成入口进了两族、
+## 本名单没跟，登记后反而会把矩阵判红 —— 是名单过期，不是断言过严。两条断言都原样保留。
 const GENERATOR_KINDS: Array = [
 	"holed_grid", "hex", "t488", "iso_cubes", "tri_grid", "trihex", "t31212", "ring",
-	"circle", "star", "sector", "mask",
+	"circle", "star", "sector", "ngon", "annulus", "mask",
 ]
 
 

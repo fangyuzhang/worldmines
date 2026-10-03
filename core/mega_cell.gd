@@ -211,6 +211,114 @@ func conflicts() -> Array[Dictionary]:
 	return out
 
 
+# ==================== 下钻（进入 / 退出复合格内部）====================
+#
+# 下钻状态是**纯数据**：`{"version": int, "path": Array[int]}` —— path 为「由外到内」的
+# 复合格 id 栈（path[0] = 最外层）。纯数据 ⇒ 可查询、可深比较、可直接序列化 round-trip，
+# 且不把「导航状态」塞进 MegaCell 实例（实例仍是「一块棋盘上的复合格集合」，职责单一）。
+#
+# 深度口径（复核 `merge` 的 :119 禁嵌套判据 —— **以代码为准**）：
+#   同一基础格只能属于一个复合格 ⇒ **复合格内部只有基础格、不含复合格** ⇒ 合法的下钻
+#   路径最多 1 层。`DRILL_MAX_DEPTH = 1`，超限即拒；这是「禁嵌套」在下钻侧的同一口径，
+#   下钻因此**不可能**绕过 :119 伪造出「格中格」。
+const DRILL_MAX_DEPTH := 1
+const DRILL_VERSION := 1
+
+
+## 新的空下钻状态（顶层）。
+static func drill_state() -> Dictionary:
+	return {"version": DRILL_VERSION, "path": []}
+
+
+## 当前层级路径（由外到内的复合格 id，副本）。非法 / 缺失 ⇒ 空数组。
+static func drill_path(state: Variant) -> Array[int]:
+	var out: Array[int] = []
+	if not (state is Dictionary):
+		return out
+	var raw: Variant = (state as Dictionary).get("path", [])
+	if not (raw is Array):
+		return out
+	for v: Variant in raw:
+		out.append(int(v))
+	return out
+
+
+## 当前下钻深度（= 路径长度）。顶层 = 0。
+static func drill_depth(state: Variant) -> int:
+	return drill_path(state).size()
+
+
+## 当前是否在某个复合格内部（深度 > 0）。
+static func is_inside(state: Variant) -> bool:
+	return drill_depth(state) > 0
+
+
+## 进入复合格内部。
+## `state` = 下钻状态（Dictionary，**成功时**就地更新 `path`）；`cell` = 目标复合格（id 或 merge 记录）。
+## 返回 `{ok, path, inner, reason}`：
+##   · ok = true  ⇒ path = 新路径，inner = 该复合格**内部的基础格**（规范序副本）；
+##   · ok = false ⇒ path 原样回显、inner 为空、reason 为人话原因，且 **state 逐字段不变（回滚）**。
+## 拒绝码：`not_mega`（目标是基础格 / 无法解析）/ `unknown`（复合格不存在）/
+##         `nested`（传了复合格集合，复用 :119 禁嵌套口径）/ `depth`（已在某格内部，已达深度上限）。
+func drill_in(state: Dictionary, cell: Variant) -> Dictionary:
+	var cur := drill_path(state)
+	var depth := cur.size()
+	if depth >= DRILL_MAX_DEPTH:
+		var last := int(cur[depth - 1]) if depth > 0 else 0
+		return _drill_reject(state, "depth",
+			"已在复合格 #%d 内部（下钻深度上限 %d 层）—— 复合格禁止嵌套（同一基础格只能属于一个复合格），不能再进入更深一层" % [last, DRILL_MAX_DEPTH])
+	var kind := _classify(cell)
+	if kind == "group":
+		# Array / 「含 cells 的字典」= 复合格集合；下钻不绕过 :119 的禁嵌套判据。
+		var gid0 := _resolve_id(cell)
+		if gid0 <= 0:
+			return _drill_reject(state, "nested",
+				"禁止嵌套：下钻目标必须是**单个已存在的复合格**（id 或 merge 记录），收到的是复合格集合 / 未解析的组：%s" % str(cell))
+		if not _cells.has(gid0):
+			return _drill_reject(state, "unknown", "复合格 #%d 不存在，无法下钻" % gid0)
+	var gid := _resolve_id(cell)
+	if gid <= 0:
+		return _drill_reject(state, "not_mega",
+			"下钻目标不是复合格：%s（需复合格 id 或 merge 返回的记录）" % str(cell))
+	if not _cells.has(gid):
+		return _drill_reject(state, "unknown", "复合格 #%d 不存在，无法下钻" % gid)
+	var path := cur.duplicate()
+	path.append(gid)
+	state["path"] = path
+	return {"ok": true, "path": path.duplicate(), "inner": internal_cells(gid), "reason": ""}
+
+
+## 退出到上一层。
+## `state` = 下钻状态（Dictionary，**成功时**就地更新 `path`）。
+## 返回 `{ok, path, reason}`；在顶层再退 ⇒ ok = false + reason 非空 + **state 不变**。
+func drill_out(state: Dictionary) -> Dictionary:
+	var cur := drill_path(state)
+	if cur.is_empty():
+		return _drill_reject(state, "top",
+			"已在顶层，没有更外层可退出（复合格下钻只能回退到进入前的层级）")
+	var path := cur.duplicate()
+	path.pop_back()
+	state["path"] = path
+	return {"ok": true, "path": path.duplicate(), "reason": ""}
+
+
+## 下钻状态 → 普通数据（显式序列化口径，version 只增不改）。
+static func drill_to_dict(state: Variant) -> Dictionary:
+	return {"version": DRILL_VERSION, "path": drill_path(state)}
+
+
+## 普通数据 → 下钻状态。版本高于本模块 ⇒ push_error + 空状态；坏数据 ⇒ 只保留可解析的整数 id。
+static func drill_from_dict(d: Variant) -> Dictionary:
+	if not (d is Dictionary):
+		push_error("MegaCell.drill_from_dict: 需要 Dictionary（收到 %s）" % str(d))
+		return drill_state()
+	var ver := int((d as Dictionary).get("version", DRILL_VERSION))
+	if ver > DRILL_VERSION:
+		push_error("MegaCell.drill_from_dict: 下钻状态版本 %d 高于本模块支持的 %d（version 只增不改）" % [ver, DRILL_VERSION])
+		return drill_state()
+	return {"version": DRILL_VERSION, "path": drill_path(d)}
+
+
 # ==================== 邻接计算 / 硬规则门禁 ====================
 
 ## 邻接：复合格与多少「基础格 / 复合格」相邻（**去重后**计数）。
@@ -431,6 +539,11 @@ static func _empty_adjacency(reason: String) -> Dictionary:
 
 func _reject(code: String, reason: String) -> Dictionary:
 	return {"ok": false, "code": code, "reason": reason}
+
+
+## 下钻拒绝：**不回显前先算 path 副本**，绝不改动 state（回滚）。
+func _drill_reject(state: Dictionary, code: String, reason: String) -> Dictionary:
+	return {"ok": false, "code": code, "path": drill_path(state), "inner": [], "reason": reason}
 
 
 func _resolve_id(mega: Variant) -> int:

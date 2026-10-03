@@ -36,6 +36,14 @@ const PERF_LEDGER := preload("res://core/perf_ledger.gd")
 ## 模板库（core/template_library.gd，文档「九」+「十.6」）。它**刻意没有 class_name**（见其文件头），
 ## 所以只能 preload；本切片只接线，模板数据与 `apply_to_doc` 全在 core。
 const TEMPLATES := preload("res://core/template_library.gd")
+## 形状布尔 / 形状依赖图 / 修复建议 / 短码分享 —— 四个 core 能力（都已单测）接到界面上。
+## 【为什么一律用 preload 而不是 class_name】本仓的坑 #26：headless 下**新全局类不在 `.godot`
+## 全局类缓存里**（本轮已核实：ShapeBoolean/ShapeDag/RepairSuggest/ShareCode 四个名字都不在
+## `global_script_class_cache.cfg` 中），按类名引用会让整份脚本解析失败 ⇒ 与 BINDINGS/TEMPLATES 同法。
+const SHAPE_BOOLEAN := preload("res://core/shape_boolean.gd")
+const SHAPE_DAG := preload("res://core/shape_dag.gd")
+const REPAIR_SUGGEST := preload("res://core/repair_suggest.gd")
+const SHARE_CODE := preload("res://core/share_code.gd")
 
 const EDITOR_DIR := "user://editor"
 ## 图标工厂：本仓约定是**逐文件 preload**（`ui_icons.gd` 刻意没有 class_name，见其文件头注释）
@@ -164,6 +172,8 @@ const HELP_TEXT := {
 	"打开存档文件夹": "打开本机存档目录（分享包 zip 也在这里）。",
 	"打开这个存档": "打开下拉框里选中的那份存档（自动存档也会出现在列表里）。",
 	"生成分享包": "把当前关卡打成一个 zip（带分类与图文图例）；没接 Steamworks 时要自己上传。",
+	"复制短码": "把这一关压成一行短码并复制到剪贴板（贴聊天就能发）。只服务小关卡；含自定义形状或盘太大时会说明原因，请改用「生成分享包」。",
+	"载入短码": "把上面框里（或剪贴板里）的短码读成一关。读不出来会说清是哪里不对（字符非法 / 被改过 / 版本不支持…）。",
 	"要做很多关？→ 批量生成关卡": "一次做一批关卡：勾棋盘大小、填每档几关（可选先探一次），带进度条与预计时间，随时能停；做完自动打包并装进游戏。",
 	"插入「周围 8 格计数」模板": "在规则原文里插入「周围 8 格 = 数字」的标准写法，改规则时省得从零写。",
 	# 从「AI 帮我写」页搬进说明的原文（界面已不再显示）——挂在这一页的关键按钮上，
@@ -187,6 +197,26 @@ var _foreign_note: Label
 var _wrap_check: CheckBox
 var _shape_opt: OptionButton
 var _shape_size: SpinBox
+# ---- 形状组合（ShapeBoolean / ShapeDag 接线，2026-10-03）----
+## 形状依赖图实例（core/shape_dag.gd）。**不写类型注解**（同 `_perf` 的写法）：本仓不用
+## class_name 引用这些新模块（坑 #26），无注解的 Variant 才能直接调它的方法。
+var _dag = SHAPE_DAG.new()
+var _dag_shape_opt: OptionButton          # 加进依赖图的形状（圆 / 星 / 扇）
+var _dag_shape_size: SpinBox
+var _dag_a_opt: OptionButton              # 操作数 A（布尔左值 / 依赖的父）
+var _dag_b_opt: OptionButton              # 操作数 B（布尔右值 / 依赖的子）
+var _dag_note: Label                      # 常驻结果/拒绝原因（失败必须有可读文案，不许只弹 toast）
+var _dag_shape_made := 0                  # 已生成形状节点的序号（s1、s2…）
+var _dag_bool_made := 0                   # 已生成布尔节点的序号（b1、b2…）
+# ---- 修复建议（RepairSuggest 接线）----
+var _repair_btn: Button
+var _repair_msg: Label
+var _repair_box: VBoxContainer
+## 当前展示的建议 plan（按行索引取）。列表一刷新就清空 ⇒ 过期条目不会拿旧 plan 硬应用。
+var _repair_plans: Array = []
+# ---- 短码分享（ShareCode 接线）----
+var _share_edit: LineEdit
+var _share_note: Label
 var _self_check: CheckBox
 var _preset_opt: OptionButton
 var _dirs_edit: LineEdit
@@ -643,6 +673,25 @@ func _build_left_bar() -> Control:
 	# 悬停说明补上"上传哪个文件"：实测小白看到"请手动上传"时不知道要传什么、在哪找。
 	pack_btn.tooltip_text = "生成一份 zip 分享包（文件在左栏「打开存档文件夹」里）；本机没接 Steamworks 时要自己上传"
 	box.add_child(pack_btn)
+	# ---- 短码分享（ShareCode 接线）----
+	# 分享包要传文件；小关卡其实一行字就够了（贴聊天/扫码）。含自定义形状或大棋盘时走不了短码，
+	# 这时**必须给出可读原因**并让人改用「生成分享包」，不许静默失败。
+	box.add_child(_section_label("短码分享（小关卡：贴一行字就能玩）"))
+	_share_edit = LineEdit.new()
+	_share_edit.custom_minimum_size = Vector2(0, 30)
+	_share_edit.placeholder_text = "短码会显示在这里；也可以把别人给的短码粘进来"
+	box.add_child(_share_edit)
+	var share_row := HBoxContainer.new()
+	share_row.add_theme_constant_override("separation", 6)
+	var share_out := _action_button("复制短码", _export_share_code)
+	share_out.tooltip_text = "把这一关压成一行短码并复制（只服务小关卡；含自定义形状/大棋盘时会说明为什么不行，改用「生成分享包」）"
+	share_row.add_child(share_out)
+	var share_in := _action_button("载入短码", _import_share_code)
+	share_in.tooltip_text = "把上面框里的短码（或剪贴板里的）读成一关；读不出会告诉你具体原因"
+	share_row.add_child(share_in)
+	box.add_child(share_row)
+	_share_note = _plain_label("")
+	box.add_child(_share_note)
 	box.add_child(_section_label("批量做关卡（一次做很多关）"))
 	var forge_btn := _action_button("批量生成关卡（按大小 × 档位）", _open_forge)
 	forge_btn.tooltip_text = "勾选棋盘大小、填每个难度要几关，一次生成一批；带进度条与预计时间，随时可停"
@@ -770,6 +819,479 @@ func _apply_template_build(doc_build: Dictionary, template_name: String) -> bool
 		template_name, doc.rows, doc.cols, doc.mine_count()])
 	_toast("已套用模板「%s」：可以直接试玩；想重来按 Ctrl+Z" % template_name, false, 4.5)
 	return true
+
+
+# ==================== 形状组合（ShapeBoolean + ShapeDag 接线） ====================
+#
+# 分工：格集布尔全在 `core/shape_boolean.gd`（并/交/差/异或 + 盘内过滤），依赖图全在
+# `core/shape_dag.gd`（加边即成环拒绝、拓扑序、求值计划）。本文件只做三件事：
+#   ① 给出"选哪两块形状"的界面；② 把结果按 `ShapeBoolean.apply_to_grid` 的口径写回 `doc`
+#   （盘上只保留结果里的格，其余记为障碍 = 格不存在）；③ 失败一律给**常驻可读文案** + toast。
+
+## 形状组合区（属性页「形状」之后）。
+func _build_shape_compose(box: VBoxContainer) -> void:
+	box.add_child(_section_label("形状组合（并 / 交 / 差 / 异或 · 依赖图）"))
+	box.add_child(_plain_label("把两块形状合成一块新盘型。A / B 可以是「整盘 / 框选区域 / 初始翻开格」，"
+		+ "也可以是下面依赖图里加的形状。\n"
+		+ "「差集」有方向：A − B = 在 A 里但不在 B 里。合成结果会**写回棋盘**"
+		+ "（盘上只保留结果里的格，其余格记为「不存在」；写回只算一步，按左栏「撤销」可退回）。"))
+	_dag_a_opt = _operand_option()
+	_dag_b_opt = _operand_option()
+	var arow := HBoxContainer.new()
+	arow.add_theme_constant_override("separation", 6)
+	arow.add_child(_plain_label("A"))
+	arow.add_child(_dag_a_opt)
+	box.add_child(arow)
+	var brow := HBoxContainer.new()
+	brow.add_theme_constant_override("separation", 6)
+	brow.add_child(_plain_label("B"))
+	brow.add_child(_dag_b_opt)
+	box.add_child(brow)
+	var ops := GridContainer.new()
+	ops.columns = 2
+	ops.add_theme_constant_override("h_separation", 6)
+	ops.add_theme_constant_override("v_separation", 4)
+	for o in [["并集 A ∪ B", SHAPE_BOOLEAN.OP_UNION], ["交集 A ∩ B", SHAPE_BOOLEAN.OP_INTERSECT],
+			["差集 A − B", SHAPE_BOOLEAN.OP_DIFFERENCE], ["异或 A ⊕ B", SHAPE_BOOLEAN.OP_XOR]]:
+		var op_btn := _action_button(str(o[0]), func() -> void: _compose_boolean(str(o[1])))
+		op_btn.tooltip_text = "把 A、B 按「%s」合成，结果写回棋盘（一步撤销）" % str(o[0])
+		ops.add_child(op_btn)
+	box.add_child(ops)
+	# 依赖图：形状可以互相依赖（"B 由 A 算出来"）；成环当场拒绝并给出环路径。
+	box.add_child(_plain_label("下面这块表达「一个形状由哪些形状算出来」：先「加形状」，"
+		+ "再选 A / B 点「加依赖」，得到「A → B（B 依赖 A）」的链。"
+		+ "若加边会形成循环，会**当场拒绝并给出环路径**。"))
+	var srow := HBoxContainer.new()
+	srow.add_theme_constant_override("separation", 6)
+	_dag_shape_opt = OptionButton.new()
+	_dag_shape_opt.clip_text = true
+	_dag_shape_opt.fit_to_longest_item = false
+	_dag_shape_opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for e in [["圆形", "circle"], ["星形（五角）", "star"], ["扇形（90°）", "sector"],
+			["正 N 边形（5 边）", "ngon"], ["圆环（外径 = 尺寸，内径 = 一半）", "ring"]]:
+		_dag_shape_opt.add_item(str(e[0]), _dag_shape_opt.item_count)
+		_dag_shape_opt.set_item_metadata(_dag_shape_opt.item_count - 1, str(e[1]))
+	srow.add_child(_dag_shape_opt)
+	_dag_shape_size = _spin(2, 40, 1)
+	_dag_shape_size.value = 4
+	srow.add_child(_dag_shape_size)
+	box.add_child(srow)
+	box.add_child(_action_button("加形状（按上面的形状与尺寸）", _on_dag_add_shape))
+	var drow := HBoxContainer.new()
+	drow.add_theme_constant_override("separation", 6)
+	drow.add_child(_action_button("加依赖 A → B", _on_dag_add_edge))
+	drow.add_child(_action_button("检查有没有环", _on_dag_check_cycle))
+	box.add_child(drow)
+	box.add_child(_action_button("把 A 求值并写回棋盘", _on_dag_eval))
+	_dag_note = _plain_label("依赖图还是空的：先点「加形状」。")
+	box.add_child(_dag_note)
+	_refresh_dag_opts()
+
+
+func _operand_option() -> OptionButton:
+	var opt := OptionButton.new()
+	opt.clip_text = true
+	# 长文案不许把右面板撑宽（与 recipe / global 下拉同因：实测会把棋盘挤到一格只剩 29px）
+	opt.fit_to_longest_item = false
+	opt.custom_minimum_size = Vector2(120, 28)
+	opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	return opt
+
+
+## 刷新 A / B 下拉：三个内置集合 + 依赖图里的每个节点（保持原选中项，找不到就回到默认）。
+func _refresh_dag_opts() -> void:
+	if _dag_a_opt == null or _dag_b_opt == null:
+		return
+	var keep_a := _opt_key(_dag_a_opt)
+	var keep_b := _opt_key(_dag_b_opt)
+	for opt in [_dag_a_opt, _dag_b_opt]:
+		opt.clear()
+		for e in [["整盘形状（当前棋盘）", "__board__"], ["框选区域", "__selection__"],
+				["初始翻开格", "__revealed__"]]:
+			opt.add_item(str(e[0]), opt.item_count)
+			opt.set_item_metadata(opt.item_count - 1, str(e[1]))
+		for nid in _dag.node_ids():
+			var n: Dictionary = _dag.node(str(nid))
+			var idx: int = opt.item_count
+			opt.add_item("%s（%s）" % [str(nid), _dag_shape_label(str(n["shape"]))], idx)
+			opt.set_item_metadata(idx, str(nid))
+	_select_opt_key(_dag_a_opt, keep_a)
+	_select_opt_key(_dag_b_opt, keep_b)
+	if _dag_a_opt.selected < 0:
+		_dag_a_opt.selected = 0
+	if _dag_b_opt.selected < 0:
+		_dag_b_opt.selected = mini(1, _dag_b_opt.item_count - 1)
+
+
+func _select_opt_key(opt: OptionButton, key: String) -> void:
+	if opt == null or key == "":
+		return
+	for i in opt.item_count:
+		if str(opt.get_item_metadata(i)) == key:
+			opt.selected = i
+			return
+
+
+## 当前选中的键（内置集合名或依赖图节点 id）；没选中 → ""。
+func _opt_key(opt: OptionButton) -> String:
+	if opt == null or opt.selected < 0 or opt.selected >= opt.item_count:
+		return ""
+	return str(opt.get_item_metadata(opt.selected))
+
+
+func _operand_label(opt: OptionButton) -> String:
+	if opt == null or opt.selected < 0 or opt.selected >= opt.item_count:
+		return "?"
+	return opt.get_item_text(opt.selected)
+
+
+func _set_dag_note(text: String) -> void:
+	if _dag_note != null:
+		_dag_note.text = text
+
+
+func _dag_shape_label(shape: String) -> String:
+	if shape == "circle":
+		return "圆"
+	if shape == "star":
+		return "星形"
+	if shape == "sector":
+		return "扇形"
+	if shape == "ngon":
+		return "正 N 边形"
+	if shape == "ring":
+		return "圆环"
+	if shape == SHAPE_BOOLEAN.OP_UNION:
+		return "并集"
+	if shape == SHAPE_BOOLEAN.OP_INTERSECT:
+		return "交集"
+	if shape == SHAPE_BOOLEAN.OP_DIFFERENCE:
+		return "差集"
+	if shape == SHAPE_BOOLEAN.OP_XOR:
+		return "异或"
+	return shape
+
+
+func _bool_label(op: String) -> String:
+	return _dag_shape_label(op)
+
+
+func _dag_params_for(shape: String, dim: int) -> Dictionary:
+	if shape == "star":
+		return {"points": 5, "outer_radius": dim, "inner_ratio": 0.5}
+	if shape == "sector":
+		return {"radius": dim, "start_deg": 0.0, "end_deg": 90.0}
+	if shape == "ngon":
+		return {"sides": 5, "radius": dim}
+	if shape == "ring":
+		# 本 DAG 的 ring = annulus（内圆挖空）；生成器要求 1 ≤ inner < outer
+		return {"outer_radius": dim, "inner_radius": maxi(1, floori(dim / 2.0)), "precision": 24}
+	return {"radius": dim, "precision": 24}
+
+
+## 「加形状」：把当前下拉里的形状（圆 / 星 / 扇 / 正 N 边形 / 圆环）作为一个原子节点加进依赖图。
+func _on_dag_add_shape() -> void:
+	var shape := _opt_key(_dag_shape_opt)
+	var dim := int(_dag_shape_size.value)
+	_dag_shape_made += 1
+	var id := "s%d" % _dag_shape_made
+	var r: Dictionary = _dag.add_primitive(id, shape, _dag_params_for(shape, dim))
+	if not bool(r["ok"]):
+		_set_dag_note("加形状失败：%s" % str(r["error"]))
+		_toast("加形状失败：%s" % str(r["error"]), true, 7.0)
+		return
+	_refresh_dag_opts()
+	_select_opt_key(_dag_a_opt, id)
+	_set_dag_note("已加形状 %s：%s（尺寸 %d）。接着可以「加形状」加第二个，或直接选 A / B 做布尔运算。"
+		% [id, _dag_shape_label(shape), dim])
+
+
+## 「加依赖 A → B」：B 依赖 A。成环 / 自依赖 / 重复边由 `ShapeDag.add_edge` 拒绝，**原因原样显示**。
+func _on_dag_add_edge() -> void:
+	var a := _opt_key(_dag_a_opt)
+	var b := _opt_key(_dag_b_opt)
+	if not _dag.has_node(a) or not _dag.has_node(b):
+		_set_dag_note("「加依赖」只作用于依赖图里的形状：A / B 要选依赖图节点（先用「加形状」建两个）。")
+		_toast("加依赖需要 A、B 都是依赖图里的形状", true, 6.0)
+		return
+	var r: Dictionary = _dag.add_edge(a, b)
+	if not bool(r["ok"]):
+		_set_dag_note("加依赖被拒：%s" % str(r["error"]))
+		_toast("加依赖被拒：%s" % str(r["error"]), true, 8.0)
+		return
+	_set_dag_note("已加依赖 %s → %s（%s 依赖 %s）。拓扑序 = %s" % [a, b, b, a, str(_dag.topo_order())])
+
+
+## 「检查有没有环」：无环给出拓扑序；有环给出环路径（依赖图在加边时已拒绝成环，这里主要给用户安心/诊断）。
+func _on_dag_check_cycle() -> void:
+	if _dag.node_count() == 0:
+		_set_dag_note("依赖图还是空的：先点「加形状」。")
+		return
+	var cyc: Array = _dag.detect_cycle()
+	if cyc.is_empty():
+		_set_dag_note("检查过了：无环，可以求值。拓扑序 = %s" % str(_dag.topo_order()))
+		return
+	_set_dag_note("发现循环依赖：%s（有环就没有求值顺序）" % _cycle_text(cyc))
+
+
+func _cycle_text(cycle: Array) -> String:
+	var parts: Array[String] = []
+	for id in cycle:
+		parts.append(str(id))
+	if parts.size() > 0:
+		parts.append(parts[0])
+	return " → ".join(parts)
+
+
+## 「把 A 求值并写回棋盘」：解析 A（内置集合或依赖图节点，节点会按其依赖递归求值）。
+func _on_dag_eval() -> void:
+	var opt := _dag_a_opt
+	var cells := _operand_cells(_opt_key(opt))
+	if not bool(cells["ok"]):
+		_set_dag_note("求值失败：%s" % str(cells["reason"]))
+		_toast("求值失败：%s" % str(cells["reason"]), true, 7.0)
+		return
+	var w := _write_board_shape(cells["cells"], "形状「%s」" % _operand_label(opt))
+	if not bool(w["ok"]):
+		return
+	if not bool(w["changed"]):
+		_set_dag_note("形状「%s」的结果与当前盘面一致，没有需要写回的改动。" % _operand_label(opt))
+		return
+	_set_dag_note("已把形状「%s」写回棋盘：保留 %d 格，盘外丢弃 %d 格，另清掉 %d 颗落在盘外的雷。"
+		% [_operand_label(opt), int(w["kept"]), int(w["dropped"]), int(w["removed_mines"])])
+	_toast("已按形状「%s」重画盘面（一步撤销，按左栏「撤销」可退回）" % _operand_label(opt), false, 5.0)
+
+
+## 布尔运算按钮的实现：解析 A、B → `ShapeBoolean` → 写回 doc（成功落地才登记进依赖图）。
+func _compose_boolean(op: String) -> void:
+	var ra := _operand_cells(_opt_key(_dag_a_opt))
+	if not bool(ra["ok"]):
+		_set_dag_note("A 端不能用：%s" % str(ra["reason"]))
+		_toast("A 端不能用：%s" % str(ra["reason"]), true, 7.0)
+		return
+	var rb := _operand_cells(_opt_key(_dag_b_opt))
+	if not bool(rb["ok"]):
+		_set_dag_note("B 端不能用：%s" % str(rb["reason"]))
+		_toast("B 端不能用：%s" % str(rb["reason"]), true, 7.0)
+		return
+	var r: Dictionary = _bool_op(op, ra["cells"], rb["cells"])
+	if not bool(r["ok"]):
+		_set_dag_note("「%s」失败：%s" % [_bool_label(op), str(r["reason"])])
+		_toast("形状「%s」失败：%s" % [_bool_label(op), str(r["reason"])], true, 8.0)
+		return
+	var w := _write_board_shape(r["cells"], "「%s」的结果" % _bool_label(op))
+	if not bool(w["ok"]):
+		return                     # 写回被拒：**不登记**依赖图节点（免得图上多一个从未落地的结果）
+	if not bool(w["changed"]):
+		_set_dag_note("「%s」算出来了，但结果与当前盘面一致，没有需要写回的改动（也没有登记新节点）。"
+			% _bool_label(op))
+		return
+	# 真的落地了才登记：这次运算成为依赖图里的一个节点（"结果由 A、B 算出来"），供后续复用/求值。
+	var recorded := _record_boolean(op)
+	var tail := "" if recorded == "" else "，并记进依赖图 %s" % recorded
+	_set_dag_note("已按「%s」写回棋盘：保留 %d 格，盘外丢弃 %d 格，另清掉 %d 颗落在盘外的雷%s。"
+		% [_bool_label(op), int(w["kept"]), int(w["dropped"]), int(w["removed_mines"]), tail])
+	_toast("已按「%s」合成并写回棋盘（一步撤销，按左栏「撤销」可退回）" % _bool_label(op), false, 5.0)
+	_refresh_dag_opts()            # 新登记的节点要出现在 A / B 下拉里
+
+
+## 把这次布尔运算登记成依赖图里的一个节点（A、B 必须都是图里的形状才登记）。
+## 返回新节点 id；不登记则返回 ""（内置集合做操作数时没有"形状节点"可记）。
+func _record_boolean(op: String) -> String:
+	var ka := _opt_key(_dag_a_opt)
+	var kb := _opt_key(_dag_b_opt)
+	if not _dag.has_node(ka) or not _dag.has_node(kb):
+		return ""
+	_dag_bool_made += 1
+	var bid := "b%d" % _dag_bool_made
+	if not bool((_dag.add_boolean(bid, op) as Dictionary)["ok"]):
+		return ""
+	if not bool((_dag.add_edge(ka, bid) as Dictionary)["ok"]):
+		return ""
+	if not bool((_dag.add_edge(kb, bid) as Dictionary)["ok"]):
+		return ""
+	return bid
+
+
+func _bool_op(op: String, a: Variant, b: Variant) -> Dictionary:
+	if op == SHAPE_BOOLEAN.OP_UNION:
+		return SHAPE_BOOLEAN.union(a, b)
+	if op == SHAPE_BOOLEAN.OP_INTERSECT:
+		return SHAPE_BOOLEAN.intersect(a, b)
+	if op == SHAPE_BOOLEAN.OP_DIFFERENCE:
+		return SHAPE_BOOLEAN.difference(a, b)
+	if op == SHAPE_BOOLEAN.OP_XOR:
+		return SHAPE_BOOLEAN.xor(a, b)
+	return {"ok": false, "cells": [], "count": 0, "reason": "未知布尔运算：%s" % op}
+
+
+## 解析一个操作数 → `{ok, cells, reason}`。内置集合走 doc / 画布；其余键当依赖图节点求值。
+func _operand_cells(key: String) -> Dictionary:
+	if key == "":
+		return {"ok": false, "cells": [], "reason": "还没选中形状（先在 A / B 下拉里选一个）"}
+	if key == "__board__":
+		return {"ok": true, "cells": doc.grid().all_positions(), "reason": ""}
+	if key == "__selection__":
+		if canvas.selection.size == Vector2i.ZERO:
+			return {"ok": false, "cells": [],
+				"reason": "还没框选：用左栏「区域选择」在棋盘上拖一个框"}
+		return {"ok": true, "cells": _cells_in_rect(canvas.selection), "reason": ""}
+	if key == "__revealed__":
+		return {"ok": true, "cells": doc.revealed.keys(), "reason": ""}
+	return _dag_eval_cells(key)
+
+
+## 选区 → 盘内格坐标（与 `_cells_in` 同一套判界：问 `grid.in_board()`，不许用包围盒）。
+func _cells_in_rect(rect: Rect2i) -> Array:
+	var out: Array = []
+	var g := doc.grid()
+	for y in range(rect.position.y, rect.position.y + rect.size.y + 1):
+		for x in range(rect.position.x, rect.position.x + rect.size.x + 1):
+			var p := Vector2i(x, y)
+			if g.in_board(p):
+				out.append(p)
+	return out
+
+
+## 依赖图节点 → 格集（递归求值）。原子形状查 `ShapeDag.primitive_to_builder` 的**显式映射**，
+## 然后**按 `builder_name` 派发**给 `ShapeGenerator.build_*`。
+## 【为什么不能把 shape 名直接喂 `ShapeGenerator.to_adjacency_grid()`】两者的命名空间不同：
+## `to_adjacency_grid` 的 kind 是**编辑器盘型**，其中 "ring" = 同心环盘；而 DAG 的 "ring" 是
+## annulus（build_annulus）。撞名会**静默产出错几何** —— 这正是 shape_dag.gd 顶部「派发纪律」点名要拦的。
+## 未登记映射 ⇒ 显式失败（绝不挑近似构建器 / 出空几何）；布尔节点按 `dependencies_of()`
+## 的加边顺序折叠（差集是有序运算，顺序就是语义）。
+func _dag_eval_cells(id: String) -> Dictionary:
+	if not _dag.has_node(id):
+		return {"ok": false, "cells": [], "reason": "依赖图里没有节点 %s" % id}
+	var n: Dictionary = _dag.node(id)
+	var kind := str(n["kind"])
+	if kind == "primitive":
+		var shape := str(n["shape"])
+		var mapping: Dictionary = SHAPE_DAG.primitive_to_builder(shape)
+		if not bool(mapping["ok"]):
+			return {"ok": false, "cells": [], "reason": str(mapping["reason"])}
+		var builder := str(mapping["builder_name"])
+		var topo := _call_shape_builder(builder, n["params"])
+		if String(topo.get("error", "")) != "":
+			return {"ok": false, "cells": [],
+				"reason": "形状「%s」（%s）构建失败：%s" % [shape, builder, String(topo["error"])]}
+		var g := AdjacencyGrid.new()
+		g.setup_from_topo(topo)
+		if g.cell_count() == 0:
+			return {"ok": false, "cells": [],
+				"reason": "形状「%s」（%s）构建出空盘：已拒绝把它写回棋盘" % [shape, builder]}
+		return {"ok": true, "cells": g.all_positions(), "reason": ""}
+	# 布尔节点
+	var deps: Array = _dag.dependencies_of(id)
+	if deps.size() < 2:
+		return {"ok": false, "cells": [],
+			"reason": "布尔节点 %s 需要至少 2 个输入（当前 %d 个）：先用「加依赖」接上形状" % [id, deps.size()]}
+	var acc := _dag_eval_cells(str(deps[0]))
+	if not bool(acc["ok"]):
+		return acc
+	for i in range(1, deps.size()):
+		var nxt := _dag_eval_cells(str(deps[i]))
+		if not bool(nxt["ok"]):
+			return nxt
+		var r := _bool_op(str(n["shape"]), acc["cells"], nxt["cells"])
+		if not bool(r["ok"]):
+			return r
+		acc = {"ok": true, "cells": r["cells"], "reason": ""}
+	return acc
+
+
+## 按 `ShapeDag.primitive_to_builder()` 给出的 **builder_name** 派发到具体生成器（见上面那条纪律）。
+## 返回生成器原始产物：失败时含 `error` 键（与既有族同接口，不要用 `has("error")` 判失败）。
+func _call_shape_builder(builder: String, params: Dictionary) -> Dictionary:
+	if builder == "build_circle":
+		return ShapeGenerator.build_circle(int(params.get("radius", 0)), int(params.get("precision", 24)))
+	if builder == "build_star":
+		return ShapeGenerator.build_star(int(params.get("points", 0)),
+			int(params.get("outer_radius", 0)), float(params.get("inner_ratio", 0.5)))
+	if builder == "build_sector":
+		return ShapeGenerator.build_sector(int(params.get("radius", 0)),
+			float(params.get("start_deg", 0.0)), float(params.get("end_deg", 90.0)))
+	if builder == "build_ngon":
+		return ShapeGenerator.build_ngon(int(params.get("sides", 0)), int(params.get("radius", 0)))
+	if builder == "build_annulus":
+		return ShapeGenerator.build_annulus(int(params.get("outer_radius", 0)),
+			int(params.get("inner_radius", 0)), int(params.get("precision", 24)))
+	return {"error": "本仓没有构建器 %s（形状映射表与生成器漂移了，请反馈）" % builder}
+
+
+## 把一格集合当作**新的盘面形状**写回 doc：盘上只保留这些格，其余记为「障碍（格不存在）」。
+## 先过 `ShapeBoolean.apply_to_grid`（只保留盘内格并如实报告丢弃数）——异形/挖洞盘不能用包围盒判界。
+## 成功返回 {ok, changed, kept, dropped, removed_mines}；失败返回 {ok:false, ...} 且**已给出可读提示**。
+func _write_board_shape(cells: Array, what: String) -> Dictionary:
+	var g := doc.grid()
+	var filt: Dictionary = SHAPE_BOOLEAN.apply_to_grid(cells, g)
+	if not bool(filt["ok"]):
+		_set_dag_note("%s 写回失败：%s" % [what, str(filt["reason"])])
+		_toast("%s 写回失败：%s" % [what, str(filt["reason"])], true, 8.0)
+		return {"ok": false, "changed": false, "reason": str(filt["reason"])}
+	var kept: Array = filt["cells"]
+	if kept.is_empty():
+		var why := "结果是空的：按它写回会把整盘清成空格盘，已取消（换一个运算，或先加形状 / 先框选）。"
+		_set_dag_note("%s %s" % [what, why])
+		_toast("%s %s" % [what, why], true, 8.0)
+		return {"ok": false, "changed": false, "reason": why}
+	# 盘面可用的格 = 当前盘内格 ∪ 现存的障碍格（障碍格本来就属于"底图"，可以被重新放回来）
+	var universe := {}
+	for p in g.all_positions():
+		universe[p] = true
+	for p in doc.obstacles:
+		universe[p] = true
+	var keep := {}
+	for p in kept:
+		keep[p] = true
+	var new_obs: Array = []
+	for p in universe:
+		if not keep.has(p):
+			new_obs.append(p)
+	new_obs.sort_custom(_pos_less_xy)
+	var obs_set := {}
+	for p in new_obs:
+		obs_set[p] = true
+	var changed := not _same_cells(obs_set, doc.obstacles)
+	if not changed:
+		return {"ok": true, "changed": false, "kept": kept.size(),
+			"dropped": (filt["discarded"] as Array).size(), "removed_mines": 0}
+	# 按钮命令 ⇒ 自成一步撤销（不被 700ms 合并窗折进上一个手势）
+	_push_undo(false)
+	doc.obstacles.clear()
+	doc.obstacles.assign(new_obs)
+	var kept_mines: Array[Vector2i] = []
+	for m in doc.mines:
+		if not obs_set.has(m):
+			kept_mines.append(m)
+	var removed_mines := doc.mines.size() - kept_mines.size()
+	doc.mines.assign(kept_mines)
+	var kept_rev := {}
+	for p in doc.revealed:
+		if not obs_set.has(p):
+			kept_rev[p] = null
+	doc.revealed = kept_rev
+	_sync_declared_total()
+	_mark_dirty()
+	_refresh_all()
+	return {"ok": true, "changed": true, "kept": kept.size(),
+		"dropped": (filt["discarded"] as Array).size(), "removed_mines": removed_mines}
+
+
+func _same_cells(a: Dictionary, b: Array[Vector2i]) -> bool:
+	if a.size() != b.size():
+		return false
+	for p in b:
+		if not a.has(p):
+			return false
+	return true
+
+
+## (y, x) 升序 —— 与 `ShapeBoolean` / `EditorDoc` 的输出口径一致（可复现、diff 友好）。
+func _pos_less_xy(p: Vector2i, q: Vector2i) -> bool:
+	if p.y != q.y:
+		return p.y < q.y
+	return p.x < q.x
 
 
 func _build_right_panel() -> Control:
@@ -973,6 +1495,7 @@ func _build_props_tab() -> Control:
 	box.add_child(srow)
 	box.add_child(_plain_label("选形状后，邻域/边界控件不适用；雷位与障碍照常编辑。"
 		+ "「形状尺寸」对圆 / 星 / 扇形是半径（格）。"))
+	_build_shape_compose(box)
 	scroll.add_child(box)
 	return scroll
 
@@ -1033,6 +1556,20 @@ func _build_verify_tab() -> Control:
 	box.add_child(_verify_stars)
 	_verify_state = _plain_label("")
 	box.add_child(_verify_state)
+	# ---- 修复建议（RepairSuggest 接线）----
+	# 验证告诉用户"这盘要猜"，但"那怎么办"原来只能自己想。这里给出 1~3 条**已复核有效**的单步修法
+	# （挪一颗雷 / 加一条初始线索），点「应用」= 一步写进撤销栈（一次算一步，不污染重做链）。
+	box.add_child(_section_label("修复建议（要猜的时候，这里给修法）"))
+	box.add_child(_plain_label("点「给我修复建议」：编辑器会在**文档副本**上试若干修法，只给出"
+		+ "复核过「修完就能不靠猜推完」的 1~3 条（宁少而真）。\n"
+		+ "每条点「应用」才真的改关卡，且只算**一步撤销**——按左栏「撤销」就能退回。"))
+	_repair_btn = _action_button("给我修复建议", _on_repair)
+	box.add_child(_repair_btn)
+	_repair_msg = _plain_label("")
+	box.add_child(_repair_msg)
+	_repair_box = VBoxContainer.new()
+	_repair_box.add_theme_constant_override("separation", 3)
+	box.add_child(_repair_box)
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_verify_issues = VBoxContainer.new()
@@ -2934,6 +3471,103 @@ func _plain_conclusion(state: String) -> String:
 			return "没能得出结论——下面的「本盘问题」里如果有红字，先照着改，再点一次验证。"
 
 
+# ==================== 修复建议（RepairSuggest 接线） ====================
+#
+# 分工：候选搜索 / 副本试执行 / 复核 / `apply_plan` 全在 `core/repair_suggest.gd`（纯逻辑、已单测）。
+# 本文件只负责：① 展示 1~3 条 + 一键应用；② **应用走撤销栈且一次只算一步**；③ 失败给可读文案。
+# 【为什么要 async】`suggest()` 内部要跑多轮 verify（有墙钟预算），大棋盘上会卡住主线程 ⇒
+# 与「开始验证」同一套做法：先禁用按钮、等一帧让"正在算"画出来，再算。
+
+func _on_repair() -> void:
+	if _repair_btn != null:
+		_repair_btn.disabled = true
+	_clear_repairs()
+	_set_repair_msg("正在试各种修法…（棋盘越大越慢，请稍等）")
+	await get_tree().process_frame
+	var r: Dictionary = REPAIR_SUGGEST.suggest(doc)
+	if _repair_btn != null:
+		_repair_btn.disabled = false
+	var sug: Array = r["suggestions"]
+	if not bool(r["ok"]):
+		_set_repair_msg("没给出建议：%s" % str(r["reason"]))
+		_toast("修复建议：%s" % str(r["reason"]), true, 8.0)
+		return
+	if sug.is_empty():
+		_set_repair_msg("这盘不用修：%s" % str(r["reason"]))
+		return
+	for s in sug:
+		var sd: Dictionary = s
+		_repair_plans.append(sd["plan"])
+		_add_repair_row(sd, _repair_plans.size() - 1)
+	var tail := "" if bool(r["exhaustive"]) else "（候选没搜完，不代表只有这些）"
+	_set_repair_msg("给出 %d 条已复核的修法%s：点每条右边的「应用」。" % [sug.size(), tail])
+
+
+func _set_repair_msg(text: String) -> void:
+	if _repair_msg != null:
+		_repair_msg.text = text
+
+
+func _clear_repairs() -> void:
+	_repair_plans.clear()
+	if _repair_box == null:
+		return
+	for c in _repair_box.get_children():
+		c.queue_free()
+
+
+## 一行建议：人话说明 + 「应用」。按**索引**回调 ⇒ 列表刷新（`_clear_repairs`）后过期索引会显式报错，
+## 不会拿旧 plan 去改一份已经变了的文档。
+func _add_repair_row(s: Dictionary, idx: int) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	var lb := _plain_label(str(s["text"]))
+	lb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(lb)
+	var btn := _action_button("应用", func() -> void: _apply_repair(idx))
+	btn.tooltip_text = "把这条修法写进关卡（只算一步撤销）"
+	row.add_child(btn)
+	_repair_box.add_child(row)
+
+
+## 「一键应用」：先按当前文档复核 plan 是否还成立（不成立就不动文档、不留空撤销步），
+## 再 `_push_undo(false)` + `RepairSuggest.apply_plan`（core 侧落笔前先校验，无半途状态）。
+func _apply_repair(idx: int) -> void:
+	if idx < 0 or idx >= _repair_plans.size():
+		_set_repair_msg("这条建议已过期（盘面变过）：请重新点「给我修复建议」。")
+		return
+	var plan: Dictionary = _repair_plans[idx]
+	var why := _repair_plan_reason(plan)
+	if why != "":
+		_set_repair_msg("这条修法现在不适用：%s\n（请重新点「给我修复建议」）" % why)
+		_toast("这条修法现在不适用：%s" % why, true, 7.0)
+		return
+	_push_undo(false)                     # 一步：改动前快照
+	var r: Dictionary = REPAIR_SUGGEST.apply_plan(doc, plan)
+	if not bool(r["ok"]):
+		# 复核失败不该留下"什么都没做"的一步：把这步撤掉，保持撤销栈/重做链干净。
+		if not _undo.is_empty():
+			_undo.pop_back()
+		_set_repair_msg("应用失败（未改动关卡）：%s" % str(r["reason"]))
+		_toast("应用失败：%s" % str(r["reason"]), true, 8.0)
+		return
+	_doc_to_ui()
+	_mark_dirty()
+	_refresh_all()
+	_clear_repairs()
+	_set_repair_msg("已应用这条修法：%s\n（按左栏「撤销」可一步退回；下面是重跑验证的结果）" % str(r["reason"]))
+	await _on_verify()
+
+
+## plan 在当前文档上是否还成立：判据唯一来源 = `RepairSuggest.can_apply()`（提前问一句才不会白记一步撤销）。
+func _repair_plan_reason(plan: Dictionary) -> String:
+	# 【2026-10-03 收口：判据只有一份】此前这里抄了 `RepairSuggest._apply` 的同样 5 条判据，理由是
+	# "不适用就不该白记一步撤销"（动机对，但两份真相会漂移：改一处忘另一处 ⇒ UI 说能修而 core 拒绝）。
+	# 现在判据收进 `core/repair_suggest.gd:can_apply()`（公开纯函数、纯读无副作用），UI 只转发原因。
+	var r: Dictionary = REPAIR_SUGGEST.can_apply(plan, doc)
+	return "" if bool(r["ok"]) else str(r["reason"])
+
+
 # ==================== 数据：保存 / 打开 / 剪贴板 / 打包 / 试玩 ====================
 
 ## 文件名用的标题：只去掉文件系统不认的字符，**其余（含中文）原样保留**。
@@ -3096,6 +3730,103 @@ func _import_clipboard() -> void:
 	_current_path = ""
 	if not _load_from_text(text):
 		_toast("粘贴板里的内容不是一份关卡\n（让对方在自己的编辑器里按「复制关卡文本」再发一次）", true, 7.0)
+
+
+# ==================== 短码分享（ShareCode 接线） ====================
+#
+# 分工：编码 / 解码 / 分级 / 校验全在 `core/share_code.gd`（纯本地运算、绝不抛异常，已单测）。
+# 本文件只负责：① 导出到剪贴板并回填输入框；② 导入前先过编辑器自己的规模闸门；
+# ③ 任何失败都给**可读原因**（toast + 常驻说明行），不静默、不崩。
+
+## 导出短码。含自定义形状 / 自由几何 / 大棋盘时 `ShareCode` 会给可读原因并建议走文件。
+func _export_share_code() -> void:
+	var r: Dictionary = SHARE_CODE.encode(doc.to_level_json())
+	if not bool(r["ok"]):
+		_set_share_note("这份关卡做不成短码：%s" % str(r["reason"]))
+		_toast("短码导出失败：%s" % str(r["reason"]), true, 8.0)
+		return
+	var code := str(r["code"])
+	if _share_edit != null:
+		_share_edit.text = code
+	var copied := _clipboard_available()
+	if copied:
+		DisplayServer.clipboard_set(code)
+	_set_share_note("%s（载荷 %d 字节，码长 %d 字符）：贴到聊天窗口，"
+		% ["短码已复制到剪贴板" if copied else "短码已生成（本机没有剪贴板，请手动复制上面的码）",
+			int(r["bytes"]), code.length()]
+		+ "对方粘进上面的框点「载入短码」就能玩。")
+	_toast("短码已%s（%d 个字符）" % ["复制到剪贴板" if copied else "生成", code.length()], false, 5.0)
+
+
+## 当前显示后端有没有剪贴板。**headless（CI / 无头）没有**，此时调 `clipboard_get()` 会让引擎打
+## ERROR（实测会污染测试）⇒ 先问一句，没有就只给可读提示。
+func _clipboard_available() -> bool:
+	return DisplayServer.get_name() != "headless"
+
+
+## 导入短码。输入框为空时退回剪贴板；非法码一律给可读原因（`ShareCode.decode` 绝不抛异常）。
+func _import_share_code() -> void:
+	var text := _share_edit.text.strip_edges() if _share_edit != null else ""
+	if text == "" and _clipboard_available():
+		text = DisplayServer.clipboard_get().strip_edges()
+	if text == "":
+		_set_share_note("还没短码：把别人给的短码粘到上面的框里（或先复制到剪贴板），再点「载入短码」。")
+		_toast("没有短码可载入", true, 5.0)
+		return
+	var r: Dictionary = SHARE_CODE.decode(text)
+	if not bool(r["ok"]):
+		_set_share_note("这不是一条能用的短码：%s" % str(r["reason"]))
+		_toast("短码不能用：%s" % str(r["reason"]), true, 8.0)
+		return
+	var lv := _share_level_to_doc_json(r["level"])
+	var gate := LevelGuardRef.check_level(lv)
+	if not bool(gate["ok"]):
+		_set_share_note("短码内容超出编辑上限：%s" % str(gate["reason"]))
+		_toast("短码内容超出编辑上限：%s" % str(gate["reason"]), true, 8.0)
+		return
+	# 载入 = 换一份"新东西"：一步撤销 + 断掉当前文件路径（别让下次保存覆盖原来那份）
+	_push_undo(false)
+	var lr: Dictionary = doc.load_from(lv)
+	if not bool(lr["ok"]):
+		if not _undo.is_empty():
+			_undo.pop_back()      # 失败不该留一步"什么都没做"的撤销
+		_set_share_note("短码内容读不出来：%s" % str(lr["reason"]))
+		_toast("短码内容读不出来：%s" % str(lr["reason"]), true, 8.0)
+		return
+	_current_path = ""
+	_doc_to_ui()
+	_mark_dirty()
+	_refresh_all()
+	_set_share_note("已载入短码：%d×%d、%d 颗雷（撤一步可退回原关卡）。" % [
+		doc.cols, doc.rows, doc.mine_count()])
+	_toast("已载入短码关卡：可以直接试玩", false, 5.0)
+
+
+## 短码解出的关卡 → `EditorDoc.load_from` 认识的口径。
+## `ShareCode` 把规则放在 `rule` 段（{id, level, spec}），而 `EditorDoc` 读的是
+## `clue_rule` / `rule_level` / `custom.spec` ⇒ 这里做一次**显式映射**，不让规则在导入时静默丢掉。
+func _share_level_to_doc_json(level: Dictionary) -> Dictionary:
+	var out := level.duplicate(true)
+	var rule: Variant = out.get("rule", null)
+	if rule is Dictionary:
+		var rd: Dictionary = rule
+		out.erase("rule")
+		if str(rd.get("id", "")) != "":
+			out["clue_rule"] = str(rd["id"])
+			out["rule_level"] = true
+		if rd.get("spec", null) is Dictionary and not (rd["spec"] as Dictionary).is_empty():
+			var custom: Dictionary = {}
+			if out.get("custom", null) is Dictionary:
+				custom = (out["custom"] as Dictionary).duplicate(true)
+			custom["spec"] = (rd["spec"] as Dictionary).duplicate(true)
+			out["custom"] = custom
+			out["rule_level"] = true
+	return out
+
+
+func _set_share_note(text: String) -> void:
+	if _share_note != null:
+		_share_note.text = text
 
 
 func _make_pack() -> void:

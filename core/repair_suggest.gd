@@ -148,12 +148,15 @@ static func suggest(doc: EditorDoc, opts: Dictionary = {}) -> Dictionary:
 ## 【与 suggest() 的分工】suggest() 绝不动原文档（只在副本上试）；本函数是"用户真的点了应用"
 ## 时才调，会改 `doc`（这是需求「一键应用后自动重跑校验」的落点，UI 直接调即可）。
 ## 返回 `{ok, applied, reason, verify}`；ok=false 时 `doc` 未被修改（`_apply` 先校验后落笔，无半途状态）。
+## 【落笔前先问 `can_apply()`】调用方若想"不适用就别留下副作用"，先调它；本函数自己也会走同一判据，
+## 拒绝时 `reason` 就是那条**具体**原因（不再是笼统的"坐标越界 / 已被占用 / 类型未知"三合一）。
 static func apply_plan(doc: EditorDoc, plan: Dictionary, opts: Dictionary = {}) -> Dictionary:
-	if doc == null:
-		return {"ok": false, "applied": false, "reason": "文档为空", "verify": {}}
+	var why := _plan_reason(doc, plan)
+	if why != "":
+		return {"ok": false, "applied": false, "reason": "计划无法执行：%s" % why, "verify": {}}
 	if not _apply(doc, plan):
 		return {"ok": false, "applied": false,
-			"reason": "计划无法执行：坐标越界 / 目标格已被雷或初始翻开占用 / 操作类型未知", "verify": {}}
+			"reason": "计划无法执行：落笔时复核未通过（判据通过的瞬间之后文档被改动）", "verify": {}}
 	var v := EditorVerify.verify_islands(doc, _verify_opts(opts))
 	return {"ok": true, "applied": true, "reason": str(v["reason"]), "verify": v}
 
@@ -238,40 +241,82 @@ static func _problem_islands(islands: Array) -> Array:
 
 # ==================== 试执行 / 副本 ====================
 
-## 在副本上执行一条 plan。返回 false = 该计划对这份文档不合法（不落任何改动）。
-static func _apply(cand: EditorDoc, plan: Dictionary) -> bool:
+## 一条 plan 对**这份**文档是否可执行 —— `""` = 可执行，否则**可读原因**。**纯读，不改任何东西**。
+##
+## 【为什么必须收口在这里】"这条修法现在还能不能用"是同一件事：`_apply()`（试执行）要先问它，
+## UI 在落笔前也要先问它（否则会先记一步撤销再失败，或反过来"UI 说能修、core 拒绝"）。
+## 2026-10-03 之前 UI 侧抄了一份同样 5 条判据 ⇒ 两份真相迟早漂移（改了一处忘另一处）。
+## 现在两条路都走本函数：判据**只此一份**，UI 只负责显示 reason。
+static func _plan_reason(doc: EditorDoc, plan: Dictionary) -> String:
+	if doc == null:
+		return "文档为空：没有可改的盘"
 	var op := str(plan.get("op", ""))
 	if op == KIND_ADD_CLUE:
 		var c: Dictionary = plan.get("cell", {})
 		var p := Vector2i(int(c.get("c", -1)), int(c.get("r", -1)))
-		if not _plausible_target(cand, p):
-			return false
+		if not _plausible_target(doc, p):
+			return "目标格 %s 不在盘上（越界或洞格）：加线索要挑盘内格" % str(p)
 		# 隐藏安全格：不能是雷、也不能已经是初始翻开格（否则加了也没有新线索）
-		if cand.mines.has(p) or cand.revealed.has(p):
-			return false
-		cand.revealed[p] = null
-		return true
+		if doc.mines.has(p):
+			return "目标格 %s 已经是雷：加线索要挑**隐藏安全格**" % str(p)
+		if doc.revealed.has(p):
+			return "目标格 %s 已经是初始翻开格：加了不会带来新线索" % str(p)
+		return ""
 	if op == KIND_MOVE_MINE:
 		var fd: Dictionary = plan.get("from", {})
 		var td: Dictionary = plan.get("to", {})
 		var a := Vector2i(int(fd.get("c", -1)), int(fd.get("r", -1)))
 		var b := Vector2i(int(td.get("c", -1)), int(td.get("r", -1)))
-		if not cand.mines.has(a):
-			return false
-		if not _plausible_target(cand, b):
-			return false
-		if cand.mines.has(b) or cand.revealed.has(b):
-			return false
-		cand.mines.erase(a)
-		cand.mines.append(b)
-		return true
-	return false
+		if not doc.mines.has(a):
+			return "源格 %s 上没有雷：挪雷必须从雷格出发" % str(a)
+		if not _plausible_target(doc, b):
+			return "目标格 %s 不在盘上（越界或洞格）：挪雷的目标必须是盘内格" % str(b)
+		if doc.mines.has(b) or doc.revealed.has(b):
+			return "目标格 %s 已被雷或初始翻开格占用" % str(b)
+		return ""
+	return "未知修法：%s（可用：%s / %s）" % [op, KIND_ADD_CLUE, KIND_MOVE_MINE]
 
 
-static func _plausible_target(doc: EditorDoc, p: Vector2i) -> bool:
-	if p.x < 0 or p.y < 0 or p.x >= doc.cols or p.y >= doc.rows:
+## 公开入口：这条 plan 现在还能不能用。**纯读**（不碰 `doc`，无副作用）⇒ 调用方可以
+## "先问、再决定要不要记撤销步"。返回 `{ok, reason}`；`ok=false` 时 `reason` 必为非空可读原因。
+static func can_apply(plan: Dictionary, doc: EditorDoc) -> Dictionary:
+	var why := _plan_reason(doc, plan)
+	if why != "":
+		return {"ok": false, "reason": why}
+	return {"ok": true, "reason": ""}
+
+
+## 在副本上执行一条 plan。返回 false = 该计划对这份文档不合法（不落任何改动）。
+## 【唯一判据】先问 `_plan_reason()`（与公开的 `can_apply()` 同一份），通过的才落笔。
+static func _apply(cand: EditorDoc, plan: Dictionary) -> bool:
+	var why := _plan_reason(cand, plan)
+	if why != "":
 		return false
-	return not doc.obstacles.has(p)
+	var op := str(plan.get("op", ""))
+	if op == KIND_ADD_CLUE:
+		var c: Dictionary = plan.get("cell", {})
+		cand.revealed[Vector2i(int(c.get("c", -1)), int(c.get("r", -1)))] = null
+		return true
+	# 走到这里 `_plan_reason` 已保证：op 合法、源格有雷、目标格是未被占用的盘内格。
+	var fd: Dictionary = plan.get("from", {})
+	var td: Dictionary = plan.get("to", {})
+	cand.mines.erase(Vector2i(int(fd.get("c", -1)), int(fd.get("r", -1))))
+	cand.mines.append(Vector2i(int(td.get("c", -1)), int(td.get("r", -1))))
+	return true
+
+
+## 目标格是否可用（判据的一部分）：必须是**盘上真实存在的格**。
+##
+## 【2026-10-03 收口：判界只问网格】原实现按**包围盒**判界（`p.x < doc.cols and not obstacles`）——
+## 与 `ui/level_editor.gd:_paste_selection` / `_cells_in` / 画布 的「问 `grid().in_board()`」是
+## **两套口径**（同仓库同一 bug 类）。后果具体而真：形状盘（环形 annulus / 轮廓族）的「包围盒内、
+## 但轮廓外或洞格」会被当成合法目标 ⇒ `can_apply` 说可用、`apply_plan` 真去写，落一条**不在盘上**的
+## 初始翻开格（渲染找不到 Cell）。现在统一走网格：`in_board()` 同时覆盖"越界 / 障碍洞格 / 轮廓外格"，
+## 无需再叠一层 `obstacles` 判断，判据只有一份。
+static func _plausible_target(doc: EditorDoc, p: Vector2i) -> bool:
+	if doc == null:
+		return false
+	return doc.grid().in_board(p)
 
 
 ## 深拷贝：只读既有 `snapshot()` / `restore()`（不改原文档），失败返回 null。

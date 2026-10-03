@@ -292,6 +292,35 @@ static func estimate_cells(shape_kind: String, shape_params: Dictionary, rows: i
 							Vector2(float(f_x), float(f_y))):
 						f_n += 1
 			return f_n
+		"ngon":
+			# (m) 正 N 边形：与 build_ngon 同口径（内接正 sides 边形栅格化，起始 -90°）。
+			# 与 circle 同一套纯几何原语 ⇒ 不建盘、不写状态，与 build_ngon 的 positions 逐格一致（测试对拍）。
+			# tier 按 `to_adjacency_grid("ngon")` 的口径读（该入口**会**把 tier 传给 build_ngon）。
+			var g_sides := int(shape_params.get("sides", 0))
+			var g_rad := int(shape_params.get("radius", 0))
+			var g_tier := str(shape_params.get("tier", ShapeGenerator.RASTER_DEFAULT))
+			if g_sides < 3 or g_rad <= 0 or not ShapeGenerator.RASTER_TIERS.has(g_tier):
+				return 0                     # 与 build_ngon 的拒绝条件一致 ⇒ 0 格（调用方的形状闸门会拦住）
+			var g_center := Vector2(float(g_rad), float(g_rad))
+			return ShapeGenerator._rasterize_polygon(
+				ShapeGenerator._regular_polygon_pts(g_center, float(g_rad), g_sides, -90.0), g_tier).size()
+		"annulus":
+			# (n) 环形 annulus：与 build_annulus 同口径 —— 外环 + **反向**内环交给（奇偶判据的）栅格化。
+			# ⚠ 与上面的 "ring"（同心环盘 build_ring）**同名不同义**，参数名也不同（这里是 outer/inner_radius）。
+			var a_out := int(shape_params.get("outer_radius", 0))
+			var a_in := int(shape_params.get("inner_radius", 0))
+			var a_prec := int(shape_params.get("precision", 24))
+			var a_tier := str(shape_params.get("tier", ShapeGenerator.RASTER_DEFAULT))
+			if a_out <= 0 or a_in < 1 or a_in >= a_out or a_prec < 3:
+				return 0                     # 与 build_annulus 的拒绝条件一致 ⇒ 0 格
+			if not ShapeGenerator.RASTER_TIERS.has(a_tier):
+				return 0                     # tier 非法同样建不出盘（build_annulus 会拒绝）
+			var a_center := Vector2(float(a_out), float(a_out))
+			var a_poly := ShapeGenerator._regular_polygon_pts(a_center, float(a_out), a_prec, -90.0)
+			var a_hole := ShapeGenerator._regular_polygon_pts(a_center, float(a_in), a_prec, -90.0)
+			for i in range(a_hole.size() - 1, -1, -1):
+				a_poly.append(a_hole[i])     # 内环反向 = 规范"甜甜圈"环序（与 build_annulus 逐字同法）
+			return ShapeGenerator._rasterize_polygon(a_poly, a_tier).size()
 		"trihex":
 			# 精确计数复用几何族（只产多边形，不建 AdjacencyGrid）
 			return ShapeGenerator.trihex_cells_geo(

@@ -44,13 +44,18 @@ const NODE_BOOLEAN := "boolean"
 ## （不跨 0°）；参数名就是 radius / start_deg / end_deg，不是 sectors / angle_span。
 ## 产物与既有族同接口，失败时才有 error 键 ⇒ 执行器判失败用 String(topo.get("error", "")) != ""，
 ## 不要用 has("error")（成功产物没有该键，与既有族一致）。
-## 两处**已知缺口**（本模块只登记词汇，不负责补生成器）：
-##   · "ngon" —— 尚无正 N 边形生成器（shape_generator 未提供）；
+## 两处**曾经的缺口**已于 2026-10-03 **接线**（生成器落地 + 映射登记）：
+##   · "ngon" —— `ShapeGenerator.build_ngon(sides, radius, tier)`（core/shape_generator.gd:846）⇒ 登记；
 ##   · "ring" —— 此处语义是**环形 annulus**（内圆挖空），**不是** ShapeGenerator.build_ring 的
-##     「同心环盘（带角向闭环）」。求值 ring primitive 时切勿直接拿 build_ring 顶替：
-##     annulus 是单个带洞形状，环盘是一圈可绕回的格区，几何与拓扑都不同。
-## 这两个缺口**不靠注释防呆**：见下方 primitive_to_builder()（ngon ⇒ ok=false + 原因；
-## ring ⇒ 禁止映射到 build_ring）与 test/unit/test_shape_dag_mapping.gd 的红灯断言。
+##     「同心环盘（带角向闭环）」。生成器 = `ShapeGenerator.build_annulus(outer, inner, precision, tier)`
+##     （core/shape_generator.gd:869）⇒ 登记到 build_annulus（**不是** build_ring）。annulus 是单个带洞
+##     形状，环盘是一圈可绕回的格区，几何与拓扑都不同。
+## ⚠ **派发纪律（新增能力带来的新陷阱）**：调用方必须按 `builder_name` 派发。**禁止**把 DAG 的
+## `shape` 名直接喂给 `ShapeGenerator.to_adjacency_grid()` —— `to_adjacency_grid` 的 kind 命名空间是
+## **编辑器盘型**（其中 "ring" 早已存在且语义 = 同心环盘）⇒ `to_adjacency_grid("ring", ...)` 会静默
+## 产出**错几何**（正是本模块 "禁止静默降级" 要拦的那一类）。annulus 在 `to_adjacency_grid` 里尚无
+## kind，本轮**有意不登记**（会牵动 core/editor_doc.gd 的 estimate_cells，等该文件释放后统一接线）。
+## 这两个缺口**不靠注释防呆**：见下方 primitive_to_builder() 与 test/unit/test_shape_dag_mapping.gd。
 const PRIMITIVE_SHAPES: Array[String] = [
 	"rect", "circle", "ngon", "star", "ring", "sector", "freehand", "text",
 ]
@@ -59,10 +64,17 @@ const PRIMITIVE_SHAPES: Array[String] = [
 const BOOLEAN_OPS: Array[String] = ["union", "intersect", "difference", "xor"]
 ## DAG 形状 → core/shape_generator.gd 构建器名：**只登记语义已逐字核对一致**的形状。
 ## 未登记 ⇒ 没有可用构建器（不是"用空几何兜底"），必须走 primitive_to_builder() 的失败分支。
+## 【2026-10-03】ngon / ring 两条是本次新增生成器后的**接线**（此前因"有词汇、无生成器"显式拒绝）：
+## ring 的入参口径是 `outer_radius / inner_radius`（annulus），**没有** sectors/step_deg/r0/dr
+## （那是 build_ring 环盘的参数，两者不是一回事）。
 const BUILDER_BY_SHAPE := {
 	"circle": "build_circle",   # (radius: int, precision: int = 24)
 	"star": "build_star",       # (points: int, outer_radius: int, inner_ratio: float = 0.5)
 	"sector": "build_sector",   # (radius: int, start_deg: float, end_deg: float)
+	"ngon": "build_ngon",       # (sides: int, radius: int, tier: String = "default")
+	                            #   —— core/shape_generator.gd:846（2026-10-03 新增）
+	"ring": "build_annulus",    # (outer_radius: int, inner_radius: int, precision: int = 24, tier: String = "default")
+	                            #   —— core/shape_generator.gd:869（2026-10-03 新增；annulus，**不是** build_ring）
 }
 
 var _nodes: Dictionary = {}       ## id -> {"id","kind","shape","params"}
@@ -248,32 +260,26 @@ func eval_plan() -> Array:
 # ============================== 形状 → 构建器映射（红灯） ==============================
 #
 # 为什么必须有这层显式映射（而不是让求值器"就近挑一个 build_*"）：
-#   · 词汇表里的名字 ≠ 有生成器（本仓没有 ngon / rect / freehand / text 的构建器）；
-#   · 名字相同 ≠ 语义相同（本 DAG 的 "ring" 是 annulus，与 build_ring 的环盘不是一回事）。
+#   · 词汇表里的名字 ≠ **已接线**的生成器（生成器存在 ≠ 映射已登记：本仓 rect / freehand / text
+#     仍无构建器 ⇒ 必须显式失败）；
+#   · 名字相同 ≠ 语义相同（本 DAG 的 "ring" 是 annulus，与 build_ring 的环盘不是一回事 ⇒ 只登记
+#     到 build_annulus；调用方按 builder_name 派发，绝不可拿 shape 名去 to_adjacency_grid 撞名）。
 # 两种情况若靠"就近挑"⇒ **静默产出错几何或空几何**；空几何最难查：它会被当成
 # 「形状本来就长这样」写进关卡且全程无报错。故本函数只对语义已核对一致的形状开口，
 # 其余一律 ok=false + 可读原因，由调用方显式处理（**禁止静默降级成空几何**）。
 
 ## 查一个 primitive shape 该用哪个构建器。返回 {ok, kind, reason, builder_name}：
 ##   · ok=true  ⇒ kind="builder"，builder_name ∈ BUILDER_BY_SHAPE；
-##   · ok=false ⇒ kind="unsupported"（本仓无生成器，含未知/空 shape）
-##                / "semantics_mismatch"（同名不同义）；
+##   · ok=false ⇒ kind="unsupported"（未接线，含未知/空 shape、rect/freehand/text）；
 ##                builder_name 恒为 ""（调用方**不得**自行挑近似构建器）。
-## ring 额外带 `forbidden_builder: "build_ring"` —— 它是**明令禁止的顶替者**，不是候选。
+## 【2026-10-03】ngon / ring 已从"显式拒绝"翻到"已接线"（新生成器落地的收口，见 BUILDER_BY_SHAPE）；
+## ring ⇒ build_annulus，**绝不是** build_ring（同名不同义，禁止顶替）。
 static func primitive_to_builder(shape: String) -> Dictionary:
 	if BUILDER_BY_SHAPE.has(shape):
 		return {
 			"ok": true, "kind": "builder", "builder_name": str(BUILDER_BY_SHAPE[shape]),
 			"reason": "",
 		}
-	if shape == "ring":
-		return {
-			"ok": false, "kind": "semantics_mismatch", "builder_name": "",
-			"forbidden_builder": "build_ring",
-			"reason": "「ring」在本 DAG 的语义是 **annulus**（单个内圆挖空的带洞形状）；ShapeGenerator.build_ring 是「同心环盘」——多格、带角向闭环、返回 positions+adjacency，几何形态与数据结构都不同 ⇒ 同名不同义，**不得**拿 build_ring 顶替。本仓尚无 annulus 构建器 ⇒ 显式失败（绝不静默出空几何）；annulus 构建器落地后再在此登记。",
-		}
-	if shape == "ngon":
-		return _unsupported("「ngon」只有词汇、没有生成器：本仓未提供正 N 边形构建器（无 build_ngon）。求值 / 映射必须显式失败——禁止静默产出空几何（空几何会被误当成「形状本来就长这样」）。")
 	if PRIMITIVE_SHAPES.has(shape):
 		return _unsupported("形状「%s」在词汇表 PRIMITIVE_SHAPES 内，但本仓未提供对应构建器（无 build_%s）⇒ 显式失败，禁止静默出空几何。" % [shape, shape])
 	return _unsupported("未知形状「%s」：既不在词汇表 PRIMITIVE_SHAPES 内，也无构建器映射 ⇒ 显式失败（不猜语义、不出空几何）。可用词汇：%s" % [shape, str(PRIMITIVE_SHAPES)])

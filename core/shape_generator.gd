@@ -54,6 +54,15 @@ const MASK_FILLED := "#X1"
 const MASK_EMPTY := ".0 "
 ## (d) mask 可用的 style（与三族参数化生成器一一对应；未注册 → 报错 + 空拓扑）。
 const MASK_STYLES: Array[String] = ["holed_grid", "hex", "t488"]
+## (m)~(n) 栅格化三档精度：**边界判定的采样严格度**（与 `precision`（内接多边形边数）是两个正交旋钮）。
+##   coarse  —— 严格内缩：格心 + 四角**全部**落在形状内才收录（格数最少）；
+##   default —— **硬红线：逐格与旧行为完全一致**（= 既有 `_rasterize_polygon` 的"只判格心"口径）；
+##   fine    —— 宽松外扩：格心 / 四角 / 四边中点**任一点**落在形状内即收录（格数最多）。
+## 严格单调（coarse < default < fine）与包含关系（粗 ⊆ 默认 ⊆ 细）由 test_core_shape_geometry 断言 —— 防空转。
+const RASTER_COARSE := "coarse"
+const RASTER_DEFAULT := "default"
+const RASTER_FINE := "fine"
+const RASTER_TIERS: Array[String] = [RASTER_COARSE, RASTER_DEFAULT, RASTER_FINE]
 
 
 ## (a) 挖洞方格（rows 行 × cols 列）。
@@ -751,8 +760,11 @@ static func _sort_poly_ccw(poly: PackedVector2Array, c: Vector2) -> PackedVector
 ##
 ## 为什么是"内接正 n 边形"而不是直接判 dist ≤ radius：`precision` 就是精度旋钮（边数越多越接近
 ## 正圆），内接保证形状恒在半径内、格集随 precision 单调收敛，且与 (k)/(l) 共用同一套多边形判据。
-## 参数：radius ≥ 1（整数，格为单位）；precision ≥ 3（内接边形边数，默认 24）。
-static func build_circle(radius: int, precision: int = 24) -> Dictionary:
+## 参数：radius ≥ 1（整数，格为单位）；precision ≥ 3（内接边形边数，默认 24）；
+##       tier = 栅格化精度档（见 RASTER_TIERS；默认档与旧行为逐格一致）。
+static func build_circle(radius: int, precision: int = 24, tier := RASTER_DEFAULT) -> Dictionary:
+	if not RASTER_TIERS.has(tier):
+		return _reject("build_circle", "tier 必须是 %s 之一（收到 \"%s\"）" % [str(RASTER_TIERS), str(tier)])
 	if radius <= 0:
 		return _reject("build_circle", "radius 必须为正整数（收到 %d）：半径以格为单位，须 ≥ 1" % radius)
 	if precision < 3:
@@ -762,7 +774,11 @@ static func build_circle(radius: int, precision: int = 24) -> Dictionary:
 		return _reject("build_circle", why)
 	var c := Vector2(float(radius), float(radius))
 	var poly := _regular_polygon_pts(c, float(radius), precision, -90.0)
-	return _outline_topo(_rasterize_polygon(poly), "circle", {"radius": radius, "precision": precision})
+	var params := {"radius": radius, "precision": precision}
+	# 默认档不写 tier ⇒ 既有产物的 params 逐字段零变化（硬红线：默认档 == 旧行为）。
+	if tier != RASTER_DEFAULT:
+		params["tier"] = tier
+	return _outline_topo(_rasterize_polygon(poly, tier), "circle", params)
 
 
 ## (k) 星形：points 个角（= 2*points 个顶点的星形多边形）在整数格上栅格化。
@@ -808,6 +824,117 @@ static func build_sector(radius: int, start_deg: float, end_deg: float) -> Dicti
 			if _sector_contains(c, float(radius), start_deg, end_deg, Vector2(float(x), float(y))):
 				cells[Vector2i(x, y)] = true
 	return _outline_topo(cells, "sector", {"radius": radius, "start_deg": start_deg, "end_deg": end_deg})
+
+
+## ==== (m) 正 N 边形（ngon）与 (n) 环形（annulus）====
+##
+## 补齐 `core/shape_dag.gd` 词汇表 `PRIMITIVE_SHAPES` 里两个**曾自记"本仓无生成器"**的名字：
+##   · "ngon" —— 正 N 边形（该文件 :276 原文："本仓未提供正 N 边形构建器（无 build_ngon）"）；
+##   · "ring" —— 该文件 :273 明确其语义是 **annulus**（单个内圆挖空的带洞形状），并禁止拿
+##     既有 `build_ring`（同心环盘）顶替 ⇒ 这里落地的就是 annulus（`build_annulus`），
+##     **不是**环盘。两者同名不同义，别再混。
+## 三族（circle / ngon / annulus）同接口同口径：入参风格一致（整数半径 + 可选 precision + tier），
+## 返回同一套 `{positions, adjacency, style, params}`；邻接复用 `_graph_from_dirs(..., MOORE8)`，
+## 故既有不变量（非负 / 对称 / 无自环 / 无重复 / 端点闭合）原样成立——**本段不碰既有族任何一行**。
+
+
+## (m) 正 N 边形：边数 sides（≥3）、外接半径 radius 的正多边形在整数格上栅格化。
+##
+## 与 (j) 圆同族同口径（同样以 (radius, radius) 为心、从正上方 -90° 起、Moore 8 邻），
+## 差别只在**几何是精确多边形**（无内接近似误差）——圆是它的极限特例。
+## 参数：sides ≥ 3（边数）；radius ≥ 1（外接半径，格）；tier = 栅格化精度档（见 RASTER_TIERS）。
+static func build_ngon(sides: int, radius: int, tier := RASTER_DEFAULT) -> Dictionary:
+	if not RASTER_TIERS.has(tier):
+		return _reject("build_ngon", "tier 必须是 %s 之一（收到 \"%s\"）" % [str(RASTER_TIERS), str(tier)])
+	if sides < 3:
+		return _reject("build_ngon", "sides（边数）必须 ≥ 3（收到 %d）：不足 3 边不成多边形" % sides)
+	if radius <= 0:
+		return _reject("build_ngon", "radius 必须为正整数（收到 %d）：外接半径以格为单位，须 ≥ 1" % radius)
+	var why := _budget_reason(_disk_upper_bound(float(radius)))
+	if why != "":
+		return _reject("build_ngon", why)
+	var c := Vector2(float(radius), float(radius))
+	var poly := _regular_polygon_pts(c, float(radius), sides, -90.0)
+	var params := {"sides": sides, "radius": radius}
+	if tier != RASTER_DEFAULT:
+		params["tier"] = tier
+	return _outline_topo(_rasterize_polygon(poly, tier), "ngon", params)
+
+
+## (n) 环形 annulus：外半径 outer_radius、内半径 inner_radius（内圆挖空）的**带洞**圆环。
+##
+## 几何 = 外圆盘 − 内圆盘：两条内接正 precision 边形的边界合成一个"甜甜圈"多边形（外环 + 反向内环），
+## 由 `_poly_contains` 的**奇偶判据**处理 ⇒ 洞内格天然不被收录（不是靠包围盒挖洞）。
+## 参数：outer_radius ≥ 1；1 ≤ inner_radius < outer_radius；precision ≥ 3；tier = 栅格化精度档。
+static func build_annulus(outer_radius: int, inner_radius: int,
+		precision: int = 24, tier := RASTER_DEFAULT) -> Dictionary:
+	if not RASTER_TIERS.has(tier):
+		return _reject("build_annulus", "tier 必须是 %s 之一（收到 \"%s\"）" % [str(RASTER_TIERS), str(tier)])
+	if outer_radius <= 0:
+		return _reject("build_annulus", "outer_radius 必须为正整数（收到 %d）：以格为单位，须 ≥ 1" % outer_radius)
+	if inner_radius < 1 or inner_radius >= outer_radius:
+		return _reject("build_annulus", "inner_radius 必须满足 1 ≤ inner_radius < outer_radius（收到 inner=%d, outer=%d）：否则不是「带洞的环」而是整盘或空盘" % [inner_radius, outer_radius])
+	if precision < 3:
+		return _reject("build_annulus", "precision 必须 ≥ 3（收到 %d）：内外圆均按内接正 precision 边形栅格化" % precision)
+	var why := _budget_reason(_disk_upper_bound(float(outer_radius)))
+	if why != "":
+		return _reject("build_annulus", why)
+	var c := Vector2(float(outer_radius), float(outer_radius))
+	var poly := _regular_polygon_pts(c, float(outer_radius), precision, -90.0)
+	var inner := _regular_polygon_pts(c, float(inner_radius), precision, -90.0)
+	for idx in range(inner.size() - 1, -1, -1):   # 内环反向：形成规范"甜甜圈"环序（奇偶判据下等价）
+		poly.append(inner[idx])
+	var params := {"outer_radius": outer_radius, "inner_radius": inner_radius, "precision": precision}
+	if tier != RASTER_DEFAULT:
+		params["tier"] = tier
+	return _outline_topo(_rasterize_polygon(poly, tier), "annulus", params)
+
+
+# ---------- (o) 边缘平滑：腐蚀 / 膨胀（格集 × 网格 → 格集） ----------
+#
+# 纯函数：不建盘、不改网格、不引用 UI/autoload。判界**一律问网格** `grid.in_board()` /
+# `grid.get_neighbors()`，**绝不**用 cols/rows 包围盒 —— 形状盘（环形 annulus / 挖洞盘）的洞格
+# 不在盘上（没有 Cell），按包围盒补洞会把格写进洞里：渲染找不到 Cell、CP-SAT 索引也会错位。
+#
+# 语义（在网格自己的邻域上做形态学，矩形盘即 Moore 8 邻、蜂窝盘即 6 邻、环盘即环向 + 径向）：
+#   · 膨胀 dilate：格集 ∪ 其全部**盘内**邻格（洞格 / 盘外格永不被写入——它们不在邻域里）。
+#   · 腐蚀 erode ：格集里「盘内全部邻格也都在集内」的格（外缩、抹掉薄突刺）。
+# 输入里的盘外 / 洞格条目一律**丢弃**（"不存在的格"不是数据错误，不报错也不写入）。
+
+## 膨胀：格集每个格 + 其全部盘内邻格并入结果。返回**新**格集（Dictionary[Vector2i -> true]）。
+static func dilate_cells(cells: Dictionary, grid: GridInterface) -> Dictionary:
+	var out := {}
+	if grid == null:
+		push_error("ShapeGenerator.dilate_cells: grid 为空（判界必须走网格 in_board()/get_neighbors()，不得按包围盒）")
+		return out
+	for p: Vector2i in cells:
+		if not grid.in_board(p):
+			continue                      # 洞格 / 盘外格：不存在，丢弃（绝不写入）
+		out[p] = true
+		for nb: Vector2i in grid.get_neighbors(p):
+			if grid.in_board(nb):
+				out[nb] = true
+	return out
+
+
+## 腐蚀：只保留「自身与**全部盘内邻格**都在集内」的格。孤立格（盘内无邻格）恒保留：
+## 其邻域为空集，"全部邻格都在集内"空洞成立（否则单格盘会被腐蚀成空盘）。
+static func erode_cells(cells: Dictionary, grid: GridInterface) -> Dictionary:
+	var out := {}
+	if grid == null:
+		push_error("ShapeGenerator.erode_cells: grid 为空（判界必须走网格 in_board()/get_neighbors()，不得按包围盒）")
+		return out
+	for p: Vector2i in cells:
+		if not grid.in_board(p):
+			continue
+		var keep := true
+		for nb: Vector2i in grid.get_neighbors(p):
+			if not cells.has(nb):
+				keep = false
+				break
+		if keep:
+			out[p] = true
+	return out
 
 
 # ---------- (j)~(l) 栅格化与闸门内部实现 ----------
@@ -860,15 +987,45 @@ static func _verts_bbox(verts: PackedVector2Array, margin: int) -> Rect2i:
 	return Rect2i(Vector2i(min_x, min_y), Vector2i(max_x - min_x + 1, max_y - min_y + 1))
 
 
-## 多边形 → 格集（格心落在多边形内即收录；射线 / 奇偶判据，凹凸皆可）。
-static func _rasterize_polygon(poly: PackedVector2Array) -> Dictionary:
+## 多边形 → 格集（射线 / 奇偶判据，凹凸皆可；**带洞**多边形同样成立）。
+## tier = 三档采样严格度（见 RASTER_TIERS）：default 只判格心 ⇒ 与旧实现逐格、逐次序完全一致
+## （硬红线）；coarse 要求四角全中（内缩）；fine 任一边界采样点命中即收（外扩）。
+## 采样点都是**格内**坐标、判界只看多边形本身 ⇒ 有洞的形状绝不会被包围盒补洞。
+static func _rasterize_polygon(poly: PackedVector2Array, tier := RASTER_DEFAULT) -> Dictionary:
 	var box := _verts_bbox(poly, 1)
 	var cells := {}
 	for y in range(box.position.y, box.end.y):
 		for x in range(box.position.x, box.end.x):
-			if _poly_contains(poly, Vector2(float(x), float(y))):
+			if _sample_hits(poly, x, y, tier):
 				cells[Vector2i(x, y)] = true
 	return cells
+
+
+## 单格采样点集（相对格心；格边长 = 1）。未知 tier 退回 default（调用方须先校验 tier）。
+static func _cell_samples(tier: String) -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	match tier:
+		RASTER_COARSE:
+			out.assign([Vector2(-0.5, -0.5), Vector2(0.5, -0.5), Vector2(-0.5, 0.5), Vector2(0.5, 0.5)])
+		RASTER_FINE:
+			out.assign([Vector2.ZERO,
+					Vector2(-0.5, -0.5), Vector2(0.5, -0.5), Vector2(-0.5, 0.5), Vector2(0.5, 0.5),
+					Vector2(-0.5, 0.0), Vector2(0.5, 0.0), Vector2(0.0, -0.5), Vector2(0.0, 0.5)])
+		_:
+			out.assign([Vector2.ZERO])
+	return out
+
+
+## 采样判据：coarse = **全部**采样点命中；default / fine = **任一**采样点命中。
+static func _sample_hits(poly: PackedVector2Array, x: int, y: int, tier: String) -> bool:
+	var strict := tier == RASTER_COARSE
+	for s: Vector2 in _cell_samples(tier):
+		var hit := _poly_contains(poly, Vector2(float(x), float(y)) + s)
+		if strict and not hit:
+			return false
+		if not strict and hit:
+			return true
+	return strict
 
 
 ## 点是否在多边形内（射线法 / 奇偶规则）。边界点的判定不影响栅格化（两侧口径都合法）。
@@ -951,10 +1108,17 @@ static func _angle_deg(d: Vector2) -> float:
 ##   "circle"     —— {"radius":R, "precision":N}（圆；(j) 参数化轮廓族，precision 可省默认 24）
 ##   "star"       —— {"points":K, "outer_radius":R, "inner_ratio":q}（星形；(k) 参数化轮廓族）
 ##   "sector"     —— {"radius":R, "start_deg":a0, "end_deg":a1}（扇形；(l) 参数化轮廓族）
+##   "ngon"       —— {"sides":K, "radius":R}（正 K 边形；(m) 参数化轮廓族；可选 tier）
+##   "annulus"    —— {"outer_radius":R, "inner_radius":r, "precision":N}（环形 annulus（内圆挖空）；
+##                    (n) 参数化轮廓族；precision 可省默认 24，可选 tier）
 ##   "mask"       —— {"style":S, "mask":[...]}（S ∈ holed_grid/hex/t488；mask = build_from_mask
 ##                    的 ASCII 轮廓；落盘 params = {"mask": mask}，供 JSON 审计）
+## ⚠ **这就是上面 (m)/(n) 的"正确落点"**：DAG（ShapeDag）的 primitive "ring" = annulus（内圆挖空），
+##   而本入口的 kind "ring" = **同心环盘**（多格 + 角向闭环，参数 sectors/step_deg/r0/dr）——**同名不同义**。
+##   调用方必须按自己的命名空间传 kind：拿 DAG 的 shape 名直接喂本函数就会撞名、静默产出错几何。
 ## 形状为空、参数非法（build_* 已 push_error）、kind 未注册 → push_error 并返回 null
 ## （调用方据此回退矩形/报错；返回 null 而非空 grid，避免「空盘」被误当成合法关卡）。
+## **绝不静默兜底**：没有"默认分支画方阵/环盘"这种路径 —— `_:` 分支只 push_error + null（见文件尾）。
 static func to_adjacency_grid(kind: String, params: Dictionary) -> AdjacencyGrid:
 	var topo: Dictionary = {}
 	match kind:
@@ -988,6 +1152,15 @@ static func to_adjacency_grid(kind: String, params: Dictionary) -> AdjacencyGrid
 			# (l) 扇形：角度缺省 start=0 / end=90（缺参数时 start>=end，build_sector 会给可读 error）。
 			topo = build_sector(int(params.get("radius", 0)),
 					float(params.get("start_deg", 0.0)), float(params.get("end_deg", 90.0)))
+		"ngon":
+			# (m) 正 N 边形：tier 可省，缺省 default（与 build_ngon 的签名默认一致）。
+			topo = build_ngon(int(params.get("sides", 0)), int(params.get("radius", 0)),
+					str(params.get("tier", RASTER_DEFAULT)))
+		"annulus":
+			# (n) 环形 annulus：precision 可省默认 24、tier 可省默认 default（与 build_annulus 签名一致）。
+			# ⚠ 与上面的 "ring"（同心环盘）**同名不同义**，两者参数名也完全不同（这里是 outer/inner_radius）。
+			topo = build_annulus(int(params.get("outer_radius", 0)), int(params.get("inner_radius", 0)),
+					int(params.get("precision", 24)), str(params.get("tier", RASTER_DEFAULT)))
 		"mask":
 			# mask 族（T7）：style + mask 两个字段 → build_from_mask；落盘 params = {"mask": mask}
 			# 让产物 JSON 自带图案审计（人可读、可复核）。
@@ -998,7 +1171,9 @@ static func to_adjacency_grid(kind: String, params: Dictionary) -> AdjacencyGrid
 			var mask_arr: Array = mask_v
 			topo = build_from_mask(str(params.get("style", "")), mask_arr, {"mask": mask_arr})
 		_:
-			push_error("ShapeGenerator.to_adjacency_grid: 未注册的形状 kind \"%s\"（可用：holed_grid/hex/t488/iso_cubes/tri_grid/trihex/t31212/ring/circle/star/sector/mask）" % kind)
+			# 显式失败（**唯一的兜底**）：不注册就报错 + null，绝不"就近挑一个盘画出来"。
+			# 这里刻意不写任何默认几何 —— 历史上"默认分支画方阵/环盘"正是静默错几何的根源。
+			push_error("ShapeGenerator.to_adjacency_grid: 未注册的形状 kind \"%s\"（可用：holed_grid/hex/t488/iso_cubes/tri_grid/trihex/t31212/ring/ngon/annulus/circle/star/sector/mask）" % kind)
 			return null
 	var positions: Array = topo["positions"]
 	if positions.is_empty():
