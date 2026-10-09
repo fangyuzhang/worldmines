@@ -87,38 +87,71 @@ func bootstrap_bundled_mods() -> int:
 		return _bootstrap_bundled_from_pack()
 	DirAccess.make_dir_recursive_absolute(MODS_DIR)
 	var loaded := 0
-	for mod_dir in dir.get_directories():
-		if BUNDLED_SKIP.has(mod_dir):
-			continue
-		var src := "%s/%s" % [BUNDLED_MODS_DIR, mod_dir]
-		if not FileAccess.file_exists(src.path_join("manifest.json")):
-			continue
-		var dst := "%s/%s" % [MODS_DIR, mod_dir]
-		var marker := dst.path_join(".bundled_hash")
-		var sig := _bundled_signature(src)
-		var need_copy := not FileAccess.file_exists(dst.path_join("manifest.json"))
-		if not need_copy and (not FileAccess.file_exists(marker)
-				or FileAccess.get_file_as_string(marker) != sig):
-			need_copy = true   # 无标记（旧版安装）或随包内容已更新
-		if need_copy:
-			if not _copy_code_mod(src, dst):
-				push_warning("内置算子 Mod 安装失败: %s" % mod_dir)
-				continue
+	# 每轮都重新枚举 mods 目录：并发（多进程分片跑测试 / 杀毒 / 索引服务）下，
+	# 目录列举与 FileAccess.file_exists 都可能**瞬时**看不到文件。旧实现在这种瞬时假阴上
+	# 直接 continue（静默跳过）——于是某个内置算子整轮不注册，下游「目录必须包含 X」
+	# 批量变红，而单独重跑又不复现。故瞬时失败一律重试一次。
+	var seen := {}
+	var pending: Array = []
+	for _attempt in 2:
+		var scan := DirAccess.open(BUNDLED_MODS_DIR)
+		if scan == null:
+			break
+		for mod_dir in scan.get_directories():
+			var mod_name := str(mod_dir)
+			if not seen.has(mod_name):
+				seen[mod_name] = true
+				pending.append(mod_name)
+		var retry: Array = []
+		for mod_name in pending:
+			var n := _bootstrap_one(String(mod_name))
+			if n < 0:
+				retry.append(mod_name)
+			else:
+				loaded += n
+		pending = retry
+		if pending.is_empty():
+			break
+		OS.delay_msec(25)   # 让别的进程的拷贝 / 写标记先落盘，再重试
+	for mod_name in pending:
+		push_warning("内置算子 Mod 安装失败（已重试）: %s" % String(mod_name))
+	return loaded
+
+
+## 安装 + 装载单个内置 Mod。返回本次**新装载**的 Mod 数（0 或 1）；
+## 返回 -1 = 这一瞬间看不到源文件（瞬时假阴），调用方应稍后重试，而不是当成永久缺失。
+func _bootstrap_one(mod_dir: String) -> int:
+	if BUNDLED_SKIP.has(mod_dir):
+		return 0
+	var src := "%s/%s" % [BUNDLED_MODS_DIR, mod_dir]
+	if not FileAccess.file_exists(src.path_join("manifest.json")):
+		return -1
+	var dst := "%s/%s" % [MODS_DIR, mod_dir]
+	var marker := dst.path_join(".bundled_hash")
+	var sig := _bundled_signature(src)
+	var need_copy := not FileAccess.file_exists(dst.path_join("manifest.json"))
+	if not need_copy and (not FileAccess.file_exists(marker)
+			or FileAccess.get_file_as_string(marker) != sig):
+		need_copy = true   # 无标记（旧版安装）或随包内容已更新
+	if need_copy and not _copy_code_mod(src, dst):
+		return -1   # 拷贝失败也可能只是并发 IO，交给重试
+	# 标记文件**只在内容确实不同时**才写。旧实现每次启动都无条件重写：FileAccess.open(WRITE)
+	# 先截断再写，并发的另一个进程正好读到空标记 ⇒ 误判「随包已更新」⇒ 重拷 entry.gd
+	# ⇒ 第三个进程 load() 到半截脚本 ⇒ 解析失败、该算子整轮缺失。这是本竞态的核心放大器。
+	if FileAccess.get_file_as_string(marker) != sig:
 		var mf := FileAccess.open(marker, FileAccess.WRITE)
 		if mf != null:
 			mf.store_string(sig)
 			mf.close()
-		_bundled[mod_dir] = true
-		if _mods.has(mod_dir):
-			continue
-		var r := load_mod(dst)
-		if bool(r.get("ok", false)):
-			loaded += 1
-			_bundled[str(r.get("mod_id", mod_dir))] = true
-		else:
-			push_warning("内置算子 Mod 加载失败: %s（%s）" % [mod_dir, str(r.get("reason", ""))])
-	return loaded
-
+	_bundled[mod_dir] = true
+	if _mods.has(mod_dir):
+		return 0
+	var r := load_mod(dst)
+	if bool(r.get("ok", false)):
+		_bundled[str(r.get("mod_id", mod_dir))] = true
+		return 1
+	push_warning("内置算子 Mod 加载失败: %s（%s）" % [mod_dir, str(r.get("reason", ""))])
+	return 0
 
 ## 导出版专用：直接从 res:// 加载内置 Mod，**不做拷贝**。
 ##
@@ -176,12 +209,15 @@ func _copy_code_mod(src: String, dst: String) -> bool:
 			if fname == "manifest.json" or fname == "entry.gd":
 				return false   # 两个必需文件缺失 = 包不完整
 			continue
-		var f := FileAccess.open(dst.path_join(fname), FileAccess.WRITE)
-		if f == null:
-			return false
 		# 字节复制（审计 M1）：store_string 走文本转码会破坏二进制（.wasm/.png），
 		# 装出来的 wasm 过不了魔数校验。mod 资源一律按原始字节搬运。
 		var bytes := FileAccess.get_file_as_bytes(sp)
+		var dp := dst.path_join(fname)
+		if FileAccess.file_exists(dp) and FileAccess.get_file_as_bytes(dp) == bytes:
+			continue   # 内容已一致：不重写（重写会先截断，并发读到半截的进程会解析失败）
+		var f := FileAccess.open(dp, FileAccess.WRITE)
+		if f == null:
+			return false
 		f.store_buffer(bytes)
 		f.close()
 	# 子目录递归（levels/ 预生成关卡等数据目录——创意工坊分发单元的组成部分，
@@ -203,10 +239,14 @@ func _copy_dir_recursive(src: String, dst: String) -> bool:
 	for f in d.get_files():
 		if str(f).ends_with(".uid"):
 			continue
-		var fo := FileAccess.open(dst.path_join(str(f)), FileAccess.WRITE)
+		var bytes := FileAccess.get_file_as_bytes(src.path_join(str(f)))
+		var dp := dst.path_join(str(f))
+		if FileAccess.file_exists(dp) and FileAccess.get_file_as_bytes(dp) == bytes:
+			continue   # 内容已一致：不重写（同 _copy_code_mod 的并发理由）
+		var fo := FileAccess.open(dp, FileAccess.WRITE)
 		if fo == null:
 			return false
-		fo.store_buffer(FileAccess.get_file_as_bytes(src.path_join(str(f))))
+		fo.store_buffer(bytes)
 		fo.close()
 	for sub in d.get_directories():
 		if not _copy_dir_recursive(src.path_join(str(sub)), dst.path_join(str(sub))):

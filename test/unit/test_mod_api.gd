@@ -173,3 +173,23 @@ func test_wasm_mod_load() -> void:
 	var ur := api.unload_mod("wasm.test")
 	assert_true(ur.get("ok", false), "wasm mod 应能卸载")
 	assert_true(api.get_sandbox("wasm.test") == null, "卸载后 sandbox 应为 null")
+# 自举幂等（2026-10-09 修复的分片假红根因）：
+# 已安装且签名一致时，第二次 bootstrap_bundled_mods 不得重写任何文件。
+# 旧实现每次启动都无条件 FileAccess.open(marker, WRITE)——先截断再写；
+# 并发跑分片测试时别的进程正好读到空标记 ⇒ 误判「随包已更新」
+# ⇒ 重拷 entry.gd ⇒ 第三个进程 load() 到半截脚本、该算子整轮缺失
+# （实测 10 片里有 1~3 片注册表只有 37/38 条，正常 39），
+# 现场表现为「目录必须包含 z5 / 应为完整交叉 63≠70」
+# 这类与改动无关的假红。
+func test_bootstrap_does_not_rewrite_when_already_installed() -> void:
+	ModAPI.bootstrap_bundled_mods()          # 确保已安装（autoload 通常已经装过）
+	var marker := "user://mods/s6_duou/.bundled_hash"
+	assert_true(FileAccess.file_exists(marker), "内置算子 Mod 的标记文件应已生成")
+	if not FileAccess.file_exists(marker):
+		return
+	var before := FileAccess.get_modified_time(marker)
+	OS.delay_msec(1200)                      # get_modified_time 只有秒级精度，须跨秒
+	var loaded: int = ModAPI.bootstrap_bundled_mods()
+	var after := FileAccess.get_modified_time(marker)
+	assert_eq(loaded, 0, "已装载过的内置 Mod 不应重复装载")
+	assert_eq(after, before, "签名一致时不得重写标记文件（重写会先截断，别的进程会读到空标记）")
