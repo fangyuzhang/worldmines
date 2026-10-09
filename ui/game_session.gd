@@ -34,6 +34,9 @@ const NO_GUESS_OFF := NoGuessGuard.NO_GUESS_OFF
 const NO_GUESS_EXPERT := NoGuessGuard.NO_GUESS_EXPERT
 const NO_GUESS_ULTIMATE := NoGuessGuard.NO_GUESS_ULTIMATE
 
+## 成就接线层（刻意无 class_name：headless 下新全局类不在 .godot 缓存里，见坑表 #26）。
+const AchievementService := preload("res://ui/achievement_service.gd")
+
 var level_path: String = ""
 var board: Board = null
 var elapsed: float = 0.0
@@ -51,6 +54,10 @@ var last_stars: int = 3
 var last_hint_tier: int = -1
 ## 本局用过的最高帮助深度（只升不降，结算按最差一次计）。
 var hint_tier_used: int = -1
+## 最近一次终局**新解锁**的成就 id（结算页 / toast 读它）。
+## 为什么放在 session 而不是结算页自己算：终局可能发生在结算覆盖层实例化之前
+## （开局即胜），那时覆盖层要靠本字段补显 —— 与 last_stars 同款安排。
+var last_new_achievements: Array[String] = []
 # 2026-09-28（用户决策）：提示充能机制整体移除——每次提示只给 ≤2 格后，再按 120 秒卡一次
 # 会让提示基本用不动。随之删除 hint_charge_left / hint_uncharged_used / hint_charge_ratio /
 # HINT_CHARGE_SEC；「非完美通关」标记当前无消费者，将来要做时按新口径重新引入。
@@ -563,6 +570,10 @@ func _finish(won: bool) -> void:
             # 终局盘：打 ended 标记，restore_from_save 会拒绝恢复（禁止 SL 复活失败局）。
             SaveCoordinator.save(board, elapsed, level_path, _get_drawing(), true)
         SaveCoordinator.clear_temp()
+    # 成就判定（2026-10-09）：必须放在**进度写入之后** —— 上下文里的 cleared_count /
+    # cleared_no_hint / 各轴计数都要包含"刚刚这一关"，否则「通关第 1 关」这类成就要等
+    # 下一局才亮（实测过的顺序依赖）。hint_tier_used = -1 表示本局未用提示。
+    last_new_achievements = AchievementService.evaluate(key, won, last_stars, hint_tier_used, elapsed)
     game_ended.emit(won)
 
 

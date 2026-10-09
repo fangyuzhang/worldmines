@@ -23,6 +23,15 @@ const ThemePickerScript := preload("res://ui/theme_picker_button.gd")
 const TutorialOverlayScript := preload("res://ui/tutorial_overlay.gd")
 # 图标（书本 / 齿轮）走同一个工厂：对局 HUD 的「教程」入口用的是同一本书
 const Icons := preload("res://ui/ui_icons.gd")
+# 【2026-10-09 工具区】右上角「更多」菜单背后的四个面板 + 系列导览外壳。
+# 全部走 preload：这些新脚本刻意没有 class_name（headless 下新全局类不在 .godot 缓存里，
+# 见坑表 #26），用 class_name 引用会在 GUT 里直接解析失败。
+const AchievementWallScript := preload("res://ui/achievement_wall.gd")
+const RadarPanelScript := preload("res://ui/mastery_radar_panel.gd")
+const TutorialTreeScript := preload("res://ui/tutorial_tree.gd")
+const CreatorHubScript := preload("res://ui/creator_hub_overlay.gd")
+const ToolShellScript := preload("res://ui/tool_shell.gd")
+const IllusionSeries := preload("res://core/illusion_series.gd")
 
 # ===== 常量 =====
 # 序列相关的常量统一托管在 LevelSequence（终局页要靠它算「下一关」，两处必须同源）。
@@ -285,10 +294,10 @@ func _build_ui() -> void:
 	# 不引入外部资源，解析失败只是图标缺失、按钮仍可点）。
 	var corner := HBoxContainer.new()
 	corner.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	# 宽度 = 三个 40px 按钮 + 2×8 间距 = 136，留 8 余量（2026-09-30 加主题切换后 3 枚；
-	# 原先两枚 -120，更早两枚 -104 只有 80 宽 ⇒ 溢出 8px，齿轮被推出容器右缘，
-	# 见 test_ui_rework_contract 的"不溢出"断言）
-	corner.offset_left = -168
+	# 宽度 = 四个 40px 按钮 + 3×8 间距 = 184，留 8 余量（2026-10-09 加「更多工具」后 4 枚：
+	# 主题 / 图鉴 / 更多 / 设置。三枚时是 136（-168），两枚时 -120，更早两枚 -104 只有 80 宽
+	# ⇒ 溢出 8px，齿轮被推出容器右缘，见 test_ui_rework_contract 的"不溢出"断言）
+	corner.offset_left = -216
 	corner.offset_top = 14
 	corner.offset_right = -24
 	corner.add_theme_constant_override("separation", 8)
@@ -308,6 +317,13 @@ func _build_ui() -> void:
 	codex_btn.set_meta("codex_btn", true)   # 测试 / 调试可据此定位
 	codex_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://ui/codex.tscn"))
 	corner.add_child(codex_btn)
+	# 「更多」：成就墙 / 解谜者画像 / 教学树 / 创作中心（2026-10-09）。
+	# 为什么收进一个菜单而不是加四枚图标：工具区宽度是硬约束（上面那条不溢出断言），
+	# 而这些都是低频、看完就走的面板；一个入口对"选关开局"这条主路径打扰最小。
+	var tools_btn := _make_icon_button(Icons.tools())
+	tools_btn.set_meta("tools_btn", true)   # 测试 / 调试可据此定位
+	tools_btn.pressed.connect(_open_tools_menu)
+	corner.add_child(tools_btn)
 	var gear_btn := _make_icon_button(_svg_gear())
 	gear_btn.set_meta("settings_btn", true)   # 测试 / 调试可据此定位
 	gear_btn.pressed.connect(_open_settings_popup)
@@ -1452,6 +1468,60 @@ func _svg_book() -> Texture2D:
 	return Icons.book()
 
 
+# ============ 右上角「更多」菜单（2026-10-09） ============
+
+## 菜单项 id（PopupMenu 的 id 只在本页内有意义，取小整数即可）。
+const MENU_TOOLS_ACHIEVEMENTS := 1
+const MENU_TOOLS_RADAR := 2
+const MENU_TOOLS_TUTORIAL := 3
+const MENU_TOOLS_CREATOR := 4
+
+var _tools_menu: PopupMenu = null
+
+
+## 打开「更多」菜单。菜单按需创建（本页初始化时多建一个 Window 是纯浪费）。
+func _open_tools_menu() -> void:
+	if _tools_menu == null:
+		_tools_menu = PopupMenu.new()
+		_tools_menu.name = "ToolsMenu"
+		_tools_menu.set_meta("tools_menu", true)
+		_tools_menu.add_item("成就墙", MENU_TOOLS_ACHIEVEMENTS)
+		_tools_menu.add_item("解谜者画像", MENU_TOOLS_RADAR)
+		_tools_menu.add_item("教学树", MENU_TOOLS_TUTORIAL)
+		_tools_menu.add_item("创作中心", MENU_TOOLS_CREATOR)
+		add_child(_tools_menu)
+		_tools_menu.id_pressed.connect(_on_tools_menu_pick)
+	# 贴着按钮下沿弹出（默认位置是屏幕左上角，会离入口很远）。
+	var anchor := _find_meta_control(self, "tools_btn")
+	var at := Vector2i(24, 24)
+	if anchor != null:
+		at = Vector2i(anchor.global_position + Vector2(anchor.size.x - 160.0, anchor.size.y + 6.0))
+	_tools_menu.popup(Rect2i(at, Vector2i.ZERO))
+
+
+func _on_tools_menu_pick(id: int) -> void:
+	match id:
+		MENU_TOOLS_ACHIEVEMENTS:
+			AchievementWallScript.open(self)
+		MENU_TOOLS_RADAR:
+			RadarPanelScript.open(self)
+		MENU_TOOLS_TUTORIAL:
+			TutorialTreeScript.open(self)
+		MENU_TOOLS_CREATOR:
+			CreatorHubScript.open(self)
+
+
+## 深度优先找带指定 meta 的 Control（测试同款做法；层级变了也不会失灵）。
+func _find_meta_control(root: Node, key: String) -> Control:
+	if root is Control and root.has_meta(key):
+		return root as Control
+	for c in root.get_children():
+		var r := _find_meta_control(c, key)
+		if r != null:
+			return r
+	return null
+
+
 # ============ 未完成对局提示（2026-09-28 从 main_menu 搬迁） ============
 
 ## 进程级门控：每次启动只检测一次（场景节点会随切页重建，实例字段保不住）。
@@ -1552,6 +1622,7 @@ func _fill_shape_popup_col(col: VBoxContainer, vid: String) -> void:
 		if not by_tier.has(t):
 			t = ""
 		(by_tier[t] as Array).append(info)
+	_append_series_guide(col, vid)
 	for t in SHAPE_TIER_ORDER:
 		var lst: Array = by_tier[t]
 		if lst.is_empty():
@@ -1564,6 +1635,76 @@ func _fill_shape_popup_col(col: VBoxContainer, vid: String) -> void:
 		col.add_child(flow)
 		for info: Dictionary in lst:
 			flow.add_child(_make_shape_card(info))
+
+
+## 官方系列导览段（2026-10-09）：把一个变体下的错觉 / 造型关卡按**策展系列**归纳成几行，
+## 每行给「名称 · 一句话看点（本变体里几关）」+ 一个「这是什么？」。
+##
+## 为什么放在档位分组**之上**：错觉关卡的差异不在难度，而在"看错的方式"不同 ——
+## 档位标签只能告诉你哪一张难，系列名才告诉你这一张在考验什么。
+## 本段只在确实存在系列成员时出现（经典底座里那些普通异形关不受影响）。
+func _append_series_guide(col: VBoxContainer, vid: String) -> void:
+	var by_series: Dictionary = {}
+	for info: Dictionary in _shape_levels():
+		if str(info["variant"]) != vid:
+			continue
+		var sid := IllusionSeries.series_of(str(info["path"]))
+		if sid == "":
+			continue
+		by_series[sid] = int(by_series.get(sid, 0)) + 1
+	if by_series.is_empty():
+		return
+
+	var head := Label.new()
+	head.text = "官方系列（先看一眼这是什么，再进去打）"
+	head.add_theme_font_size_override("font_size", 15)
+	head.add_theme_color_override("font_color", ThemeManager.text_secondary())
+	head.set_meta("series_guide_header", true)
+	col.add_child(head)
+
+	for raw in IllusionSeries.ids():
+		var sid := str(raw)
+		if not by_series.has(sid):
+			continue
+		var s := IllusionSeries.by_id(sid)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		row.set_meta("series_row", sid)
+		var lb := Label.new()
+		lb.text = "%s · %s（%d 关）" % [str(s.get("name", sid)), str(s.get("hook", "")), int(by_series[sid])]
+		lb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		lb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		lb.add_theme_font_size_override("font_size", 14)
+		row.add_child(lb)
+		var btn := Button.new()
+		btn.text = "这是什么？"
+		btn.focus_mode = Control.FOCUS_ALL
+		btn.set_meta("series_guide_btn", sid)
+		UiTheme.style_button(btn)
+		btn.pressed.connect(_show_series_guide.bind(sid))
+		row.add_child(btn)
+		col.add_child(row)
+
+
+## 系列导览正文（「看见什么 ≠ 是什么」的短课）：一段话 + 这一系列共有几关 + 专属成就提示。
+func _show_series_guide(sid: String) -> void:
+	var s := IllusionSeries.by_id(sid)
+	if s.is_empty():
+		return
+	var sh := ToolShellScript.build(self, str(s.get("name", sid)) + " · 看见什么 ≠ 是什么",
+			str(s.get("hook", "")))
+	if sh.is_empty():
+		return
+	var body: VBoxContainer = sh["body"]
+	body.add_child(ToolShellScript.note(str(s.get("text", ""))))
+	var n := 0
+	for info: Dictionary in _shape_levels():
+		if IllusionSeries.series_of(str(info["path"])) == sid:
+			n += 1
+	body.add_child(ToolShellScript.note("本系列共 %d 关。" % n))
+	if bool(s.get("illusion", false)):
+		body.add_child(ToolShellScript.note(
+			"成就线索：全部错觉系列各通关至少 1 关，解锁「看见什么 ≠ 是什么」。"))
 
 
 func _make_shape_card(info: Dictionary) -> Button:
@@ -1596,7 +1737,14 @@ func _make_shape_card(info: Dictionary) -> Button:
 	box.add_child(title)
 
 	var desc := Label.new()
-	desc.text = "%s · %d 格 · %d 雷" % [str(info["kind"]), int(info["cells"]), int(info["mines"])]
+	# 系列名前置（2026-10-09）：错觉 / 蜂窝 / 折叠…这些是**策展分组**，而卡片原本只写几何
+	# 类型（等轴菱面 / 蜂窝盘），玩家看不出「这五张是一套」。前缀放在同一行里，不新增一行
+	# ——卡片高度是算好的 3 行预算（_measure_card_metrics），多一行会被裁掉。
+	var series_name := ""
+	var sid := IllusionSeries.series_of(str(info["path"]))
+	if sid != "":
+		series_name = str(IllusionSeries.by_id(sid).get("name", "")) + " · "
+	desc.text = "%s%s · %d 格 · %d 雷" % [series_name, str(info["kind"]), int(info["cells"]), int(info["mines"])]
 	desc.add_theme_font_size_override("font_size", 13)
 	desc.add_theme_color_override("font_color", ThemeManager.text_secondary())
 	desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

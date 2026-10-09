@@ -130,6 +130,18 @@ static func record_attempt(level_path: String) -> void:
     _flush()
 
 
+## 全部关卡记录（**副本**）：供成就 / 掌握度雷达这类「按整表统计」的读方使用。
+## 为什么要给访问器：此前只有 cleared_count() 一个聚合读口，统计方各自去摸私有 _data()，
+## 一旦内部结构变了，摸私有的那些地方是**静默算错**（不报错、只是数字不对）。
+static func levels() -> Dictionary:
+    var src: Dictionary = _data().get("levels", {})
+    var out: Dictionary = {}
+    for k in src:
+        if src[k] is Dictionary:
+            out[str(k)] = (src[k] as Dictionary).duplicate(true)
+    return out
+
+
 static func is_cleared(level_path: String) -> bool:
     var rec: Dictionary = _data()["levels"].get(level_path, {})
     return bool(rec.get("cleared", false))

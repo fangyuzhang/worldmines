@@ -6,12 +6,16 @@ extends Control
 var _big_label: Label
 var _sub_label: Label
 var _stars_label: Label
+var _ach_label: Label
 var _panel: PanelContainer
 var _undo_btn: Button
 var _next_btn: Button
 var _skip_btn: Button
 var _again_btn: Button
 var _back_btn: Button
+
+
+const AchievementService := preload("res://ui/achievement_service.gd")
 
 
 func _ready() -> void:
@@ -45,6 +49,17 @@ func _ready() -> void:
     _stars_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     _stars_label.add_theme_font_size_override("font_size", 24)
     vbox.add_child(_stars_label)
+
+    # 新成就（2026-10-09）：本局新解锁的成就名直接写在结算页上。
+    # 为什么结算页也要写一遍（HUD 里已经弹过 toast）：toast 只停 4 秒，而结算页是
+    # 「回头看这一局发生了什么」的地方；成就又恰是这局最值得回看的一件事。
+    _ach_label = Label.new()
+    _ach_label.name = "NewAchievements"
+    _ach_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    _ach_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    _ach_label.add_theme_font_size_override("font_size", 16)
+    _ach_label.set_meta("new_achievements", true)
+    vbox.add_child(_ach_label)
 
     _undo_btn = Button.new()
     _undo_btn.text = "撤回"
@@ -122,6 +137,9 @@ func _on_game_ended(won: bool) -> void:
     var star_n := clampi(GameSession.last_stars, 0, 3)
     _stars_label.text = ("★".repeat(star_n) + "☆".repeat(3 - star_n)) if won else ""
     _stars_label.tooltip_text = "提示越少，星级越高：3★ 未求助，2★ 只看可疑区域，1★ 给过一步，0★ 给过整条链"
+    if _ach_label != null:
+        var names := AchievementService.names_of(GameSession.last_new_achievements)
+        _ach_label.text = ("新成就：" + "、".join(names)) if (won and not names.is_empty()) else ""
     if _undo_btn != null:
         _undo_btn.visible = not won  # 撤回仅在失败终局可用
     # 下一关：只有「生成关卡序列」里的关卡才知道下一关是谁（见 LevelSequence）。

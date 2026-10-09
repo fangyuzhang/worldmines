@@ -648,3 +648,36 @@ func test_portal_pairing_two_clicks_then_undo() -> void:
 	# 撤销：回到"还没配对"（撤销点取在改动之前）
 	ed.call("_undo_once")
 	assert_eq((ed.get("doc") as EditorDoc).portals.size(), 0, "撤销一次应回到未配对状态")
+
+## ---- 创作中心接线（2026-10-09「六项」之六）----
+## 编辑器「存档与分享」页必须有一键登记入口，且按钮真的接到 core/creator_hub.gd。
+## 这里**不测写盘**：登记会写真实 user://creator_hub.json，行为覆盖交给 test_creator_hub.gd
+##（那边注入临时路径）；本文件只验「入口在」「空标题被拦在生成包之前」。
+func _find_meta(node: Node, key: String) -> Node:
+	if node.has_meta(key):
+		return node
+	for c in node.get_children():
+		var hit := _find_meta(c, key)
+		if hit != null:
+			return hit
+	return null
+
+
+func test_editor_has_creator_hub_register_entry() -> void:
+	var ed := _make_editor()
+	var btn := _find_meta(ed as Node, "hub_register")
+	assert_not_null(btn, "分享页应有「登记到创作中心」按钮（别只贴文案不接线）")
+	assert_true(btn is Button, "登记入口应是按钮")
+	var notes := _find_meta(ed as Node, "hub_notes")
+	assert_not_null(notes, "分享页应有版本说明输入框")
+	assert_true(notes is LineEdit, "版本说明应是输入框")
+
+
+func test_register_to_hub_rejects_blank_title() -> void:
+	var ed := _make_editor()
+	var hub: GDScript = load("res://core/creator_hub.gd")
+	var before: int = (hub.list_packs() as Array).size()
+	(ed.get("doc") as EditorDoc).title = "   "
+	ed.call("_register_to_hub")
+	var after: int = (hub.list_packs() as Array).size()
+	assert_eq(after, before, "空标题登记必须被拦下（不得往创作中心里塞条目）")

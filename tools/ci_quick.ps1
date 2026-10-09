@@ -123,6 +123,22 @@ $map = @{
     # 2026-10-09 补：图标工厂（新增一枚图标要能被「用它的人」的用例断言到 ——
     # 透镜图标由 test_topology_view 直接断言非空，HUD 图标簇由 rework 契约守）。
     'ui_icons'       = @('test_topology_view', 'test_ui_rework_contract')
+    # 2026-10-09 补：成就 / 画像 / 教学树 / 创作中心（core + UI 两层都登记，
+    # 否则改了这些文件增量门禁会「映射不到用例」而漏测）。
+    'achievement_registry' = @('test_achievement_registry', 'test_achievement_catalog')
+    'achievement_catalog'  = @('test_achievement_catalog', 'test_achievement_registry')
+    'achievement_service'  = @('test_tools_panels')
+    'achievement_wall'     = @('test_tools_panels')
+    'mastery_radar'        = @('test_mastery_radar', 'test_tools_panels')
+    'mastery_radar_panel'  = @('test_tools_panels')
+    'tutorial_catalog'     = @('test_tutorial_catalog', 'test_tools_panels')
+    'tutorial_progress'    = @('test_tutorial_catalog')
+    'tutorial_tree'        = @('test_tools_panels')
+    'creator_hub'          = @('test_creator_hub', 'test_tools_panels')
+    'creator_hub_overlay'  = @('test_tools_panels')
+    'illusion_series'      = @('test_illusion_series', 'test_tools_panels')
+    'level_tags'           = @('test_level_tags')
+    'tool_shell'           = @('test_tools_panels')
     'game_session'   = @('test_board_view_interaction', 'test_ui_rework_contract', 'test_progress_check')
 }
 

@@ -149,3 +149,17 @@ static func undo() -> Texture2D:
 ## 清空（垃圾桶）：盖 + 桶身三条镂空（evenodd）——危险动作的通用符号。
 static func trash() -> Texture2D:
 	return texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><path fill=\"#FFFFFF\" fill-rule=\"evenodd\" d=\"M12 3h8a1.6 1.6 0 0 1 1.6 1.6V6h6a1.4 1.4 0 0 1 0 2.8H4.4A1.4 1.4 0 0 1 4.4 6h6V4.6A1.6 1.6 0 0 1 12 3zM7.6 10.4h16.8l-1.3 16a2.4 2.4 0 0 1-2.4 2.2H11.3a2.4 2.4 0 0 1-2.4-2.2zM12.4 13.4v11.6h2.6V13.4zm4.8 0v11.6h2.6V13.4z\"/></svg>")
+
+
+## 奖杯（成就墙）：杯身 + 两侧提环（evenodd 环，孔里透出按钮底色）+ 杯柄 + 底座。
+## 沿用既有口径：32×32、#FFFFFF 全填充、颜色交给按钮 icon 色。缩到 22px 时
+## 「上宽下窄的杯 + 一个底座」是奖杯唯一不会与"垃圾桶/调色板"混淆的造型（后两者都是圆截面）。
+static func trophy() -> Texture2D:
+	return texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><g fill=\"#FFFFFF\"><path fill-rule=\"evenodd\" d=\"M9.2 4h13.6v5.2a6.8 6.8 0 0 1-13.6 0zM4.2 7.4a3.6 3.6 0 1 1 0 7.2 3.6 3.6 0 0 1 0-7.2zm0 1.8a1.8 1.8 0 1 0 0 3.6 1.8 1.8 0 0 0 0-3.6zM27.8 7.4a3.6 3.6 0 1 1 0 7.2 3.6 3.6 0 0 1 0-7.2zm0 1.8a1.8 1.8 0 1 0 0 3.6 1.8 1.8 0 0 0 0-3.6z\"/><rect x=\"14.5\" y=\"15.6\" width=\"3\" height=\"6.2\" rx=\"1.2\"/><rect x=\"9.6\" y=\"22.4\" width=\"12.8\" height=\"3\" rx=\"1.5\"/><rect x=\"7.4\" y=\"26.6\" width=\"17.2\" height=\"2.6\" rx=\"1.3\"/></g></svg>")
+
+
+## 工具箱（右上角「更多」入口）：2×2 圆角方块 = 「有若干工具」的通用记法。
+## 为什么不用扳手：扳手在 22px 下与"斜置的橡皮"太像（绘制工具栏已占用该造型）。
+## 四格等大、间距 2.8px —— 缩小后仍是四个独立方块，不会糊成一块实心方。
+static func tools() -> Texture2D:
+	return texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><g fill=\"#FFFFFF\"><rect x=\"4.6\" y=\"4.6\" width=\"9.8\" height=\"9.8\" rx=\"2.4\"/><rect x=\"17.6\" y=\"4.6\" width=\"9.8\" height=\"9.8\" rx=\"2.4\"/><rect x=\"4.6\" y=\"17.6\" width=\"9.8\" height=\"9.8\" rx=\"2.4\"/><rect x=\"17.6\" y=\"17.6\" width=\"9.8\" height=\"9.8\" rx=\"2.4\"/></g></svg>")

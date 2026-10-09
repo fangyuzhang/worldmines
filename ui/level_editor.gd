@@ -75,6 +75,13 @@ const LOCK := preload("res://core/file_lock.gd")
 const THUMB := preload("res://core/level_thumbnail.gd")
 ## 缩略图的「显示器」：`_draw()` 涂色块，不建节点、不参与玩法判定。
 const THUMB_VIEW := preload("res://ui/level_thumb_view.gd")
+## 创作中心（**纯本地**版本登记：产出 → 记版本 → 反馈交换；无服务器、不联网）。
+## 见 core/creator_hub.gd 头部：绝不假装联网，没有「上传 / 订阅数」字段。
+## 同上面几组：**用 preload 引用、不按 class_name 引用**（坑表 #26）。
+const CREATOR_HUB := preload("res://core/creator_hub.gd")
+## 成就接线层：登记版本后要**当场**亮「工艺组」成就（否则要等到下一局通关才判定）。
+## 同 CREATOR_HUB：preload 引用，不按 class_name 引用（坑表 #26）。
+const ACH_SERVICE := preload("res://ui/achievement_service.gd")
 
 const EDITOR_DIR := "user://editor"
 ## 图标工厂：本仓约定是**逐文件 preload**（`ui_icons.gd` 刻意没有 class_name，见其文件头注释）
@@ -288,6 +295,11 @@ var _repair_plans: Array = []
 # ---- 短码分享（ShareCode 接线）----
 var _share_edit: LineEdit
 var _share_note: Label
+# ---- 创作中心（纯本地版本登记；见 _register_to_hub）----
+## 这一版改了什么（可留空）：登记时写进版本历史，方便自己回看 / 对照反馈。
+var _hub_notes_edit: LineEdit
+## 登记结果回显（「已登记 v3」这类）。
+var _hub_note: Label
 ## 「只读分享」勾选（文档 §8）：勾上 ⇒ 对方编辑器里只能看/试玩，改不动。
 var _share_readonly_chk: CheckButton
 var _self_check: CheckBox
@@ -1001,6 +1013,24 @@ func _build_left_bar() -> Control:
 	box.add_child(share_row)
 	_share_note = _plain_label("")
 	box.add_child(_share_note)
+	# ---- 创作中心（纯本地版本登记，无联网；见 core/creator_hub.gd 头部）----
+	# 为什么放在「存档与分享」页：登记的对象是**这一关的这一版**（走的是同一份生成包），
+	# 和短码/分享包是同一个动作链；放别处会让人以为它要联网发布。
+	box.add_child(_section_label("创作中心（本地版本记录）"))
+	box.add_child(_plain_label("登记一个版本号（首次 = 发布，之后再点 = 更新）。全程在本机：\n"
+		+ "不上传、不联网、不统计订阅数；反馈交换走文件（导出/导入反馈包）。"))
+	_hub_notes_edit = LineEdit.new()
+	_hub_notes_edit.custom_minimum_size = Vector2(0, 30)
+	_hub_notes_edit.placeholder_text = "这一版改了什么（可留空）"
+	_hub_notes_edit.set_meta("hub_notes", true)
+	box.add_child(_hub_notes_edit)
+	var hub_btn := _action_button("登记到创作中心（记一个版本）", _register_to_hub)
+	hub_btn.tooltip_text = "生成当前关卡的分享包，并在本机创作中心记一个版本（不上传、不联网）"
+	hub_btn.set_meta("hub_register", true)
+	box.add_child(hub_btn)
+	_hub_note = _plain_label("")
+	_hub_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(_hub_note)
 	# ---- 认证提交（文档 §8 最后一条）：本地队列 + 流转状态（**不假装联网**，文案写「本地审核队列」）----
 	box.add_child(_section_label("认证提交（送进审核队列）"))
 	box.add_child(_plain_label("把关卡送进审核队列，并看它走到哪一步：已入队 → 审核中 → 已通过 / 已退回。\n"
@@ -5964,6 +5994,33 @@ func _share_level_to_doc_json(level: Dictionary) -> Dictionary:
 func _set_share_note(text: String) -> void:
 	if _share_note != null:
 		_share_note.text = text
+
+
+## 登记到创作中心（**纯本地**，见 core/creator_hub.gd 头部）：生成分享包 + 记一个版本。
+##
+## 为什么登记一定要连生成包一起做：创作中心只存「版本号 + 变更说明 + 包路径」，
+## 若只登记不带包，那一版就指不到任何玩家能拿到的文件，作者回看时也对不上号。
+## 标题取 `doc.title`（和存档 / 分享包同一个名字），空标题先拦下 —— 创作中心的 id 由标题推导，
+## 空标题会全部落到同一个 pack id 上，把彼此覆盖掉。
+func _register_to_hub() -> void:
+	var title := doc.title.strip_edges()
+	if title == "":
+		_toast("先在上面「标题」里给这一关起个名字，再登记到创作中心", true, 5.0)
+		return
+	var built := WorkshopPack.build(doc, {"read_only": _share_read_only_wanted()})
+	if not bool(built["ok"]):
+		_toast("登记失败：%s\n（先照「本盘问题」里的红字改，再试一次）" % str(built["reason"]), true, 7.0)
+		return
+	var notes := ""
+	if _hub_notes_edit != null:
+		notes = _hub_notes_edit.text.strip_edges()
+	var entry := CREATOR_HUB.publish(title, notes, str(built["path"]))
+	var ver := int(entry.get("version", 1))
+	if _hub_note != null:
+		_hub_note.text = "「%s」已登记：v%d（本地记录，不上传、不联网）" % [title, ver]
+	_toast("已登记到创作中心：「%s」v%d\n（本地记录；玩家反馈包在选关页「更多 → 创作中心」导入）" % [title, ver], false, 7.0)
+	# 登记 / 更新作品是「工艺组」成就的一个触发点；不刷新的话要等到下一局通关才亮。
+	ACH_SERVICE.refresh()
 
 
 func _make_pack() -> void:

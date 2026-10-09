@@ -1,10 +1,11 @@
 # 下一步要做什么（交接清单）
 
 > 承接：`HANDOFF_START_HERE.md`（先按它把环境和工程还原好，并跑通门禁）
-> 代码基线：`main` @ `a01b324`（异形盘格线修复 `6fea403` + 编辑器左栏三页坞 `f4e2de9`
-> + **属性页分段 / 面板内容铺满宽度** `a01b324`；文档更新提交在其后，`git log` 可见）；
-> 门禁 **GREEN**（2026-10-09 实测）：unit **215 脚本 / 1658 用例 / 92850 断言**、
-> ui **34 脚本 / 232 用例 / 8581 断言**、build **0 警告 0 错误**
+> 代码基线：`main` @ `76f7648`（异形盘格线修复 `6fea403` + 编辑器左栏三页坞 `f4e2de9`
+> + 属性页分段 `a01b324` + **三档求助深度 / 提示星级** `76f7648`；**玩法元系统六件**在其后的提交里，
+> `git log` 可见）；
+> 门禁 **GREEN**（2026-10-09 实测）：unit **221 脚本 / 1718 用例 / 93729 断言**、
+> ui **35 脚本 / 245 用例 / 8630 断言**、build **0 警告 0 错误**
 
 ---
 
@@ -25,6 +26,7 @@
 | 异形盘线条（2026-10-09） | 用户报「异形关线不连续、有颗粒感，矩形关没有」。根因两层：**格线恒 1px**（斜线落在非整数像素 ⇒ 灰阶 58/75/91/125 四档跳）+ **异形盘跳过 `_draw_board_mat`**（格缝露视口底色 ⇒ 线是「细线+黑带+细线」）。修法：`_shape_grid_line_w()` 按视觉格边长缩放（1~3px，矩形盘零回归）+ `_draw_shape_mat()` 逐格外扩铺不透明板色（外扩量取**真·多边形间距**，缓存持 Board 引用）。实测**只有蜂窝盘真有缝**（kmax≈1.07），其余 8 族逐像素零回归 |
 | 编辑器左栏三页坞（2026-10-09） | 用户原话「编辑器太丑了，根本没法用」。左栏 **1754px 长条 → 三页**（流程/工具/分享，实测 537/851/358 vs 视口 611）；左栏加 **PanelContainer 底板**（分页后内容短于视口会露窗口底色）；组框加**左侧强调色竖条**。**不新增 TabContainer**（契约见 B4） |
 | 编辑器属性页分段 + 铺满宽度（2026-10-09） | 左栏三页坞之后，右栏属性页 16 个组标题仍排一列（要滚 2.9 屏）⇒ 按「基础 / 形状与盘面 / 高级工具」**切三段**（互斥按钮 + 互斥可见的滚动段，**仍不新增 TabContainer**），搬之前核对「框数 == 组标题数」不许丢组。顺手抓到 **box 只给 `SIZE_FILL` ⇒ `ScrollContainer` 不拉满它**：切到第 3 段整列只剩 186px、组标题折两行；改 `EXPAND_FILL` 后三段 322~330 宽、标题一行。真机三段高 **610 / 616 / 300**（视口 616；改前 637 / 849 / 500） |
+| 玩法元系统六件（2026-10-09） | **① 分级提示**：三档（圈出可疑区域 → 给一步 → 给整条推理链），星级按档位记（`ui/hint_coordinator.gd` / `core/reasoning_step.gd` 的 `tier` / `ui/board_view.gd::_draw_hint` / `ui/hud.gd::_hint_menu` / `ui/game_session.gd::stars_for_session`）；**② 成就墙**：`core/achievement_catalog.gd` 内置 **78 条 / 8 组** + `core/achievement_registry.gd` 落盘 `user://achievements.json`（坏档静默跳过）+ `ui/achievement_wall.gd` + 结算页「新成就」条；**③ 掌握度雷达**：`core/level_tags.gd`（进度键 → 三轴标签）+ `core/mastery_radar.gd`（计数/画像/多边形点）+ `ui/mastery_radar_panel.gd` 自绘三角环；**④ 教学树**：`core/tutorial_catalog.gd` 六章 42 页 + `core/tutorial_progress.gd`（`user://tutorial_seen.json`）+ `ui/tutorial_tree.gd`（软解锁：看过上一章 1 页即解锁下一章）；**⑤ 官方错觉策展**：`core/illusion_series.gd`（11 组 / 6 组 `illusion=true`：iso/ani/holed/ring/fold/wormhole）+ 选关页系列导览弹窗（`ui/level_select.gd::_append_series_guide`）；**⑥ 创作中心**：`core/creator_hub.gd`（纯本地、无联网字段）+ `ui/creator_hub_overlay.gd`（导出/导入反馈包）+ **编辑器分享页「登记到创作中心」按钮**（`ui/level_editor.gd::_register_to_hub`：生成分享包 + 记一个版本一步到位，登记后当场刷「工艺组」成就）。选关页入口统一在右上「更多」菜单（成就墙 / 解谜者画像 / 教学树 / 创作中心 4 项） |
 | 门禁工具 | `tools/gut_shards.ps1`（**并行分片** + 碰 `user://` 文件自动串行片 + **缺摘要分片定向重跑** + 红时保留证据 + `-SimulateMissingShard` 自测开关）、`tools/ci_quick.ps1`（增量门禁）、`tools/ci_lock.ps1`（跨进程锁） |
 
 **关键性能事实**：门禁从早期 **420 s 单进程串行** 降到 **≈160~250 s**（unit 10 片并行 + ui 3 片；`test/ui` 里 15 个有状态文件走串行片独占约 235 s，是时长主因）。
@@ -123,7 +125,7 @@
 ## D. 常用命令速查
 
 ```powershell
-# 全量门禁（判定：CI GREEN + unit 215/1658 + ui 34/232 + build 0 警告 0 错误）
+# 全量门禁（判定：CI GREEN + unit 221/1718 + ui 35/245 + build 0 警告 0 错误）
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\ci_check.ps1
 
 # 增量门禁（日常迭代）
