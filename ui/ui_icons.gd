@@ -128,6 +128,14 @@ static func eraser_partial() -> Texture2D:
 	return texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><path fill=\"#FFFFFF\" d=\"M10.6 3.6a2 2 0 0 1 2.8 0l7 7a2 2 0 0 1 0 2.8L13 21H6.4L3 17.6a2 2 0 0 1 0-2.8z\"/><circle fill=\"#FFFFFF\" cx=\"22\" cy=\"19\" r=\"2\"/><circle fill=\"#FFFFFF\" cx=\"26\" cy=\"24\" r=\"1.6\"/><circle fill=\"#FFFFFF\" cx=\"21\" cy=\"27\" r=\"1.2\"/><rect fill=\"#FFFFFF\" x=\"4\" y=\"26.4\" width=\"13\" height=\"2.2\" rx=\"1.1\"/></svg>")
 
 
+## 连接透镜（不可能几何盘的「看着相邻 / 真的相邻」对照开关，2026-10-09）：
+## 放大镜 —— evenodd 圆环（孔里透出按钮底色）+ 45° 手柄。造型口径与齿轮/调色板同路：
+## 32×32 视图框、#FFFFFF 全填充剪影、颜色交给按钮的 icon 色覆盖。
+## 为什么不用"菱形/立方体"造型：那正是被观察的对象（等轴菱面），做图标会和棋盘图案糊在一起。
+static func lens() -> Texture2D:
+	return texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><path fill=\"#FFFFFF\" fill-rule=\"evenodd\" d=\"M13.4 3.6a9.8 9.8 0 1 1 0 19.6 9.8 9.8 0 0 1 0-19.6zm0 4.2a5.6 5.6 0 1 0 0 11.2 5.6 5.6 0 0 0 0-11.2z\"/><rect fill=\"#FFFFFF\" x=\"19.2\" y=\"21.8\" width=\"9.6\" height=\"4.4\" rx=\"2.2\" transform=\"rotate(45 24 24)\"/></svg>")
+
+
 ## 撤销：回拐箭头（绘画工具栏「撤回」）。
 static func undo() -> Texture2D:
 	return texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><path fill=\"#FFFFFF\" d=\"M13 3.6 4.6 11a1.6 1.6 0 0 0 0 2.4L13 20.8a1.6 1.6 0 0 0 2.6-1.2v-4.2h7.2a4.4 4.4 0 0 1 0 8.8h-5.2a1.8 1.8 0 0 0 0 3.6h5.2a8 8 0 0 0 0-16h-7.2V4.8A1.6 1.6 0 0 0 13 3.6z\"/></svg>")

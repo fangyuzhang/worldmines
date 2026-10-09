@@ -44,6 +44,9 @@ var _deducible_label: Label
 var _hint_btn: Button
 var _tut_btn: Button
 var _pause_btn: Button
+## 连接透镜按钮（**只在真的存在错觉的盘上装**，见 _sync_lens_button）：
+## 普通棋盘进场时它是 null ⇒ 右列仍是「提示 / 撤销 / 暂停」三枚，不多一枚按了没反应的死按钮。
+var _lens_btn: Button = null
 var _pause_icon_shown_paused := false
 var _settings_popup: PopupPanel
 ## 右上单排图标簇里的「设置」齿轮（配置类图标，对齐 CozySudoku 顶栏右侧的齿轮位）。
@@ -225,6 +228,9 @@ func _ready() -> void:
 	_pause_btn = _add_col_icon_button(_right_col, Icons.pause(), "暂停",
 		"暂停 / 继续（Esc）", func(): _toggle_pause())
 	_pause_btn.name = "PauseBtn"
+	# 【2026-10-09】连接透镜：**等轴菱面盘专属**的对局工具（见 _sync_lens_button）。
+	# 放在 _apply_theme() 之前 —— 新按钮要吃到 _apply_theme 里的图标着色与样式。
+	_sync_lens_button()
 	# 2026-09-28 删除「重开」与「主菜单」两个按钮（用户决策）：进行中不再提供重开
 	#（终局重开在结算层 game_over）；主菜单场景已删，「关卡列表」是唯一的离开出口。
 
@@ -411,6 +417,55 @@ func _toggle_pause() -> void:
 		bv.call("toggle_pause")
 
 
+# ============ 连接透镜（不可能几何盘专属，2026-10-09） ============
+
+## 本对局的 BoardView（透镜的持有者）。**先从父链找**（HUD 由 board_view 挂进来，见
+## board_view._ready 的 add_child(hud)），找不到再退回 current_scene。
+## 为什么不照抄 _toggle_pause 只认 current_scene：单测里 HUD 常被单独实例化，那时
+## current_scene 不是对局场景 —— 本函数保证「找不到就是不装按钮」，绝不抛错。
+func _lens_target() -> Node:
+	var n: Node = get_parent()
+	while n != null:
+		if n.has_method("supports_lens"):
+			return n
+		n = n.get_parent()
+	var tree := get_tree()
+	var scene: Node = tree.current_scene if tree != null else null
+	if scene != null and scene.has_method("supports_lens"):
+		return scene
+	return null
+
+
+## 按当前棋盘决定装 / 拆透镜按钮（幂等：重复调用不会装出第二枚）。
+## 判据 = `BoardView.supports_lens()`（**唯一事实源**：本盘真的是等轴菱面且几何齐备）——
+## HUD 不复制任何几何规则，免得两处判据漂移成「按钮在、点开没东西」或反之。
+func _sync_lens_button() -> void:
+	var target := _lens_target()
+	var want := target != null and bool(target.call("supports_lens"))
+	if want == (_lens_btn != null):
+		return
+	if want:
+		_lens_btn = _add_col_icon_button(_right_col, Icons.lens(), "透镜",
+			"连接透镜：实心钉 = 真的相邻；空心叉 = 只是看着碰上（不算相邻）。"
+			+ "点一下让全盘常驻显示，再点收起",
+			func(): _toggle_lens())
+		_lens_btn.name = "LensBtn"
+		_lens_btn.set_meta("lens_btn", true)   # 测试 / 调试据此定位（有文字也能找，但 meta 不受文案改动影响）
+	else:
+		var gone := _lens_btn
+		_lens_btn = null
+		_side_buttons.erase(gone)   # 先摘出处，再释放：_apply_theme 会遍历这张表
+		_right_col.remove_child(gone)
+		gone.queue_free()
+
+
+## 透镜开关转发给 BoardView（几何与判据都在它手里，HUD 只负责这一次点击）。
+func _toggle_lens() -> void:
+	var target := _lens_target()
+	if target != null and target.has_method("toggle_lens"):
+		target.call("toggle_lens")
+
+
 ## 打开对局内设置弹窗（缓存单实例，复用不重复创建）
 func _open_settings() -> void:
 	if _settings_popup == null or not is_instance_valid(_settings_popup):
@@ -520,6 +575,7 @@ func _flag_count(board: Board) -> int:
 func _on_session_started() -> void:
 	_flag_cache = -1
 	_last_shown_sec = -1
+	_sync_lens_button()   # 换关可能换掉「本盘支不支持透镜」这件事（幂等，多数时候无事发生）
 	if GameSession.board != null and not GameSession.board.cell_state_changed.is_connected(_on_cell_changed):
 		GameSession.board.cell_state_changed.connect(_on_cell_changed)
 

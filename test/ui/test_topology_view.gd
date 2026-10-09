@@ -105,3 +105,141 @@ func test_portal_colors_are_distinct_within_a_set() -> void:
 		var c: Color = _view._portal_color(i, 6)
 		seen[snappedf(c.h, 0.001)] = true
 	assert_eq(seen.size(), 6, "同一组里的虫洞颜色应两两可分")
+
+
+# ==================== 不可能几何：连接透镜（2026-10-09） ====================
+#
+# 守的是「错觉盘上，看着相邻 ≠ 真的相邻」这件事**被真的算出来了**：
+# 等轴菱面把每个方块画成三个菱形面，屏幕上**顶点相接**的两格看着碰在一起，但引擎里
+# 只有**共边**才算邻居。_impossible_pairs() 把这两批位置分开（seams / ghosts），
+# 绘制函数只是把它们画出来 —— 所以这里断言纯数据，不碰 draw_*。
+
+## 一块等轴菱面盘：直接用真关卡 iso_01.json。
+## custom_shapes 是**渲染几何**，LevelLoader 才会把它挂到 board 的 meta 上；本测试自己
+## 建 Board，就照做同一步（否则 _custom_layout() 为假、透镜无从谈起）。
+func _install_iso_level() -> Board:
+	var f := FileAccess.open("res://levels/iso_01.json", FileAccess.READ)
+	assert_not_null(f, "前置：res://levels/iso_01.json 应存在")
+	if f == null:
+		return null
+	var raw: Variant = JSON.parse_string(f.get_as_text())
+	f.close()
+	assert_true(raw is Dictionary, "iso_01.json 应是字典")
+	var lv: Dictionary = raw
+	var b := Board.new()
+	b.load_level(lv)
+	b.set_meta("custom_shapes", lv["custom_shapes"])
+	GameSession.board = b
+	_view._connect_board()
+	return b
+
+
+## 无向边数 = 每格邻居数之和的一半（与实现里的去重口径无关，独立算一遍）。
+func _undirected_edge_count(grid: GridInterface) -> int:
+	var inc := 0
+	for pos in grid.all_positions():
+		inc += grid.get_neighbors(pos).size()
+	assert_eq(inc % 2, 0, "邻接表必须对称（邻居总数应为偶数）")
+	return inc / 2
+
+
+func test_impossible_level_is_recognised_and_supports_lens() -> void:
+	_install_iso_level()
+	assert_eq(str(_view._view_meta().get("kind", "")), TopologyModel.VIEW_IMPOSSIBLE,
+			"等轴菱面盘应被识别为不可能几何")
+	assert_true(_view.supports_lens(), "等轴菱面盘应支持连接透镜")
+
+
+func test_lens_is_not_offered_on_other_topologies() -> void:
+	_install_board(_wrap_level())
+	assert_false(_view.supports_lens(), "环绕盘没有「看着相邻」的错觉，不应提供透镜")
+	var pairs: Dictionary = _view._impossible_pairs()
+	assert_eq((pairs["seams"] as Array).size(), 0, "非错觉盘不该算出实缝")
+	assert_eq((pairs["ghosts"] as Array).size(), 0, "非错觉盘不该算出角接")
+
+
+func test_lens_seams_are_exactly_the_graph_edges() -> void:
+	var b := _install_iso_level()
+	var grid: GridInterface = b.grid
+	var pairs: Dictionary = _view._impossible_pairs()
+	var seams: Array = pairs["seams"]
+	assert_eq(seams.size(), _undirected_edge_count(grid),
+			"实缝应**逐条**对上邻接表：每一条真邻接恰好一枚钉、不多不少")
+	for rec: Variant in seams:
+		var d: Dictionary = rec
+		var a: Vector2i = d["a"]
+		var nb: Vector2i = d["b"]
+		assert_true(grid.get_neighbors(a).has(nb), "实缝两端必须是真邻居：%s-%s" % [a, nb])
+		# 钉在共享边中点上 ⇒ 必须落在两格各自的多边形包围盒里（边中点就在边界上，
+		# 故按 grow 半个像素判，只排除「画到别的格上」这类结构性错误）。
+		var at: Vector2 = _view._custom_world_to_screen(d["at"])
+		assert_true(_view._cell_rect(a).grow(0.5).has_point(at), "钉应在 A 格范围内")
+		assert_true(_view._cell_rect(nb).grow(0.5).has_point(at), "钉应在 B 格范围内")
+
+
+func test_lens_ghosts_are_vertex_touches_that_are_not_adjacent() -> void:
+	var b := _install_iso_level()
+	var grid: GridInterface = b.grid
+	var ghosts: Array = (_view._impossible_pairs()["ghosts"] as Array)
+	assert_gt(ghosts.size(), 0, "等轴菱面盘**必须有**角接：这正是「看不清凸凹」的来源")
+	for rec: Variant in ghosts:
+		var d: Dictionary = rec
+		var a: Vector2i = d["a"]
+		var nb: Vector2i = d["b"]
+		assert_false(grid.get_neighbors(a).has(nb),
+				"角接两端**不得**是真邻居（否则就不是错觉了）：%s-%s" % [a, nb])
+		# 只共享一个顶点 ⇒ 该点必须同时是两个多边形的顶点。
+		var at: Vector2 = d["at"]
+		assert_true(_impl_has_vertex(a, at), "角接点应是 A 格的顶点")
+		assert_true(_impl_has_vertex(nb, at), "角接点应是 B 格的顶点")
+
+
+## 某格的多边形里是否含有这个**世界坐标**顶点（按 1e-4 量化比对，与实现同口径）。
+func _impl_has_vertex(pos: Vector2i, world_at: Vector2) -> bool:
+	var c: Dictionary = _view._custom_cell(pos)
+	if c.is_empty():
+		return false
+	var want: Vector2i = _world_vkey(world_at)
+	# `_custom_cell(pos)["poly"]` 已是世界绝对坐标（不要再叠格心）。
+	for v: Vector2 in (c["poly"] as PackedVector2Array):
+		if _world_vkey(v) == want:
+			return true
+	return false
+
+
+## 世界坐标顶点 → 量化键（与 BoardView._impl_vkey 同口径：1e4 分辨率）。
+func _world_vkey(v: Vector2) -> Vector2i:
+	return Vector2i(int(round(v.x * 10000.0)), int(round(v.y * 10000.0)))
+
+
+func test_lens_toggle_flips_and_redraws() -> void:
+	_install_iso_level()
+	assert_false(_view.lens_enabled(), "透镜默认关（只在悬停格上出现）")
+	assert_true(_view.toggle_lens(), "第一次点开")
+	assert_true(_view.lens_enabled(), "开态应可读回")
+	assert_false(_view.toggle_lens(), "再点收起")
+	assert_false(_view.lens_enabled(), "关态应可读回")
+
+
+func test_hud_lens_button_appears_only_on_impossible_boards() -> void:
+	# ① 普通盘：右列不该多一枚按了没反应的死按钮
+	_install_board(_wrap_level())
+	var hud_a: Control = load("res://ui/hud.tscn").instantiate()
+	_view.add_child(hud_a)
+	assert_null(hud_a.get("_lens_btn"), "环绕盘的 HUD 不应装透镜按钮")
+	assert_eq(hud_a._right_col.get_child_count(), 3, "非错觉盘的右列仍是 提示/撤销/暂停")
+	hud_a.queue_free()
+	# ② 错觉盘：HUD 进场就装上，且点一下真的切到 BoardView 的开关
+	_install_iso_level()
+	var hud_b: Control = load("res://ui/hud.tscn").instantiate()
+	_view.add_child(hud_b)
+	var lens_btn: Button = hud_b.get("_lens_btn") as Button
+	assert_not_null(lens_btn, "等轴菱面盘的 HUD 应装上透镜按钮")
+	assert_eq(hud_b._right_col.get_child_count(), 4, "错觉盘的右列 = 提示/撤销/暂停 + 透镜")
+	if lens_btn == null:
+		return
+	assert_not_null(lens_btn.icon, "透镜按钮应带图标（图标解析失败会静默降级为空）")
+	assert_ne(str(lens_btn.tooltip_text), "", "纯图标/短标签按钮必须带 tooltip")
+	lens_btn.pressed.emit()
+	assert_true(_view.lens_enabled(), "点透镜应真的切到 BoardView 的开关")
+	hud_b.queue_free()

@@ -136,6 +136,14 @@ var _custom_unit_px: float = 48.0
 ## 按 board 实例 id 失效（换关/重开/读档都是新 Board ⇒ 自动重建，不跨关卡残留）。
 var _custom_cells: Dictionary = {}
 var _custom_cache_key: int = 0
+## 连接透镜开关（**不可能几何盘专属**；见 supports_lens 的判据）与它的几何缓存。
+##   · `_lens_on`   —— 玩家点了右列「透镜」后整盘常驻；关闭时只在悬停格上出现（悬停即问）。
+##   · `_impl_seams` / `_impl_ghosts` —— 见 _impossible_pairs()：把「真相邻」与
+##     「看着碰上、其实不算相邻」两批位置算一次、存起来（键 = board 实例 id，换关自动失效）。
+var _lens_on := false
+var _impl_key: int = 0
+var _impl_seams: Array = []
+var _impl_ghosts: Array = []
 ## 鼠标悬停格（-1,-1 = 无）
 var hover_pos: Vector2i = Vector2i(-1, -1)
 
@@ -2979,7 +2987,8 @@ func _wrap_axes() -> Dictionary:
 	return {"horizontal": false, "vertical": false}
 
 
-## 拓扑呈现主入口（当前只有环绕有几何提示；虫洞/折叠的专属视图见各自分支）。
+## 拓扑呈现主入口（环绕 = 回卷边框 / 虫洞 = 洞口徽章 / 不可能几何 = 连接透镜；
+## 折叠的专属视图见各自分支）。
 func _draw_topology_hints() -> void:
 	var meta := _view_meta()
 	if meta.is_empty():
@@ -2989,6 +2998,8 @@ func _draw_topology_hints() -> void:
 		_draw_wrap_hints()
 	elif kind == TopologyModel.VIEW_WORMHOLE:
 		_draw_wormhole_hints()
+	elif kind == TopologyModel.VIEW_IMPOSSIBLE:
+		_draw_impossible_hints()
 
 
 ## 环绕盘：一圈虚线「回卷边框」+ 四条边的双向箭头 +（悬停到边格时）穿过边界的虚线通道。
@@ -3202,6 +3213,183 @@ func _draw_portal_tunnel(a: Vector2i, b: Vector2i, col: Color) -> void:
 	draw_polyline(pts, col, lw, true)
 	draw_circle(pts[0], lw * 0.85, col)
 	draw_circle(pts[pts.size() - 1], lw * 0.85, col)
+
+
+# ============ 连接透镜（不可能几何盘，2026-10-09） ============
+
+## 本盘是否支持连接透镜 = 呈现种类为「不可能几何」**且**起落几何（custom_shapes）齐备。
+## 为什么必须两者都判：等轴菱面的错觉来自**每个方块被拆成三个菱形面**这套几何，
+## 少了几何数据就只能退回方块格子——那时「看着碰上」这件事根本不存在，透镜无话可说。
+func supports_lens() -> bool:
+	if str(_view_meta().get("kind", "")) != TopologyModel.VIEW_IMPOSSIBLE:
+		return false
+	return _custom_layout()
+
+
+func lens_enabled() -> bool:
+	return _lens_on
+
+
+## 开关透镜（返回开启后的状态；HUD 与测试共用这一句判据）。
+func toggle_lens() -> bool:
+	_lens_on = not _lens_on
+	queue_redraw()
+	return _lens_on
+
+
+## 不可能几何的「实缝 / 角接」分类（纯几何 + 邻接表；不碰 draw_* ，可单测）。
+##
+## 【为什么要分类】等轴菱面把每个方块画成三个菱形面，整盘读起来像一摞 3D 立方体；但引擎眼里的
+## 「谁挨着谁」是**共边**（同一方块的三个面两两相连、跨方块只有特定朝向的面对相连）。于是屏幕上
+## **顶点相接**（看起来碰上了）的两格可能根本不是邻居——玩家「看不清是凸还是凹、分不清算不算挨着」
+## 的根源就在这儿。分类把眼睛看到的相邻拆成两批：
+##   · seams  —— 图上相邻、且两格多边形**共享一条边**：at = 共享边中点（"真的焊住了"）；
+##   · ghosts —— 图上**不相邻**、但两格多边形共享一个顶点：at = 该顶点（"只是看着碰上"）。
+## `at` 一律是**世界坐标**（与 custom_shapes 同一坐标系），绘制侧只做一次 world→screen。
+## 结果按 board 实例缓存：custom_shapes 随关卡 JSON 一次性载入、不可变 ⇒ 一局只算一次。
+func _impossible_pairs() -> Dictionary:
+	var b: Board = GameSession.board
+	if b == null or b.grid == null or not _custom_layout():
+		return {"seams": [], "ghosts": []}
+	var key: int = b.get_instance_id()
+	if key == _impl_key:
+		return {"seams": _impl_seams, "ghosts": _impl_ghosts}
+	_impl_key = key
+	_impl_seams = []
+	_impl_ghosts = []
+	var grid: GridInterface = b.grid
+	# 世界坐标多边形 +「量化顶点 → 拥有它的格」倒排表。
+	# ⚠️ `_custom_cell(pos)["poly"]` **本身已经是世界绝对坐标**（_ensure_custom_cache 里
+	# 就把 center 加成过了，见那里的 abs_poly）——这里再叠一次格心会让**任何两格都不再共享
+	# 顶点**，症状是 seams/ghosts 双空（本实现第一版就是这么错的，被 test_topology_view 当场抓住）。
+	var world_poly: Dictionary = {}
+	var own: Dictionary = {}
+	var vpos: Dictionary = {}
+	for pos in grid.all_positions():
+		var c := _custom_cell(pos)
+		if c.is_empty():
+			continue
+		var w: PackedVector2Array = c["poly"]
+		world_poly[pos] = w
+		for v2: Vector2 in w:
+			var vk := _impl_vkey(v2)
+			if not own.has(vk):
+				own[vk] = []
+				vpos[vk] = v2
+			(own[vk] as Array).append(pos)
+	# 角接：共享顶点但**不是**邻居的格子对（同一对只记一条；顶点坐标由量化键回放）
+	var seen: Dictionary = {}
+	for vk2: Variant in own.keys():
+		var ids: Array = own[vk2]
+		if ids.size() < 2:
+			continue
+		var at: Vector2 = vpos[vk2]
+		for i in ids.size():
+			for j in range(i + 1, ids.size()):
+				var pa: Vector2i = ids[i]
+				var pb: Vector2i = ids[j]
+				if grid.get_neighbors(pa).has(pb):
+					continue
+				var pk := "%d,%d|%d,%d" % [pa.x, pa.y, pb.x, pb.y]
+				if seen.has(pk):
+					continue
+				seen[pk] = true
+				_impl_ghosts.append({"a": pa, "b": pb, "at": at})
+	# 实缝：图上相邻的一对，取共享边（两个共享顶点）的中点；每对只走一遍
+	for pos_v: Variant in world_poly.keys():
+		var a2: Vector2i = pos_v
+		var poly_a: PackedVector2Array = world_poly[pos_v]
+		for nb: Vector2i in grid.get_neighbors(a2):
+			if not world_poly.has(nb):
+				continue
+			if not _impl_before(a2, nb):
+				continue
+			var shared := _impl_shared_vertices(poly_a, world_poly[nb])
+			if shared.size() < 2:
+				continue
+			_impl_seams.append({"a": a2, "b": nb, "at": (shared[0] + shared[1]) * 0.5})
+	return {"seams": _impl_seams, "ghosts": _impl_ghosts}
+
+
+## 顶点量化键（1e4 分辨率）：同一个共享顶点由两格各自算出，浮点误差 ≪ 1e-4
+##（落盘按 1e-7 量化，见 tools/gen_iso_cubes_levels.gd::_custom_shapes）。
+## 分辨率不能再粗：等轴菱面的顶点间距是 0.5 世界单位，1e4 下仍有 5000 个刻度的余量。
+static func _impl_vkey(v: Vector2) -> Vector2i:
+	return Vector2i(int(round(v.x * 10000.0)), int(round(v.y * 10000.0)))
+
+
+## 两格多边形共享的顶点（按量化键比对；返回出现在 pa 里的那些）。
+static func _impl_shared_vertices(pa: PackedVector2Array, pb: PackedVector2Array) -> Array[Vector2]:
+	var keys_b: Dictionary = {}
+	for v: Vector2 in pb:
+		keys_b[_impl_vkey(v)] = true
+	var out: Array[Vector2] = []
+	for v2: Vector2 in pa:
+		if keys_b.has(_impl_vkey(v2)):
+			out.append(v2)
+	return out
+
+
+## (y,x) 字典序的前后判据：让「一对边」只从一端走一遍（坐标可为负，故不写成数字比较）。
+static func _impl_before(a: Vector2i, b: Vector2i) -> bool:
+	if a.y != b.y:
+		return a.y < b.y
+	return a.x < b.x
+
+
+## 连接透镜的绘制入口。默认只在**悬停格**上亮出它自己的实缝与角接（悬停即问
+## 「这一格到底和谁挨着」）；打开透镜后整盘常驻，把「看着连 / 真的连」一次摊开对照。
+func _draw_impossible_hints() -> void:
+	if not _custom_layout():
+		return
+	var pairs := _impossible_pairs()
+	var seams: Array = pairs["seams"]
+	var ghosts: Array = pairs["ghosts"]
+	if seams.is_empty() and ghosts.is_empty():
+		return
+	var b: Board = GameSession.board
+	var hover_on := hover_pos.x >= 0 and b != null and b.grid != null and b.grid.in_board(hover_pos)
+	if not _lens_on and not hover_on:
+		return
+	for rec: Variant in seams:
+		var d: Dictionary = rec
+		var a: Vector2i = d["a"]
+		var nb: Vector2i = d["b"]
+		var hot := hover_on and (a == hover_pos or nb == hover_pos)
+		if not _lens_on and not hot:
+			continue
+		_draw_impl_seam(d["at"], hot)
+	for rec2: Variant in ghosts:
+		var g: Dictionary = rec2
+		var ga: Vector2i = g["a"]
+		var gb: Vector2i = g["b"]
+		var hot2 := hover_on and (ga == hover_pos or gb == hover_pos)
+		if not _lens_on and not hot2:
+			continue
+		_draw_impl_ghost(g["at"], hot2)
+
+
+## 实缝标记：共享边中点的一枚**实心钉**（+ 一圈压暗外环）——读作「这两格焊住了」。
+func _draw_impl_seam(world_at: Vector2, hot: bool) -> void:
+	var at := _custom_world_to_screen(world_at)
+	var col := ThemeManager.accent()
+	col.a = 0.95 if hot else 0.40
+	var r := maxf(2.0, float(_custom_unit_px) * (0.10 if hot else 0.075))
+	draw_circle(at, r, col)
+	var ring := Color(0.0, 0.0, 0.0, clampf(col.a * 0.45, 0.0, 1.0))
+	draw_arc(at, r, 0.0, TAU, 14, ring, maxf(1.0, r * 0.35), true)
+
+
+## 角接标记：共享顶点上的**空心环 + 斜杠**（"∅" 的读法）——「只是看着碰上了，不算相邻」。
+func _draw_impl_ghost(world_at: Vector2, hot: bool) -> void:
+	var at := _custom_world_to_screen(world_at)
+	var col := ThemeManager.text_secondary()
+	col.a = 0.95 if hot else 0.42
+	var r := maxf(2.5, float(_custom_unit_px) * (0.13 if hot else 0.10))
+	var w := maxf(1.0, r * 0.32)
+	draw_arc(at, r, 0.0, TAU, 16, col, w, true)
+	var d := r * 0.72
+	draw_line(at + Vector2(-d, -d), at + Vector2(d, d), col, w, true)
 
 
 func _draw_custom_highlights() -> void:

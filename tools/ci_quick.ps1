@@ -116,6 +116,9 @@ $map = @{
     # 2026-10-09 补：主题/纹理规则表（新增形状族 kind 时要同步）。
     'theme_marks'    = @('test_theme_marks', 'test_level_naming_contract', 'test_palette_color')
     'hud'            = @('test_ui_rework_contract', 'test_board_view_interaction', 'test_progress_check')
+    # 2026-10-09 补：图标工厂（新增一枚图标要能被「用它的人」的用例断言到 ——
+    # 透镜图标由 test_topology_view 直接断言非空，HUD 图标簇由 rework 契约守）。
+    'ui_icons'       = @('test_topology_view', 'test_ui_rework_contract')
     'game_session'   = @('test_board_view_interaction', 'test_ui_rework_contract', 'test_progress_check')
 }
 
