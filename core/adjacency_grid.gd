@@ -16,6 +16,12 @@ var _adj: Dictionary = {}      # Vector2i -> Array[Vector2i]
 var style: String = "custom"
 ## 风格的附随参数（如 hex / t488 的 {"size": N}）。同样是展示/几何提示，不参与邻接语义。
 var style_params: Dictionary = {}
+## 拓扑呈现元数据（环绕 / 虫洞 / 不可能几何 / 折叠）。同样只影响展示，不参与邻接语义。
+var view_meta: Dictionary = {}
+## 编辑器回读元数据（WrapTopology.build 写进 topology["editor"] 的那一份：wrap / include_self / dirs）。
+## 同样只影响**编辑**，不参与邻接语义。落盘时必须原样带回（见 PuzzleGenerator._topology_to_dict），
+## 否则"生成的环绕关在编辑器里打开会显示成不环绕"，作者无从看出这盘其实折返。
+var editor_meta: Dictionary = {}
 
 
 ## 从关卡拓扑描述构建。
@@ -27,47 +33,32 @@ var style_params: Dictionary = {}
 func setup_from_topo(topo: Dictionary) -> void:
 	_cells.clear()
 	_adj.clear()
-	style = String(topo.get("style", "custom"))
-	var sp: Variant = topo.get("params", {})
+	# 兼容纪律：先把任意输入整理成对称、去重、排序的规范邻接表。
+	# 合法旧数据逐位等价；坏数据（自环/盘外/单向/重复）在这里被消掉。
+	var canon := TopologyModel.canonicalize(topo)
+	style = String(canon.get("style", topo.get("style", "custom")))
+	var sp: Variant = canon.get("params", topo.get("params", {}))
 	style_params = sp if sp is Dictionary else {}
-	var positions: Array = topo.get("positions", [])
-	for p in positions:
-		var d: Dictionary = p
+	view_meta = TopologyModel.view_meta(topo)
+	var em_v: Variant = canon.get("editor", topo.get("editor", {}))
+	editor_meta = (em_v as Dictionary).duplicate(true) if em_v is Dictionary else {}
+	var positions: Array = canon.get("positions", [])
+	for p_v in positions:
+		var d: Dictionary = p_v
 		var pos := Vector2i(int(d["x"]), int(d["y"]))
 		_cells[pos] = Cell.new()
 		_adj[pos] = []
-
-	# 形式 2：显式邻接表（优先）
-	if topo.has("neighbors"):
-		var nb: Dictionary = topo["neighbors"]
-		for key in nb:
-			var pos := _parse_key(String(key))
-			if not _cells.has(pos):
-				continue
-			var lst: Array = nb[key]
-			for nk in lst:
-				var npos := _parse_key(String(nk))
-				if _cells.has(npos):
-					var cur: Array = _adj[pos]
-					if not cur.has(npos):
-						cur.append(npos)
-		return
-
-	# 形式 1：边列表
-	var adj: Array = topo.get("adjacency", [])
-	for e in adj:
-		var edge: Dictionary = e
-		var a_d: Dictionary = edge["a"]
-		var b_d: Dictionary = edge["b"]
-		var a := Vector2i(int(a_d["x"]), int(a_d["y"]))
-		var b := Vector2i(int(b_d["x"]), int(b_d["y"]))
-		if _cells.has(a) and _cells.has(b):
-			var la: Array = _adj[a]
-			var lb: Array = _adj[b]
-			if not la.has(b):
-				la.append(b)
-			if not lb.has(a):
-				lb.append(a)
+	var nb: Dictionary = canon.get("neighbors", {})
+	for key in nb:
+		var pos2 := _parse_key(String(key))
+		if not _cells.has(pos2):
+			continue
+		var lst: Array = nb[key]
+		var cur: Array = _adj[pos2]
+		for nk in lst:
+			var npos := _parse_key(String(nk))
+			if _cells.has(npos) and not cur.has(npos):
+				cur.append(npos)
 
 
 ## 是否按蜂窝六边形几何排布（渲染层唯一判据）。只读辅助，不改任何拓扑语义。
@@ -118,6 +109,10 @@ static func normalized(topo: GridInterface) -> AdjacencyGrid:
 			moved["style"] = src.style
 			if not src.style_params.is_empty():
 				moved["params"] = src.style_params
+		if not src.view_meta.is_empty():
+			moved["view"] = src.view_meta.duplicate(true)
+		if not src.editor_meta.is_empty():
+			moved["editor"] = src.editor_meta.duplicate(true)
 	var out := AdjacencyGrid.new()
 	out.setup_from_topo(moved)
 	return out

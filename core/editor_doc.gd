@@ -828,7 +828,12 @@ func validate() -> Dictionary:
 			if not on_board.has(m):
 				errors.append(_issue("mine_off_board", "雷位不在盘上（形状盘/外部拓扑盘上的空位）：(%d,%d)" % [m.x, m.y], m, ISSUE_ERROR))
 
-	# 3.5) 拓扑体检（复用仓库自带审计器 + 逐格定位度数异常）
+	# 3.5) 拓扑体检（**与关卡加载侧同一判据**：TopologyModel + 逐格定位度数异常）
+	# 【为什么从 AdjacencyBuilder.audit(ag) 换成 TopologyModel.validate(topo)】
+	# 审计器看的是**已建好的棋盘对象**，而真正会被写进关卡 JSON、被加载器读取的是 topology() 这份**字典**。
+	# 两者口径一旦漂移就是"编辑器放行 / 玩家那边拒收"的经典坑（本仓栽过：能编辑、不能玩）。
+	# 现在两侧共用 `TopologyModel.validate` 这一个判据（ui/level_loader.gd 的硬闸门同一函数），
+	# 报错文案也一致；另外字典口径能看见"指向盘外的邻接"——它在建盘时就被静默丢掉了，审计器看不见。
 	# 体检结果按结构签名缓存：它只依赖拓扑（行/列/邻域/障碍/外部盘），与雷位/规则无关
 	# ⇒ 改雷位不必重跑（审计在 64x64 环绕盘上不便宜，而"改一格就审计全盘"是编辑器卡顿的主因之一）。
 	if rows > 0 and cols > 0:
@@ -840,10 +845,13 @@ func validate() -> Dictionary:
 				_audit_errors = []
 				_audit_warnings = []
 				var ag := grid()   # 复用缓存的棋盘（不要再 setup_from_topo 一遍）
-				var audit := AdjacencyBuilder.audit(ag)
+				var audit := TopologyModel.validate(topo_audit)
 				if not bool(audit["ok"]):
-					_audit_errors.append(_issue("topology", "邻接表体检未通过：%s" % "；".join(audit["problems"]),
+					_audit_errors.append(_issue("topology", "邻接表体检未通过：%s" % "；".join(audit["errors"]),
 						Vector2i(-1, -1), ISSUE_ERROR))
+				# 提醒级（含自身 / 没有邻接表）：不阻断保存，但要让作者看见。
+				for w in (audit["warnings"] as Array):
+					_audit_warnings.append(_issue("topology_warn", str(w), Vector2i(-1, -1), ISSUE_WARN))
 				# 孤立格：有邻域定义却一个邻居都没有（偏移写错、或被障碍隔开）——
 				# audit 只给整表级结论，这里逐格给坐标，UI 才能高亮到点上。
 				# 纯提示（💡）：格子的数字/推理不受影响，只是作者该知道。
@@ -856,9 +864,14 @@ func validate() -> Dictionary:
 								"该格没有任何邻居（排版偏移写错，或被障碍隔开）", p, ISSUE_INFO))
 			for e in _audit_errors:
 				errors.append(e)
-			# 审计告警当前只有 💡info 级；仍会经「warnings = warn ∪ info」兼容桶出现在 warnings 里。
+			# 审计里的"孤立格"恒为 💡info（只是作者该知道）；"含自身 / 没有邻接表"是 warn。
+			# 两者都会经「warnings = warn ∪ info」兼容桶出现在 warnings 里。
 			for w2 in _audit_warnings:
-				infos.append(w2)
+				var it: Dictionary = w2
+				if str(it.get("level", ISSUE_INFO)) == ISSUE_WARN:
+					warnings.append(it)
+				else:
+					infos.append(it)
 
 	# 4) 规则（spec 走仓库自己的校验器；非 spec 走注册表解析）
 	if not rule_spec.is_empty():

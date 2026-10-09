@@ -2235,6 +2235,10 @@ func _draw() -> void:
 	# 填充收缩时线不动，「网格永远笔直」成为结构性保证。
 	_draw_grid_lines()
 
+	# 拓扑呈现遍（环绕回卷边框 / 边界通道）：只画"这个盘是怎么回事"，不碰任何邻接语义。
+	# 放在网格线之后、雷体与悬停之前：它是背景级的结构提示，不该盖住线索数字与棋子。
+	_draw_topology_hints()
+
 	# 终局揭晓（非 PLAYING）：全部雷位画雷体 + 引爆格 danger 底
 	if endgame:
 		_draw_mines_reveal(board, scale)
@@ -2944,6 +2948,145 @@ func _canon_vertex(v: Vector2, reps: Array[Vector2], vmap: Dictionary) -> int:
 ## ——开放折线、**绝不闭合**。顺序错会画出错误的图案（数据里 31 个六边形一律 (0,1,2,3)，
 ## 180 个五边形分 6 种朝向 × 30 个，拼出的正是「雏菊链」）；索引越界/顶点不足则整格不画。
 ## 线色 palette.tile_highlight（无 palette → 主题网格线色）。
+# ============ 拓扑呈现（环绕 / 虫洞 / 不可能几何 / 折叠） ============
+##
+## 单一事实源 = `AdjacencyGrid.view_meta`（由 core/topology_model.gd 的 view_meta() 生成）。
+## 本层**只画**，绝不改邻接语义：谁是邻居一律问 `grid.get_neighbors()`，
+## 呈现元数据缺省（旧关卡 / 普通矩形盘）⇒ 本层整段不画，视觉零变化。
+
+## 当前盘的呈现元数据（非 AdjacencyGrid / 无元数据 ⇒ 空字典）。
+func _view_meta() -> Dictionary:
+	var b: Board = GameSession.board
+	if b == null or b.grid == null or not (b.grid is AdjacencyGrid):
+		return {}
+	var meta: Dictionary = (b.grid as AdjacencyGrid).view_meta
+	return meta
+
+
+## 环绕轴开关。返回 {"horizontal": bool, "vertical": bool}。
+## 判据取 `view_meta.wrap`（TopologyModel 写入），缺字段时按 kind=="wrap" 兜底成全开。
+func _wrap_axes() -> Dictionary:
+	var meta := _view_meta()
+	var w: Variant = meta.get("wrap", null)
+	if w is Dictionary:
+		var wd: Dictionary = w
+		return {
+			"horizontal": bool(wd.get("horizontal", true)),
+			"vertical": bool(wd.get("vertical", true)),
+		}
+	if str(meta.get("kind", "")) == TopologyModel.VIEW_WRAP:
+		return {"horizontal": true, "vertical": true}
+	return {"horizontal": false, "vertical": false}
+
+
+## 拓扑呈现主入口（当前只有环绕有几何提示；虫洞/折叠的专属视图见各自分支）。
+func _draw_topology_hints() -> void:
+	var meta := _view_meta()
+	if meta.is_empty():
+		return
+	var kind := str(meta.get("kind", ""))
+	if kind == TopologyModel.VIEW_WRAP:
+		_draw_wrap_hints()
+
+
+## 环绕盘：一圈虚线「回卷边框」+ 四条边的双向箭头 +（悬停到边格时）穿过边界的虚线通道。
+##
+## 【为什么需要】环绕只改了邻接表：屏幕上 (0,y) 与 (cols-1,y) 之间没有任何视觉联系，
+## 玩家看到对边格一起高亮只会觉得是 bug。边框负责"常驻地说"这盘是环绕的，
+## 通道负责在悬停时把"从哪边出去、从哪边进来"当场演示一遍。
+func _draw_wrap_hints() -> void:
+	var axes := _wrap_axes()
+	var h_on := bool(axes["horizontal"])
+	var v_on := bool(axes["vertical"])
+	if not h_on and not v_on:
+		return
+	var b: Board = GameSession.board
+	if b == null or b.grid == null:
+		return
+	var grid: GridInterface = b.grid
+	var size := grid.size()
+	if size.x <= 0 or size.y <= 0:
+		return
+	# 棋盘包围盒（矩形路径 = 原格矩形并集；环绕盘恒走这条路径，见 WrapTopology.build 的 style="custom"）。
+	# 用 _cell_rect 的两个角算，避免每帧遍历 up-to-64x64 个格。
+	var bb := _cell_rect(Vector2i.ZERO).merge(_cell_rect(size - Vector2i.ONE))
+	var acc := ThemeManager.accent()
+	var gap := maxf(4.0, float(cell_px) * 0.18)
+	var frame := bb.grow(gap)
+	var lw := maxf(1.0, float(cell_px) * 0.045)
+	var frame_col := acc
+	frame_col.a = 0.26
+	# 回卷边框：四边虚线（dash 随格宽缩放，密而不糊）
+	var dash := maxf(3.0, float(cell_px) * 0.22)
+	var p := frame.position
+	var e := frame.end
+	draw_dashed_line(Vector2(p.x, p.y), Vector2(e.x, p.y), frame_col, lw, dash)
+	draw_dashed_line(Vector2(e.x, p.y), Vector2(e.x, e.y), frame_col, lw, dash)
+	draw_dashed_line(Vector2(e.x, e.y), Vector2(p.x, e.y), frame_col, lw, dash)
+	draw_dashed_line(Vector2(p.x, e.y), Vector2(p.x, p.y), frame_col, lw, dash)
+	# 四边中点：一对内外箭头（"出得去、进得来"），只在启用的轴上画
+	var arrow_col := acc
+	arrow_col.a = 0.60
+	var asz := maxf(4.0, float(cell_px) * 0.20)
+	if h_on:
+		var my := (p.y + e.y) * 0.5
+		_draw_wrap_arrows(Vector2(p.x, my), Vector2(-1.0, 0.0), asz, arrow_col)
+		_draw_wrap_arrows(Vector2(e.x, my), Vector2(1.0, 0.0), asz, arrow_col)
+	if v_on:
+		var mx := (p.x + e.x) * 0.5
+		_draw_wrap_arrows(Vector2(mx, p.y), Vector2(0.0, -1.0), asz, arrow_col)
+		_draw_wrap_arrows(Vector2(mx, e.y), Vector2(0.0, 1.0), asz, arrow_col)
+	# 悬停通道：把"这一格跨过边界连到哪一格"画成两条穿过边框的虚线
+	if hover_pos.x >= 0 and grid.in_board(hover_pos):
+		_draw_wrap_tunnels(hover_pos, frame, arrow_col, lw)
+
+
+## 边界双向箭头：尖端 outward，尾部两条斜线（"出/入"各一枚，形成 ⇄ 的读法）。
+func _draw_wrap_arrows(tip: Vector2, outward: Vector2, sz: float, col: Color) -> void:
+	var base := tip - outward * sz
+	var side := Vector2(-outward.y, outward.x) * sz * 0.55
+	draw_polyline(PackedVector2Array([base + side, tip, base - side]), col, 1.6, true)
+
+
+## 悬停格的「环绕通道」：对每个"跨越大半个盘"的邻居各画一条穿框虚线。
+## 判据：|dx|>1 或 |dy|>1（环绕折返后的邻接）——普通 8 邻恒为 1，绝不会误画。
+func _draw_wrap_tunnels(pos: Vector2i, frame: Rect2, col: Color, lw: float) -> void:
+	var b: Board = GameSession.board
+	if b == null or b.grid == null:
+		return
+	var grid: GridInterface = b.grid
+	var center := _cell_center(pos)
+	var dash := maxf(2.0, float(cell_px) * 0.16)
+	for nb in grid.get_neighbors(pos):
+		var d := nb - pos
+		if absi(d.x) <= 1 and absi(d.y) <= 1:
+			continue
+		# 出边方向 = 从对端指回本格（本格 (0,y) 的对端在 (cols-1,y) ⇒ 从左边出去）
+		var dir := Vector2(signi(pos.x - nb.x), signi(pos.y - nb.y))
+		var exit := _frame_exit_point(center, dir, frame)
+		draw_dashed_line(center, exit, col, lw, dash)
+		_draw_wrap_arrows(exit, dir, maxf(3.0, float(cell_px) * 0.16), col)
+		# 入边：对端格同样画一条（从对端指向本格的方向出去）
+		var dir2 := Vector2(signi(nb.x - pos.x), signi(nb.y - pos.y))
+		var center2 := _cell_center(nb)
+		var exit2 := _frame_exit_point(center2, dir2, frame)
+		draw_dashed_line(center2, exit2, col, lw, dash)
+
+
+## 从 from 沿 dir（分量取 ±1）到 frame 边框的交点。
+func _frame_exit_point(from: Vector2, dir: Vector2, frame: Rect2) -> Vector2:
+	var out := from
+	if dir.x > 0.0:
+		out.x = frame.end.x
+	elif dir.x < 0.0:
+		out.x = frame.position.x
+	if dir.y > 0.0:
+		out.y = frame.end.y
+	elif dir.y < 0.0:
+		out.y = frame.position.y
+	return out
+
+
 func _draw_custom_highlights() -> void:
 	if _custom_cells.is_empty():
 		return

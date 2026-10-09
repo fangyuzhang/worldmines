@@ -167,9 +167,29 @@ static func _validate_and_build(d: Dictionary, path: String) -> Board:
     if rows * cols > MAX_CELLS:
         push_error("关卡规模超上限（%d 格 > %d）: %s" % [rows * cols, MAX_CELLS, path])
         return null
+
+    # 异形拓扑闸门（拓扑玩法安全门）：先把坏表挡在 Board 之外。
+    # 重点不是“格式对不对”，而是不能让单向邻接/自环/盘外雷位静默进入对局——
+    # 那会让玩家看到与关卡自述不一致的数字，或让无猜验证建立在另一张图上。
+    var topo_cells := {}
+    var logical_cell_count := rows * cols
+    var topo_v: Variant = d.get("topology", null)
+    if topo_v != null:
+        if not (topo_v is Dictionary) or (topo_v as Dictionary).is_empty():
+            push_error("topology 结构非法: " + path)
+            return null
+        var ta := TopologyModel.validate(topo_v as Dictionary)
+        if not bool(ta["ok"]):
+            push_error("拓扑校验失败（%s）: %s" % [path, "；".join(ta["errors"])])
+            return null
+        for p_v: Variant in ta["positions"]:
+            var p: Vector2i = p_v
+            topo_cells[p] = true
+        logical_cell_count = topo_cells.size()
+
     var total_mines: int = int(d.get("total_mines", -1))
     # 允许 0 雷关卡（引擎支持：翻开全部非雷格即胜），此前 <=0 的硬拒绝比引擎能力更紧。
-    if total_mines < 0 or total_mines >= rows * cols:
+    if total_mines < 0 or total_mines >= logical_cell_count:
         push_error("关卡雷数非法: " + path)
         return null
 
@@ -192,6 +212,9 @@ static func _validate_and_build(d: Dictionary, path: String) -> Board:
             push_error("雷位越界: " + path)
             return null
         var mkey := Vector2i(mc, mr)
+        if not topo_cells.is_empty() and not topo_cells.has(mkey):
+            push_error("雷位不在拓扑盘上: " + path)
+            return null
         if mine_keys.has(mkey):
             push_error("雷位重复: " + path)
             return null
@@ -209,6 +232,10 @@ static func _validate_and_build(d: Dictionary, path: String) -> Board:
         if rr < 0 or rr >= rows or cc < 0 or cc >= cols:
             push_error("初始翻开格越界: " + path)
             return null
+        var rkey_pos := Vector2i(cc, rr)
+        if not topo_cells.is_empty() and not topo_cells.has(rkey_pos):
+            push_error("初始翻开格不在拓扑盘上: " + path)
+            return null
         # 遮蔽区间结构校验：board.load_level 直接下标取 iv[0]/iv[1]，
         # 畸形 interval（空数组/长度不足/上下界倒置）会在此路径数组越界崩溃，必须前置拦截。
         if rv.has("interval"):
@@ -221,7 +248,7 @@ static func _validate_and_build(d: Dictionary, path: String) -> Board:
             if lo > hi or lo < 0 or hi > rows * cols:
                 push_error("初始翻开格 interval 区间非法: " + path)
                 return null
-        var rkey := Vector2i(cc, rr)
+        var rkey := rkey_pos
         if mine_keys.has(rkey):
             push_error("初始翻开格是雷: " + path)
             return null

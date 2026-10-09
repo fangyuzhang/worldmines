@@ -1389,4 +1389,11 @@ static func _topology_to_dict(topo: GridInterface) -> Dictionary:
 			out["style"] = ag.style
 			if not ag.style_params.is_empty():
 				out["params"] = ag.style_params
+		# 呈现元数据与编辑器元数据必须跟着走：否则"生成出来的环绕/虫洞盘"落盘后**看起来是普通盘**
+		# （邻接还是对的，玩家却没有任何提示，编辑器打开也看不到「环绕」勾选）。走 json_safe_view
+		# 是因为 JSON.stringify 不认 Vector2i（会把端点变成字符串 ⇒ 读回即丢）。
+		if not ag.view_meta.is_empty():
+			out["view"] = TopologyModel.json_safe_view(ag.view_meta)
+		if not ag.editor_meta.is_empty():
+			out["editor"] = TopologyModel.json_safe_view(ag.editor_meta)
 	return out
