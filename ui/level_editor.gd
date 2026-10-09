@@ -60,6 +60,15 @@ const DISCLOSURE := preload("res://core/editor_disclosure.gd")
 ## 骨牌划分（`DominoModel`）：与 `MegaCell` 同为「关卡内容」，但**不复用 class_name**（同坑 #26）。
 const DOMINO_MODEL := preload("res://core/domino_model.gd")
 
+
+## 存档占用锁（功能清单 §8「防事故」前半）：**跨会话互斥** —— 同一份存档不允许两个编辑窗口同时写。
+## 同 `DOMINO_MODEL` 的理由：不按 `class_name` 引用（headless 下全局类可能还没注册，见本仓坑 #26）。
+const LOCK := preload("res://core/file_lock.gd")
+## 缩略图（功能清单 §8「防事故」后半）：结果层 → 小尺寸索引网格（纯数据，headless 可测）。
+const THUMB := preload("res://core/level_thumbnail.gd")
+## 缩略图的「显示器」：`_draw()` 涂色块，不建节点、不参与玩法判定。
+const THUMB_VIEW := preload("res://ui/level_thumb_view.gd")
+
 const EDITOR_DIR := "user://editor"
 ## 图标工厂：本仓约定是**逐文件 preload**（`ui_icons.gd` 刻意没有 class_name，见其文件头注释）
 const Icons := preload("res://ui/ui_icons.gd")
@@ -338,6 +347,21 @@ var _ai_last_text := ""
 var _ai_last_errors: Array[String] = []
 ## 当前正在编辑的文件路径（"" = 还没保存过）。保存时优先覆盖它，避免同名关卡互相覆盖。
 var _current_path := ""
+
+# ---- 存档占用锁 + 缩略图（文档 §8「防事故」）----
+## 本会话的锁所有者标识（**每次运行唯一**：同一台机器开两个窗口必须能互相区分）。
+var _lock_owner := ""
+## 当前**持锁目录**（"" = 没持锁）。锁的是「每份存档自己的隐藏子目录」，不是存档目录——
+## 存档平铺在 user://editor，直接锁那个目录会让「编辑别的关」的另一个窗口也撞锁（误伤）。
+var _locked_dir := ""
+## 只读打开（打开时发现别人正开着）：能看 / 能试玩，但不许覆盖；要留改动只能改标题另存。
+var _read_only := false
+var _read_only_path := ""
+## 缩略图预览控件与说明文字（节点在「存档与分享」段建，见 _build_* 里的 THUMB_VIEW）。
+## 控件**不加类型标注**（同 _replay_model 的理由）：它的 set_thumb/thumb_hash 是本仓自定义方法，
+## 声明成 Control 再调自定义方法会被 GDScript 静态检查判成编译失败。
+var _thumb_view = null
+var _thumb_note: Label
 var _tool_group := ButtonGroup.new()
 var _kind_group := ButtonGroup.new()
 
@@ -738,6 +762,17 @@ func _build_left_bar() -> Control:
 	box.add_child(_open_opt)
 	box.add_child(_action_button("打开这个存档", _open_selected))
 	box.add_child(_action_button("打开存档文件夹", _open_save_dir))
+
+	# ---- 缩略图预览（文档 §8）----
+	# 存档列表只有文件名，同名 / 相似名的关卡分不出来 ⇒ 给当前关卡一张小图。
+	# 用 `_draw()` 涂色块（不建 1024 个 ColorRect），所以控件的 custom_minimum_size 就是它的大小。
+	box.add_child(_section_label("缩略图预览（当前关卡）"))
+	_thumb_view = THUMB_VIEW.new()
+	_thumb_view.custom_minimum_size = Vector2(0, 96)
+	box.add_child(_thumb_view)
+	_thumb_note = _plain_label("（还没有内容：布好雷就会显示小图）")
+	_thumb_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(_thumb_note)
 	var pack_btn := _action_button("生成分享包", _make_pack)
 	# 悬停说明补上"上传哪个文件"：实测小白看到"请手动上传"时不知道要传什么、在哪找。
 	pack_btn.tooltip_text = "生成一份 zip 分享包（文件在左栏「打开存档文件夹」里）；本机没接 Steamworks 时要自己上传"
@@ -2803,6 +2838,7 @@ func _refresh_all() -> void:
 	_refresh_stats()
 	_refresh_color_lock()
 	_refresh_domino_note()
+	_refresh_thumb_preview()
 
 
 func _refresh_preview() -> void:
@@ -2973,7 +3009,8 @@ func _refresh_open_list() -> void:
 		return
 	var names: Array[String] = []
 	for f in dir.get_files():
-		if str(f).ends_with(".json") and not str(f).begins_with("_"):
+		# 缩略图 sidecar（<存档>.thumb.json）**不是关卡**：按名字排除，别让它出现在「打开这个存档」里。
+		if str(f).ends_with(".json") and not str(f).begins_with("_") and not str(f).ends_with(".thumb.json"):
 			names.append(str(f))
 	names.sort()
 	for n in names:
@@ -4376,9 +4413,141 @@ func _slug(text: String) -> String:
 	return out if out != "" else "我的关卡"
 
 
+# ==================== 存档占用锁（文档 §8「防事故」前半） ====================
+#
+# 【要解决什么】两个编辑器窗口同时保存同一关 ⇒ 后写者**静默**覆盖前者（原子替换只保证不写坏文件，
+#   不保证「谁的内容」）。这里把「谁在写」变成**在场可见**：别人正开着 ⇒ 本窗口只读打开。
+# 【锁粒度】存档平铺在 user://editor，锁这个目录会误伤「编辑别的关」的另一个窗口；
+#   所以每份存档锁**自己的隐藏同名子目录**：user://editor/.<存档名>.lock/.level.lock。
+#   锁文件只是提示 + 互斥，不含关卡数据；用户删掉它等同强制解锁（可接受，见 file_lock.gd 文件头）。
+# 【崩溃不锁死】锁带 TTL（900 秒），过期即视为陈旧、后来者可直接回收 ⇒ 不需要人工清锁。
+
+func _lock_owner_id() -> String:
+	# 所有者标识：进程号 + 启动时刻。同一进程内的多个编辑器共用（它们本来就同生共死），
+	# 不同进程一定不同 —— 这才是要区分的那一维。
+	if _lock_owner == "":
+		_lock_owner = "editor-%d-%d" % [OS.get_process_id(), Time.get_ticks_usec()]
+	return _lock_owner
+
+
+## 某份存档对应的**锁目录**（隐藏同名子目录；注意不是存档文件所在目录）。
+func _lock_dir_for(path: String) -> String:
+	if path.strip_edges().is_empty():
+		return ""
+	return "%s/.%s.lock" % [path.get_base_dir(), path.get_file()]
+
+
+## 可读的占用说明：acquire / peek 的 reason 已经是人话，这里只兜底。
+func _lock_conflict_text(rec: Dictionary) -> String:
+	var s := str(rec.get("reason", ""))
+	return s if s != "" else "该存档正被其它窗口占用"
+
+
+## 确保本会话持有该存档的锁；**换目标文件时先释放旧锁**（不占着不放）。
+## 返回 LOCK.acquire 的原样结果：{ok, reason, ...}。
+func _ensure_lock(path: String) -> Dictionary:
+	var dir := _lock_dir_for(path)
+	if dir == "":
+		return {"ok": false, "reason": "存档路径为空，无法加锁"}
+	if dir == _locked_dir:
+		# 同一份存档重复保存：acquire 对同 owner 直接放行并续期（TTL 重新计时）。
+		return LOCK.acquire(dir, _lock_owner_id())
+	if _locked_dir != "":
+		LOCK.release(_locked_dir, _lock_owner_id())
+		_locked_dir = ""
+	var rec := LOCK.acquire(dir, _lock_owner_id())
+	if bool(rec.get("ok", false)):
+		_locked_dir = dir
+	return rec
+
+
+func _release_lock() -> void:
+	if _locked_dir == "":
+		return
+	LOCK.release(_locked_dir, _lock_owner_id())
+	_locked_dir = ""
+
+
+## 退出时释放锁：不释放的话，下一个窗口要等满 TTL（15 分钟）才能接管。
+func _exit_tree() -> void:
+	_release_lock()
+
+
+# ==================== 缩略图（文档 §8「防事故」后半） ====================
+
+## 缩略图 sidecar 路径：<存档>.thumb.json（与存档同目录，便于随存档一起被看见 / 备份）。
+## 注意：分享包由 WorkshopPack 按 doc 现算生成、**不扫目录**，所以 sidecar 不会被误当成关卡打进包里。
+func _thumb_path_for(path: String) -> String:
+	if path.strip_edges().is_empty():
+		return ""
+	return "%s/%s.thumb.json" % [path.get_base_dir(), path.get_file()]
+
+
+## 缩略图输入层：**只要**尺寸 + 雷位 + 初始翻开位。
+## 不经 doc.to_level_json()：那个会展开派生 topology（64×64 环绕盘上是 MB 级），而本函数每次编辑
+## 都要跑 ⇒ 自建这个最小结果层（字段名与关卡 JSON 一致，LevelThumbnail 原样认）。
+func _thumb_layer() -> Dictionary:
+	var ms: Array = []
+	for m in doc.mines:
+		ms.append({"r": m.y, "c": m.x})
+	var rv: Array = []
+	for p in doc.revealed:
+		rv.append({"r": p.y, "c": p.x})
+	return {"size": {"rows": doc.rows, "cols": doc.cols}, "mines": ms, "revealed": rv}
+
+
+## 保存成功后写一份缩略图 sidecar。**失败绝不影响存档**（缩略图只是辅助显示）。
+func _write_thumb_sidecar(path: String) -> void:
+	var tp := _thumb_path_for(path)
+	if tp == "" or doc == null:
+		return
+	var thumb := THUMB.build(_thumb_layer())
+	if not bool(thumb.get("ok", false)):
+		return          # 生成不出来（尺寸非法等）就不写，也不打扰用户
+	var f := FileAccess.open(tp, FileAccess.WRITE)
+	if f == null:
+		return
+	f.store_string(JSON.stringify(THUMB.to_dict(thumb), "  "))
+	f.close()
+
+
+## 刷新缩略图预览（当前编辑内容 → 小图）。编辑中随时可看，不必先保存。
+func _refresh_thumb_preview() -> void:
+	if _thumb_view == null or doc == null:
+		return
+	var thumb := THUMB.build(_thumb_layer())
+	if not bool(thumb.get("ok", false)):
+		_thumb_view.clear()
+		if _thumb_note != null:
+			_thumb_note.text = "（缩略图：— %s）" % str(thumb.get("reason", "无法生成"))
+		return
+	# 指纹没变就不重设（避免每次全量刷新都 queue_redraw，白白重绘）。
+	if _thumb_view.has_thumb() and _thumb_view.thumb_hash() == str(thumb.get("hash", "")):
+		return
+	_thumb_view.set_thumb(thumb)
+	if _thumb_note != null:
+		var cut := ""
+		if bool(thumb.get("cropped", false)):
+			cut = "（已裁到 %d×%d，原 %d×%d）" % [
+				int(thumb["rows"]), int(thumb["cols"]), int(thumb["src_rows"]), int(thumb["src_cols"])]
+		_thumb_note.text = "缩略图：%d×%d 格%s；雷 %d 颗、初始翻开 %d 格" % [
+			int(thumb["rows"]), int(thumb["cols"]), cut, doc.mine_count(), doc.revealed.size()]
+
+
 func _save() -> void:
 	DirAccess.make_dir_recursive_absolute(EDITOR_DIR)
 	var path := _target_save_path()
+
+	# 【文档 §8·防事故】只读打开（打开时别人正开着）⇒ 不许覆盖；要留改动只能改标题另存。
+	if _read_only and (_read_only_path == "" or _read_only_path == path):
+		_toast("这份存档正被别的窗口占用，当前是**只读**打开。\n想保留改动：改一下标题再点保存，会存成新文件。",
+			true, 6.0)
+		return
+	# 【文档 §8·防事故】写盘前拿锁：拿不到就**拦下保存**并说清谁在占（绝不静默覆盖别人）。
+	var lk := _ensure_lock(path)
+	if not bool(lk.get("ok", false)):
+		_toast("保存被拦下：%s" % _lock_conflict_text(lk), true, 6.0)
+		return
 	# 【清单·一「保存」注意事项】原来手动保存是**直写**目标文件：写到一半崩/断电就留下半截 JSON，
 	# 用户下次打开就是坏档。清单明确要求"复用游戏本体那套防损坏写入（临时文件→替换），
 	# 编辑器不能自己发明一套"。这里与 `_write_autosave()`、以及游戏本体的
@@ -4397,9 +4566,16 @@ func _save() -> void:
 		return
 	_current_path = path
 	_dirty = false
+	# 自己保存过 ⇒ 之后不再按只读处理（文件是我写的，锁也在我手上）。
+	_read_only = false
+	_read_only_path = ""
 	_refresh_open_list()
+	# 缩略图 sidecar：给别人 / 给未来的自己一眼认出这份存档是什么样（写失败不影响存档本身）。
+	_write_thumb_sidecar(path)
+	_refresh_thumb_preview()
 	# 只说文件名 + 去哪儿找：原来把 user://editor/level.json 直接甩给用户，小白既看不懂也找不到
-	_toast("已保存：%s\n（在左栏「打开存档文件夹」里能看到这个文件）" % path.get_file(), false, 5.0)
+	_toast("已保存：%s\n（在左栏「打开存档文件夹」里能看到这个文件；缩略图 %s）" % [
+		path.get_file(), _thumb_path_for(path).get_file()], false, 5.0)
 
 
 ## 决定写哪个文件：**当前正在编辑的文件优先**（"保存"应当覆盖自己的文件，这是人的预期）；
@@ -4468,6 +4644,18 @@ func _load_example() -> void:
 
 
 func _load_from_file(path: String) -> bool:
+	# 【文档 §8·防事故】打开前先**只读探测**（peek 不写盘、不抢锁）：别人正开着 ⇒ 本次按只读打开
+	#（能看 / 试玩；保存时会被拦下并提示改标题另存 —— 把别人赶走不是编辑器该做的事）。
+	var probe := LOCK.peek(_lock_dir_for(path))
+	var held := bool(probe.get("held", false)) and not bool(probe.get("stale", false))
+	var holder := str(probe.get("owner", ""))
+	if held and holder != "" and holder != _lock_owner_id():
+		_read_only = true
+		_read_only_path = path
+		_toast("这份存档正被别的窗口占用，已按**只读**打开（改动只能改标题另存）。", false, 6.0)
+	else:
+		_read_only = false
+		_read_only_path = ""
 	var f := FileAccess.open(path, FileAccess.READ)
 	if f == null:
 		return false

@@ -288,3 +288,74 @@ func test_ai_tab_offers_a_repair_round_when_the_reply_is_broken() -> void:
 	assert_null(RuleRegistry.default().resolve(StringName("spec_ai_broken")), "失败的规格不得注册")
 	var errs := ed.get("_ai_last_errors") as Array
 	assert_gt(errs.size(), 0, "失败时必须记住报错（「让 AI 修」要用它）")
+
+# ==================== 存档占用锁 + 缩略图（文档 §8「防事故」） ====================
+#
+# 这两条钉的是**接线**（算法本身另有 test_file_lock / test_level_thumbnail 单测）：
+#   · 保存要顺手写一份缩略图 sidecar；
+#   · sidecar **不是关卡**，不得出现在「打开这个存档」里（选中它会加载成一份假关卡）；
+#   · 别人正开着同一份存档时，第二会话必须**只读**打开，且保存不得覆盖它。
+# 本套件因此会碰 user:// ⇒ 被 tools/gut_shards.ps1 自动收进"有状态"串行片（不会与并行片抢盘）。
+
+const EDITOR_DIR := "user://editor"
+## 固定且独特的标题：存到固定文件名，既不与真人存档重名，也便于本用例收尾。
+const SMOKE_TITLE := "zz_smoke_lock_thumb"
+
+
+func _open_items(ed: Object) -> Array[String]:
+	var out: Array[String] = []
+	var opt := ed.get("_open_opt") as OptionButton
+	if opt == null:
+		return out
+	for i in opt.item_count:
+		out.append(opt.get_item_text(i))
+	return out
+
+
+func _cleanup_save(path: String) -> void:
+	if path == "":
+		return
+	DirAccess.remove_absolute("%s/%s.thumb.json" % [path.get_base_dir(), path.get_file()])
+	DirAccess.remove_absolute(path)
+	var lock_dir := "%s/.%s.lock" % [path.get_base_dir(), path.get_file()]
+	DirAccess.remove_absolute(lock_dir.path_join(".level.lock"))
+	DirAccess.remove_absolute(lock_dir)
+
+
+func test_save_writes_thumb_sidecar_and_the_open_list_hides_it() -> void:
+	var ed := _make_editor()
+	var d := _doc5()
+	d.title = SMOKE_TITLE
+	_bind(ed, d)
+	ed.call("_save")
+	var path := str(ed.get("_current_path"))
+	assert_eq(path, "%s/%s.json" % [EDITOR_DIR, SMOKE_TITLE], "保存路径应由标题决定（本用例据此收尾）")
+	var sidecar := "%s/%s.thumb.json" % [path.get_base_dir(), path.get_file()]
+	assert_true(FileAccess.file_exists(sidecar),
+		"保存必须顺手写一份缩略图 sidecar（文档 §8「自动缩略图」）：%s" % sidecar)
+	var items := _open_items(ed)
+	assert_true(items.has(path.get_file()), "真实存档应出现在「打开这个存档」里：%s" % str(items))
+	assert_false(items.has(sidecar.get_file()),
+		"缩略图 sidecar 不是关卡，不得出现在「打开这个存档」里：%s" % str(items))
+	_cleanup_save(path)
+
+
+func test_second_editor_opens_a_locked_save_read_only() -> void:
+	var a := _make_editor()
+	var d := _doc5()
+	d.title = SMOKE_TITLE
+	_bind(a, d)
+	a.call("_save")
+	var path := str(a.get("_current_path"))
+	assert_true(path != "", "前置条件：第一会话应已保存成功")
+	# 第二个编辑器会话（不同 owner）打开同一份存档
+	var b := _make_editor()
+	assert_true(bool(b.call("_load_from_file", path)), "第二会话应能打开这份存档")
+	assert_true(bool(b.get("_read_only")), "别人持有锁时必须以**只读**打开")
+	assert_eq(str(b.get("_read_only_path")), path, "只读态要记住是哪一份文件被占")
+	# 只读态保存：不得覆盖被占用的文件（文案要求的"改标题另存"由用户触发）
+	var before := FileAccess.get_file_as_string(path)
+	b.call("_save")
+	assert_eq(FileAccess.get_file_as_string(path), before, "只读态保存不得覆盖别人正在编辑的文件")
+	a.call("_release_lock")
+	_cleanup_save(path)

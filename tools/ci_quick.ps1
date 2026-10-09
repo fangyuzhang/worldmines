@@ -92,6 +92,8 @@ $map = @{
     'file_lock'      = @('test_file_lock')
     'level_thumbnail' = @('test_level_thumbnail')
     'stroke_limits'  = @('test_drawing_stroke_limits')
+    # 2026-10-09 补：缩略图显示控件（改它会影响编辑器面板的可见控件）。
+    'level_thumb_view' = @('test_level_thumbnail', 'test_level_editor_smoke')
 }
 
 $want = New-Object System.Collections.Generic.List[string]
