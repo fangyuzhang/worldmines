@@ -894,6 +894,13 @@ func overlay_cell_color(must_guess: bool, level: int, max_level: int, opts: Dict
 		return Color(d.r, d.g, d.b, clampf(float(opts.get("must_alpha", OVERLAY_MUST_GUESS_ALPHA)), 0.0, 1.0))
 	if level < 0:
 		return Color(0, 0, 0, 0)
+	# 【2026-10-09】四象染色预览要的是「每格一色」（不是深度渐变）：调用方可在 opts.colors 里给
+	# 「level → Color」的显式色表（如 ColoringPreview.color_table()）。给了就用它；没给仍走原来的主题色。
+	var tbl: Variant = opts.get("colors", null)
+	if tbl is Dictionary and (tbl as Dictionary).has(level):
+		var cc: Variant = (tbl as Dictionary)[level]
+		if cc is Color:
+			return cc
 	var ml := int(opts.get("max_level", 0))
 	if ml <= 0:
 		ml = max_level

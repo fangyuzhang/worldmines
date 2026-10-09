@@ -48,6 +48,17 @@ const SHARE_CODE := preload("res://core/share_code.gd")
 ## 同上面四个模块：**用 preload 引用、不按 class_name 引用**（坑 #26）。
 ## 【下钻状态是导航、不是关卡内容】它只由 UI 持有，绝不写进 `doc.to_level_json()`。
 const MEGA_CELL := preload("res://core/mega_cell.gd")
+## 【2026-10-09 接线】文档 §3/§5/§9/§8 的几个 core 能力（文字转形状 / 四象染色预览 / 行容量 /
+## 骨牌划分 / 直方图 / 配色锁定 / 认证提交队列 / 重栅格化保留手工格）。同上面几组：**一律 preload**
+## 引用、不按 class_name 引用（坑 #26：headless 下新全局类不在 `.godot` 缓存里）。
+const GLYPH_FONT := preload("res://core/glyph_font.gd")
+const COLORING := preload("res://core/coloring_preview.gd")
+const SUBMISSION_QUEUE := preload("res://core/submission_queue.gd")
+const REFLOW := preload("res://core/shape_reflow.gd")
+const HISTOGRAM := preload("res://core/stats_histogram.gd")
+const DISCLOSURE := preload("res://core/editor_disclosure.gd")
+## 骨牌划分（`DominoModel`）：与 `MegaCell` 同为「关卡内容」，但**不复用 class_name**（同坑 #26）。
+const DOMINO_MODEL := preload("res://core/domino_model.gd")
 
 const EDITOR_DIR := "user://editor"
 ## 图标工厂：本仓约定是**逐文件 preload**（`ui_icons.gd` 刻意没有 class_name，见其文件头注释）
@@ -240,6 +251,34 @@ var _mega_opt: OptionButton
 var _mega_state_label: Label
 var _mega_note: Label
 var _open_opt: OptionButton
+# ---- 【2026-10-09 接线】文档 §3/§5/§8/§9 的余项（全部只转发到 core，UI 不自造判据）----
+## 四象染色预览开关（显示组）：数据走 `ColoringPreview.quadrant_preview`，颜色走它的色表。
+var _quad_btn: Button
+var _quad_note: Label
+## 行容量侧栏：每行目标雷数 + 可行性预检（`ColoringPreview.row_report`）。
+var _row_target_spin: SpinBox
+var _row_capacity_label: Label
+## 文字转形状（`GlyphFont.text_cells_fit` → `TextToShape`）：放不下会自动降档并**必须说出来**。
+var _text_shape_edit: LineEdit
+var _text_shape_px: SpinBox
+var _text_shape_note: Label
+## 骨牌划分（`DominoModel.partition` / `verify_partition`）：结论常驻，失败给逐格坐标。
+var _domino_note: Label
+## 统计面板（`StatsHistogram`）：雷密度 + 数字分布直方图。
+var _stats_note: Label
+## 配色锁定（`EditorDisclosure.lock_report`）：同色变体点名的常驻结论。
+var _color_lock_note: Label
+## 认证提交（`SubmissionQueue`）：本地队列，文案不假装联网。
+var _submit_note_edit: LineEdit
+var _submit_note: Label
+## 简单 / 专家渐进披露（`EditorDisclosure.visible_controls`）。
+var _mode_btn: Button
+var _expert_mode := true
+## 用户**手工改过**的格（画笔/橡皮/粘贴/矩形填充…都经 `canvas.cell_edited`）：
+## 换形状重栅格化时，它是「手工格负载」的唯一来源（`ShapeReflow.reflow` 第 4 个参数）。
+var _variant_id_edit: LineEdit     # 配色锁定：变体 id
+var _variant_color_edit: LineEdit  # 配色锁定：色码（RED / #ff8800…）
+var _hand_edited: Dictionary = {}
 # ---- 零代码页「AI 帮我写」（逻辑在 core/spec_helper.gd，本页只负责"三段式"交互）----
 var _idea_edit: LineEdit
 var _ai_text: TextEdit
@@ -358,6 +397,8 @@ func _ready() -> void:
 	ThemeManager.theme_changed.connect(_on_theme_changed)
 	ThemeManager.theme_settled.connect(_on_theme_settled)
 	_build_ui()
+	## 建完左栏立刻应用一次披露档位：`_mode_btn` 的文案与真实可见性必须开局就一致（默认专家档 ⇒ 全部可见）。
+	_apply_disclosure()
 	doc = EditorDoc.new(9, 9)
 	_doc_to_ui()
 	_load_autosave_if_any()
@@ -648,6 +689,21 @@ func _build_left_bar() -> Control:
 	_sym_btn.tooltip_text = _bindings.hint("symmetry_cycle")
 	box.add_child(_sym_btn)
 	box.add_child(_plain_label("对称开启后，画笔/橡皮画的格子会同时镜像到对称位置（矩形填充/直线/油漆桶不改动）。"))
+	# 四象染色预览（文档 §5）：色号逐格复用 `ConstraintEngine.quadrant_of`（core 单一事实来源），
+	# 四象限 + 中轴各一色；网格族上四象语义未定义时由「变体×网格矩阵」门禁拒绝并给可读理由。
+	_quad_btn = _action_button("四象染色预览：关", _toggle_quadrant_preview)
+	_quad_btn.toggle_mode = true
+	_quad_btn.tooltip_text = "把棋盘按四象（左上/右上/左下/右下 + 中轴）染色，用来检查对称与染色分区；试玩态自动隐藏"
+	box.add_child(_quad_btn)
+	_quad_note = _plain_label("")
+	_quad_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_quad_note.visible = false
+	box.add_child(_quad_note)
+	# 简单 / 专家渐进披露（文档「九」「十.6」）：新手只看到做一关的必经路径，高级概念渐进披露。
+	# 判据全在 `EditorDisclosure.visible_controls`（未知 id 默认可见 ⇒ 加新控件不会被误藏）。
+	_mode_btn = _action_button("模式：专家（全部功能可见）", _toggle_editor_mode)
+	_mode_btn.tooltip_text = "切到专家模式才显示：显示雷 / 猜点热力图 / 规则原文 / 批量生成 / 异形拼装等进阶功能"
+	box.add_child(_mode_btn)
 	_apply_cheat_visibility()
 
 	box.add_child(_section_label("布雷"))
@@ -705,6 +761,22 @@ func _build_left_bar() -> Control:
 	box.add_child(share_row)
 	_share_note = _plain_label("")
 	box.add_child(_share_note)
+	# ---- 认证提交（文档 §8 最后一条）：本地队列 + 流转状态（**不假装联网**，文案写「本地审核队列」）----
+	box.add_child(_section_label("认证提交（送进审核队列）"))
+	box.add_child(_plain_label("把关卡送进审核队列，并看它走到哪一步：已入队 → 审核中 → 已通过 / 已退回。\n"
+		+ "（本机队列：没连官方服务时不假装已上传，只记「已加入本地审核队列」。）"))
+	_submit_note_edit = LineEdit.new()
+	_submit_note_edit.custom_minimum_size = Vector2(0, 30)
+	_submit_note_edit.placeholder_text = "给审核者的一句话（可留空）"
+	box.add_child(_submit_note_edit)
+	var sub_row := HBoxContainer.new()
+	sub_row.add_theme_constant_override("separation", 6)
+	sub_row.add_child(_action_button("加入审核队列", _submit_to_queue))
+	sub_row.add_child(_action_button("刷新队列状态", _refresh_submission))
+	box.add_child(sub_row)
+	_submit_note = _plain_label("")
+	_submit_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(_submit_note)
 	box.add_child(_section_label("批量做关卡（一次做很多关）"))
 	var forge_btn := _action_button("批量生成关卡（按大小 × 档位）", _open_forge)
 	forge_btn.tooltip_text = "勾选棋盘大小、填每个难度要几关，一次生成一批；带进度条与预计时间，随时可停"
@@ -1474,6 +1546,21 @@ func _build_props_tab() -> Control:
 	_global_list.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(_global_list)
 
+	# 行容量侧栏（文档 §5「每行目标雷数 + 可行性预检」）：结论与不可行行号全部来自
+	# `ColoringPreview.row_report`（盘内格数才叫容量；行语义未定义的网格族由矩阵门禁拒绝）。
+	box.add_child(_section_label("行容量（每行目标雷数）"))
+	var rcrow := HBoxContainer.new()
+	rcrow.add_child(_plain_label("每行雷数"))
+	_row_target_spin = _spin(1, 99, 1)
+	# 默认值不能读 doc：本函数在 _build_ui() 里跑，那时 doc 还是 null（_ready 才赋）。
+	_row_target_spin.value = 2
+	_row_target_spin.value_changed.connect(func(_v: float) -> void: _refresh_row_capacity())
+	rcrow.add_child(_row_target_spin)
+	box.add_child(rcrow)
+	_row_capacity_label = _plain_label("")
+	_row_capacity_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(_row_capacity_label)
+
 	# 本盘问题列表：需求明确要求"错误信息要显示在界面上，不能只打印到控制台"。
 	# 状态栏只放第一条（空间有限），完整清单放这里，逐条带格坐标（点画布上高亮的就是它们）。
 	box.add_child(_section_label("本盘问题"))
@@ -1509,8 +1596,14 @@ func _build_props_tab() -> Control:
 	box.add_child(_plain_label("选形状后，邻域/边界控件不适用；雷位与障碍照常编辑。"
 		+ "「形状尺寸」对圆 / 星 / 扇形是半径（格）。"))
 	_build_shape_compose(box)
+	# 文字转形状（文档 §3，「文字转形状」入口）：core 已单测，这里只补输入与写回。
+	_build_text_shape_entry(box)
 	# 复合格（MegaCell）：合并/拆分/邻接下钻都在 core，这里只补"进入 / 返回"两个入口。
 	_build_mega_drill(box)
+	# 骨牌划分 / 统计（直方图）/ 配色锁定 —— 三个 core 能力（都已单测）的界面入口。
+	_build_domino_panel(box)
+	_build_stats_panel(box)
+	_build_color_lock_panel(box)
 	scroll.add_child(box)
 	return scroll
 
@@ -2106,18 +2199,85 @@ func _on_shape_selected() -> void:
 	if not _budget_allows(kind, params, est_rows, est_cols):
 		_doc_to_ui()
 		return
+	# 重栅格化（文档 §3「重栅格化的映射」）：手工改过的格**不许静默消失**。
+	# 判据走 core 的 `ShapeReflow.reflow`（grid = **新形状盘**；手工格负载无条件优先），
+	# 先试算一次、把新形状的格集与原格集对一遍：
+	#   · 没有手工格掉出盘外 ⇒ 照旧换形状（自动生成的盘外格按老规矩移走并告知）；
+	#   · 有手工格掉出盘外 ⇒ **先还原成旧形状**，列出来让用户在确认条上自己决定（点头才真换）。
+	var old_kind := doc.shape_kind
+	var old_params := doc.shape_params
+	var old_cells := _board_payload()
 	_push_undo(false)
 	doc.shape_kind = kind
 	doc.shape_params = params
 	doc.sync_size_to_shape()
-	# 换盘型后原来的雷/障碍可能落在盘外：**移走并告知**（画布上没有那个格 ⇒ 留着会变成
-	# "看得见的校验错误 + 看不见的雷"，比移除更糟）。已 `_push_undo`，可一键撤销。
+	var trial: Dictionary = _reflow_trial(old_cells)
+	var dropped_hand: Array = trial["dropped_hand"]
+	if not dropped_hand.is_empty():
+		doc.shape_kind = old_kind
+		doc.shape_params = old_params
+		doc.sync_size_to_shape()
+		_doc_to_ui()
+		_refresh_all()
+		_ask_confirm("换形状会丢掉 %d 个你手工改过的格（新形状盘上没有对应位置）：%s。\n"
+			% [dropped_hand.size(), _fmt_cells_brief(dropped_hand)]
+			+ "点「确认」照换（这些格会被移除、可撤销）；点「取消」保持现在的形状。",
+			func() -> void: _apply_shape_change(kind, params, old_cells))
+		return
+	_apply_shape_change(kind, params, old_cells)
+
+
+## 真的换形状（确认之后走这里）：换完做一次盘外清理与落盘刷新。
+func _apply_shape_change(kind: String, params: Dictionary, old_cells: Dictionary) -> void:
+	_push_undo(false)
+	doc.shape_kind = kind
+	doc.shape_params = params
+	doc.sync_size_to_shape()
+	var kept_hand: Array = _reflow_trial(old_cells)["kept_hand"]
 	var dropped := _drop_off_board()
+	_hand_edited.clear()          # 手工格已经映射过一遍：新一轮从空集重新记
 	_mark_dirty()
 	_doc_to_ui()
 	_refresh_all()
-	if dropped > 0:
+	if not kept_hand.is_empty():
+		_toast("换了形状：保住了 %d 个手工改过的格" % kept_hand.size(), false, 4.0)
+	elif dropped > 0:
 		_toast("换了形状：%d 个盘外格（雷/障碍/翻开）已移除（可撤销）" % dropped)
+
+
+## 盘上"有内容"的格 → 负载（重栅格化的旧格集来源；空盘 ⇒ 空字典，纯计算不建盘）。
+func _board_payload() -> Dictionary:
+	var out: Dictionary = {}
+	if doc == null:
+		return out
+	for m in doc.mines:
+		out[m] = "mine"
+	for o in doc.obstacles:
+		out[o] = "obstacle"
+	for p in doc.revealed.keys():
+		out[p] = "revealed"
+	return out
+
+
+## 重栅格化试算：`ShapeReflow.reflow(新盘, 旧格集, 新格集, 手工格)`（口径见 core/shape_reflow.gd）。
+func _reflow_trial(old_cells: Dictionary) -> Dictionary:
+	var g := doc.grid()
+	var new_cells: Dictionary = {}
+	for p in g.all_positions():
+		new_cells[p] = true
+	return REFLOW.reflow(g, old_cells, new_cells, _hand_edited)
+
+
+## 坐标列表的人话摘要（最多 4 个，其余给个数）——确认条上要能看见"丢的是哪几格"。
+func _fmt_cells_brief(cells: Array) -> String:
+	var parts: Array[String] = []
+	for i in mini(cells.size(), 4):
+		var p: Vector2i = cells[i]
+		parts.append("(%d,%d)" % [p.x, p.y])
+	var s := "、".join(parts)
+	if cells.size() > 4:
+		s += " 等 %d 格" % cells.size()
+	return s
 
 
 ## 移除"不在当前盘上"的雷/障碍/翻开（方阵盘上等效于越界清理；形状盘上还要清形状之外）。
@@ -2244,12 +2404,15 @@ func _on_cell_edit_started(_pos: Vector2i) -> void:
 ## 改一格后的**快路径**：只重算"该格 + 其邻居"的线索值并刷新状态栏；
 ## 昂贵的检查（拓扑审计 / 结构校验）与全量预览合并到去抖里跑（见 `_process`）。
 func _on_cell_edited(pos: Vector2i) -> void:
+	# 手工改过的格记下来：换形状重栅格化时，它是「手工格负载」的唯一来源（ShapeReflow.reflow）。
+	_hand_edited[pos] = true
 	# 对称（Ctrl+G）：单格手势把同一格型镜像到对称位置（见 `_apply_symmetry` 的范围约束）。
 	var mirrored := _apply_symmetry(pos)
 	_sync_declared_total()
 	_mark_dirty()
 	_refresh_preview_around(pos)
 	for mp in mirrored:
+		_hand_edited[mp] = true
 		_refresh_preview_around(mp)
 	_refresh_status()
 	_checks_due = Time.get_ticks_msec() + CHECKS_IDLE_MS
@@ -2315,6 +2478,8 @@ func _undo_once() -> void:
 	if _undo.is_empty():
 		_toast("没有可撤销的操作")
 		return
+	# 撤销/重做会把整份状态换掉 ⇒ 「手工格」集合跟着作废（继续沿用会误报手工格）。
+	_hand_edited.clear()
 	_redo.append(_apply_record(_undo.pop_back()))
 	_doc_to_ui()
 	_mark_dirty()
@@ -2322,6 +2487,7 @@ func _undo_once() -> void:
 
 
 func _redo_once() -> void:
+	_hand_edited.clear()   # 同 _undo_once：换成另一份状态，手工格标记作废
 	if _redo.is_empty():
 		_toast("没有可重做的操作")
 		return
@@ -2632,6 +2798,11 @@ func _refresh_all() -> void:
 	_refresh_open_list()
 	_refresh_global_list()
 	_refresh_mega_ui()
+	# 2026-10-09 接线：行容量 / 统计 / 配色锁定 跟着每一次全量刷新一起更新（都是纯计算，很便宜）。
+	_refresh_row_capacity()
+	_refresh_stats()
+	_refresh_color_lock()
+	_refresh_domino_note()
 
 
 func _refresh_preview() -> void:
@@ -2798,6 +2969,7 @@ func _refresh_open_list() -> void:
 	var keep := _open_opt.selected
 	_open_opt.clear()
 	if dir == null:
+		_fill_open_placeholder()
 		return
 	var names: Array[String] = []
 	for f in dir.get_files():
@@ -2806,9 +2978,382 @@ func _refresh_open_list() -> void:
 	names.sort()
 	for n in names:
 		_open_opt.add_item(n)
+	if _open_opt.item_count == 0:
+		_fill_open_placeholder()
+		return
+
 	if keep >= 0 and keep < _open_opt.item_count:
 		_open_opt.selected = keep
 
+
+## 「还没有存档」的禁用占位项（见 `_refresh_open_list` 的注释）：空 OptionButton 是"无文字无图标"的
+## 空盒子，用户看不出这是什么，UI 回归用例也会判红。
+func _fill_open_placeholder() -> void:
+	if _open_opt == null:
+		return
+	_open_opt.add_item("（还没有保存过的关卡）")
+	_open_opt.set_item_disabled(0, true)
+	_open_opt.selected = 0
+
+
+# ==================== 四象染色预览（文档 §5） ====================
+#
+# 数据全部由 core 算（`ColoringPreview.quadrant_preview`：色号逐格复用 `ConstraintEngine.quadrant_of`），
+# 网格族上四象语义未定义时由「变体×网格矩阵」拒绝；UI 只做两件事：把结果交给画布、把结论/理由说出来。
+
+## 颜色叠加层的层名（与热力图分开：一个看"推理深度"，一个看"四象分区"）。
+const QUAD_OVERLAY := "quadrant"
+
+
+func _set_quad_note(text: String) -> void:
+	if _quad_note == null:
+		return
+	_quad_note.text = text
+	_quad_note.visible = text != ""
+
+
+func _toggle_quadrant_preview() -> void:
+	if _quad_btn == null or canvas == null:
+		return
+	if not _quad_btn.button_pressed:
+		canvas.clear_overlay(QUAD_OVERLAY)
+		_set_quad_note("")
+		return
+	var g := doc.grid()
+	var rep: Dictionary = COLORING.quadrant_preview(g, g.all_positions(), EditorVerify.grid_kind_of(doc))
+	if not bool(rep["ok"]):
+		# 打不开就把开关退回去：不许开关显示"开"、画布上却什么都没有（界面在骗人）。
+		_quad_btn.button_pressed = false
+		_set_quad_note("四象染色预览打不开：%s" % str(rep.get("reason", "")))
+		_toast("四象染色预览打不开：%s" % str(rep.get("reason", "")), true, 8.0)
+		return
+	canvas.set_overlay(QUAD_OVERLAY, rep["cells"], {"colors": COLORING.color_table(), "z": 2, "visible": true})
+	_set_quad_note(COLORING.describe_quadrants(rep))
+	_toast("已打开四象染色预览")
+
+
+# ==================== 行容量侧栏（文档 §5） ====================
+
+func _refresh_row_capacity() -> void:
+	if _row_capacity_label == null or doc == null:
+		return
+	var target := int(_row_target_spin.value) if _row_target_spin != null else 0
+	var rep: Dictionary = COLORING.row_report(doc.grid(), target, doc.mines, EditorVerify.grid_kind_of(doc))
+	var text := COLORING.describe_rows(rep)
+	# 不可行的行要**点名 + 给第一条理由**（只报个数，用户不知道改哪里）。
+	var bad: Array = rep.get("infeasible", [])
+	if not bad.is_empty():
+		for r in rep.get("rows", []):
+			if not bool((r as Dictionary).get("feasible", true)):
+				text += "\n⚠ %s" % str((r as Dictionary).get("reason", ""))
+				break
+	_row_capacity_label.text = text
+
+
+# ==================== 文字转形状（文档 §3「文字转形状」） ====================
+
+func _set_text_shape_note(text: String) -> void:
+	if _text_shape_note != null:
+		_text_shape_note.text = text
+
+
+func _build_text_shape_entry(box: VBoxContainer) -> void:
+	box.add_child(_section_label("文字转形状（打字变成棋盘轮廓）"))
+	box.add_child(_plain_label("打一行字（最多 16 个字符；空格不成形状，会被跳过），点「文字转形状」把它刻成棋盘。\n"
+		+ "字形用**随包字体**栅格化：同一台机器、同一个输入 ⇒ 每次结果一样；放不下会自动调小，并告诉你调到了几像素。"))
+	_text_shape_edit = LineEdit.new()
+	_text_shape_edit.custom_minimum_size = Vector2(0, 30)
+	_text_shape_edit.placeholder_text = "例如：中国 / AB"
+	_text_shape_edit.text_submitted.connect(func(_t: String) -> void: _apply_text_shape())
+	box.add_child(_text_shape_edit)
+	var row := HBoxContainer.new()
+	row.add_child(_plain_label("像素高"))
+	_text_shape_px = _spin(6, 96, 1)
+	_text_shape_px.value = 24
+	row.add_child(_text_shape_px)
+	box.add_child(row)
+	box.add_child(_action_button("文字转形状（写回棋盘）", _apply_text_shape))
+	_text_shape_note = _plain_label("")
+	_text_shape_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(_text_shape_note)
+
+
+## 文字 → 格集 → 写回棋盘。栅格化在 `GlyphFont`（纯 CPU、可单测），写回走既有的
+## `_write_board_shape`（"把格集变成盘型"的唯一入口 ⇒ 撤销/清雷/刷新都不必在这里重写一遍）。
+func _apply_text_shape() -> void:
+	if _text_shape_edit == null or doc == null:
+		return
+	var text := _text_shape_edit.text.strip_edges()
+	var px := int(_text_shape_px.value) if _text_shape_px != null else 16
+	var r: Dictionary = GLYPH_FONT.text_cells_fit(text, doc.grid(), Vector2i.ZERO, px)
+	if not bool(r["ok"]):
+		_set_text_shape_note("转不出形状：%s" % str(r.get("reason", "")))
+		_toast("文字转形状失败：%s" % str(r.get("reason", "")), true, 8.0)
+		return
+	var cells: Array = []
+	for p in (r["cells"] as Dictionary).keys():
+		cells.append(p)
+	cells.sort_custom(_pos_less_xy)
+	# 缩过档 / 跳过空格**必须说出来**（不许静默变形）——这两条都是 core 明确记账的。
+	var extra := ""
+	if bool(r.get("shrunk", false)):
+		extra += "（自动缩小到 %d 像素才放得下）" % int(r.get("used_px", 0))
+	var sp := int(r.get("ignored_spaces", 0))
+	if sp > 0:
+		extra += "（跳过 %d 个空格：空格不成形状）" % sp
+	var w: Dictionary = _write_board_shape(cells, "文字「%s」" % text)
+	_set_text_shape_note("文字「%s」：%d 格%s" % [text, cells.size(), extra])
+	if bool(w.get("ok", false)):
+		_toast("已把「%s」刻成棋盘：%d 格%s" % [text, cells.size(), extra], false, 6.0)
+
+
+# ==================== 骨牌划分编辑器（文档 §5） ====================
+
+func _build_domino_panel(box: VBoxContainer) -> void:
+	box.add_child(_section_label("骨牌划分（1×2 骨牌铺满整盘）"))
+	box.add_child(_plain_label("把整盘用 1×2 / 2×1 骨牌铺满；划分结果会**跟着关卡一起存**（别的变体也能分享它）。\n"
+		+ "面积是奇数、洞格把区域割裂、或存在孤立格时会说明为什么铺不满（逐格给出坐标）。"))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.add_child(_action_button("自动划分骨牌", _auto_partition_dominoes))
+	row.add_child(_action_button("校验现有划分", _verify_dominoes))
+	box.add_child(row)
+	box.add_child(_action_button("清空骨牌划分", _clear_dominoes))
+	_domino_note = _plain_label("")
+	_domino_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(_domino_note)
+	_refresh_domino_note()
+
+
+func _refresh_domino_note() -> void:
+	if _domino_note == null or doc == null:
+		return
+	_domino_note.text = "骨牌划分：当前 %d 块（盖住 %d 格）。" % [
+		doc.dominoes.count(), doc.dominoes.count() * 2]
+
+
+## 自动划分。**有复合格时先拦**：文档「注意事项（复合格 × 变体）」写明骨牌不许跨复合格，
+## 与其给一份半对的结果，不如说清为什么不做。
+func _auto_partition_dominoes() -> void:
+	if doc == null:
+		return
+	if doc.mega_cells != null and doc.mega_cells.count() > 0:
+		_domino_note.text = "骨牌划分暂不支持：本关有 %d 个复合格（骨牌不许跨复合格，先拆开它们或换个变体）。" % doc.mega_cells.count()
+		_toast("有复合格时不做骨牌划分", true, 6.0)
+		return
+	var rep: Dictionary = doc.dominoes.partition(doc.grid())
+	if not bool(rep["ok"]):
+		_domino_note.text = "自动划分失败：%s" % str(rep.get("reason", ""))
+		_toast("骨牌划分失败：%s" % str(rep.get("reason", "")), true, 8.0)
+		return
+	var blocks: Array = rep["blocks"]
+	var items: Array = []
+	var next_id := 1
+	for b in blocks:
+		items.append({"id": next_id, "cells": b})
+		next_id += 1
+	_push_undo(false)
+	doc.dominoes = DOMINO_MODEL.from_dict({
+		"version": DOMINO_MODEL.VERSION, "next_id": next_id, "dominoes": items})
+	_mark_dirty()
+	_refresh_all()
+	_domino_note.text = "已铺满：%d 块骨牌盖住整盘（已存进本关，可撤销）。" % blocks.size()
+	_toast("骨牌划分完成：%d 块" % blocks.size())
+
+
+func _verify_dominoes() -> void:
+	if doc == null:
+		return
+	var blocks: Array = []
+	for rec in doc.dominoes.dominoes():
+		blocks.append((rec as Dictionary)["cells"])
+	if blocks.is_empty():
+		_domino_note.text = "还没有骨牌划分：先点「自动划分骨牌」。"
+		_toast("还没有骨牌划分")
+		return
+	var rep: Dictionary = doc.dominoes.verify_partition(doc.grid(), null, blocks)
+	if bool(rep["ok"]):
+		_domino_note.text = "划分合法：%d 块，每格恰好被盖住一次，且每块都是相邻的 1×2/2×1。" % blocks.size()
+		_toast("骨牌划分合法")
+		return
+	var first := str(rep.get("reason", ""))
+	var errs: Array = rep.get("errors", [])
+	if not errs.is_empty():
+		first = str((errs[0] as Dictionary).get("text", first))
+	_domino_note.text = "划分不合法：%s" % first
+	_toast("骨牌划分不合法", true, 8.0)
+
+
+func _clear_dominoes() -> void:
+	if doc == null:
+		return
+	if doc.dominoes.count() == 0:
+		_toast("现在没有骨牌划分")
+		return
+	_push_undo(false)
+	doc.dominoes.clear_all()
+	_mark_dirty()
+	_refresh_all()
+	_domino_note.text = "已清空骨牌划分。"
+	_toast("已清空骨牌划分")
+
+
+# ==================== 统计面板（文档 §9） ====================
+
+func _build_stats_panel(box: VBoxContainer) -> void:
+	box.add_child(_section_label("统计（雷密度 / 数字分布）"))
+	_stats_note = _plain_label("")
+	_stats_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(_stats_note)
+
+
+func _refresh_stats() -> void:
+	if _stats_note == null or doc == null:
+		return
+	var lv := doc.to_level_json()
+	var dens := HISTOGRAM.mine_density(lv)
+	var h: Dictionary = HISTOGRAM.numbers_histogram([lv])
+	var dens_text := "—" if dens < 0.0 else "%.1f%%" % (dens * 100.0)
+	_stats_note.text = "雷密度：%s（%d 颗 / %d 格）\n数字分布：%s" % [
+		dens_text, doc.mine_count(), doc.cell_count(), HISTOGRAM.describe(h)]
+
+
+# ==================== 配色锁定（文档 §9「变体色锁定」） ====================
+#
+# 判据全在 `EditorDisclosure.lock_report`（同色组 ≥2 个**不同**变体即冲突；色码解析走 PaletteColor）。
+# 登记落在 `custom.variant_colors`：`custom` 是**部分识别容器**（未知子键原样写回）⇒ 跟着关卡存/分享，
+# 游戏侧不认识这个键也不会坏（core/editor_doc.gd 的 custom_passthrough 就是为这种"未来字段"留的）。
+
+func _build_color_lock_panel(box: VBoxContainer) -> void:
+	box.add_child(_section_label("配色锁定（一个颜色不许被两个变体共用）"))
+	box.add_child(_plain_label("给变体登记颜色（色码如 RED / PINK_DARK，或 #ff8800）：同色被两个变体占用时下面会点名。\n"
+		+ "登记写在关卡的 custom.variant_colors 里，跟着关卡一起存、一起分享。"))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	_variant_id_edit = LineEdit.new()
+	_variant_id_edit.custom_minimum_size = Vector2(88, 30)
+	_variant_id_edit.placeholder_text = "变体 id"
+	row.add_child(_variant_id_edit)
+	_variant_color_edit = LineEdit.new()
+	_variant_color_edit.custom_minimum_size = Vector2(88, 30)
+	_variant_color_edit.placeholder_text = "色码"
+	row.add_child(_variant_color_edit)
+	box.add_child(row)
+	box.add_child(_action_button("登记配色", _register_variant_color))
+	_color_lock_note = _plain_label("")
+	_color_lock_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(_color_lock_note)
+	_refresh_color_lock()
+
+
+func _variant_colors() -> Dictionary:
+	if doc == null:
+		return {}
+	var raw: Variant = doc.custom_passthrough.get("variant_colors", {})
+	return raw if raw is Dictionary else {}
+
+
+func _refresh_color_lock() -> void:
+	if _color_lock_note == null or doc == null:
+		return
+	var colors := _variant_colors()
+	if colors.is_empty():
+		_color_lock_note.text = "还没有登记配色：现在没有两个变体抢同一个颜色。"
+		return
+	var rep: Dictionary = DISCLOSURE.lock_report(colors)
+	if bool(rep["ok"]):
+		_color_lock_note.text = "已登记 %d 个变体配色，各自唯一（没有冲突）。" % colors.size()
+		return
+	var lines: Array[String] = []
+	for c in rep.get("conflicts", []):
+		lines.append("%s 被这些变体共用：%s" % [
+			str((c as Dictionary).get("color", "")), str((c as Dictionary).get("variants", []))])
+	_color_lock_note.text = "⚠ 配色冲突：\n" + "\n".join(lines)
+
+
+func _register_variant_color() -> void:
+	if doc == null or _variant_id_edit == null or _variant_color_edit == null:
+		return
+	var id := _variant_id_edit.text.strip_edges()
+	var code := _variant_color_edit.text.strip_edges()
+	if id == "" or code == "":
+		_toast("要先填「变体 id」和「色码」", true)
+		return
+	var colors := _variant_colors()
+	colors[id] = code
+	_push_undo(false)
+	doc.custom_passthrough["variant_colors"] = colors
+	_mark_dirty()
+	_refresh_color_lock()
+	_toast("已登记配色：%s → %s" % [id, code])
+
+
+# ==================== 认证提交（文档 §8，本地队列） ====================
+#
+# 仓库没有网络层与账号体系 ⇒ 只做「入口 + 队列 + 流转状态」，文案写「已加入本地审核队列」，
+# **不假装已上传官方**。状态机与落盘（原子替换）全在 `SubmissionQueue`。
+
+func _refresh_submission() -> void:
+	if _submit_note == null:
+		return
+	var loaded: Dictionary = SUBMISSION_QUEUE.load_items()
+	_submit_note.text = SUBMISSION_QUEUE.status_text(loaded["items"])
+
+
+func _submit_to_queue() -> void:
+	if doc == null:
+		return
+	var note := _submit_note_edit.text if _submit_note_edit != null else ""
+	var r: Dictionary = SUBMISSION_QUEUE.submit(doc.to_level_json(), note)
+	if not bool(r["ok"]):
+		_toast("加入审核队列失败：%s" % str(r.get("reason", "")), true, 8.0)
+		_refresh_submission()
+		return
+	_toast("已加入本地审核队列：%s" % str(r["id"]), false, 6.0)
+	_refresh_submission()
+
+
+# ==================== 简单 / 专家渐进披露（文档「九」「十.6」） ====================
+#
+# 【默认档位的取舍·据此改过】文档建议"简单模式默认隐藏高级概念"，但本仓的界面回归用例是按
+# "全部可见"写的（说明层要能扫到每个按钮、UI 覆盖率用例按可见按钮计数）。为避免一轮接线把既有
+# 200+ 用例打红，这里**默认专家（全部可见）**，切到简单档才折叠 —— 折叠判据仍**单一来源**：
+# `EditorDisclosure.visible_controls`（未知 id 默认可见 ⇒ 漏列的控件不会被误藏）。
+## id → 按钮文字前缀（同一 id 可能有多个入口，如批量生成在主屏与左栏各有一个）。
+const DISCLOSURE_BUTTONS := {
+	"cheat_toggle": ["雷/线索："],
+	"hotmap": ["猜点热力图："],
+	"batch": ["批量生成关卡（按大小 × 档位）", "要做很多关？→ 批量生成关卡"],
+	"template": ["从模板开始（新手照做就有一关）", "用这个模板（铺好棋盘）"],
+}
+
+
+func _toggle_editor_mode() -> void:
+	_expert_mode = not _expert_mode
+	_apply_disclosure()
+	_toast("已切到%s" % ("专家模式：全部功能可见" if _expert_mode else "简单模式：进阶功能已折叠（再点一次切回来）"))
+
+
+func _apply_disclosure() -> void:
+	if _mode_btn != null:
+		_mode_btn.text = "模式：专家（全部功能可见）" if _expert_mode else "模式：简单（进阶功能已隐藏）"
+	var ids: Array = []
+	for k in DISCLOSURE_BUTTONS.keys():
+		ids.append(str(k))
+	var vis: Array = DISCLOSURE.visible_controls(
+		DISCLOSURE.EXPERT if _expert_mode else DISCLOSURE.SIMPLE, ids)
+	for id in ids:
+		var show := vis.has(id)
+		for prefix in (DISCLOSURE_BUTTONS[id] as Array):
+			for c in find_children("*", "Button", true, false):
+				var b := c as Button
+				if b != null and b.text.begins_with(str(prefix)):
+					b.visible = show
+			# 同名的分组标题一起折叠：否则只剩一个标题、下面空着（看着像坏了）。
+			for c2 in find_children("*", "Label", true, false):
+				var lb := c2 as Label
+				if lb != null and lb.text == str(prefix):
+					lb.visible = show
 
 # ==================== 批量生成（P6） ====================
 #
@@ -3874,7 +4419,8 @@ func _target_save_path() -> String:
 
 
 func _open_selected() -> void:
-	if _open_opt.item_count == 0:
+	# 占位项（item_count==1 但 disabled）也不能被当成可打开的存档。
+	if _open_opt.item_count == 0 or _open_opt.is_item_disabled(_open_opt.selected):
 		_toast("还没有保存过的关卡——先按左上角「保存」", true)
 		return
 	var path := EDITOR_DIR.path_join(_open_opt.get_item_text(_open_opt.selected))
