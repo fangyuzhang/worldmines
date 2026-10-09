@@ -105,7 +105,7 @@ func test_no_generator_writes_palette_without_theme_marks() -> void:
 	var files := [
 		"res://tools/gen_shape_levels.gd", "res://tools/gen_style_shape_levels.gd",
 		"res://tools/gen_geo_levels.gd", "res://tools/gen_iso_cubes_levels.gd",
-		"res://tools/gen_variant_shape_levels.gd",
+		"res://tools/gen_variant_shape_levels.gd", "res://tools/gen_wormhole_levels.gd",
 	]
 	var missing: Array[String] = []
 	for p in files:

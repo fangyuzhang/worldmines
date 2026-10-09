@@ -53,7 +53,7 @@ $map = @{
     'theme_manager'  = @('test_ui_mounts')
     'progress_store' = @('test_progress_store')
     'save_coordinator' = @('test_save_coordinator')
-    'board_view'     = @('test_single_cell_pop', 'test_wave_stagger', 'test_progress_check')
+    'board_view'     = @('test_single_cell_pop', 'test_wave_stagger', 'test_progress_check', 'test_topology_view')
     'puzzle_generator' = @('test_generator_multifaceted', 'test_solver_budget')
     'rule_registry'  = @('test_rule_platform', 'test_spec_schema')
     # 【2026-10-03 补】新增 core 模块长期没进映射表 ⇒ 改了它们却"映射不到用例"，
@@ -106,6 +106,14 @@ $map = @{
     'shape_fill'     = @('test_shape_fill')
     # 2026-10-09 补：边缘平滑（腐蚀 / 膨胀）的「连通区域数量不变」硬校验（文档 §3）——判据 + UI 接线。
     'shape_smooth'   = @('test_shape_smooth')
+    # 2026-10-09 补：拓扑族（安全门 + 呈现）——改任一拓扑相关文件都要重跑这组用例。
+    'topology_model' = @('test_topology_model', 'test_topology_view', 'test_wormhole_levels', 'test_level_loader_topology_gate')
+    'wrap_topology'  = @('test_topology_model', 'test_wrap_topology', 'test_level_loader_topology_gate')
+    'level_loader'   = @('test_level_loader', 'test_level_loader_topology_gate', 'test_wormhole_levels')
+    # 2026-10-09 补：虫洞关生成器（离线工具）——改它要重跑产线门禁与虫洞关门禁。
+    'gen_wormhole_levels' = @('test_wormhole_levels', 'test_gen_param_parity')
+    # 2026-10-09 补：主题/纹理规则表（新增形状族 kind 时要同步）。
+    'theme_marks'    = @('test_theme_marks', 'test_level_naming_contract', 'test_palette_color')
     'hud'            = @('test_ui_rework_contract', 'test_board_view_interaction', 'test_progress_check')
     'game_session'   = @('test_board_view_interaction', 'test_ui_rework_contract', 'test_progress_check')
 }

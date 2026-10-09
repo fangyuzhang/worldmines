@@ -2987,6 +2987,8 @@ func _draw_topology_hints() -> void:
 	var kind := str(meta.get("kind", ""))
 	if kind == TopologyModel.VIEW_WRAP:
 		_draw_wrap_hints()
+	elif kind == TopologyModel.VIEW_WORMHOLE:
+		_draw_wormhole_hints()
 
 
 ## 环绕盘：一圈虚线「回卷边框」+ 四条边的双向箭头 +（悬停到边格时）穿过边界的虚线通道。
@@ -3085,6 +3087,121 @@ func _frame_exit_point(from: Vector2, dir: Vector2, frame: Rect2) -> Vector2:
 	elif dir.y < 0.0:
 		out.y = frame.position.y
 	return out
+
+
+## —— 虫洞呈现 ——
+## 【为什么需要】虫洞是"屏幕远、邻接近"的边：(0,0) 的线索数把 (7,7) 也算进去，
+## 不画出来玩家只会当成数错。所以：两端常驻"洞口徽章"（同色 = 同一根管子），
+## 悬停任一端时把管子**当场连起来**（虚线 + 对端放大 + 对端描边）。
+## 【为什么不常驻画线】多对虫洞的连线会互相交叉成一团乱麻；徽章已经能"常驻回答"
+## 谁和谁一对（同色 + 同序号），连线只在玩家主动看的时候出现。
+func _draw_wormhole_hints() -> void:
+	var meta := _view_meta()
+	var raw: Variant = meta.get("portals", [])
+	if not (raw is Array):
+		return
+	var portals: Array = raw
+	if portals.is_empty():
+		return
+	var b: Board = GameSession.board
+	if b == null or b.grid == null:
+		return
+	var grid: GridInterface = b.grid
+	var count := portals.size()
+	var hit: Dictionary = {}
+	for i in count:
+		var item_v: Variant = portals[i]
+		if not (item_v is Dictionary):
+			continue
+		var item: Dictionary = item_v
+		var a_v: Variant = TopologyModel.parse_pos(item.get("a", null))
+		var b_v: Variant = TopologyModel.parse_pos(item.get("b", null))
+		if a_v == null or b_v == null:
+			continue
+		var pa: Vector2i = a_v
+		var pb: Vector2i = b_v
+		if not grid.in_board(pa) or not grid.in_board(pb):
+			continue
+		var col := _portal_color(i, count)
+		_draw_portal_badge(pa, col, 1.0)
+		_draw_portal_badge(pb, col, 1.0)
+		if hover_pos == pa or hover_pos == pb:
+			hit = {"a": pa, "b": pb, "col": col}
+	if hit.is_empty():
+		return
+	var ha: Vector2i = hit["a"]
+	var hb: Vector2i = hit["b"]
+	var hc: Color = hit["col"]
+	var other: Vector2i = hb if hover_pos == ha else ha
+	_draw_portal_tunnel(ha, hb, hc)
+	_draw_portal_badge(other, hc, 1.8)
+	_draw_cell_outline(other, hc, 2.5, 1.0)
+
+
+## 一对虫洞一种颜色：从主题强调色出发按黄金角散开（任意对数都分得开、又不离主题太远）。
+func _portal_color(i: int, count: int) -> Color:
+	var base := ThemeManager.accent()
+	var hue := fposmod(base.h + float(i) * 0.6180339887, 1.0)
+	var sat := clampf(maxf(base.s, 0.55), 0.0, 1.0)
+	var val := clampf(maxf(base.v, 0.88), 0.0, 1.0)
+	var col := Color.from_hsv(hue, sat, val, 1.0)
+	col.a = clampf(maxf(base.a, 0.9), 0.0, 1.0)
+	return col
+
+
+## 洞口徽章的圆心（纯几何，供绘制与测试共用）：格内左上角，避让数字所在的中宫。
+func _portal_badge_at(pos: Vector2i) -> Vector2:
+	var r := _cell_rect(pos)
+	return r.position + Vector2(r.size.x, r.size.y) * 0.24
+
+
+## 洞口徽章半径（纯几何）：随格宽缩放、有下限，再乘 hover 放大系数。
+func _portal_badge_radius(pos: Vector2i, mul: float) -> float:
+	var r := _cell_rect(pos)
+	return maxf(3.0, minf(r.size.x, r.size.y) * 0.15) * mul
+
+
+## 虫洞通道折线（纯几何）：两端格心之间一条轻微外弓的二次贝塞尔——外弓是为了不和网格线读混。
+## 拆成纯函数是为了让"通道真的连到两端格心、且中点确实外弓"可以被断言（见 test_topology_view）。
+func _portal_tunnel_points(a: Vector2i, b: Vector2i) -> PackedVector2Array:
+	var pa := _cell_center(a)
+	var pb := _cell_center(b)
+	var d := pb - pa
+	var seg := 26
+	var ctrl := (pa + pb) * 0.5
+	if d.length() > 0.001:
+		var n := Vector2(-d.y, d.x).normalized()
+		ctrl += n * minf(d.length() * 0.11, maxf(6.0, float(cell_px) * 1.4))
+	var pts := PackedVector2Array()
+	for k in seg + 1:
+		var t := float(k) / float(seg)
+		pts.append(pa.lerp(ctrl, t).lerp(ctrl.lerp(pb, t), t))
+	return pts
+
+
+## 洞口徽章：格内左上角的"甜甜圈"（实心外环 + 深色内孔）——读作一个洞，不抢数字的位置。
+func _draw_portal_badge(pos: Vector2i, col: Color, mul: float) -> void:
+	var r := _cell_rect(pos)
+	if r.size.x <= 0.0:
+		return
+	var at := _portal_badge_at(pos)
+	var rad := _portal_badge_radius(pos, mul)
+	draw_circle(at, rad, col)
+	var ring := Color(0.0, 0.0, 0.0, clampf(col.a * 0.55, 0.0, 1.0))
+	draw_arc(at, rad, 0.0, TAU, 20, ring, maxf(1.0, rad * 0.30), true)
+	draw_circle(at, maxf(1.0, rad * 0.42), Color(0.0, 0.0, 0.0, clampf(col.a * 0.78, 0.0, 1.0)))
+
+
+## 虫洞通道：两端格心之间一条轻微外弓的粗线（几何见 _portal_tunnel_points）。
+func _draw_portal_tunnel(a: Vector2i, b: Vector2i, col: Color) -> void:
+	var pts := _portal_tunnel_points(a, b)
+	var lw := maxf(1.5, float(cell_px) * 0.08)
+	var glow := col
+	glow.a = clampf(col.a * 0.22, 0.0, 1.0)
+	draw_polyline(pts, glow, lw * 2.8, true)
+	draw_polyline(pts, col, lw, true)
+	draw_circle(pts[0], lw * 0.85, col)
+	draw_circle(pts[pts.size() - 1], lw * 0.85, col)
 
 
 func _draw_custom_highlights() -> void:

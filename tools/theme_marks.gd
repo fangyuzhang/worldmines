@@ -57,6 +57,9 @@ const BY_KIND := {
 	"poly_set": "PINK",
 	"iso_cubes": "GREY",
 	"mask": "VIOLET",
+	# 虫洞族（tools/gen_wormhole_levels.gd）：深蓝紫 —— 「管子/隧道」的稳定色相，
+	# 与其它族不撞色。不给它登记 = 生成器写出的 palette 过不了全库 theme 门禁。
+	"wormhole": "INDIGO",
 }
 
 ## 纯风格族（同一 kind 有多关）的**逐关轮转**色表。
