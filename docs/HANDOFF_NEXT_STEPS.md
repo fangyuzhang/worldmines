@@ -1,8 +1,9 @@
 # 下一步要做什么（交接清单）
 
 > 承接：`HANDOFF_START_HERE.md`（先按它把环境和工程还原好，并跑通门禁）
-> 代码基线：`main` @ `2ed67db`（折纸族 + 折痕编辑器入口；文档更新提交在其后，`git log` 可见）；门禁 **GREEN**（2026-10-09 实测）：
-> unit **215 脚本 / 1638 用例 / 92651 断言**、ui **34 脚本 / 232 用例 / 8581 断言**、build **0 警告 0 错误**
+> 代码基线：`main` @ `b4705c4`（折纸族 + 折痕编辑器入口 + **编辑器 UI 框架重构**；文档更新提交在其后，`git log` 可见）；
+> 门禁 **GREEN**（2026-10-09 实测）：unit **215 脚本 / 1645 用例 / 92800 断言**、
+> ui **34 脚本 / 232 用例 / 8581 断言**、build **0 警告 0 错误**
 
 ---
 
@@ -19,6 +20,7 @@
 | 自定义格形（§3） | 六边形 / 三角形 / **Voronoi** 三族齐；每族**四处登记齐活**才算接线：`to_adjacency_grid` + `EditorDoc.estimate_cells` + `VariantGridMatrix` + `AdjacencyBuilder.from_tiling`；UI 形状下拉 6→8 项（含等轴菱面错觉盘） |
 | 拓扑玩法（第五期） | 虫洞配对 → 环绕盘 → 形状安全门 → 不可能几何（等轴菱面）→ 静态折叠 → **折纸族（多折痕顺序折叠）**；`core/fold_model.gd` / `topology_model.gd` 已进加载/呈现/生成器，`fold_01..12` 共 12 张折叠官方关；编辑器属性页已补折痕**加/删**面板与画布折线 |
 | 计算内存（§G） | 空间哈希（`core/shape_fill.gd` 只按整数格集做碰撞，无 O(N²) 多边形对；`ShapeBoolean.MAX_CELL_BUDGET` 前置硬阻）、**换形状滑杆去抖**（`ui/level_editor.gd` 的 `SHAPE_COALESCE_MS` / `_on_shape_size_changed` / `_shape_change_due`：拖动只登记待办，`_process` 合并成一次；离散换族立即执行并清空待办 —— 文档 §G4「新任务入队即取消排队中未开始的旧任务」在本仓**同步路径**上的等价实现，有 3 个用例钉住） |
+| 编辑器 UI 框架（第九轮） | **常驻顶栏**（关卡名 + 未保存星号 + 撤销/重做/试玩/保存/说明/返回选关，`_build_editor_topbar` / `_refresh_topbar_title`）+ 左右栏统一升级成**可折叠组**（`_wrap_collapsible_group` / `_bind_collapsible` / `_set_props_groups_collapsed`，属性页再给"展开全部/收起全部"）+ 左栏流程按钮 2×2；实测左栏内容 3200→1721px、属性页 5000+→1795px、画布 702×632（1280×720）；左栏里重复的撤销/重做/返回选关已删（全局动作单一来源 = 顶栏） |
 | 门禁工具 | `tools/gut_shards.ps1`（**并行分片** + 碰 `user://` 文件自动串行片 + **缺摘要分片定向重跑** + 红时保留证据 + `-SimulateMissingShard` 自测开关）、`tools/ci_quick.ps1`（增量门禁）、`tools/ci_lock.ps1`（跨进程锁） |
 
 **关键性能事实**：门禁从早期 **420 s 单进程串行** 降到 **≈160~250 s**（unit 10 片并行 + ui 3 片；`test/ui` 里 15 个有状态文件走串行片独占约 235 s，是时长主因）。
@@ -55,6 +57,20 @@
 - Windows Defender 排除（见 `START_HERE.md` §4）；
 - `core/domino_model.gd` 的 `place()` 已统一为**正交 1×2/2×1**（对角不再算合法骨牌）——若有历史存档含对角骨牌，`validate` 会报 `not_adjacent`，属**预期**（脏数据现形，而非静默放过）。
 
+### B4（低）编辑器 UI 还能再往前一步（本轮已做完骨架，下面是余量）
+> 本轮（`b4705c4`）把"结构"问题解决了：全局动作进顶栏、左右栏都变成可折叠组、属性页默认只展开核心 6 组。
+> 剩下的都是**观感/便利**层面，不是"能不能用"层面；动它们前先跑 `tools\ci_quick.ps1`（`level_editor` 已映射）。
+- **分组标题的视觉层级**：现在靠"面板框 + ▸/▾"区分，标题与正文同色同字重。若要更像正经软件，
+  给组标题加一条左侧强调色竖条（新增节点必须让**组标题仍是 `inner` 的第 0 个子节点** ——
+  `test_left_bar_groups_each_get_a_visible_frame` 按 `h.get_index() == 0` 断言）；
+- **属性页再分层**：10 个高级组默认收起后仍与核心组同列（16 个标题一列排下来）。
+  若要做成"基础 / 异形工具 / 分享"三段，**别新增 TabContainer** —— `test_first_tab_is_named_in_plain_chinese`
+  与 `test_level_editor_smoke.gd` 都按"唯一 TabContainer + 4 页"断言，新增页要先改这两条契约；
+- **记住展开状态**：现在每次打开都是"核心展开、高级收起"。若用户授权，可以把每个组的开合状态
+  存进 `user://` 下的 editor 配置（与 `_dirty` 无关，别写进关卡存档）；
+- **左栏 1721px vs 视口 635px**：工具组仍要滚 2.7 屏。真要再省，得把"工具 / 格型"合并成一排图标按钮
+  （有测试按按钮宽度 ≥60px 兜底：`test_no_button_is_squeezed_into_an_empty_box`）。
+
 ---
 
 ## C. 在这个仓库上工作的规则（血泪版，建议照做）
@@ -87,7 +103,7 @@
 ## D. 常用命令速查
 
 ```powershell
-# 全量门禁（判定：CI GREEN + unit 215/1638 + ui 34/232 + build 0 警告 0 错误）
+# 全量门禁（判定：CI GREEN + unit 215/1645 + ui 34/232 + build 0 警告 0 错误）
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\ci_check.ps1
 
 # 增量门禁（日常迭代）
