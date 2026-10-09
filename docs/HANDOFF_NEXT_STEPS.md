@@ -1,7 +1,8 @@
 # 下一步要做什么（交接清单）
 
 > 承接：`HANDOFF_START_HERE.md`（先按它把环境和工程还原好，并跑通门禁）
-> 基线：`main` @ 备份前最后一次提交（`git log -1` 可见）；门禁 **GREEN**：unit 201 脚本/1473 用例、ui 33/212、build 0 警告 0 错误
+> 基线：`main` @ `6580c43`（`git log -1` 可见）；门禁 **GREEN**（2026-10-09 实测）：
+> unit **209 脚本 / 1578 用例 / 89757 断言**、ui **33 脚本 / 212 用例 / 7976 断言**、build **0 警告 0 错误**
 
 ---
 
@@ -12,36 +13,40 @@
 | 轮次 | 内容 |
 |---|---|
 | 编辑器数据爆炸防线 | 格子双档预算（事前估算硬阻）、邻接上限、组合熔断、撤销 diff/快照分离、**手绘点数上限 + Douglas-Peucker 抽稀 + 坐标量化（v3 兼容）**、**快照 md5 去重 + 全局配额**、ProofLog 体积上限 + 截断标记、导入总量闸门、存档原子写 |
-| 形状与生成 | 环形（annulus）/ 正 N 边形生成器、**栅格化三档精度**（默认档与旧行为**逐格一致**，有测试钉住）、腐蚀/膨胀、**变体×网格矩阵**被 `editor_verify` 消费、`ngon/annulus` 登记进 `estimate_cells` 与矩阵 |
-| 编辑器功能接线 | **形状布尔 / 形状 DAG（含环检测拒绝理由显示）/ 修复建议（1~3 修法 + 一键应用）/ 短码分享** 接进 UI；快捷键全套 + 绑定表存储；Mega 复合格**下钻 UI**；问题面板**三级**；热力图改用画布叠加 API |
-| 新模块（core + 测试齐） | `core/shape_reflow.gd`（重栅格化保留手工格）、`core/domino_model.gd` 骨牌**划分/校验**、`core/text_to_shape.gd`（文字/手绘→形状）、`core/stats_histogram.gd`、`core/editor_disclosure.gd`（渐进披露 + 配色锁定）、`core/file_lock.gd`（存档占用锁）、`core/level_thumbnail.gd`（数据缩略图）、`core/stroke_limits.gd`（笔迹常量单源） |
+| 形状与生成 | 环形（annulus）/ 正 N 边形生成器、**栅格化三档精度**（默认档与旧行为**逐格一致**，有测试钉住）、**边缘平滑（腐蚀/膨胀，连通区域守恒是硬闸）**、**Voronoi 不规则镶嵌**（抖动晶格撒种 → 多源 BFS → 矩形化边界；种子 1/65536 量化 + 回显）、**变体×网格矩阵**与**变体×复合格矩阵**均被 `editor_verify` 消费 |
+| 编辑器功能接线 | **形状布尔 / 形状 DAG（含环检测拒绝理由显示）/ 修复建议（1~3 修法 + 一键应用）/ 短码分享 / 只读分享 / 认证提交（本地审核队列 + 流转状态）/ 文字→形状 / 四象染色预览 / 行容量侧栏 / 统计直方图 / 配色锁定 / 简单-专家渐进披露 / 重栅格化保留手工格 / 试玩「检查进度」** 接进 UI；快捷键全套 + 绑定表存储；Mega 复合格**下钻 UI**；问题面板**三级**；热力图改用画布叠加 API |
+| 新模块（core + 测试齐） | `core/shape_reflow.gd`（重栅格化保留手工格）、`core/domino_model.gd` 骨牌**划分/校验**、`core/text_to_shape.gd`（文字/手绘→形状）、`core/stats_histogram.gd`、`core/editor_disclosure.gd`（渐进披露 + 配色锁定）、`core/file_lock.gd`（存档占用锁）、`core/level_thumbnail.gd`（数据缩略图）、`core/stroke_limits.gd`（笔迹常量单源）、`core/mega_variant_matrix.gd`（复合格 × 变体门禁表） |
+| 自定义格形（§3） | 六边形 / 三角形 / **Voronoi** 三族齐；每族**四处登记齐活**才算接线：`to_adjacency_grid` + `EditorDoc.estimate_cells` + `VariantGridMatrix` + `AdjacencyBuilder.from_tiling`；UI 形状下拉 6→7 项 |
+| 计算内存（§G） | 空间哈希（`core/shape_fill.gd` 只按整数格集做碰撞，无 O(N²) 多边形对；`ShapeBoolean.MAX_CELL_BUDGET` 前置硬阻）、**换形状滑杆去抖**（`ui/level_editor.gd` 的 `SHAPE_COALESCE_MS` / `_on_shape_size_changed` / `_shape_change_due`：拖动只登记待办，`_process` 合并成一次；离散换族立即执行并清空待办 —— 文档 §G4「新任务入队即取消排队中未开始的旧任务」在本仓**同步路径**上的等价实现，有 3 个用例钉住） |
 | 门禁工具 | `tools/gut_shards.ps1`（**并行分片** + 碰 `user://` 文件自动串行片 + **缺摘要分片定向重跑** + 红时保留证据 + `-SimulateMissingShard` 自测开关）、`tools/ci_quick.ps1`（增量门禁）、`tools/ci_lock.ps1`（跨进程锁） |
 
 **关键性能事实**：门禁从早期 **420 s 单进程串行** 降到 **≈160~250 s**（unit 10 片并行 + ui 3 片；`test/ui` 里 15 个有状态文件走串行片独占约 235 s，是时长主因）。
 
 ---
 
-## B. 还没做（按优先级；每条都给了落点）
+## B. 已完成 / 还没做（按优先级；每条都给了落点）
 
-### B1（高）UI 接线余项 —— 对应的 **core 能力与测试都已就绪**，只缺界面入口
-| 项 | core 已就绪 | 建议落点 |
-|---|---|---|
-| **骨牌划分编辑器** | `DominoModel.partition(grid, region)` / `verify_partition(...)`（`core/domino_model.gd:304/:360`，测试 `test/unit/test_domino_partition.gd`） | `ui/level_editor.gd`（新增一个页签或属性区） |
-| **文字 / 手绘轮廓 → 形状 入口** | `TTS.text_to_cells(text, font_mask, scale, grid, origin)` / `outline_to_cells(points, grid, tolerance)`（`core/text_to_shape.gd:62/:119`） | 形状面板 + `ui/drawing_layer.gd` 的手绘完成回调 |
-| **重栅格化保留手工格** | `ShapeReflow.reflow(grid, old_cells, new_cells, hand_edited)` / `describe_reflow`（`core/shape_reflow.gd`）。**接线口径已定**：`grid` 传**新形状盘对象**；手工格负载**无条件优先** | 形状切换/参数变更路径（原来只做"丢弃盘外格"） |
-| **直方图面板** | `StatsHistogram.histogram(values, buckets, min, max)` / `describe`（`core/stats_histogram.gd:36/:108`） | 统计面板 |
-| **配色锁定提示** | `EditorDisclosure.lock_report(variants_with_colors)`（`core/editor_disclosure.gd:121`） | 变体/配色面板 |
-| **简单-专家渐进披露** | `EditorDisclosure.visible_controls(mode, ids)`（`core/editor_disclosure.gd:69`，未知 id 策略 = **fail-visible**） | 编辑器初始化时统一 `set_visible` |
-| 四象染色预览 / 行容量侧栏 | —（尚未实现） | `ui/level_editor.gd` |
-| **检查进度（标记插错的旗）** | —（尚未实现；现有格型见 `ui/editor_canvas.gd` 的格型枚举） | 需新增一种"标记"格型 + 试玩侧统计 |
-| 只读分享 / 认证提交入口 | `core/share_code.gd` 已有导入导出 | 分享面板 |
+### B1（高）UI 接线余项 —— **已完成**（2026-10-09；下表是留档的落点索引，用户视角已可见）
+| 项 | 落地位置（以代码为准） |
+|---|---|
+| **骨牌划分编辑器** | `ui/level_editor.gd` 的 `_build_domino_panel`（结论常驻，失败给逐格坐标） |
+| **文字 / 手绘轮廓 → 形状 入口** | `ui/level_editor.gd` 的 `_build_text_shape_entry` + `ui/editor_canvas.gd` 手绘完成回调（放不下会自动降档并**说出来**） |
+| **重栅格化保留手工格** | `ui/level_editor.gd` 的 `_apply_shape_change` / `_reflow_trial`（`ShapeReflow.reflow`；有手工格会掉出盘外时**先还原旧形状**再让用户确认） |
+| **直方图面板** | `ui/level_editor.gd` 的 `_build_stats_panel`（雷密度 + 数字分布） |
+| **配色锁定提示** | `ui/level_editor.gd` 的 `_build_color_lock_panel`（同色组 ≥2 个不同变体即冲突） |
+| **简单-专家渐进披露** | `ui/level_editor.gd` 的 `_apply_disclosure`（未知 id = **fail-visible**，漏列控件不会被误藏） |
+| **四象染色预览 / 行容量侧栏** | 预览开关在 `_build_left_bar`、`_toggle_quadrant_preview`（色号走 `ConstraintEngine.quadrant_of`）；行容量在 `_build_props_tab`（可行性走 `ColoringPreview.row_report`，行语义未定义的族由矩阵门禁拒绝） |
+| **检查进度（标记插错的旗）** | 试玩态：`ui/hud.gd` 发信号 → `ui/board_view.gd` 标/清（判据 `core/progress_check.gd`；红叉与终局**共用同一支笔**）。**仅试玩态可用**（硬约束） |
+| **只读分享 / 认证提交入口** | 短码分享面板（`_export_share_code` / `_import_share_code` / `_enter_read_only_share`）；认证提交 = `SubmissionQueue` 本地队列 + 流转状态（**不假装联网**） |
 
-> ⚠ 两个已定但**尚未接线**的口径，接线时不要改：① `shape_reflow` 的 `grid` = 新形状盘；② `ShapeDag` 的 `ring` = **annulus**，而 `to_adjacency_grid` 的 `"ring"` = **同心环盘**（同名不同义！UI 必须**按 `builder_name` 派发**，见 `ui/level_editor.gd` 的 `_call_shape_builder`）。
+> ⚠ 两个已定口径，**已接线**但仍不许改：① `shape_reflow` 的 `grid` = 新形状盘；② `ShapeDag` 的 `ring` = **annulus**，而 `to_adjacency_grid` 的 `"ring"` = **同心环盘**（同名不同义！UI 必须**按 `builder_name` 派发**，见 `ui/level_editor.gd` 的 `_call_shape_builder`）。
 
-### B2（需你拍板）`probe40` 类重用例的优化
+### B2（已决策：不动）`probe40` 类重用例的优化
 `test/ui/test_probe40_roundtrip.gd` 单文件 180~390 s（负载敏感），它是 `test/ui` 串行片的主要耗时。
 - 可动的地方：每关"双生成"改"首关双生成 + 其余单生成"、60 s 预算改 20 s 超时即记 pending、`ui_9x9_timeout_budget` 3 seed 改 1 个等；
-- **代价**：这些都是**验证强度取舍**（60 s 预算是当初为消除"机器忙就随机红"故意放宽的），**需要你点头**，负责人不应擅自改。
+- **代价**：这些都是**验证强度取舍**（60 s 预算是当初为消除"机器忙就随机红"故意放宽的），属验证强度取舍。
+- **决策（2026-10-09）**：**不削弱**。用户虽已授权自行拍板，但本项与 code.md 功能清单无关（只是门禁时长优化），
+  而降低预算会把"机器忙就随机红"重新引回来 —— **维持现状**；若将来 CI 时长成为瓶颈，再按上面三个旋钮单独评估。
 
 ### B3（低）其它
 - 门禁里 `dotnet build` 每次都跑（约 3.5 s）：可改成"仅 `.cs` 变更时跑"（收益小，我判断不值得）；
@@ -80,7 +85,7 @@
 ## D. 常用命令速查
 
 ```powershell
-# 全量门禁（判定：CI GREEN + unit 201/1473 + ui 33/212 + build 0 警告 0 错误）
+# 全量门禁（判定：CI GREEN + unit 209/1578 + ui 33/212 + build 0 警告 0 错误）
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\ci_check.ps1
 
 # 增量门禁（日常迭代）

@@ -265,3 +265,68 @@ func test_shape_dropdown_blocks_over_budget_request() -> void:
 	assert_eq(d.shape_kind, "", "超预算选择必须被闸门拦住：doc.shape_kind 不得改动")
 	assert_eq(d.shape_params, {}, "超预算选择必须被闸门拦住：doc.shape_params 不得写入")
 	assert_eq(opt.selected, 0, "被拦后下拉应被拉回文档当前值（方阵）")
+# ==================== D. 任务取消 / 去抖（文档 §G4「任务取消机制」/ §G6） ====================
+#
+# 场景：用户连续拖「形状尺寸」滑杆。若每个 `value_changed` 都跑一次全盘重栅格化，盘一大
+# 就会把拖动拖成灾难（code.md §G4 原话）。契约：
+#   · 拖动只登记去抖待办，**不逐 tick 重算**；
+#   · 到期由 `_process` 合并成**一次**重算（连拖若干次只留最后一个值 = 取消旧任务）；
+#   · 离散换族（下拉）立即生效并清空待办（= 取消排队中未开始的旧任务）。
+
+func _shape_due_ms(ed: Object) -> int:
+	return int(ed.get("_shape_change_due"))
+
+
+func test_shape_size_drag_is_debounced_not_applied_per_tick() -> void:
+	var ed := _make_editor()
+	var d := EditorDoc.new(9, 9)
+	ed.doc = d
+	ed.call("_doc_to_ui")
+	var opt := ed.get("_shape_opt") as OptionButton
+	var sb := ed.get("_shape_size") as SpinBox
+	opt.selected = 3                       # 圆
+	sb.value = 5                           # 模拟拖动滑杆（不是离散选择）
+	assert_gt(_shape_due_ms(ed), 0, "拖滑杆应登记去抖待办，而不是立刻重算")
+	assert_eq(d.shape_kind, "", "拖动过程中不得逐 tick 直接重建盘（文档 §G4）")
+	# 把待办拨到过去 ⇒ 模拟去抖窗口走完，由 `_process` 合并执行一次。
+	ed.set("_shape_change_due", 1)
+	ed.call("_process", 0.016)
+	assert_eq(d.shape_kind, "circle", "去抖到期后应真的换形状")
+	assert_eq(int(d.shape_params.get("radius", -1)), 5, "应写入最后读到的尺寸")
+	assert_eq(_shape_due_ms(ed), 0, "消费后待办必须清零（否则每帧重复重算）")
+
+
+func test_shape_size_drag_coalesces_to_last_value() -> void:
+	var ed := _make_editor()
+	var d := EditorDoc.new(9, 9)
+	ed.doc = d
+	ed.call("_doc_to_ui")
+	var opt := ed.get("_shape_opt") as OptionButton
+	var sb := ed.get("_shape_size") as SpinBox
+	opt.selected = 3
+	sb.value = 6
+	sb.value = 7
+	sb.value = 8
+	ed.set("_shape_change_due", 1)
+	ed.call("_process", 0.016)
+	assert_eq(int(d.shape_params.get("radius", -1)), 8,
+			"连续拖动只保留最后一个值：排队中未开始的旧任务必须被取消（文档 §G4）")
+
+
+func test_shape_kind_switch_cancels_pending_size_task() -> void:
+	var ed := _make_editor()
+	var d := EditorDoc.new(9, 9)
+	ed.doc = d
+	ed.call("_doc_to_ui")
+	var opt := ed.get("_shape_opt") as OptionButton
+	var sb := ed.get("_shape_size") as SpinBox
+	opt.selected = 3
+	sb.value = 5
+	assert_gt(_shape_due_ms(ed), 0, "先拖滑杆 ⇒ 应有排队中未开始的待办")
+	opt.selected = 4                       # 星形（下拉 item_selected 的落点）
+	ed.call("_on_shape_selected")
+	assert_eq(d.shape_kind, "star", "离散换族必须立即生效")
+	assert_eq(_shape_due_ms(ed), 0, "立即执行必须取消排队中未开始的旧任务")
+	# 再走一遍 `_process`：旧任务若没被取消，会把形状补写成圆。
+	ed.call("_process", 0.016)
+	assert_eq(d.shape_kind, "star", "旧任务不许在新选择之后补跑")

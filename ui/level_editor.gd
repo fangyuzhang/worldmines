@@ -103,6 +103,10 @@ const PERF_FRAME_BUDGET_MS := EditorVerify.DEFAULT_TOTAL_BUDGET_MS
 ## 实测（64x64 环绕盘 / 400 雷）：全量预览 101 ms、`grid()` 91 ms、拓扑审计更贵 ⇒
 ## 每改一格都跑一遍会让拖动直接卡死；去抖后编辑路径只剩"增量重算 ≤9 格"。
 const CHECKS_IDLE_MS := 260
+## 「形状尺寸」滑杆的去抖窗口（毫秒，文档 §G4「任务取消机制」/ §G6「任务取消与去抖」）。
+## 拖动滑杆时每个 `value_changed` 都跑一次全盘重栅格化 = 拖动卡死（盘越大越明显）⇒
+## 只登记「到期时间」、由 `_process` 合并成一次；换族下拉（离散选择）仍立即生效。
+const SHAPE_COALESCE_MS := 180
 
 var doc: EditorDoc
 var canvas: EditorCanvas
@@ -116,6 +120,11 @@ var _last_change_ms := 0
 # 去抖待办（0 = 无）：昂贵检查与全量预览不能每敲一个字符/每画一格就跑
 var _checks_due := 0
 var _full_preview_due := 0
+## 换形状的去抖待办（0 = 无）：拖动「形状尺寸」滑杆时只保留**最后一个**任务。
+## 文档 §G4 要求「新任务入队即取消所有排队中未开始的旧任务」——本仓换形状是同步路径
+## （没有任务队列），故用一个待办槽实现同一语义：新的到期时间覆盖旧的 = 取消；
+## 离散换族（下拉）会立即执行并清空它。
+var _shape_change_due := 0
 
 var _status: Label
 ## 「说明」层（2026-10-02 用户需求）：独立的「说明」按钮开关，默认不显示。
@@ -478,6 +487,9 @@ func _process(_delta: float) -> void:
 	if _checks_due != 0 and now >= _checks_due:
 		_checks_due = 0
 		_refresh_errors()
+	if _shape_change_due != 0 and now >= _shape_change_due:
+		_shape_change_due = 0
+		_on_shape_selected()
 	if not _dirty:
 		return
 	# 【PerfLedger 接线 ③】自动保存空闲间隔按 `rate_of("autosave")` 缩放（见 `_autosave_idle_ms`）。
@@ -1996,7 +2008,8 @@ func _build_props_tab() -> Control:
 	# 而不是一段没人走得到的防御代码。超限由 `_budget_allows` → `_shape_upper_bound_reason` 拦住给提示。
 	_shape_size = _spin(2, 40, 1)
 	_shape_size.value = 4
-	_shape_size.value_changed.connect(func(_v: float) -> void: _on_shape_selected())
+	# 【§G4】拖动滑杆不逐 tick 重算：只登记去抖待办（见 SHAPE_COALESCE_MS / _on_shape_size_changed）。
+	_shape_size.value_changed.connect(func(_v: float) -> void: _on_shape_size_changed())
 	srow.add_child(_shape_size)
 	box.add_child(srow)
 	box.add_child(_plain_label("选形状后，邻域/边界控件不适用；雷位与障碍照常编辑。"
@@ -2567,12 +2580,24 @@ func _on_neighborhood_changed() -> void:
 	_refresh_all()
 
 
+## 拖动「形状尺寸」滑杆：**只登记去抖待办**，不逐 tick 重算（文档 §G4「任务取消机制」/
+## §G6「任务取消与去抖」）。连续拖动只保留最后一个到期时间 —— 新值覆盖旧值即「取消排队中
+## 未开始的旧任务」；真正执行在 `_process` 到期时（→ `_on_shape_selected()`）。
+func _on_shape_size_changed() -> void:
+	if _syncing:
+		return
+	_shape_change_due = Time.get_ticks_msec() + SHAPE_COALESCE_MS
+
+
 ## 选形状 ⇒ 棋盘改由 `ShapeGenerator` 生成（网格族 + 参数化轮廓族均为现成实现），并把
 ## rows/cols 同步成其包围盒。
 ## 形状盘上「邻域/边界」不适用（与载入外部拓扑同理，validate 会给出 `shape_active` 提醒）。
 func _on_shape_selected() -> void:
 	if _syncing:
 		return
+	# 【§G4】本入口 = 立即执行 ⇒ 清空排队中未开始的去抖任务（先拖滑杆、再选下拉时，
+	# 旧任务不许在新选择之后再补跑一次重栅格化）。
+	_shape_change_due = 0
 	# 先按"将要采用"的形状参数估算格数（纯计算，不建盘）：超最高上限就**不动文档**，
 	# 把下拉/尺寸拉回当前值，避免界面显示一个没生效的选择。
 	var kind := ""

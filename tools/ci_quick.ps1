@@ -38,7 +38,9 @@ if ($gd.Count -eq 0) { Write-Host '  只动了非脚本文件（文档/资源）
 #    `always` = 每次增量都跑的冒烟集：挑的是**实测快**且覆盖共享契约的文件（2 文件 3.4 s）
 $always = @('test_editor_doc', 'test_wrap_topology')
 $map = @{
-    'level_editor'   = @('test_editor_ux', 'test_level_editor_smoke')
+    # 2026-10-09 补：`ui/level_editor.gd` 的换形状路径（滑杆去抖 / 预算闸门 / 形状下拉）也被
+    # `test_shape_outline_wiring` 覆盖 ⇒ 改编辑器也要重跑它，否则增量门禁有盲区。
+    'level_editor'   = @('test_editor_ux', 'test_level_editor_smoke', 'test_shape_outline_wiring')
     'editor_canvas'  = @('test_level_editor_smoke')
     'editor_help'    = @('test_editor_ux')
     'editor_doc'     = @('test_editor_doc', 'test_editor_verify', 'test_editor_ux', 'test_voronoi_tiling')
