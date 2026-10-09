@@ -59,3 +59,57 @@ func test_request_hint_respects_cap() -> void:
 	var again := GameSession.request_hint()
 	assert_lte(again.size(), HintCoordinator.HINT_MAX_CONCLUSIONS,
 		"连点第二次同样不得超过上限（实得 %d）" % again.size())
+
+
+# ⑤ 区域档：只返回一条“可疑区域”提示，不泄露具体雷/安全结论。
+func test_region_tier_does_not_reveal_conclusions() -> void:
+	var board := Board.new()
+	var grid := RectGrid.new()
+	grid.setup(3, 3)
+	board.grid = grid
+	board.clue_variant = ClueEngine.Variant.CLASSIC
+	board.total_mines = 1
+	board._static_mines = [Vector2i(0, 0)]
+	grid.get_cell(Vector2i(0, 0)).is_mine = true
+	board._compute_clues()
+	grid.get_cell(Vector2i(1, 1)).state = Cell.State.REVEALED
+	grid.get_cell(Vector2i(0, 0)).state = Cell.State.FLAGGED
+	var got := HintCoordinator.new().compute_hint(board, HintCoordinator.TIER_REGION)
+	assert_eq(got.size(), 1, "区域档应只给一条区域提示")
+	assert_eq(got[0].method, "region", "区域档必须带 region 标记")
+	assert_eq(got[0].state, "region", "区域档不能返回 safe/mine 结论")
+	assert_gt(got[0].sources.size(), 0, "区域档应圈出至少一个待观察格")
+
+
+# ⑥ 整链档：不截断求解器结果（与“给一步”的 ≤2 上限形成对照）。
+func test_chain_tier_returns_full_solver_chain() -> void:
+	var board := Board.new()
+	var grid := RectGrid.new()
+	grid.setup(3, 3)
+	board.grid = grid
+	board.clue_variant = ClueEngine.Variant.CLASSIC
+	board.total_mines = 1
+	board._static_mines = [Vector2i(0, 0)]
+	grid.get_cell(Vector2i(0, 0)).is_mine = true
+	board._compute_clues()
+	grid.get_cell(Vector2i(1, 1)).state = Cell.State.REVEALED
+	grid.get_cell(Vector2i(0, 0)).state = Cell.State.FLAGGED
+	var all := HintSolver.new().hint(board)
+	var got := HintCoordinator.new().compute_hint(board, HintCoordinator.TIER_CHAIN)
+	assert_gte(all.size(), 7, "前置：该 3×3 局面应能推出全部 7 个安全格")
+	assert_eq(got.size(), all.size(), "整链档不得截断求解器结果")
+	for s in got:
+		assert_eq(s.tier, "chain", "整链档每一步都应带 chain 标记")
+
+
+# ⑦ 星级按本局最差一次求助记：区域 < 一步 < 整链。
+func test_star_rating_tracks_worst_hint_tier() -> void:
+	GameSession.hint_tier_used = -1
+	assert_eq(GameSession.stars_for_session(), 3, "未求助应为 3★")
+	GameSession.hint_tier_used = GameSession.HINT_TIER_REGION
+	assert_eq(GameSession.stars_for_session(), 2, "只看区域应为 2★")
+	GameSession.hint_tier_used = GameSession.HINT_TIER_STEP
+	assert_eq(GameSession.stars_for_session(), 1, "给过一步应为 1★")
+	GameSession.hint_tier_used = GameSession.HINT_TIER_CHAIN
+	assert_eq(GameSession.stars_for_session(), 0, "给过整链应为 0★")
+	GameSession.hint_tier_used = -1

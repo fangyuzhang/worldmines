@@ -2466,8 +2466,19 @@ func _draw_hint(scale: float, _font: Font) -> void:
 		var step := s as ReasoningStep
 		if step == null:
 			continue
+		# 区域档：不画“哪一格是雷/安全”，只圈出线索与待观察区域。
+		# 外圈用较粗的强调色，和旧“依据线索”的细描边区分开。
+		if step.method == "region" or step.tier == "region":
+			for src in step.sources:
+				var rp: Vector2i = src
+				if not GameSession.board.grid.in_board(rp):
+					continue
+				var rcol := ThemeManager.accent()
+				rcol.a = 0.92
+				_draw_cell_outline(rp, rcol, 4.0 * maxf(scale, 0.6), 2.4)
+			continue
 		var p: Vector2i = step.pos
-		if not GameSession.board.grid.in_board(p):
+		if p.x < 0 or p.y < 0 or not GameSession.board.grid.in_board(p):
 			continue
 		# 弱提示（对标 doc10 §3.2）：只画依据线索，不画结论格 —— 玩家自己推可推格
 		if step.method != "weak":

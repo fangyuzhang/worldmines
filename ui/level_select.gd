@@ -2229,11 +2229,11 @@ func _make_tile(idx: int) -> Button:
 		var m: Dictionary = MODES[_mode_idx]
 		btn.text = LevelLibrary.level_label(str(m["id"]), SIZES[_size_idx], _tier, idx)
 		if cleared:
-			btn.text += " ✓"
+			btn.text += " ✓" + _stars_suffix(_level_key(idx))
 	else:
 		btn.text = str(idx + 1)
 		if cleared:
-			btn.text += "  ✓"
+			btn.text += "  ✓" + _stars_suffix(_level_key(idx))
 		elif skipped:
 			btn.text += "  ›"
 		elif not unlocked:
@@ -2244,6 +2244,14 @@ func _make_tile(idx: int) -> Button:
 	_style_tile(btn, idx == _selected, cleared, skipped)
 	UiTheme.bind_hover(btn, HOVER_SCALE)
 	return btn
+
+
+## 方块标签的历史最佳星级后缀；未通关返回空串（不把 0★ 当成绩展示）。
+func _stars_suffix(key: String) -> String:
+	var n := ProgressStore.best_stars(key)
+	if n < 0:
+		return ""
+	return "  %s" % ["★".repeat(n) + "☆".repeat(3 - n)]
 
 
 func _rebuild_dots() -> void:
@@ -2266,13 +2274,24 @@ func _refresh_stat() -> void:
 	for i in _set_count():
 		if _is_cleared(_level_key(i)):
 			cleared += 1
+	var stars_total := 0
+	var star_entries := 0
+	for i in _set_count():
+		var bs := ProgressStore.best_stars(_level_key(i))
+		if bs >= 0:
+			stars_total += bs
+			star_entries += 1
+	var star_line := "最佳提示：—"
+	if star_entries > 0:
+		var avg := float(stars_total) / float(star_entries)
+		star_line = "最佳提示：平均 %.1f★（越高越少求助）" % avg
 	if _lib_mode:
 		# 短档名：tier_text 直接嵌进括号会出现
 		# 「（普通（2–3 条线索） 档）」的嵌套括号（2026-09-29 截图实证）。
-		_stat_label.text = "已通关 %d / %d\n难度：%s" % [cleared, _set_count(),
-				Difficulty.tier_short(_tier)]
+		_stat_label.text = "已通关 %d / %d\n难度：%s\n%s" % [cleared, _set_count(),
+				Difficulty.tier_short(_tier), star_line]
 	else:
-		_stat_label.text = "已通关 %d / %d" % [cleared, _set_count()]
+		_stat_label.text = "已通关 %d / %d\n%s" % [cleared, _set_count(), star_line]
 	# 按钮：选中最新解锁关卡 → 继续游戏；手选其他 → 开始游戏；未开放变体 → 禁用
 	if _mode_enabled():
 		_play_btn.disabled = false

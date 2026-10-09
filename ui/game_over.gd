@@ -5,6 +5,7 @@ extends Control
 
 var _big_label: Label
 var _sub_label: Label
+var _stars_label: Label
 var _panel: PanelContainer
 var _undo_btn: Button
 var _next_btn: Button
@@ -39,6 +40,11 @@ func _ready() -> void:
     _sub_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     _sub_label.add_theme_font_size_override("font_size", 18)
     vbox.add_child(_sub_label)
+
+    _stars_label = Label.new()
+    _stars_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    _stars_label.add_theme_font_size_override("font_size", 24)
+    vbox.add_child(_stars_label)
 
     _undo_btn = Button.new()
     _undo_btn.text = "撤回"
@@ -113,6 +119,9 @@ func _ready() -> void:
 func _on_game_ended(won: bool) -> void:
     visible = true
     _big_label.text = "胜利！" if won else "失败"
+    var star_n := clampi(GameSession.last_stars, 0, 3)
+    _stars_label.text = ("★".repeat(star_n) + "☆".repeat(3 - star_n)) if won else ""
+    _stars_label.tooltip_text = "提示越少，星级越高：3★ 未求助，2★ 只看可疑区域，1★ 给过一步，0★ 给过整条链"
     if _undo_btn != null:
         _undo_btn.visible = not won  # 撤回仅在失败终局可用
     # 下一关：只有「生成关卡序列」里的关卡才知道下一关是谁（见 LevelSequence）。

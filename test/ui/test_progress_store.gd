@@ -135,3 +135,13 @@ func test_p6_session_win_records_progress() -> void:
 	assert_almost_eq(ProgressStore.best_time(LEVEL_A), 7.5, 0.001)
 	GameSession.board = null
 	GameSession.state = GameSession.State.IDLE
+
+
+# P11：最佳提示星级取历史最高，后续更差的求助不覆盖好成绩。
+func test_p11_best_stars_keeps_maximum() -> void:
+	ProgressStore.record_clear(LEVEL_A, 20.0, 1)
+	assert_eq(ProgressStore.best_stars(LEVEL_A), 1, "首次成绩应记 1★")
+	ProgressStore.record_clear(LEVEL_A, 19.0, 0)
+	assert_eq(ProgressStore.best_stars(LEVEL_A), 1, "更差星级不得覆盖最佳")
+	ProgressStore.record_clear(LEVEL_A, 30.0, 3)
+	assert_eq(ProgressStore.best_stars(LEVEL_A), 3, "更好星级应覆盖最佳")

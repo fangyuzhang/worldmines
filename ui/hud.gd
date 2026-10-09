@@ -42,6 +42,7 @@ var _mines_label: Label
 var _time_label: Label
 var _deducible_label: Label
 var _hint_btn: Button
+var _hint_menu: PopupMenu
 var _tut_btn: Button
 var _pause_btn: Button
 ## 连接透镜按钮（**只在真的存在错觉的盘上装**，见 _sync_lens_button）：
@@ -219,10 +220,17 @@ func _ready() -> void:
 	# 本项目的对局工具 = 提示 / 撤销 / 暂停，同样竖排于此；「设置」是配置项，已移到右上单排图标簇。
 	_right_col = _make_side_column(false)
 	_hint_btn = _add_col_icon_button(_right_col, Icons.hint(), "提示",
-		"提示（H）：一步直推（100% 必然结论）· 每次给出 1~2 格，可连续点",
-		func(): GameSession.request_hint())
+		"提示（H）：一步直推（100% 必然结论）· 可连续点；点击可切换三档帮助深度",
+		func(): _show_hint_menu())
 	_hint_btn.name = "HintBtn"
 	_hint_btn.set_meta("hint_btn", true)
+	# 三档求助：区域 → 一步 → 整链。H 快捷键保持给一步，鼠标点按钮才展开选择。
+	_hint_menu = PopupMenu.new()
+	_hint_menu.add_item("圈出可疑区域（保留 2★）", GameSession.HINT_TIER_REGION)
+	_hint_menu.add_item("给一步（保留 1★）", GameSession.HINT_TIER_STEP)
+	_hint_menu.add_item("给整条链（0★）", GameSession.HINT_TIER_CHAIN)
+	_hint_menu.id_pressed.connect(func(id: int): GameSession.request_hint(id))
+	add_child(_hint_menu)
 	_add_col_icon_button(_right_col, Icons.undo(), "撤销",
 		"撤销上一步翻开/插旗（Ctrl+Z），可一路退到开局",
 		func(): GameSession.undo_move())
@@ -594,14 +602,18 @@ func _process(_delta: float) -> void:
 func _refresh_hint_button() -> void:
 	if _hint_btn == null:
 		return
-	var tip := "提示（H）：一步直推（100% 必然结论）· 每次给出 1~2 格，可连续点"
+	var tip := "提示（H）：一步直推（100% 必然结论）· 点击可在区域 / 一步 / 整条链之间选择"
 	if SettingsManager.hint_mode == GameSession.HINT_DISABLED:
 		tip = "当前设置已禁用提示，可在设置页开启"
 	elif SettingsManager.no_guess_mode == GameSession.NO_GUESS_ULTIMATE:
-		tip = "提示（H）：一步直推（每次 1~2 格）；若推不出安全格会揭开全部星号继续对局"
+		tip = "提示（H）：一步直推；若推不出安全格会揭开全部星号继续对局"
 	if _hint_btn.tooltip_text != tip:
 		_hint_btn.tooltip_text = tip
-	_hint_btn.disabled = SettingsManager.hint_mode == GameSession.HINT_DISABLED
+	var disabled := SettingsManager.hint_mode == GameSession.HINT_DISABLED
+	_hint_btn.disabled = disabled
+	if _hint_menu != null:
+		for i in _hint_menu.item_count:
+			_hint_menu.set_item_disabled(i, disabled)
 
 
 ## 旗数统计（红线 7：禁独立计数器 → 这里依然是从棋盘数出来的，
@@ -675,6 +687,17 @@ func _style_icon_colors(b: Button) -> void:
 	b.add_theme_color_override("icon_focus_color", ThemeManager.text())
 	# 禁用态（提示被关掉时）走次级字色：置灰但仍然看得见，而不是消失。
 	b.add_theme_color_override("icon_disabled_color", ThemeManager.text_secondary())
+
+
+## 打开三档提示菜单（鼠标路径）。H 键仍走 GameSession.request_hint() 的默认「给一步」。
+func _show_hint_menu() -> void:
+	if _hint_menu == null or _hint_btn == null:
+		return
+	if SettingsManager.hint_mode == GameSession.HINT_DISABLED:
+		return
+	var at := Vector2i(_hint_btn.global_position)
+	at.y += int(_hint_btn.size.y)
+	_hint_menu.popup(Rect2i(at, Vector2i(240, 0)))
 
 
 func _on_theme_changed() -> void:

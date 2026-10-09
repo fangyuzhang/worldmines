@@ -157,19 +157,29 @@ func show_hint(steps: Array) -> void:
 	if steps.is_empty():
 		_content.text = _empty_hint_text()
 	else:
+		var first := steps[0] as ReasoningStep
+		var is_region := first != null and (first.method == "region" or first.tier == "region")
+		var is_chain := first != null and first.tier == "chain"
 		var mine_hex := _hex(ThemeManager.danger_text())   # 文字场景用提亮版（WCAG AA 对比）
 		var safe_hex := _hex(ThemeManager.safe())
 		var parts: Array[String] = []
-		parts.append("[b]当前可 100% 确定的推理[/b]")
-		for s in steps:
-			var step := s as ReasoningStep
-			if step == null:
-				continue
-			var is_mine: bool = step.state == "mine"
-			var tag := "雷" if is_mine else "安全"
-			var hexc := mine_hex if is_mine else safe_hex
-			# 坐标转 1-based「行,列」，贴合玩家视角
-			parts.append("[color=%s]■ %s[/color] (%d,%d)  %s" % [hexc, tag, step.pos.y + 1, step.pos.x + 1, step.proof])
+		if is_region:
+			parts.append("[b]先看这些可疑区域[/b]")
+			parts.append("这些格子里有线索的邻域或仍未解决的格子；区域档只圈范围，不替你判断雷/安全。")
+			parts.append("观察数字与未翻开邻格的关系，再决定下一步。")
+		else:
+			parts.append("[b]%s[/b]" % ("完整推理链" if is_chain else "当前可 100% 确定的推理"))
+			for s in steps:
+				var step := s as ReasoningStep
+				if step == null:
+					continue
+				if step.method == "region" or step.tier == "region":
+					continue
+				var is_mine: bool = step.state == "mine"
+				var tag := "雷" if is_mine else "安全"
+				var hexc := mine_hex if is_mine else safe_hex
+				# 坐标转 1-based「行,列」，贴合玩家视角
+				parts.append("[color=%s]■ %s[/color] (%d,%d)  %s" % [hexc, tag, step.pos.y + 1, step.pos.x + 1, step.proof])
 		_content.text = "\n".join(parts)
 	_set_ghost(true)  # 每次新提示从无痕态开始，点击文字再唤醒调整
 	_fit_ghost_size()

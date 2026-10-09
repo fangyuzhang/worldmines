@@ -25,6 +25,10 @@ enum State { IDLE, PLAYING, PAUSED, ENDED }
 const HINT_NORMAL := HintCoordinator.HINT_NORMAL
 const HINT_WEAK := HintCoordinator.HINT_WEAK
 const HINT_DISABLED := HintCoordinator.HINT_DISABLED
+## 每次求助的帮助深度（与设置里的提示模式分开）
+const HINT_TIER_REGION := HintCoordinator.TIER_REGION
+const HINT_TIER_STEP := HintCoordinator.TIER_STEP
+const HINT_TIER_CHAIN := HintCoordinator.TIER_CHAIN
 ## 无猜模式三档（对标 doc10 §2）—— 转发常量：外部/UI/测试引用方零改动
 const NO_GUESS_OFF := NoGuessGuard.NO_GUESS_OFF
 const NO_GUESS_EXPERT := NoGuessGuard.NO_GUESS_EXPERT
@@ -41,6 +45,12 @@ var state: int = State.IDLE
 ## 内就 _finish，而 game_over 覆盖层要等 board_view._ready 才创建——那时 game_ended 早已
 ## emit 过，覆盖层只能靠本字段补显结算，见 game_over.gd 的 _ready 自同步）。
 var last_result_won := false
+## 最近一次终局的星级（3=未用提示，2=只看可疑区域，1=给过一步，0=给过整条链）。
+var last_stars: int = 3
+## 最近一次提示的档位；-1 表示本局尚未用过提示。
+var last_hint_tier: int = -1
+## 本局用过的最高帮助深度（只升不降，结算按最差一次计）。
+var hint_tier_used: int = -1
 # 2026-09-28（用户决策）：提示充能机制整体移除——每次提示只给 ≤2 格后，再按 120 秒卡一次
 # 会让提示基本用不动。随之删除 hint_charge_left / hint_uncharged_used / hint_charge_ratio /
 # HINT_CHARGE_SEC；「非完美通关」标记当前无消费者，将来要做时按新口径重新引入。
@@ -154,6 +164,9 @@ func start_level(path: String) -> bool:
     cursor = Vector2i.ZERO
     exploded_pos = Vector2i(-1, -1)
     _last_reveal_pos = Vector2i(-1, -1)
+    last_stars = 3
+    last_hint_tier = -1
+    hint_tier_used = -1
     # 终极模式：本次对局的「玩家新翻开线索格一律打星号」开关
     board.hide_new_clues = SettingsManager.no_guess_mode == NO_GUESS_ULTIMATE
     _guard.reset()
@@ -365,16 +378,27 @@ func toggle_flag(pos: Vector2i) -> void:
 
 # ============ 提示（一步直推，只读玩家视角约束，不读雷位、不代玩家操作） ============
 
-## 请求一步提示。返回 ReasoningStep 数组（可能为空），并广播 hint_ready 供 UI 高亮。
+## 请求提示。tier 控制帮助深度，默认给一步（兼容旧调用与 H 快捷键）。
 ## 非 PLAYING / 无棋盘 / 提示被禁用 → 空数组（不报错）。
-## 组装/降级/结论上限/揭星全部委托 HintCoordinator（见 hint_coordinator.gd）；
-## 2026-09-28 起每次至多给 2 格结论，且**不消耗**任何次数/充能（可连续点）。
-func request_hint() -> Array[ReasoningStep]:
+## 只有真的返回内容才记入本局成绩；空提示不惩罚玩家。
+func request_hint(tier: int = HINT_TIER_STEP) -> Array[ReasoningStep]:
     var steps: Array[ReasoningStep] = []
+    var use_tier := clampi(tier, HINT_TIER_REGION, HINT_TIER_CHAIN)
     if state == State.PLAYING:
-        steps = _hints.compute_hint(board)
+        steps = _hints.compute_hint(board, use_tier)
+    if not steps.is_empty():
+        last_hint_tier = use_tier
+        hint_tier_used = maxi(hint_tier_used, use_tier)
     hint_ready.emit(steps)
     return steps
+
+
+## 本局最终星级：3★ 未求助；2★ 只看区域；1★ 给过一步；0★ 给过完整推理链。
+## 成功盘面的“本次成绩”与 ProgressStore 的历史最佳星级使用同一口径。
+func stars_for_session() -> int:
+    if hint_tier_used < HINT_TIER_REGION:
+        return 3
+    return clampi(3 - (hint_tier_used + 1), 0, 3)
 
 
 # ============ 无猜模式（对标游戏 doc10 §2） ============
@@ -522,13 +546,14 @@ func _finish(won: bool) -> void:
     # 记录终局结果：覆盖层可能在终局之后才实例化（board_view._ready 里才创建 game_over），
     # 那时 game_ended 已 emit 过，覆盖层靠本字段补显结算（game_over.gd 自同步）。
     last_result_won = won
+    last_stars = stars_for_session()
     state = State.ENDED
     # 进度写「序列键」而不是 level_path：选关页打勾/解锁与 LevelSequence.has_next
     # 都按序列键读取。历史上这里传 level_path（user://gen_levels/*.json），
     # 写的与读的不是同一个键 → 通关了不打勾、下一关一直锁着（见 LevelSequence.progress_key）。
     var key := LevelSequence.progress_key(level_path)
     if won:
-        ProgressStore.record_clear(key, elapsed)  # 通关进度（最佳用时取最小）
+        ProgressStore.record_clear(key, elapsed, last_stars)  # 通关进度（最佳用时/最佳星级）
         # 胜局 = 对局已完结，无可续进度 → 连 MAIN 一起清（MAIN 里残留的本局自动档
         # 未带 ended 标记，留着会被下次启动的自动恢复误当成「未完成对局」复活）。
         SaveCoordinator.clear()

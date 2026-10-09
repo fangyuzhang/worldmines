@@ -1,6 +1,6 @@
 # progress_store.gd —— 通关进度持久化（静态工具，非 autoload）
-# 数据落在 user://progress.json：{ "levels": { "<关卡路径>": {"cleared": true, "best": 12.34, "plays": 3} } }
-# 只记录"通关 + 最佳用时 + 尝试次数"；不存盘面、不存雷位（与存档 SaveCoordinator 完全分离）。
+# 数据落在 user://progress.json：{ "levels": { "<关卡路径>": {"cleared": true, "best": 12.34, "best_stars": 3, "plays": 3} } }
+# 只记录"通关 + 最佳用时 + 最佳提示星级 + 尝试次数"；不存盘面、不存雷位（与存档 SaveCoordinator 完全分离）。
 class_name ProgressStore
 extends RefCounted
 
@@ -66,6 +66,7 @@ static func _migrate_legacy_keys() -> void:
             if b >= 0.0:
                 bests.append(b)
         merged["best"] = bests.min() if not bests.is_empty() else -1.0
+        merged["best_stars"] = maxi(int(merged.get("best_stars", 0)), maxi(int(cur.get("best_stars", 0)), int(old.get("best_stars", 0))))
         levels[new_key] = merged
         levels.erase(key)
         moved += 1
@@ -83,9 +84,9 @@ static func _flush() -> void:
     f.close()
 
 
-## 记录一次通关：cleared=true，best 取最小值（秒）。
+## 记录一次通关：cleared=true，best 取最小值（秒），best_stars 取最大值（3=未用提示）。
 ## 通关同时清掉「跳过」标记：跳过后回头打通，这一关就是正常通关了。
-static func record_clear(level_path: String, seconds: float) -> void:
+static func record_clear(level_path: String, seconds: float, stars: int = 3) -> void:
     if level_path == "":
         return
     var d := _data()
@@ -97,6 +98,7 @@ static func record_clear(level_path: String, seconds: float) -> void:
     var best := float(rec.get("best", -1.0))
     if best < 0.0 or seconds < best:
         rec["best"] = seconds
+    rec["best_stars"] = maxi(int(rec.get("best_stars", 0)), clampi(stars, 0, 3))
     levels[level_path] = rec
     _rev += 1
     _flush()
@@ -145,6 +147,14 @@ static func best_time(level_path: String) -> float:
     if not bool(rec.get("cleared", false)):
         return -1.0
     return float(rec.get("best", -1.0))
+
+
+## 历史最佳提示星级；未通关返回 -1。
+static func best_stars(level_path: String) -> int:
+    var rec: Dictionary = _data()["levels"].get(level_path, {})
+    if not bool(rec.get("cleared", false)):
+        return -1
+    return clampi(int(rec.get("best_stars", 0)), 0, 3)
 
 
 static func plays(level_path: String) -> int:
