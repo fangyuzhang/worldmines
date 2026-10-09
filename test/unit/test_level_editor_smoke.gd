@@ -681,3 +681,31 @@ func test_register_to_hub_rejects_blank_title() -> void:
 	ed.call("_register_to_hub")
 	var after: int = (hub.list_packs() as Array).size()
 	assert_eq(after, before, "空标题登记必须被拦下（不得往创作中心里塞条目）")
+
+
+## 「一键发布」的成功分支：有标题 + 合法盘 ⇒ 真的往创作中心登记一个版本；
+## 同标题再点一次 = 同一作品的**版本 +1**（而不是又开一条）。用完把本次条目删掉，
+## 不给后面用例 / 真人存档留垃圾。
+func test_register_to_hub_publishes_and_bumps_version() -> void:
+	var ed := _make_editor()
+	var hub: GDScript = load("res://core/creator_hub.gd")
+	var d := _doc5()
+	d.title = "smoke_hub_%d" % int(Time.get_unix_time_from_system())
+	_bind(ed, d)
+	var before: int = (hub.list_packs() as Array).size()
+	var id := str(hub.slug(d.title))
+
+	ed.call("_register_to_hub")
+	assert_eq((hub.list_packs() as Array).size(), before + 1,
+		"有标题 + 合法盘 ⇒ 应登记一个新作品")
+
+	ed.call("_register_to_hub")
+	var packs := hub.list_packs() as Array
+	assert_eq(packs.size(), before + 1, "同标题再登记 = 同一作品的版本 +1，不得新增条目")
+	var found: int = hub.find_pack(hub.load_data(), id)
+	assert_gte(found, 0, "登记后应能按 slug 找到该作品")
+	if found >= 0:
+		assert_eq(int((packs[found] as Dictionary)["version"]), 2, "第二次登记应把版本推到 2")
+
+	hub.remove_pack(id)
+	assert_eq((hub.list_packs() as Array).size(), before, "清理后应回到登记前的作品数")
