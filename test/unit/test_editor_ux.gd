@@ -1382,24 +1382,106 @@ func test_props_default_open_groups_cover_the_core_creation_path() -> void:
 
 
 func test_props_page_stays_short_enough_to_use() -> void:
-	# 用户原话："现在的编辑器太丑了，根本没法用"。实测属性页曾是一条 5000+ px 的长条
-	#（要滚 8 屏才到底）。这条契约把"默认状态又变回长条"变成红灯。
+	# 用户原话：「现在的编辑器太丑了，根本没法用」。属性页曾是一条 5000+ px 的长条（滚 8 屏）。
+	# 2026-10-09 做了两层处理：① 高级组默认收起；② 按「基础 / 形状与盘面 / 高级工具」分段。
+	# 这条契约把「默认状态又变回长条」变成红灯：判据是**每一段真实排版后的高度**，三段都要量。
+	#
+	# 【口径血泪：量高度必须先切到那一段再量】隐藏的兄弟节点 Godot **根本不排版** ——
+	# 它在 min-size 里宽度是 1px，而组标题是 autowrap 的 Label，在 1px 宽下会被折成 47 行、
+	# 报出 3000~7000px 的**假**高度。上一版这条用例就是这么误报的（7248px 红灯），
+	# 它量的是没排版的隐藏页，不是真实内容（切过去实测只有 849px）。
+	# 所以这里逐段 `_show_props_page(i)` + 等两帧，读**排版后的 `size.y`**。
+	# 【2026-10-09 第二次修】顺手抓到 box 只给了 SIZE_FILL（没 EXPAND）⇒ ScrollContainer 不拉满它，
+	# 面板内容缩到 186~260px、组标题折两行。改 EXPAND_FILL 后三段都是 322~330 宽、标题一行，
+	# 实测高度降到 610 / 616 / 300（视口 616）⇒ 门槛收紧到 max(900, 1.25×视口)。
 	var ed := await _make_editor()
 	_bind(ed, _doc5())
 	await wait_process_frames(2)
+	var pages: Array = ed.get("_props_pages")
+	assert_eq(pages.size(), 3, "属性页应分三段（基础 / 形状与盘面 / 高级工具）")
+	if pages.size() != 3:
+		return
+	var tabs := _tabs_of(ed)
+	assert_not_null(tabs, "应有页签容器")
+	var viewport_h := 614.0
+	if tabs != null and tabs.get_child_count() > 0:
+		viewport_h = maxf((tabs.get_child(0) as Control).size.y, 1.0)
+	var cap := maxf(900.0, viewport_h * 1.25)
+	for i in pages.size():
+		ed.call("_show_props_page", i)
+		await wait_process_frames(3)
+		var h := (pages[i] as Control).size.y
+		assert_true(h <= cap,
+			"属性页第 %d 段排版后高 %.0fpx > %.0f ⇒ 单段又变回长条了（视口约 %.0fpx）" % [
+				i + 1, h, cap, viewport_h])
+	ed.call("_show_props_page", 0)
+	await wait_process_frames(1)
+
+
+func test_props_pagination_is_exclusive_and_loses_no_group() -> void:
+	# 【不丢组】分段是"搬家"，不是"删功能"：组的总数必须守恒（框数 == 组标题数）。
+	# 另钉住互斥（同一时刻只有一段可见）与"翻段不改文档"——否则两段叠在一起又是一条长条。
+	var ed := await _make_editor()
+	_bind(ed, _doc5())
+	var headers: Array = ed.get("_props_group_headers")
+	var pages: Array = ed.get("_props_pages")
+	assert_eq(pages.size(), 3, "属性页应分三段")
+	if pages.size() != 3:
+		return
+	var visible := 0
+	var framed_in_pages := 0
+	for pg in pages:
+		if (pg as Control).visible:
+			visible += 1
+		for n in (pg as Node).find_children("*", "PanelContainer", true, false):
+			if n.has_meta("editor_group_frame"):
+				framed_in_pages += 1
+	assert_eq(visible, 1, "属性页同一时刻只允许一段可见（实际 %d 段）" % visible)
+	assert_eq(framed_in_pages, headers.size(),
+		"分段不许丢组：段内框数 %d ≠ 组标题数 %d" % [framed_in_pages, headers.size()])
+	var btns: Array = ed.get("_props_page_btns")
+	assert_eq(btns.size(), 3, "应有三段入口按钮")
+	if btns.size() != 3:
+		return
+	var before := _doc_fingerprint(ed)
+	(btns[1] as Button).pressed.emit()
+	await wait_process_frames(2)
+	assert_true((pages[1] as Control).visible, "点「形状与盘面」应显示第 2 段")
+	assert_false((pages[0] as Control).visible, "同一次点击必须把第 1 段收起来")
+	assert_false((pages[2] as Control).visible, "第 3 段不该跟着亮")
+	assert_eq(_doc_fingerprint(ed), before, "翻段不是编辑动作：不许改文档（含 _dirty）")
+
+
+func test_props_pages_fill_the_panel_width() -> void:
+	# 【2026-10-09 真机实测抓到的丑】属性页的 box 只给了 SIZE_FILL（没有 EXPAND）⇒
+	# ScrollContainer 不会把它拉满：切到第 3 段时整列只剩 186px，右边空掉一大块、组标题还被挤成两行。
+	# 这条契约钉住「每一段都铺满面板宽」——退回 SIZE_FILL 立刻红灯。
+	var ed := await _make_editor()
+	_bind(ed, _doc5())
+	await wait_process_frames(2)
+	var pages: Array = ed.get("_props_pages")
+	assert_eq(pages.size(), 3, "属性页应分三段")
+	if pages.size() != 3:
+		return
 	var tabs := _tabs_of(ed)
 	assert_not_null(tabs, "应有页签容器")
 	if tabs == null:
 		return
-	var props := tabs.get_child(0) as Control
-	assert_not_null(props, "属性页应是第一页")
-	if props == null or props.get_child_count() == 0:
-		return
-	var box := props.get_child(0) as Control
-	var content_h := box.get_combined_minimum_size().y
-	assert_true(content_h <= 2200.0,
-		"属性页默认内容高 %.0fpx > 2200 ⇒ 又变回几千像素的长条了（视口只有 %.0fpx）" % [
-			content_h, props.size.y])
+	var panel_w := (tabs.get_child(0) as Control).size.x
+	assert_gt(panel_w, 300.0, "右面板宽应有效（实际 %.0f）" % panel_w)
+	# 纵向滚动条最多吃掉 16px；也不能比面板本身还宽（那就是把面板顶宽了）。
+	var floor_w := panel_w - 16.0
+	for i in pages.size():
+		ed.call("_show_props_page", i)
+		await wait_process_frames(3)
+		var pg := pages[i] as Control
+		assert_true(pg.size.x >= floor_w,
+			"属性页第 %d 段宽 %.0fpx < %.0f ⇒ 没铺满面板（右边会空一块、标题折行）" % [
+				i + 1, pg.size.x, floor_w])
+		assert_true(pg.size.x <= panel_w + 0.5,
+			"属性页第 %d 段宽 %.0fpx > 面板 %.0f ⇒ 把面板顶宽了" % [i + 1, pg.size.x, panel_w])
+	ed.call("_show_props_page", 0)
+	await wait_process_frames(1)
 
 
 func test_topbar_shows_level_name_and_unsaved_mark() -> void:

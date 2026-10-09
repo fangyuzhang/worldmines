@@ -149,6 +149,11 @@ var _tabs: TabContainer = null
 var _left_pages: Array[VBoxContainer] = []
 var _left_page_btns: Array[Button] = []
 var _left_page_group: ButtonGroup = null
+## 属性页分段（2026-10-09 第二轮）：16 组一列排下来 ≈1771px（视口 614px，要滚 2.9 屏）。
+## 与左栏同一套做法（互斥按钮 + 互斥可见的滚动段），**同样不许加第二个 TabContainer**。
+var _props_pages: Array[VBoxContainer] = []
+var _props_page_btns: Array[Button] = []
+var _props_page_group: ButtonGroup = null
 ## 【审查 D12 删除】`TAB_HELP` 与 `_tab_help_title/_tab_help_text` 已无调用方（说明层 v4 改走
 ## `_help_page_items` 逐控件收集）。留着只会误导后来人以为"页级说明"还在生效。
 
@@ -2029,6 +2034,11 @@ func _build_ai_tab() -> Control:
 func _build_props_tab() -> Control:
 	var box := VBoxContainer.new()
 	box.name = "属性"
+	# 【2026-10-09 真机实测的血泪】ScrollContainer 只在子节点带 **EXPAND** 标志时才把它拉满宽度；
+	# 只给 SIZE_FILL 时，box 会缩到「当前可见内容的最小宽」——实测切到第 3 段只有 186px，
+	# 右边空掉一大块、组标题还被挤成两行。左栏 `outer` 一直是 EXPAND_FILL 才没这毛病。
+	# 这里显式 EXPAND_FILL，让三段都铺满面板宽（最小宽不变，不会把面板顶宽）。
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	box.add_theme_constant_override("separation", 4)
 	# 属性页太长时，先给一排“总开关”，再让每一组可折叠；不再要求用户一路滚 5000px。
 	var group_nav := HBoxContainer.new()
@@ -2174,8 +2184,11 @@ func _build_props_tab() -> Control:
 	_build_domino_panel(box)
 	_build_stats_panel(box)
 	_build_color_lock_panel(box)
-	# 后处理：把“组标题 + 该组控件”包成可折叠区块。基础组默认展开，高级组默认收起。
+	# 后处理 ①：把“组标题 + 该组控件”包成可折叠区块。基础组默认展开，高级组默认收起。
 	_frame_props_groups(box)
+	# 后处理 ②：把可折叠区块按“基础 / 形状与盘面 / 高级工具”分成三段。
+	# 必须在套框之后（要按 PanelContainer 找组）、在挂进滚动容器之前（这时 box 还是顶层容器）。
+	_paginate_props(box)
 	scroll.add_child(box)
 	return scroll
 
@@ -2591,6 +2604,91 @@ func _frame_props_groups(root: Node) -> void:
 	if host == null:
 		return
 	_frame_groups_of_host(host, true)
+
+
+## 属性页分段：把套好框的组分成三段，同一时刻只显示一段。
+## 【为什么分段】默认状态实测内容高 ≈1771px、视口 614px ⇒ 要滚 2.9 屏，用户原话「太丑、没法用」。
+## 【为什么不用第二个 TabContainer】见 `_left_pages` 的契约说明（全编辑器只允许一个 TabContainer）。
+## 【不丢组是硬闸】搬之前先核对"框数 == `_props_group_headers` 数"；对不上就**整段不分页**返回，
+## 宁可维持一条长条，也不许因为后处理把某一组功能静默丢掉（本仓历史上最大的病就是"静默丢"）。
+func _paginate_props(box: VBoxContainer) -> void:
+	var frames: Array = []
+	for c in box.get_children():
+		if c is PanelContainer and c.has_meta("editor_group_frame"):
+			frames.append(c)
+	if frames.size() < 6 or frames.size() != _props_group_headers.size():
+		return
+	_props_pages.clear()
+	_props_page_btns.clear()
+	_props_page_group = ButtonGroup.new()
+	var switcher := HBoxContainer.new()
+	switcher.name = "属性分段切换"
+	switcher.add_theme_constant_override("separation", 3)
+	var specs := [
+		["基础", "关卡名字 / 棋盘 / 边界与邻域 / 本盘问题（做一关的必经路径）"],
+		["形状与盘面", "形状 / 折叠 / 布局规则 / 行容量"],
+		["高级工具", "形状组合 / 填充空隙 / 边缘平滑 / 文字转形状 / 复合格 / 骨牌划分 / 统计 / 配色锁定"],
+	]
+	for i in specs.size():
+		var b := Button.new()
+		b.text = str(specs[i][0])
+		b.tooltip_text = str(specs[i][1])
+		b.toggle_mode = true
+		b.button_group = _props_page_group
+		b.button_pressed = (i == 0)
+		b.clip_text = true
+		b.custom_minimum_size = Vector2(60, 30)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.pressed.connect(_show_props_page.bind(i))
+		switcher.add_child(b)
+		_props_page_btns.append(b)
+	box.add_child(switcher)
+	for i in specs.size():
+		var page := VBoxContainer.new()
+		page.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		page.add_theme_constant_override("separation", 4)
+		page.visible = (i == 0)
+		box.add_child(page)
+		_props_pages.append(page)
+	for f in frames:
+		var idx := _props_page_of(_group_title_of(f))
+		box.remove_child(f)
+		_props_pages[idx].add_child(f)
+
+
+## 取一个组框的标题（`_bind_collapsible` 把原标题记在 `collapse_base` 上，避免读到 ▸/▾ 后缀）。
+func _group_title_of(frame: Node) -> String:
+	if frame.get_child_count() == 0:
+		return ""
+	var inner := frame.get_child(0)
+	if inner == null or inner.get_child_count() == 0:
+		return ""
+	var head := inner.get_child(0) as Label
+	if head == null:
+		return ""
+	return str(head.get_meta("collapse_base", head.text))
+
+
+## 组标题 → 段号。**前缀白名单**且默认落最后一段：新加的组自动进「高级工具」，
+## 不会因为漏登记而消失（"多收一个"只是多点一次，安全方向）。
+func _props_page_of(title: String) -> int:
+	for keep in ["关卡名字", "棋盘", "边界与邻域", "本盘问题"]:
+		if title.begins_with(keep):
+			return 0
+	for keep in ["形状（", "折叠（", "布局规则", "行容量"]:
+		if title.begins_with(keep):
+			return 1
+	return 2
+
+
+## 切到属性页第 idx 段（越界当第 0 段，绝不留下"一段都不显示"的空白面板）。
+func _show_props_page(idx: int) -> void:
+	if idx < 0 or idx >= _props_pages.size():
+		idx = 0
+	for i in _props_pages.size():
+		_props_pages[i].visible = (i == idx)
+	for i in _props_page_btns.size():
+		_props_page_btns[i].button_pressed = (i == idx)
 
 
 ## 左栏套框：兼容旧调用名，但内部已经升级成“可折叠组”。
