@@ -81,6 +81,17 @@ $map = @{
     'variant_grid_matrix' = @('test_variant_grid_matrix')
     'variant_registry' = @('test_variant_catalog')
     'gen_geo_levels'  = @('test_geo_levels')
+    # 2026-10-09 补：本轮新增/接线用到的 core 模块（之前不在映射表 ⇒ 改了它们增量门禁会漏测）。
+    'glyph_font'     = @('test_glyph_font')
+    'coloring_preview' = @('test_coloring_preview')
+    'submission_queue' = @('test_submission_queue')
+    'shape_reflow'   = @('test_shape_reflow')
+    'stats_histogram' = @('test_stats_histogram')
+    'editor_disclosure' = @('test_editor_disclosure')
+    'text_to_shape'  = @('test_text_to_shape')
+    'file_lock'      = @('test_file_lock')
+    'level_thumbnail' = @('test_level_thumbnail')
+    'stroke_limits'  = @('test_drawing_stroke_limits')
 }
 
 $want = New-Object System.Collections.Generic.List[string]
