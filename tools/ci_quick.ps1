@@ -40,9 +40,9 @@ $always = @('test_editor_doc', 'test_wrap_topology')
 $map = @{
     # 2026-10-09 补：`ui/level_editor.gd` 的换形状路径（滑杆去抖 / 预算闸门 / 形状下拉）也被
     # `test_shape_outline_wiring` 覆盖 ⇒ 改编辑器也要重跑它，否则增量门禁有盲区。
-    'level_editor'   = @('test_editor_ux', 'test_level_editor_smoke', 'test_shape_outline_wiring')
+    'level_editor'   = @('test_editor_ux', 'test_level_editor_smoke', 'test_shape_outline_wiring', 'test_editor_fold_wiring')
     # 2026-10-09 补：画布的虫洞配对工具（信号 + 只认盘上格）由 test_editor_canvas_tools 覆盖。
-    'editor_canvas'  = @('test_level_editor_smoke', 'test_editor_canvas_tools')
+    'editor_canvas'  = @('test_level_editor_smoke', 'test_editor_canvas_tools', 'test_editor_fold_wiring')
     'editor_help'    = @('test_editor_ux')
     'editor_doc'     = @('test_editor_doc', 'test_editor_verify', 'test_editor_ux', 'test_voronoi_tiling', 'test_wormhole_levels')
     'batch_forge'    = @('test_batch_forge', 'test_level_sets')

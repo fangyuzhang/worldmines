@@ -371,6 +371,55 @@ func _draw_portals() -> void:
 		draw_circle(r.get_center(), maxf(3.0, cp * 0.18), ThemeManager.accent())
 
 
+## 折痕（编辑器呈现）：每条折痕画一条虚线；顺序越靠后越淡，用户能看出先折哪一条。
+## 【为什么线段计算单独暴露】无头测试不渲染像素，但可以验证“每折一条线、位置正确”。
+func fold_crease_segments() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if doc == null:
+		return out
+	var folds := FoldModel.fold_list(doc.fold)
+	if folds.is_empty():
+		return out
+	var cp := cell_px()
+	var o := board_origin()
+	var total := Vector2(doc.cols, doc.rows) * cp
+	for i in folds.size():
+		var f: Dictionary = folds[i]
+		var axis := str(f.get("axis", ""))
+		var at := int(f.get("at", 0))
+		var a := Vector2.ZERO
+		var b := Vector2.ZERO
+		if axis == FoldModel.AXIS_X and at >= 1:
+			var x := o.x + float(at) * cp
+			a = Vector2(x, o.y)
+			b = Vector2(x, o.y + total.y)
+		elif axis == FoldModel.AXIS_Y and at >= 1:
+			var y := o.y + float(at) * cp
+			a = Vector2(o.x, y)
+			b = Vector2(o.x + total.x, y)
+		else:
+			continue
+		out.append({"order": i, "axis": axis, "at": at, "a": a, "b": b})
+	return out
+
+
+func _draw_folds() -> void:
+	var segs := fold_crease_segments()
+	if segs.is_empty():
+		return
+	var cp := cell_px()
+	for seg: Dictionary in segs:
+		var a: Vector2 = seg["a"]
+		var b: Vector2 = seg["b"]
+		var col := ThemeManager.accent()
+		col.a = clampf(0.95 - float(int(seg["order"])) * 0.12, 0.35, 0.95)
+		var w := maxf(2.0, cp * 0.10)
+		if cp >= GRID_THIN_MIN_PX:
+			draw_dashed_line(a, b, col, w)
+		else:
+			draw_line(a, b, col, w)
+
+
 ## 第 i 对虫洞的颜色：与 `board_view._portal_color` 同一套"主题色相 + 黄金角散开"口径
 ##（两端同色 ⇒ 作者在编辑器里看到的配对配色，与玩家在游戏里看到的是同一套）。
 func portal_color(i: int) -> Color:
@@ -828,6 +877,7 @@ func _draw() -> void:
 
 	# 叠加层（正式 API：多层、颜色走主题；见 `set_overlay`）
 	_draw_overlays(vis)
+	_draw_folds()
 	_draw_portals()
 
 	# 直线工具预览（拖动中“待落笔”的那条线）

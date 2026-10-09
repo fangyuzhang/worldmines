@@ -293,6 +293,12 @@ var _mega_note: Label
 var _open_opt: OptionButton
 # ---- 【2026-10-09 接线】文档 §3/§5/§8/§9 的余项（全部只转发到 core，UI 不自造判据）----
 ## 四象染色预览开关（显示组）：数据走 `ColoringPreview.quadrant_preview`，颜色走它的色表。
+## ---- 折叠（折痕）作者入口：折痕是“关卡内容”，不是画布上某几格的笔刷状态 ----
+## UI 只负责追加 / 删除折痕，合法性、配对和层数一律问 `FoldModel`（判据不在这里自造）。
+var _fold_axis_opt: OptionButton
+var _fold_at_spin: SpinBox
+var _fold_list_box: VBoxContainer
+var _fold_note: Label
 ## 虫洞配对的第一端（(-1,-1) = 没有半截配对）；第二端点上去就成对。
 var _pair_pending := Vector2i(-1, -1)
 var _quad_btn: Button
@@ -2024,6 +2030,8 @@ func _build_props_tab() -> Control:
 		+ "「形状尺寸」对圆 / 星 / 扇形是半径（格），对 Voronoi 是种子个数，"
 		+ "对等轴菱面是方块域边长（棋盘按 3 格一行展开：每 3 格 = 同一个方块的三个面）。"))
 	_build_shape_compose(box)
+	# 折叠关（拓扑族）：core 已有顺序折叠，这里补作者入口。
+	_build_fold_panel(box)
 	# 文字转形状（文档 §3，「文字转形状」入口）：core 已单测，这里只补输入与写回。
 	_build_text_shape_entry(box)
 	# 复合格（MegaCell）：合并/拆分/邻接下钻都在 core，这里只补"进入 / 返回"两个入口。
@@ -2034,6 +2042,181 @@ func _build_props_tab() -> Control:
 	_build_color_lock_panel(box)
 	scroll.add_child(box)
 	return scroll
+
+
+## 折叠（折痕）面板：一张盘可以按顺序折多折（折纸族）。
+## 【为什么不做成画布格工具】折痕是整盘属性（一条线切两半），不是“点两格配对”的虫洞；
+## 用户要选轴 + 折痕位置，再把结果交给`FoldModel.normalize_folds` 拒绝或接受。
+func _build_fold_panel(box: VBoxContainer) -> void:
+	box.add_child(_section_label("折叠（一张盘按顺序折多次；远侧会盖到近侧）"))
+	box.add_child(_plain_label("左右折 = 折痕竖着，上下折 = 折痕横着；"
+		+ "折痕位置 at 是右侧/下侧第一格的坐标。后一折只能折到当前剩下那张纸里。"))
+	_fold_axis_opt = OptionButton.new()
+	_fold_axis_opt.fit_to_longest_item = false
+	_fold_axis_opt.clip_text = true
+	_fold_axis_opt.add_item("左右折（折痕竖着）", 0)
+	_fold_axis_opt.add_item("上下折（折痕横着）", 1)
+	_fold_axis_opt.item_selected.connect(func(_i: int) -> void: _on_fold_axis_selected())
+	box.add_child(_fold_axis_opt)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.add_child(_plain_label("折痕位置"))
+	_fold_at_spin = _spin(1, 64, 1)
+	row.add_child(_fold_at_spin)
+	row.add_child(_action_button("加一折", _on_fold_added))
+	box.add_child(row)
+	_fold_list_box = VBoxContainer.new()
+	_fold_list_box.add_theme_constant_override("separation", 2)
+	box.add_child(_fold_list_box)
+	_fold_note = _plain_label("")
+	box.add_child(_fold_note)
+
+
+## 当前轴名：只用 FoldModel 的常量，不在这里写裸字符串 x/y。
+func _fold_axis_key() -> String:
+	return FoldModel.AXIS_X if _fold_axis_opt != null and _fold_axis_opt.selected == 0 else FoldModel.AXIS_Y
+
+
+## 当前盘上存在的格（含洞/异形的排除规则一律问网格，不按 rows×cols 包围盒猜）。
+func _fold_positions() -> Array[Vector2i]:
+	var empty: Array[Vector2i] = []
+	if doc == null:
+		return empty
+	var g := doc.grid()
+	if g == null:
+		return empty
+	return g.all_positions()
+
+
+## 折完当前折痕后还剩哪些格；声明非法时退回原始盘面，让状态行去报错。
+func _fold_current_positions() -> Array[Vector2i]:
+	var positions := _fold_positions()
+	if doc == null:
+		return positions
+	var norm := FoldModel.normalize_folds(FoldModel.fold_list(doc.fold), positions)
+	if not bool(norm["ok"]):
+		return positions
+	var cur: Array[Vector2i] = positions
+	for f_v: Variant in (norm["folds"] as Array):
+		var f: Dictionary = f_v
+		cur = FoldModel.footprint_after(cur, str(f["axis"]), int(f["at"]))
+	return cur
+
+
+## 某一轴在当前纸面上的总宽度（折痕 at 的上限 = 宽度 - 1）。
+func _fold_axis_extent(axis: String, positions: Array[Vector2i]) -> int:
+	var extent := 0
+	for p in positions:
+		extent = maxi(extent, FoldModel.index_of(p, axis) + 1)
+	return extent
+
+
+func _fold_axis_label(axis: String) -> String:
+	if axis == FoldModel.AXIS_X:
+		return "左右折"
+	if axis == FoldModel.AXIS_Y:
+		return "上下折"
+	return "未知轴"
+
+
+## 折痕序列当前未配对格数的可读尾注（挖洞/折出盘外都不是错误，只是作者提示）。
+func _fold_unpaired_note(rep: Dictionary) -> String:
+	var n := int(rep.get("unpaired", 0))
+	if n <= 0:
+		return ""
+	return "；有 %d 格翻过去没有对家（挖洞或折出盘外，属于提示）" % n
+
+
+func _on_fold_axis_selected() -> void:
+	if _syncing:
+		return
+	_refresh_fold_ui()
+
+
+## 追加一折：先在文档副本上试算，非法就只报原因、一格数据都不改。
+func _on_fold_added() -> void:
+	if doc == null or _fold_axis_opt == null or _fold_at_spin == null:
+		return
+	var seq := FoldModel.fold_list(doc.fold)
+	var axis := _fold_axis_key()
+	var at := int(_fold_at_spin.value)
+	var trial: Array = seq.duplicate(true)
+	trial.append({"axis": axis, "at": at})
+	var norm := FoldModel.normalize_folds(trial, _fold_positions())
+	if not bool(norm["ok"]):
+		# 【反馈不能只进 toast】toast 会消失；状态行必须留下这次拒绝的原因，用户才知道该改哪一折。
+		var errs: Array = norm["errors"]
+		var reason := str(errs[0] if not errs.is_empty() else "声明不合法")
+		_refresh_fold_ui()
+		if _fold_note != null:
+			_fold_note.add_theme_color_override("font_color", Color(0.90, 0.27, 0.24, 1.0))
+			_fold_note.text = "这折没加上：%s" % reason
+		_toast("折痕没加上：%s" % reason, true, 6.0)
+		return
+	_push_undo(false)
+	doc.fold = {"folds": (norm["folds"] as Array).duplicate(true)}
+	_mark_dirty()
+	_refresh_all()
+	_toast("已加第 %d 折：%s@%d" % [trial.size(), _fold_axis_label(axis), at])
+
+
+## 删一折：删除后仍保留某几折的先后关系；合法性会在刷新时重新体检。
+func _on_fold_delete(index: int) -> void:
+	if doc == null:
+		return
+	var seq := FoldModel.fold_list(doc.fold)
+	if index < 0 or index >= seq.size():
+		return
+	_push_undo(false)
+	seq.remove_at(index)
+	doc.fold = {} if seq.is_empty() else {"folds": seq}
+	_mark_dirty()
+	_refresh_all()
+	_toast("已删掉第 %d 折（可撤销）" % (index + 1))
+
+
+## 常驻刷新：列表 + at 上限 + 通过/拒绝原因 + 最厚层数。
+func _refresh_fold_ui() -> void:
+	if _fold_list_box == null or _fold_note == null:
+		return
+	for child in _fold_list_box.get_children():
+		_fold_list_box.remove_child(child)
+		child.queue_free()
+	var seq: Array = FoldModel.fold_list(doc.fold) if doc != null else []
+	if seq.is_empty():
+		_fold_list_box.add_child(_plain_label("当前没有折痕：这张盘还是平的。"))
+	else:
+		for i in seq.size():
+			var f: Dictionary = seq[i]
+			var row := HBoxContainer.new()
+			row.add_theme_constant_override("separation", 6)
+			row.add_child(_plain_label("第 %d 折：%s@%d" % [i + 1, _fold_axis_label(str(f.get("axis", ""))), int(f.get("at", 0))]))
+			var idx := i
+			var del := _action_button("删除", func() -> void: _on_fold_delete(idx))
+			del.custom_minimum_size = Vector2(58, 28)
+			row.add_child(del)
+			_fold_list_box.add_child(row)
+	if doc == null:
+		_fold_note.text = "载入关卡后可以在这里加折痕。"
+		return
+	var norm := FoldModel.normalize_folds(seq, _fold_positions())
+	if not bool(norm["ok"]):
+		_fold_note.add_theme_color_override("font_color", Color(0.90, 0.27, 0.24, 1.0))
+		var errs: Array = norm["errors"]
+		_fold_note.text = "当前折痕不合法：%s" % str(errs[0] if not errs.is_empty() else "声明不合法")
+		return
+	_fold_note.add_theme_color_override("font_color", _label_color())
+	if seq.is_empty():
+		_fold_note.text = "当前没有折痕。"
+	else:
+		var rep := FoldModel.audit_folds(seq, _fold_positions())
+		_fold_note.text = "当前 %d 折：%s；折完最厚 %d 层%s" % [
+			seq.size(), FoldModel.describe(seq), int(rep["layers_max"]), _fold_unpaired_note(rep)]
+	var cur := _fold_current_positions()
+	var axis := _fold_axis_key()
+	var cap := maxi(1, _fold_axis_extent(axis, cur) - 1)
+	_fold_at_spin.max_value = float(cap)
+	_fold_at_spin.value = clampf(_fold_at_spin.value, 1.0, float(cap))
 
 
 ## 复合格（Mega Cell）下钻区：core（`core/mega_cell.gd`）已有 `drill_in/drill_out/is_inside/drill_path`，
@@ -3296,6 +3479,7 @@ func _refresh_all() -> void:
 	_refresh_stats()
 	_refresh_color_lock()
 	_refresh_domino_note()
+	_refresh_fold_ui()
 	_refresh_thumb_preview()
 
 
