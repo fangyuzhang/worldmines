@@ -2010,6 +2010,158 @@ func _draw_board_mat(size: Vector2i) -> void:
 		draw_style_box(sb, rect)
 
 
+## 异形盘垫子（逐格外扩版）：把「格与格之间的缝」铺成本主题的板色，而不是露出视口底色。
+## 调用点在 _draw()（见那里的长注释）。两条硬约束：
+##   ① 板色必须**不透明**才允许逐格重叠铺（半透板会叠深）⇒ 棱镜玻璃等 a<1 的主题直接跳过；
+##   ② 只在**真有缝**时铺；已经严丝合缝的镶嵌盘与两格几何重叠处 ⇒ 不画（零回归）。
+const SEAM_MIN_PX := 0.5    # 缝宽 ≤ 此值 ⇒ 视为无缝（格边严丝合缝 / 两格几何重叠），不补
+const SEAM_PAD_PX := 0.75   # 补缝余量：盖住格线半宽与浮点误差，缝里不留原始底色
+
+
+func _draw_shape_mat() -> void:
+	var pad := ThemeManager.board_mat()
+	if not _shape_mat_is_opaque(pad):
+		return
+	var board: Board = GameSession.board
+	if board == null or board.grid == null:
+		return
+	for p: Vector2i in board.grid.all_positions():
+		var poly := _cell_polygon(p)
+		if poly.size() < 3:
+			continue
+		var k := _shape_mat_scale(p, poly)
+		if k <= 1.0:
+			continue   # 无缝可补（_shape_mat_scale 只在「与邻格真有缝」时 > 1）
+		draw_colored_polygon(scale_polygon_about(poly, _cell_center(p), k), pad)
+
+
+## 板色是否**够不透明**到可以逐格重叠铺。半透板逐格重叠会叠深（越叠越实）⇒ 必须跳过。
+## 抽成 static 纯函数：让单测能直接钉住「棱镜玻璃那种 a=0.05 的板色必须被判为不可铺」。
+static func _shape_mat_is_opaque(pad: Color) -> bool:
+	return pad.a >= 0.999
+
+
+## 该格需要的外扩缩放比（绕格心等比缩放）；**只有「与邻格之间真有一条缝」时才 > 1**。
+##
+## 缝宽口径 = **真·多边形间距**（两格多边形的最近点距），见 _polygon_gap。
+## ⚠️ 不能用「格心距 − 两边内切半径」，更不能用「格心距/2 − 本格内切半径」：
+## 两者都只在**相邻两格同尺寸、且共享边垂直于格心连线**时才成立。实测两种情况会算错 ——
+##   ① 蜂窝/方阵：两式都对（相邻同尺寸）；
+##   ② 扇形格（同心环盘）：共享边是**径向**的，与格心连线不垂直 ⇒ 算出 1.8× 的假缝；
+##   ③ 混排格（截角三角盘：三角形 + 十二边形）：内切半径差 6 倍 ⇒ 算出 3.7× 的假缝。
+## 假缝的后果是把垫色糊到盘的轮廓**之外** —— 玩家看到盘外多一圈假边框，比不补更丑。
+## 故直接用真·多边形间距：共享边/几何重叠恰好为 0（零回归），有缝才为正。
+##
+## 缝宽 ≤ SEAM_MIN_PX ⇒ 返回 1.0（无缝可补）；否则把该格外扩到「中缝 + SEAM_PAD_PX」：
+## k·inr = inr + 缝宽/2 + 余量（外扩量 = 缝宽/2 + 余量 ⇒ 盘边缘的溢出也只有这么多，不会成框）。
+## 无邻格 / 邻格数据缺失 / 洞格（get_cell()==null）/ 内切半径为 0 ⇒ 返回 1.0（不外扩）。
+func _shape_mat_scale(pos: Vector2i, poly: PackedVector2Array) -> float:
+	var board: Board = GameSession.board
+	if board == null or board.grid == null:
+		return 1.0
+	_ensure_seam_cache()
+	if not _seam_ratio_cache.has(pos):
+		return 1.0
+	var inr := _polygon_inradius(poly, _cell_center(pos))
+	if inr <= 0.001:
+		return 1.0
+	# 缓存里是**缝宽 / 本格内切半径**（无量纲）：与 unit_px 无关 ⇒ 缩放窗口不用重建缓存。
+	var gap_px := float(_seam_ratio_cache[pos]) * inr
+	if gap_px <= SEAM_MIN_PX:
+		return 1.0   # 无缝可补（含两格几何重叠 / 共享边）
+	return 1.0 + (gap_px * 0.5 + SEAM_PAD_PX) / inr
+
+
+## 缝宽比缓存：Vector2i → 缝宽 / 本格内切半径。**无量纲**（与 unit_px 无关）。
+## 只在换 Board 时重建一次：真·多边形间距是 O(格数 × 邻数 × 顶点²)，每帧算会掉帧；
+## 而几何一旦落盘就不变（格心/顶点都随 unit_px 等比缩放，比值恒定）。
+var _seam_ratio_cache: Dictionary = {}
+## 缓存属于哪个 Board（**持引用**：Board 是 RefCounted ⇒ 旧盘不会被回收、instance_id 不会被复用）。
+var _seam_ratio_board: Board = null
+
+
+## 重建缝宽比缓存（口径见 _shape_mat_scale）。
+func _ensure_seam_cache() -> void:
+	var board: Board = GameSession.board
+	if board == null or board.grid == null:
+		return
+	if _seam_ratio_board == board and not _seam_ratio_cache.is_empty():
+		return
+	_seam_ratio_board = board
+	_seam_ratio_cache.clear()
+	for p: Vector2i in board.grid.all_positions():
+		var poly := _cell_polygon(p)
+		if poly.size() < 3:
+			continue
+		var inr := _polygon_inradius(poly, _cell_center(p))
+		if inr <= 0.001:
+			continue
+		var gap := INF
+		for q: Vector2i in board.grid.get_neighbors(p):
+			if board.grid.get_cell(q) == null:
+				continue   # 洞格（异形拓扑的盘外格）
+			var qpoly := _cell_polygon(q)
+			if qpoly.size() < 3:
+				continue
+			gap = minf(gap, _polygon_gap(poly, qpoly))
+		if is_finite(gap):
+			_seam_ratio_cache[p] = gap / inr
+
+
+## 两个凸多边形之间的最短距离；相交或共享边 ⇒ 0。
+## 凸多边形的最小距离必在「一方的顶点 ↔ 另一方的边」上取得，故逐顶点量到对边即可。
+static func _polygon_gap(a: PackedVector2Array, b: PackedVector2Array) -> float:
+	if a.size() < 3 or b.size() < 3:
+		return 0.0
+	# 先做包含判定：一方的顶点落进另一方内部（几何重叠）⇒ 距离 0。
+	# 只靠顶点—对边距离不够：顶点深深嵌进对方内部时那段距离反而是正的。
+	for v in a:
+		if Geometry2D.is_point_in_polygon(v, b):
+			return 0.0
+	for v in b:
+		if Geometry2D.is_point_in_polygon(v, a):
+			return 0.0
+	var best := INF
+	var na := a.size()
+	var nb := b.size()
+	for i in na:
+		var p := a[i]
+		var q := a[(i + 1) % na]
+		for j in nb:
+			best = minf(best, _point_seg_dist(b[j], p, q))
+	for j in nb:
+		var p := b[j]
+		var q := b[(j + 1) % nb]
+		for i in na:
+			best = minf(best, _point_seg_dist(a[i], p, q))
+	return 0.0 if not is_finite(best) else best
+
+
+## 点到线段的最短距离（垂足落在线段外时退化为到端点的距离）。
+static func _point_seg_dist(pt: Vector2, a: Vector2, b: Vector2) -> float:
+	var ab := b - a
+	var l2 := ab.length_squared()
+	if l2 < 0.0000001:
+		return pt.distance_to(a)
+	var t := clampf((pt - a).dot(ab) / l2, 0.0, 1.0)
+	return pt.distance_to(a + ab * t)
+
+
+## 凸多边形对**格心**的内切半径（格心到各边的最短距离）。
+## 用途：把「外扩多少像素」换算成「绕格心的缩放比」。蜂窝/自定义盘的格心必在多边形内部。
+static func _polygon_inradius(poly: PackedVector2Array, c: Vector2) -> float:
+	var best := INF
+	var n := poly.size()
+	for i in n:
+		var a := poly[i]
+		var ab := poly[(i + 1) % n] - a
+		var l := ab.length()
+		if l < 0.0001:
+			continue
+		best = minf(best, absf((c - a).cross(ab)) / l)
+	return 0.0 if not is_finite(best) else best
+
+
 ## 用烘焙背景贴图把 rect 区域重画一遍（玻璃垫板下方的「影擦除」）。
 ## 贴图整铺视口（_draw_prism_background 同口径），局部坐标 = 视口坐标，按比例取源区域。
 ## 贴图缺失（兜底单色分支）时退化为铺一块主题底色。
@@ -2204,6 +2356,15 @@ func _draw() -> void:
 	var hex := _hex_layout()
 	# CozyStyle 棋盘垫子（2026-09-29）：必须早于所有格填充，垫在下面。
 	_draw_board_mat(size)
+	# 异形盘的「垫子」（2026-10-09）：_draw_board_mat 是**矩形**垫，套在多边形盘上四角会露方角
+	#（上面那条注释说的就是这件事），所以异形盘一直没有垫子 —— 代价是格与格之间的缝直接露出
+	# 视口底色（近黑）：异形盘的格线于是变成「细线 + 高对比黑带 + 细线」，既碎又脏；
+	# 而矩形盘同一位置露的是主题板色 —— 这正是玩家说的「异形关比普通关丑」的结构差异。
+	# 改为**逐格外扩**的垫法：每格按「到最近邻格心的距离」外扩到中缝，相邻格的外扩层在缝里
+	# 拼成连续的一片板色；各格填充随后把内部盖回去 ⇒ 缝里留下主题板色。
+	# 板色不透明（CozyStyle 契约）+ 本来无缝的盘 k≈1 不画 ⇒ 两种情况下都不会改变观感。
+	if _cozy_tiles() and (hex or custom):
+		_draw_shape_mat()
 	for r in size.y:
 		for c in size.x:
 			var pos := Vector2i(c, r)
@@ -2822,11 +2983,12 @@ func _draw_wave_color_pulse() -> void:
 		_draw_cell_fill(pos, col)
 
 
-## 波浪高亮描边的线宽：静止 1.0，随波浪强度 g 线性加粗到 1.0 + WAVE_LINE_GAIN。
+## 波浪高亮描边的线宽：静止 = base，随波浪强度 g 线性加粗到 base + WAVE_LINE_GAIN。
 ## 收尾质感项「涟漪线的线宽」：波前经过时线略粗 → 边缘更锐、更「立」；
-## g=0 时精确回 1.0（非波浪帧与旧行为逐像素一致，避免静态棋盘观感变化）。
-func _grid_line_width(g: float) -> float:
-	return 1.0 + WAVE_LINE_GAIN * clampf(g, 0.0, 1.0)
+## g=0 时精确回 base（非波浪帧与旧行为逐像素一致，避免静态棋盘观感变化）。
+## base 默认 1.0 = 矩形盘旧行为；异形盘传 _shape_grid_line_w()（见该函数）。
+func _grid_line_width(g: float, base: float = 1.0) -> float:
+	return base + WAVE_LINE_GAIN * clampf(g, 0.0, 1.0)
 
 
 ## 网格线独立绘制遍（0 间隙方案的主通道）。
@@ -2890,19 +3052,44 @@ func _draw_grid_lines() -> void:
 
 ## 波浪路径：逐格闭合折线（旧行为原样保留 —— 被波及格的线色/线宽逐格独立变化）。
 func _draw_grid_lines_per_cell(board: Board, line: Color, glow: Color) -> void:
+	var base_w := float(_shape_grid_line_w())
 	for p: Vector2i in board.grid.all_positions():
 		var col := _outline_color()
-		var lw := 1.0
+		var lw := base_w
 		var e: Dictionary = _ripple_cache.get(p, {})
 		if not e.is_empty():
 			var g: float = float(e["g"])
 			col = line.lerp(glow, WAVE_GLOW * g)
-			lw = _grid_line_width(g)
+			lw = _grid_line_width(g, base_w)
 		var poly := _cell_polygon(p)
 		if poly.size() < 3:
 			continue
 		poly.append(poly[0])   # 闭合（draw_polyline 画的是折线）
 		draw_polyline(poly, col, lw, lw > 1.0)
+
+
+## 异形盘（蜂窝 / 自定义几何盘）的**视觉格边长**（像素）。
+## 不直接用布局给的 cell_px：那是「内容盒」口径（蜂窝盘上只有内接正方形大小，
+## ≈ 视觉格边长的 3/4），照它算线宽会整体偏细一档。
+## 蜂窝 = 平顶六边形的对边距（2×内切半径）；自定义盘 = 1 个世界单位对应的像素数。
+func _shape_visual_cell_px() -> float:
+	if _custom_layout():
+		return _custom_unit_px
+	if _hex_layout():
+		return 2.0 * HEX_INRADIUS * _hex_unit_px
+	return float(cell_px)
+
+
+## 异形盘格线宽度（整数 1~3px）——**与瓦片线稿同口径**：按视觉格边长 / LINE_REF_CELL 取整。
+##
+## 为什么必须按尺寸缩放：矩形/瓦片线稿一直走 _scaled_line_w（大格子上 2~3px），
+## 而异形盘的格线历史上恒画 1px。1px 的**斜边**必然落在非整数像素上，同一条线
+## 沿线灰阶会在 4 档之间跳（实测：横边 60px 恒为同一灰阶，斜边逐行抖 58/75/91/125）
+## ⇒ 玩家描述为「线不连续 / 颗粒感 / 像素感」，而且只出现在异形盘（矩形盘没有斜边、
+## 线又落在整数像素上，天然没有这个现象）。
+## 线宽 ≥2px 时线芯像素被完整覆盖，沿线灰阶恒定，只剩两侧由 AA/MSAA 平滑的羽边。
+func _shape_grid_line_w() -> int:
+	return clampi(roundi(_shape_visual_cell_px() / LINE_REF_CELL), 1, 3)
 
 
 ## 静态帧：**边去重 + 斜边抗锯齿** 的网格线（蜂窝 + 自定义盘共用；矩形路径不走这里）。
@@ -2911,10 +3098,12 @@ func _draw_grid_lines_per_cell(board: Board, line: Color, glow: Color) -> void:
 ## 归并（0.05px 容差空间哈希，远小于格间最短边 ≥8px，绝不误并），每条边恰好画一次 →
 ## 线宽一致、连续。同时对斜边开抗锯齿：60° 对角线在 1px 无 AA 时逐列硬跳 2 行（台阶 =
 ## 「像素感」来源），AA 后平滑；横竖边保持无 AA（整数像素下本就精确，避免 AA 羽化晕边）。
+## 线宽走 _shape_grid_line_w()：1px 细斜线沿线灰阶抖动（颗粒感）的根治手段，见该函数。
 func _draw_grid_lines_dedup(line: Color) -> void:
 	var board: Board = GameSession.board
 	if board == null or board.grid == null:
 		return
+	var lw := float(_shape_grid_line_w())
 	var reps: Array[Vector2] = []   # 归并后的顶点代表表（首见坐标为准）
 	var vmap: Dictionary = {}       # 0.05px 空间哈希格 → 顶点代表序号
 	var edges: Dictionary = {}      # "ia|ib"（ia<ib）→ 已画过
@@ -2937,9 +3126,9 @@ func _draw_grid_lines_dedup(line: Color) -> void:
 			edges[key] = true
 			var a := reps[ia]
 			var b := reps[ib]
-			# 横竖边（轴对齐）无 AA：整数像素下本就 1px 精确；斜边开 AA 消除台阶。
+			# 横竖边（轴对齐）无 AA：整数像素下本就精确；斜边开 AA 消除台阶。
 			var axis_aligned: bool = absf(a.y - b.y) < 0.001 or absf(a.x - b.x) < 0.001
-			draw_line(a, b, line, 1.0, not axis_aligned)
+			draw_line(a, b, line, lw, not axis_aligned)
 
 
 ## 顶点归并：0.05px 网格哈希 + 3×3 邻域查重，返回该顶点的代表序号。

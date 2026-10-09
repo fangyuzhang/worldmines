@@ -54,7 +54,7 @@ $map = @{
     'theme_manager'  = @('test_ui_mounts')
     'progress_store' = @('test_progress_store')
     'save_coordinator' = @('test_save_coordinator')
-    'board_view'     = @('test_single_cell_pop', 'test_wave_stagger', 'test_progress_check', 'test_topology_view')
+    'board_view'     = @('test_single_cell_pop', 'test_wave_stagger', 'test_progress_check', 'test_topology_view', 'test_shape_style')
     'puzzle_generator' = @('test_generator_multifaceted', 'test_solver_budget')
     'rule_registry'  = @('test_rule_platform', 'test_spec_schema')
     # 【2026-10-03 补】新增 core 模块长期没进映射表 ⇒ 改了它们却"映射不到用例"，

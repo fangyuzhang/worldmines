@@ -480,3 +480,192 @@ func test_board_view_rect_path_is_pixel_identical() -> void:
 			"矩形路径的棋盘→屏幕换算不得变化")
 	assert_eq(view._screen_pt_to_board(pt), (pt - view.board_origin) / float(maxi(view.cell_px, 1)),
 			"矩形路径的屏幕→棋盘换算不得变化")
+
+
+# ==================== 异形盘格线宽度（2026-10-09）====================
+#
+# 玩家反馈：「异形关卡的线不连续、像有颗粒感/像素感，矩形关卡没有这种情况」。
+# 实测（hex_01 @1280x720 截图逐像素扫描）：横边连续 60px 恒为同一灰阶，
+# 而斜边沿线灰阶在 58 / 75 / 91 / 125 四档之间来回跳 —— 1px 细斜线必然落在非整数像素上，
+# 每像素的覆盖率与「底下是亮填充还是暗缝」都不同 ⇒ 沿线深浅抖动 = 玩家说的颗粒感。
+# 矩形盘没有斜边、线又落在整数像素上，天然没有这个现象。
+# 根治手段 = 与瓦片线稿同口径：线宽按**视觉格边长**缩放（≥2px 时线芯被完整覆盖）。
+# 下面钉住「缩放口径」与「矩形盘零回归」两侧。
+
+func test_shape_grid_line_width_scales_with_visual_cell() -> void:
+	assert_true(GameSession.start_level("res://levels/hex_01.json"), "应能开 hex_01")
+	var view = load("res://ui/board_view.tscn").instantiate()
+	add_child_autofree(view)
+	await wait_process_frames(1)
+	assert_true(view._hex_layout(), "hex_01 应走蜂窝几何")
+	# 视觉格边长 = 平顶六边形的对边距 = 2×内切半径×unit（不是内容盒 cell_px）
+	assert_almost_eq(view._shape_visual_cell_px(), 2.0 * BV.HEX_INRADIUS * view._hex_unit_px, PX_EPS,
+			"蜂窝盘的视觉格边长应为对边距")
+	assert_gt(view._shape_visual_cell_px(), float(view.cell_px),
+			"视觉格边长必须大于内容盒 cell_px（否则线宽会整体偏细一档）")
+	assert_eq(view._shape_grid_line_w(), 2, "100px 级的蜂窝格应取 2px 格线（1px 必沿线抖动）")
+	# 波浪帧必须从同一基准出发，静止帧与波浪帧的线宽口径才一致
+	assert_almost_eq(view._grid_line_width(0.0, float(view._shape_grid_line_w())), 2.0, EXACT_EPS,
+			"波浪线宽 g=0 必须精确回到基准线宽")
+	assert_almost_eq(view._grid_line_width(1.0, float(view._shape_grid_line_w())),
+			2.0 + BV.WAVE_LINE_GAIN, EXACT_EPS, "波浪线宽 = 基准 + WAVE_LINE_GAIN")
+	GameSession.start_level("res://levels/classic_01.json")
+
+
+func test_small_shape_cells_keep_one_px_line() -> void:
+	# 小格子（视觉格边长 < 1.5×LINE_REF_CELL）不得被这条规则改胖：取整后仍是 1px
+	assert_true(GameSession.start_level("res://levels/girih_01.json"), "应能开 girih_01")
+	var view = load("res://ui/board_view.tscn").instantiate()
+	add_child_autofree(view)
+	await wait_process_frames(1)
+	assert_true(view._custom_layout(), "吉里赫盘应走自定义几何")
+	assert_lt(view._shape_visual_cell_px(), 96.0, "前提：本盘是小格子")
+	assert_eq(view._shape_grid_line_w(), 1, "小格子的格线应保持 1px（不改胖）")
+	GameSession.start_level("res://levels/classic_01.json")
+
+
+func test_rect_grid_line_width_default_is_unchanged() -> void:
+	# 矩形盘零回归：_grid_line_width 的 base 默认值必须仍是 1.0（旧行为逐像素不变）
+	assert_true(GameSession.start_level("res://levels/classic_01.json"), "需要经典矩形关卡")
+	var view = load("res://ui/board_view.tscn").instantiate()
+	add_child_autofree(view)
+	await wait_process_frames(1)
+	assert_false(view._hex_layout(), "矩形关卡不得走蜂窝几何")
+	assert_false(view._custom_layout(), "矩形关卡不得走自定义几何")
+	assert_almost_eq(view._grid_line_width(0.0), 1.0, EXACT_EPS, "矩形盘静止帧线宽必须仍是 1.0")
+	assert_almost_eq(view._grid_line_width(1.0), 1.0 + BV.WAVE_LINE_GAIN, EXACT_EPS,
+			"矩形盘波浪帧线宽公式不得变化")
+	assert_almost_eq(view._shape_visual_cell_px(), float(view.cell_px), PX_EPS,
+			"非异形盘的视觉格边长应回落到 cell_px")
+
+
+
+# ==================== 异形盘垫子 / 补缝（2026-10-09）====================
+#
+# 玩家反馈的「异形盘格线又碎又脏」有两层结构原因：
+#   ① 1px 斜线沿线灰阶抖动（上一节已修：线宽按视觉格边长缩放）；
+#   ② 格与格之间的缝**直接露出视口底色**（近黑）：同一段格线于是变成
+#      「细线 + 高对比黑带 + 细线」；矩形盘同一位置露的是主题板色 —— 这正是
+#      「异形盘比矩形盘丑」的结构差异（_draw_board_mat 是矩形垫，套多边形盘会露方角）。
+# 对策 = 逐格把多边形外扩到「与邻格的中缝」，缝里于是铺满主题板色。
+# 判据 = **真·多边形间距**（两格多边形的最近点距），再换算成像素看是否超过阈值。
+# ⚠️ 不能用「格心距/2 − 内切半径」（只在相邻同尺寸时成立）：实测扇形格（同心环盘）算出
+# 1.8× 的假缝、「三角形+十二边形」混排盘算出 3.7× 的假缝 —— 后果是把垫色糊到盘的**轮廓
+# 之外**，玩家看到盘外多一圈假边框，比不补更丑。真·多边形间距在共享边/几何重叠处恰为 0。
+# 下面钉住补缝判据的五侧：内切半径、多边形间距纯函数、板色不透明闸门、无缝盘零回归、有缝盘一致外扩。
+
+func test_polygon_inradius_matches_square() -> void:
+	# 边长 100 的正方形、格心在正中 ⇒ 内切半径必为 50。
+	var poly := PackedVector2Array([
+		Vector2(-50.0, -50.0), Vector2(50.0, -50.0), Vector2(50.0, 50.0), Vector2(-50.0, 50.0)])
+	assert_almost_eq(BV._polygon_inradius(poly, Vector2.ZERO), 50.0, PX_EPS,
+			"正方形对格心的内切半径应为半边长")
+	# 格心挪到一边 ⇒ 内切半径 = 到最近边（上边 y=-50）的距离 = 20
+	assert_almost_eq(BV._polygon_inradius(poly, Vector2(0.0, -30.0)), 20.0, PX_EPS,
+			"格心偏心时内切半径应取到最近边的距离")
+
+
+func test_shape_mat_opacity_gate() -> void:
+	# 半透板（棱镜玻璃 a=0.05）逐格重叠会叠深 ⇒ 必须判为不可铺；不透明板色才允许铺。
+	assert_false(BV._shape_mat_is_opaque(Color(1.0, 1.0, 1.0, 0.05)),
+			"半透明白（棱镜玻璃板色）绝不允许逐格重叠铺")
+	assert_true(BV._shape_mat_is_opaque(Color("#526685")), "CozyStyle 不透明板色应允许铺")
+
+
+func test_shape_mat_scale_seamless_board_is_zero_regression() -> void:
+	# 等轴菱面盘（iso_01）本身严丝合缝 ⇒ 每格都必须返回 1.0（不铺；零回归）。
+	assert_true(GameSession.start_level("res://levels/iso_01.json"), "应能开 iso_01")
+	var view = load("res://ui/board_view.tscn").instantiate()
+	add_child_autofree(view)
+	await wait_process_frames(1)
+	assert_true(view._custom_layout(), "iso_01 应走自定义几何")
+	var board = GameSession.board
+	var total := 0
+	var expanded := 0
+	for p in board.grid.all_positions():
+		var poly = view._cell_polygon(p)
+		if poly.size() < 3:
+			continue
+		total += 1
+		if view._shape_mat_scale(p, poly) > 1.0:
+			expanded += 1
+	assert_gt(total, 0, "iso_01 应有格子")
+	assert_eq(expanded, 0, "严丝合缝的盘不得有任何一格外扩（否则会把无缝盘画花）")
+	GameSession.start_level("res://levels/classic_01.json")
+
+
+func test_shape_mat_scale_seamed_board_expands_consistently() -> void:
+	# 蜂窝盘相邻格天然留 ~5% 缝（原版 0.95 收缩的复刻，不能改成无缝）：
+	# 每一格都必须外扩，且必须**一致地铺**——不能一半铺一半不铺（斑驳比不铺更丑）。
+	assert_true(GameSession.start_level("res://levels/hex_01.json"), "应能开 hex_01")
+	var view = load("res://ui/board_view.tscn").instantiate()
+	add_child_autofree(view)
+	await wait_process_frames(1)
+	assert_true(view._hex_layout(), "hex_01 应走蜂窝几何")
+	var board = GameSession.board
+	var total := 0
+	var expanded := 0
+	var kmax := 0.0
+	for p in board.grid.all_positions():
+		var poly = view._cell_polygon(p)
+		if poly.size() < 3:
+			continue
+		total += 1
+		var k = view._shape_mat_scale(p, poly)
+		if k > 1.0:
+			expanded += 1
+		kmax = maxf(kmax, k)
+	assert_gt(total, 0, "hex_01 应有格子")
+	assert_eq(expanded, total, "蜂窝盘每一格都要补缝（一致铺，不得斑驳）")
+	# 外扩必须**只扩到中缝多一点**：k 远小于 2（否则会把垫色糊进邻格、吃掉格线）
+	assert_lt(kmax, 1.5, "补缝的外扩比必须温和（只够盖到中缝）")
+	GameSession.start_level("res://levels/classic_01.json")
+
+
+func test_polygon_gap_pure() -> void:
+	# 共享一条边 ⇒ 间距 0（这是「无缝」的判据，必须精确为 0）
+	var a := PackedVector2Array([
+		Vector2(0.0, 0.0), Vector2(100.0, 0.0), Vector2(100.0, 100.0), Vector2(0.0, 100.0)])
+	var b_touch := PackedVector2Array([
+		Vector2(100.0, 0.0), Vector2(200.0, 0.0), Vector2(200.0, 100.0), Vector2(100.0, 100.0)])
+	assert_almost_eq(BV._polygon_gap(a, b_touch), 0.0, 0.001, "共享边 ⇒ 间距必须为 0")
+	# 隔开 10px ⇒ 间距 10（真·多边形间距，不是格心距）
+	var b_far := PackedVector2Array([
+		Vector2(110.0, 0.0), Vector2(210.0, 0.0), Vector2(210.0, 100.0), Vector2(110.0, 100.0)])
+	assert_almost_eq(BV._polygon_gap(a, b_far), 10.0, 0.001, "隔开 10px ⇒ 间距应为 10")
+	# 几何重叠（一方顶点落进另一方）⇒ 0，绝不能报成正数（否则会给重叠格补一圈假边框）
+	var b_over := PackedVector2Array([
+		Vector2(50.0, 0.0), Vector2(150.0, 0.0), Vector2(150.0, 100.0), Vector2(50.0, 100.0)])
+	assert_almost_eq(BV._polygon_gap(a, b_over), 0.0, 0.001, "几何重叠 ⇒ 间距必须为 0")
+
+
+func test_shape_mat_scale_sector_and_mixed_boards_do_not_expand() -> void:
+	# 回归：扇形格（同心环盘）与「三角形+十二边形」混排盘的格其实是**严丝合缝**的，
+	# 旧口径会算出 1.8× / 3.7× 的假缝并把垫色糊到盘轮廓之外（盘外多一圈假边框）。
+	# 这两张盘必须一律不外扩。
+	for q in [
+		["res://levels/ring_01.json", "同心环盘的扇形格"],
+		["res://levels/t31212_01.json", "三角形+十二边形混排盘"],
+	]:
+		var path: String = q[0]
+		var label: String = q[1]
+		assert_true(GameSession.start_level(path), "应能开 " + path)
+		var view = load("res://ui/board_view.tscn").instantiate()
+		add_child_autofree(view)
+		await wait_process_frames(1)
+		var board = GameSession.board
+		var expanded := 0
+		var kmax := 0.0
+		for p in board.grid.all_positions():
+			var poly = view._cell_polygon(p)
+			if poly.size() < 3:
+				continue
+			var k = view._shape_mat_scale(p, poly)
+			if k > 1.0:
+				expanded += 1
+			kmax = maxf(kmax, k)
+		assert_eq(expanded, 0, label + "严丝合缝，一格都不得外扩（否则盘外多一圈假边框）")
+		assert_almost_eq(kmax, 1.0, 0.001, label + "的外扩比必须恒为 1.0")
+		view.queue_free()
+	GameSession.start_level("res://levels/classic_01.json")
+
