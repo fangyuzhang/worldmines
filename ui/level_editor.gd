@@ -140,6 +140,15 @@ var _top_title_label: Label = null
 var _props_group_headers: Array[Label] = []
 ## 右侧页签容器：「说明」层要显示**当前页**的说明，并跟着页签切换更新
 var _tabs: TabContainer = null
+## 左栏分段页（2026-10-09 框架重构）：左栏原来是一条约 1750px 的长条（视口只有 ~647px，
+## 要滚 2.7 屏），十几组功能挤在一列里 ⇒ 用户原话"太丑了，根本没法用"。
+## 现在拆成「流程 / 工具 / 分享」三页，每页各自滚动，最先用的东西永远在第一页顶上。
+## 【为什么不用 TabContainer】`test_level_editor_smoke.gd:49` 与 `test_editor_ux.gd:_tabs_of` 都按
+## 「全编辑器唯一一个 TabContainer（右侧 4 页）」断言；再塞一个 TabContainer 会当场把二者判红。
+## 所以这里用「一组互斥按钮 + 三个互斥可见的滚动页」实现同样的分区，契约不破。
+var _left_pages: Array[VBoxContainer] = []
+var _left_page_btns: Array[Button] = []
+var _left_page_group: ButtonGroup = null
 ## 【审查 D12 删除】`TAB_HELP` 与 `_tab_help_title/_tab_help_text` 已无调用方（说明层 v4 改走
 ## `_help_page_items` 逐控件收集）。留着只会误导后来人以为"页级说明"还在生效。
 
@@ -629,6 +638,51 @@ func _build_editor_topbar() -> Control:
 	return panel
 
 
+## 左栏分段切换器（流程 / 工具 / 分享）。
+## 只做一件事：把"哪一页可见"这件事做成两个入口（按钮 + 键盘不需要）都走同一个 `_show_left_page`。
+## 按钮互斥靠 `ButtonGroup`，页面互斥靠 `_show_left_page` —— 两条路径必须写同一份判据，
+## 否则会出现"按钮显示流程页高亮、实际显示工具页"这种自相矛盾的状态。
+func _build_left_dock_switcher() -> Control:
+	var seg := HBoxContainer.new()
+	seg.name = "左栏分段切换"
+	seg.add_theme_constant_override("separation", 3)
+	_left_page_group = ButtonGroup.new()
+	_left_page_btns.clear()
+	var specs := [
+		["流程", "做一关：四步流程 + 模板 + 布雷 + 编辑（最常用的都在这）"],
+		["工具", "画笔 / 格型 / 显示开关（你「怎么画」的一组开关）"],
+		["分享", "存档、缩略图、短码、认证提交、批量做关卡"],
+	]
+	for i in specs.size():
+		var b := Button.new()
+		b.text = str(specs[i][0])
+		b.tooltip_text = str(specs[i][1])
+		b.toggle_mode = true
+		b.button_group = _left_page_group
+		b.button_pressed = (i == 0)
+		b.clip_text = true
+		b.custom_minimum_size = Vector2(60, 30)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		# 【为什么用 bind 而不是闭包捕 i】循环里捕循环变量是经典坑：读代码的人无法一眼确定
+		# 它捕的是"当时的值"还是"最后的值"。`bind(i)` 把页号当参数显式传进去，没有歧义。
+		b.pressed.connect(_show_left_page.bind(i))
+		seg.add_child(b)
+		_left_page_btns.append(b)
+	return seg
+
+
+## 切到左栏第 idx 页（越界就当第 0 页，绝不留下"一个页面都不显示"的空白左栏）。
+func _show_left_page(idx: int) -> void:
+	if idx < 0 or idx >= _left_pages.size():
+		idx = 0
+	for i in _left_pages.size():
+		var sc := _left_pages[i].get_parent() as Control
+		if sc != null:
+			sc.visible = (i == idx)
+	for i in _left_page_btns.size():
+		_left_page_btns[i].button_pressed = (i == idx)
+
+
 ## 首屏"三句话"引导条。
 ## 【为什么必须有】2026-10-02 以小白身份实测：打开后看不懂「这是干什么的 / 从哪开始」——
 ## 全界面没有一个标题或一句说明，唯一像引导的是画布操作提示。
@@ -714,20 +768,47 @@ func _build_left_bar() -> Control:
 	# 【2026-10-09 重构】这两个动作连同撤销 / 重做 / 说明 / 返回选关一起搬进了**常驻顶栏**
 	#（见 `_build_editor_topbar`）——比"钉在左栏顶部"更彻底：左栏怎么滚都不影响它们。
 	# 左栏从此只负责"这一关要怎么改"：流程 + 工具 + 格型 + 布雷 + 编辑 + 存档与分享。
-	var outer := VBoxContainer.new()
+	# 【2026-10-09 分页配套】左栏改成有底板的"坞"。
+	# 分页之后每页内容都短于视口（实测 537 / 851 / 358 vs 视口 611），裸容器会在内容下面
+	# 露出一大块**窗口底色**（真机像素实测：一条 ~250px 高的浅灰空洞夹在深色面板之间，
+	# 比原来更难看）。底板交给 PanelContainer —— 内容短也只是"坞的下半部空着"，边界仍然清楚。
+	var dock := PanelContainer.new()
+	dock.name = "左栏"
 	# 宽 236 是实测折中：够放两列工具按钮，又不把中央画布再挤窄（画布实测 702px）。
-	outer.custom_minimum_size = Vector2(236, 0)
+	dock.custom_minimum_size = Vector2(236, 0)
+	var sb_dock := dock.get_theme_stylebox("panel")
+	if sb_dock is StyleBoxFlat:
+		var dock_sb := (sb_dock as StyleBoxFlat).duplicate() as StyleBoxFlat
+		# 4px 内边距：再大就把 236 的宽度预算吃掉、把组框里的两列按钮挤窄。
+		dock_sb.content_margin_left = 4.0
+		dock_sb.content_margin_right = 4.0
+		dock_sb.content_margin_top = 4.0
+		dock_sb.content_margin_bottom = 4.0
+		dock_sb.set_corner_radius_all(10)
+		dock.add_theme_stylebox_override("panel", dock_sb)
+	var outer := VBoxContainer.new()
+	outer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	outer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	outer.add_theme_constant_override("separation", 4)
-
-	var box := VBoxContainer.new()
-	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	box.add_theme_constant_override("separation", 4)
-	# 工具按钮较多：装进滚动容器，矮窗口下可滚动而不是把底部按钮挤出屏幕
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.add_child(box)
-	outer.add_child(scroll)
+	dock.add_child(outer)
+	# 分段切换器钉在左栏顶部（不随内容滚动）：三个页面入口永远在同一位置。
+	outer.add_child(_build_left_dock_switcher())
+	# 三个互斥可见的滚动页。只显示当前页 ⇒ VBoxContainer 只给它分高度，其余两页不占位。
+	_left_pages.clear()
+	for _i in 3:
+		var page := VBoxContainer.new()
+		page.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		page.add_theme_constant_override("separation", 4)
+		var scroll := ScrollContainer.new()
+		scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		scroll.visible = (_i == 0)
+		scroll.add_child(page)
+		outer.add_child(scroll)
+		_left_pages.append(page)
+	# `box` = 「当前正在往里加内容的那一页」。下面沿用原来的顺序逐段 add_child，
+	# 只在两处分页（工具 / 存档与分享），所以每一段的构建代码一行都不用改。
+	var box := _left_pages[0]
 	# 「一关做完的四个步骤」（P7.3，小白友好）。这条路径原来散落在各处 tooltip 与提示里，
 	# 新手得自己拼"下一步该干嘛"；这里给一条**有序**的直达通道（每步一句说明）。
 	# 放在工具清单**之前**是刻意的：第一次打开的人先要看到"流程"，而不是"一堆工具"。
@@ -757,6 +838,8 @@ func _build_left_bar() -> Control:
 	# 【模板库接线】新手"照着做就能出一关"的最快入口（文档「九」+「十.6：模板库是主要入门路径」）。
 	# 放在工具清单**之前**：第一次打开的人先看到"可以不用从零画"，而不是"一堆工具"。
 	_build_template_entry(box)
+	# ---- 分页：工具 / 格型 / 显示 归入「工具」页（它们是你"怎么画"的一组开关）----
+	box = _left_pages[1]
 	box.add_child(_section_label("工具"))
 	# 每个工具都要能自己讲清"这是什么、拿来干什么"——用户实测问过"区域选择有什么用吗"，
 	# 而它（配合下面的「复制选区 / 粘贴到选区」整块复制格型）在界面上原本一个字都没解释。
@@ -839,6 +922,8 @@ func _build_left_bar() -> Control:
 	box.add_child(_mode_btn)
 	_apply_cheat_visibility()
 
+	# ---- 分页：布雷 / 编辑 回到「流程」页（它们和"做一关"的四步是同一条路径）----
+	box = _left_pages[0]
 	box.add_child(_section_label("布雷"))
 	var row := HBoxContainer.new()
 	row.add_child(_plain_label("雷数"))
@@ -863,6 +948,8 @@ func _build_left_bar() -> Control:
 	box.add_child(_action_button("复制关卡文本（发给别人）", _export_clipboard))
 	box.add_child(_action_button("粘贴关卡文本（别人发来的）", _import_clipboard))
 
+	# ---- 分页：存档 / 缩略图 / 短码 / 认证 / 批量 归入「分享」页 ----
+	box = _left_pages[2]
 	box.add_child(_section_label("存档与分享"))
 	_open_opt = OptionButton.new()
 	_open_opt.custom_minimum_size = Vector2(0, 30)
@@ -954,7 +1041,7 @@ func _build_left_bar() -> Control:
 		+ "环绕：棋盘上下、左右相通——边上的格子能看到对面的格。\n"
 		+ "深度：解开某一步要同时把握几条线索；越大越难。\n"
 		+ "峰值：整盘最深那一步的深度（难度档位就是按峰值分的：普通 2~3、困难 4~5、噩梦 6+）。"))
-	return outer
+	return dock
 
 
 # ==================== 模板库（TemplateLibrary 接线） ====================
@@ -2432,40 +2519,49 @@ func _section_label(text: String) -> Label:
 ## （`PanelContainer`，与设置弹窗 / 教程层同一套约定）⇒ 每组自带一个框、边界一眼可见。
 ## **不动任何既有排版代码**：只按原顺序搬节点 —— 内容还是原来那些内容，只是多了边界。
 func _frame_left_bar_groups(root: Node) -> void:
-	var host := _find_group_host(root)
-	if host == null:
+	# 【2026-10-09 分页重构】左栏拆成三页之后，组宿主从"一个"变成"三个"。
+	# 这里必须遍历**全部**宿主：只处理第一个会让「工具」「分享」两页的组全都裸着
+	#（`test_left_bar_groups_each_get_a_visible_frame` 按"每个标题都在一块面板里"断言 ⇒ 当场红）。
+	for host in _collect_group_hosts(root):
+		_frame_groups_of_host(host, false)
+
+
+## 收集"直接装着各组控件"的容器（它至少有一个带 group_head 标记的 Label 直接子节点）。
+## 命中即不再向下递归：这保留了旧契约 —— 嵌套容器里的同名标记不会被重复套框
+##（属性页只认最外层那个宿主，`_frame_props_groups` 依赖这一点）。
+func _collect_group_hosts(root: Node) -> Array:
+	var out: Array = []
+	_collect_group_hosts_into(root, out)
+	return out
+
+
+func _collect_group_hosts_into(root: Node, out: Array) -> void:
+	if _has_group_head_child(root):
+		out.append(root)
 		return
-	var runs: Array = []
-	var run: Array = []
-	for child in host.get_children():
-		if child is Label and (child as Label).has_meta("group_head") and not run.is_empty():
-			runs.append(run)
-			run = []
-		run.append(child)
-	if not run.is_empty():
-		runs.append(run)
-	for nodes in runs:
-		_wrap_in_frame(host, nodes)
+	for c in root.get_children():
+		_collect_group_hosts_into(c, out)
+
+
+## 容器是否"直接"装着组标题（只查直接子节点，不递归）。
+func _has_group_head_child(node: Node) -> bool:
+	for c in node.get_children():
+		if c is Label and (c as Label).has_meta("group_head"):
+			return true
+	return false
 
 
 ## 找"直接装着各组控件"的那个容器：它至少有一个带 group_head 标记的 Label 子节点。
+## 【为什么保留单数版】属性页只允许有一个宿主（见 `_collect_group_hosts` 的说明）。
 func _find_group_host(node: Node) -> Container:
-	if node is Container:
-		for c in node.get_children():
-			if c is Label and (c as Label).has_meta("group_head"):
-				return node as Container
-	for c in node.get_children():
-		var got := _find_group_host(c)
-		if got != null:
-			return got
-	return null
+	var all := _collect_group_hosts(node)
+	return all[0] as Container if not all.is_empty() else null
 
 
-## 右栏属性页的组也做同样的可折叠后处理。基础组展开，高级组默认收起。
-func _frame_props_groups(root: Node) -> void:
-	var host := _find_group_host(root)
-	if host == null:
-		return
+## 把宿主容器里的控件按"组标题"切段，每段套一块可折叠面板。
+## props=true 走属性页口径（基础组展开、高级组收起，并把标题登记进 `_props_group_headers`）；
+## props=false 走左栏口径（前缀白名单，见 `_left_group_default_collapsed`）。
+func _frame_groups_of_host(host: Container, props: bool) -> void:
 	var runs: Array = []
 	var run: Array = []
 	for child in host.get_children():
@@ -2481,9 +2577,20 @@ func _frame_props_groups(root: Node) -> void:
 		var header := (nodes as Array)[0] as Label
 		if header == null:
 			continue
-		var title := str(header.text)
-		_wrap_collapsible_group(host, nodes, _props_group_default_collapsed(title))
-		_props_group_headers.append(header)
+		if props:
+			var title := str(header.text)
+			_wrap_collapsible_group(host, nodes, _props_group_default_collapsed(title))
+			_props_group_headers.append(header)
+		else:
+			_wrap_in_frame(host, nodes)
+
+
+## 右栏属性页的组也做同样的可折叠后处理。基础组展开，高级组默认收起。
+func _frame_props_groups(root: Node) -> void:
+	var host := _find_group_host(root)
+	if host == null:
+		return
+	_frame_groups_of_host(host, true)
 
 
 ## 左栏套框：兼容旧调用名，但内部已经升级成“可折叠组”。
@@ -2502,11 +2609,22 @@ func _wrap_collapsible_group(host: Container, nodes: Array, collapsed: bool) -> 
 	var sb := frame.get_theme_stylebox("panel")
 	if sb is StyleBoxFlat:
 		var thin := (sb as StyleBoxFlat).duplicate() as StyleBoxFlat
-		thin.content_margin_left = 3.0
-		thin.content_margin_right = 3.0
+		# 【视觉层级，2026-10-09】"十几块一模一样的灰板"看着糊成一片。给每块加一条**左侧强调色竖条**：
+		# 分组边界靠形状而不是靠颜色饱和（`test_group_headers_...` 那条契约的思路：颜色不许是唯一信号）。
+		# 关键词：border 只留左边 3px、其余三边归零 ⇒ 竖条落在面板内侧，不占跨列宽度预算。
+		var accent := ThemeManager.accent()
+		thin.border_width_left = 3
+		thin.border_width_top = 0
+		thin.border_width_right = 0
+		thin.border_width_bottom = 0
+		# 半透明：真机目视下 13 块满饱和竖条太抢眼，字反而读不出来（"强调"变成"噪声"）。
+		thin.border_color = Color(accent.r, accent.g, accent.b, 0.55)
+		# 左内边距要**让开**那 3px 竖条，否则标题第一个字压在色条上（实测会贴着）。
+		thin.content_margin_left = 8.0
+		thin.content_margin_right = 4.0
 		thin.content_margin_top = 6.0
 		thin.content_margin_bottom = 6.0
-		thin.set_corner_radius_all(10)
+		thin.set_corner_radius_all(8)
 		frame.add_theme_stylebox_override("panel", thin)
 	frame.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var inner := VBoxContainer.new()

@@ -813,6 +813,90 @@ func test_batch_entry_is_also_on_the_first_screen() -> void:
 		"首屏入口要排在「存档与分享」之前（那组已在首屏之外）：%s" % str(order))
 
 
+# ==================== 左栏分页框架（2026-10-09 重构）====================
+
+## 每一页里直接挂着的组标题（按页返回）。用于断言"分页真的把功能拆开了"。
+func _titles_per_page(ed: Object) -> Array:
+	var out: Array = []
+	for pg in ed.get("_left_pages"):
+		var names: Array[String] = []
+		for n in (pg as Node).find_children("*", "Label", true, false):
+			if (n as Label).has_meta("group_head"):
+				names.append(str((n as Label).text))
+		out.append(names)
+	return out
+
+
+## 某段前缀落在第几页（找不到回 -1）。
+func _page_index_of(titles: Array, prefix: String) -> int:
+	for i in titles.size():
+		for t in (titles[i] as Array):
+			if str(t).begins_with(prefix):
+				return i
+	return -1
+
+
+func test_left_dock_splits_the_old_long_column_into_three_pages() -> void:
+	# 用户原话："现在的编辑器太丑了，根本没法用"。实测左栏曾是一条 1750px 的长条
+	#（视口 647px，要滚 2.7 屏）。这条契约把"又回到一条长条"变成红灯：
+	# 必须正好三页，**同一时刻只有一页可见**（页面互斥靠 visible，不靠 TabContainer ——
+	# 全编辑器只允许一个 TabContainer，见 test_level_editor_smoke.gd）。
+	var ed := await _make_editor()
+	_bind(ed, _doc5())
+	var pages: Array = ed.get("_left_pages")
+	assert_eq(pages.size(), 3, "左栏应分三页（流程 / 工具 / 分享）")
+	if pages.size() != 3:
+		return
+	var visible := 0
+	for pg in pages:
+		var host := (pg as Node).get_parent() as Control
+		if host != null and host.visible:
+			visible += 1
+	assert_eq(visible, 1, "同一时刻只允许一页可见（多页同时可见就又变回长条）")
+	var titles := _titles_per_page(ed)
+	assert_eq(titles.size(), 3, "应能按页列出各自的组标题：%s" % str(titles))
+	# 三页必须真的分开了，而不是把长条原样塞进一页
+	var i_tools := _page_index_of(titles, "工具")
+	var i_save := _page_index_of(titles, "存档与分享")
+	assert_true(i_tools >= 0, "「工具」组必须还在某页里：%s" % str(titles))
+	assert_true(i_save >= 0, "「存档与分享」组必须还在某页里：%s" % str(titles))
+	assert_true(i_tools != i_save,
+		"「工具」与「存档与分享」不该挤在同一页（那就是没分）：%s" % str(titles))
+
+
+func test_left_dock_page_switch_is_exclusive_and_keeps_the_document_intact() -> void:
+	# 翻页是**看**的动作，不是编辑动作：不许改文档、不许把 _dirty 点亮。
+	# 同时钉住"点哪页就只显示哪页"（互斥），否则会出现两页同时可见的叠影。
+	var ed := await _make_editor()
+	_bind(ed, _doc5())
+	var pages: Array = ed.get("_left_pages")
+	var btns: Array = ed.get("_left_page_btns")
+	assert_eq(btns.size(), 3, "应有三页入口按钮")
+	if btns.size() != 3 or pages.size() != 3:
+		return
+	var before := _doc_fingerprint(ed)
+	(btns[1] as Button).pressed.emit()
+	await wait_process_frames(2)
+	assert_true(((pages[1] as Node).get_parent() as Control).visible, "点「工具」应显示第 2 页")
+	assert_false(((pages[0] as Node).get_parent() as Control).visible, "同一次点击必须把第 1 页收起来")
+	assert_false(((pages[2] as Node).get_parent() as Control).visible, "第 3 页也不该跟着亮")
+	assert_eq(_doc_fingerprint(ed), before, "翻页不许改动文档（含 _dirty 标记）")
+	# 再点回第一页，保证是可来回切的（不是单向开关）
+	(btns[0] as Button).pressed.emit()
+	await wait_process_frames(2)
+	assert_true(((pages[0] as Node).get_parent() as Control).visible, "应能切回第 1 页")
+
+
+## 文档指纹：雷位 / 标记 / 行数 / 未保存标记。翻页前后必须一模一样。
+func _doc_fingerprint(ed: Object) -> String:
+	var d := ed.get("doc") as EditorDoc
+	var mines: Array[String] = []
+	for m in d.mines:
+		mines.append(str(m))
+	mines.sort()
+	return "%d|%d|%d|%s|%s" % [d.rows, d.cols, mines.size(), ",".join(mines), str(ed.get("_dirty"))]
+
+
 func test_rule_identity_stays_resolvable_and_forge_mode_distinguishes_globals() -> void:
 	# 【审查 #1 的回归钉子】`rule_id_effective()` 会被当**线索规则 id** 喂生成器（`_forge_opts.clue_rule_id`）
 	# ⇒ 它必须能被 `RuleRegistry` 解析（否则"带布局规则的变体批量生成 0 关"会重演）；
