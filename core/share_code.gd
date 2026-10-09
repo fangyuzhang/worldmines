@@ -37,6 +37,10 @@ const CHECKSUM_BYTES := 4
 # 载荷 flags 位
 const FLAG_RULE := 1
 const FLAG_SPEC := 2
+## 【文档 §8】**只读分享**：作者声明“这份分享件只许玩、不许改”。
+## 兼容性：`flags` 是 1 字节，**旧解码器只会当作“不认识的位”忽略它**（不参与任何判断）⇒
+## 属“只增不改不删”的可加不可改扩展，**不必升版本号**；新解码器读旧码也只是该位为 0。
+const FLAG_READONLY := 4
 
 ## 短码原始载荷上限（字节）。依据：短码的使用场景是"粘贴即玩 / 扫码"，base64url 会把体积
 ## 放大 4/3 ⇒ 384B 载荷 ≈ 512 字符，已接近聊天输入框与二维码的舒适上限；而一张 40×40=1600 格
@@ -51,7 +55,7 @@ static func classify(level: Dictionary) -> Dictionary:
 	var geo := _geometry_reason(level)
 	if geo != "":
 		return {"kind": KIND_FILE, "reason": geo}
-	var built := _build_payload(level)
+	var built := _build_payload(level, read_only_of(level))
 	if not bool(built.get("ok", false)):
 		return {"kind": KIND_FILE,
 			"reason": "%s（短码无法承载，请走文件形式）" % str(built.get("reason", ""))}
@@ -60,6 +64,28 @@ static func classify(level: Dictionary) -> Dictionary:
 		return {"kind": KIND_FILE,
 			"reason": "载荷 %d 字节超过短码上限 %d 字节（短码只服务小关卡），请走文件形式" % [bytes, MAX_PAYLOAD_BYTES]}
 	return {"kind": KIND_CODE, "reason": ""}
+
+
+## 这份关卡是否声明了“只读分享”（文档 §8）。**唯一事实来源**：设计层 `editor_meta.read_only`。
+## 短码（结果层）走载荷 flags 位，文件形式走这里 —— 两条路都归到这一个判据，UI 不许自己拼条件。
+static func read_only_of(level: Dictionary) -> bool:
+	var meta: Variant = level.get("editor_meta", null)
+	if meta is Dictionary:
+		return bool((meta as Dictionary).get("read_only", false))
+	return false
+
+
+## `read_only_of` 的写侧：给一份关卡**盖上**“只读分享”声明，其余 `editor_meta.*` 原样保留。
+## 与读侧成对放在同一个模块里 —— 这样“写什么键、读什么键”只有一处定义，调用方（编辑器 / 打包器）
+## 都不许自己拼这个字段名。纯函数：不改写调用方的字典。
+static func with_read_only(level: Dictionary) -> Dictionary:
+	var out := level.duplicate(true)
+	var meta: Dictionary = {}
+	if out.get("editor_meta", null) is Dictionary:
+		meta = (out["editor_meta"] as Dictionary).duplicate(true)
+	meta["read_only"] = true
+	out["editor_meta"] = meta
+	return out
 
 
 # ==================== 编码 ====================
@@ -72,7 +98,11 @@ static func encode(level: Dictionary, opts := {}) -> Dictionary:
 	if geo != "":
 		return {"ok": false, "code": "", "bytes": 0,
 			"reason": "%s ⇒ 请改用文件形式分享" % geo}
-	var built := _build_payload(level)
+	# 只读：显式传入优先；关卡自己声明了只读（设计层）也算 ⇒ 与 `classify` 同一真源。
+	var read_only := read_only_of(level)
+	if opts is Dictionary:
+		read_only = read_only or bool((opts as Dictionary).get("read_only", false))
+	var built := _build_payload(level, read_only)
 	if not bool(built.get("ok", false)):
 		return {"ok": false, "code": "", "bytes": int(built.get("bytes", 0)),
 			"reason": str(built.get("reason", ""))}
@@ -209,13 +239,14 @@ static func decode(code: String) -> Dictionary:
 		if spec != null:
 			rule["spec"] = spec
 		level["rule"] = rule
-	return {"ok": true, "level": level, "reason": ""}
+	# 成功时额外带 `read_only`；**失败分支不含该键** ⇒ 调用方一律用 `get("read_only", false)`。
+	return {"ok": true, "level": level, "read_only": (flags & FLAG_READONLY) != 0, "reason": ""}
 
 
 # ==================== 载荷构造 ====================
 
 ## 关卡 → 载荷字节。返回 `{ok, payload, bytes, reason}`；bytes = 载荷字节数（不含校验位）。
-static func _build_payload(level: Dictionary) -> Dictionary:
+static func _build_payload(level: Dictionary, read_only := false) -> Dictionary:
 	var lv := _unwrap(level)
 	var rows := int(lv.get("rows", 0))
 	var cols := int(lv.get("cols", 0))
@@ -253,6 +284,8 @@ static func _build_payload(level: Dictionary) -> Dictionary:
 	var rule_level := bool(rule.get("level", false))
 	var spec: Variant = rule.get("spec", null)
 	var flags := 0
+	if read_only:
+		flags |= FLAG_READONLY
 	if rule_id != "" or rule_level:
 		flags |= FLAG_RULE
 	if spec is Dictionary and not (spec as Dictionary).is_empty():

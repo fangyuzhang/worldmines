@@ -339,3 +339,29 @@ func test_steam_placeholder_never_claims_success() -> void:
 func test_default_output_dir_is_under_user() -> void:
 	assert_true(WorkshopPack.default_dir().begins_with("user://"),
 		"默认输出目录应在 user:// 下（可写、不入 res:// 版本库）：%s" % WorkshopPack.default_dir())
+
+# ==================== 只读分享（文档 §8）====================
+# 分享包是**文件形式**：它没有短码那样的 flags 位，所以声明走**设计层**（`editor_meta.read_only`）。
+# 这条用例同时钉两件事：① 声明真的写进设计层；② 结果层**不许**夹带设计层字段（两层契约）。
+
+func test_read_only_pack_stamps_the_design_layer_only() -> void:
+	var doc := _doc()
+	doc.rule_spec = _classic_spec("spec_pack_ro_%d" % randi())
+	var r := WorkshopPack.build(doc, {"dir": OUT_DIR, "read_only": true})
+	assert_true(bool(r["ok"]), "打包应成功：%s" % str(r["reason"]))
+	var zip_path := str(r["path"])
+	var design: Variant = JSON.parse_string(_text(zip_path, "design/level.json"))
+	assert_true(design is Dictionary, "设计层应是合法 JSON 对象")
+	assert_true(ShareCode.read_only_of(design as Dictionary),
+		"勾了只读 ⇒ 设计层必须带 editor_meta.read_only（接收方编辑器据此只读）")
+	var lvl: Variant = JSON.parse_string(_text(zip_path, "levels/level.json"))
+	assert_true(lvl is Dictionary, "结果层应是合法 JSON 对象")
+	assert_false((lvl as Dictionary).has("editor_meta"),
+		"结果层不得夹带 editor_meta（游戏只读结果层，两层不重叠）")
+	# 默认（不传 read_only）不许冒出这个键 —— 否则所有分享包都会变成只读
+	var r2 := WorkshopPack.build(doc, {"dir": OUT_DIR})
+	assert_true(bool(r2["ok"]), "打包应成功：%s" % str(r2["reason"]))
+	var design2: Variant = JSON.parse_string(_text(str(r2["path"]), "design/level.json"))
+	assert_true(design2 is Dictionary, "设计层应是合法 JSON 对象")
+	assert_false(ShareCode.read_only_of(design2 as Dictionary),
+		"没勾只读 ⇒ 分享包不得带只读声明（默认不许变）")

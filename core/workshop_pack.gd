@@ -217,6 +217,12 @@ static func build(doc: EditorDoc, opts: Dictionary = {}) -> Dictionary:
 	manifest = mv["manifest"]
 
 	var level := doc.to_level_json()
+	# 【文档 §8】只读分享的**分享包形式**：把声明钉进**设计层**（`editor_meta.read_only`）。
+	# 接收方（以及将来任何编辑器侧的导入通道）用的是**同一个判据**，不另发明一套；
+	# 游戏侧只读结果层 ⇒ 完全不受影响。批量包（`levels_dirs`）不适用：那是「一整批分类关卡」的
+	# 打包入口，不是「这一张盘」的分享（UI 的只读勾选只走单关路径）。
+	if not batch_mode and bool(opts.get("read_only", false)):
+		level = ShareCode.with_read_only(level)
 	var env := LevelSets.envelope(level)
 	var topo := doc.topology()
 	var files: Array = [

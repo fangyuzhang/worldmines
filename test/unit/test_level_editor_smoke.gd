@@ -416,3 +416,99 @@ func test_status_bar_names_every_tool_slot() -> void:
 		ed.call("_refresh_status")
 		assert_true(status.text.contains(expected[t]), "工具 %d（%s）时状态栏应报出名字：%s" % [t, expected[t], status.text])
 
+
+# ==================== 只读分享（文档 §8「只读分享（只能玩不能改）」）====================
+# 要钉死的四件事（都是"用户会不会被卡住"的级别）：
+#   ① 声明了 editor_meta.read_only 的关卡 ⇒ 载入即只读，且原因要说成"只读分享件"（不是"占用锁"）；
+#   ② 原名保存必须被拦下且**不落盘**（"只能玩不能改"就落在这里）；
+#   ③ 改标题 ⇒ 能另存成自己的新关卡，**且副本不再是只读**（否则下次打开又只读、每存一次都要改名）；
+#   ④ 换了一份没有只读声明的关卡 ⇒ 旧的只读态必须清掉，不然新关卡保存被白拦。
+const SMOKE_RO_TITLE := "zz_smoke_readonly_share"
+
+
+func _ro_level_json(title: String) -> String:
+	# 形状口径同 decode 的产出（mines/revealed 为 {r,c}）——编辑器导入走的就是这条口径。
+	return JSON.stringify({
+		"name": title,
+		"size": {"rows": 5, "cols": 5},
+		"total_mines": 1,
+		"mines": [{"r": 0, "c": 0}],
+		"revealed": [],
+		"editor_meta": {"read_only": true, "author": "someone"},
+	})
+
+
+func test_read_only_share_blocks_same_name_save_but_allows_save_as() -> void:
+	var ed := _make_editor()
+	_bind(ed, _doc5())
+	assert_true(bool(ed.call("_load_from_text", _ro_level_json(SMOKE_RO_TITLE))),
+		"含 editor_meta.read_only 的关卡文本应能载入")
+	assert_true(bool(ed.get("_read_only")), "只读分享件载入后必须是只读态")
+	assert_eq(str(ed.get("_read_only_reason")), "share",
+		"原因必须说成「只读分享件」，不能跟「占用锁」混成一句")
+	# ② 原名保存 ⇒ 拦下，且绝不落盘
+	var same := "%s/%s.json" % [EDITOR_DIR, SMOKE_RO_TITLE]
+	ed.call("_save")
+	assert_eq(str(ed.get("_current_path")), "", "只读分享件按原名保存必须被拦下（不得认领成当前文件）")
+	assert_false(FileAccess.file_exists(same), "被拦下的保存不得留下文件：%s" % same)
+	# ③ 改标题 ⇒ 另存成自己的新关卡（这是文档承诺的唯一出路，必须真的走得通）
+	var copy_title := SMOKE_RO_TITLE + "_copy"
+	ed.doc.title = copy_title
+	ed.call("_save")
+	var p := str(ed.get("_current_path"))
+	assert_eq(p, "%s/%s.json" % [EDITOR_DIR, copy_title], "改了标题就该另存成新文件")
+	assert_true(FileAccess.file_exists(p), "另存应真的落盘：%s" % p)
+	# 副本不能再带只读声明，否则"导入的别人的关卡可二次编辑"（§8）整条作废
+	var reloaded: Variant = JSON.parse_string(FileAccess.get_file_as_string(p))
+	assert_true(reloaded is Dictionary, "另存出来的应是合法关卡 JSON")
+	assert_false(ShareCode.read_only_of(reloaded as Dictionary),
+		"另存出来的副本应是**可编辑**的：只读声明不该跟着写进用户自己的文件")
+	_cleanup_save(p)
+	_cleanup_save(same)
+
+
+func test_loading_a_plain_level_clears_the_read_only_state() -> void:
+	var ed := _make_editor()
+	_bind(ed, _doc5())
+	assert_true(bool(ed.call("_load_from_text", _ro_level_json(SMOKE_RO_TITLE))),
+		"前置条件：先进入只读分享态")
+	assert_true(bool(ed.get("_read_only")), "前置条件：确实进了只读态")
+	var plain := {
+		"name": "zz_smoke_plain_after_ro",
+		"size": {"rows": 5, "cols": 5},
+		"total_mines": 0,
+		"mines": [],
+		"revealed": [],
+	}
+	assert_true(bool(ed.call("_load_from_text", JSON.stringify(plain))), "普通关卡文本应能载入")
+	assert_false(bool(ed.get("_read_only")), "换了一份没有只读声明的关卡 ⇒ 旧的只读态必须清掉")
+	assert_eq(str(ed.get("_read_only_reason")), "", "原因也要清空（否则下次被拦会给错话）")
+	# 清掉之后就该能正常保存（这里只验"没被当成只读件拦下"）
+	ed.call("_save")
+	var p := str(ed.get("_current_path"))
+	assert_true(p != "", "非只读关卡应能正常保存（实际 %s）" % p)
+	_cleanup_save(p)
+
+# 「只读分享」勾选对**文本形式**（复制关卡文本）的生效路径。
+# 走 `_share_text_for_export` 而不是按按钮：无头环境没有剪贴板（`_clipboard_available()` 为假），
+# 直接验“要复制的内容”既稳定，又正好钉住真正要保证的那件事——文本里带不带只读声明。
+func _read_only_of_text(text: String) -> bool:
+	var d: Variant = JSON.parse_string(text)
+	if not (d is Dictionary):
+		return false
+	return ShareCode.read_only_of(d as Dictionary)
+
+
+func test_read_only_checkbox_stamps_the_text_form_too() -> void:
+	var ed := _make_editor()
+	_bind(ed, _doc5())
+	var chk := ed.get("_share_readonly_chk") as CheckButton
+	assert_not_null(chk, "分享面板应有「只读分享」勾选框")
+	if chk == null:
+		return
+	assert_false(chk.button_pressed, "默认必须是**不勾**（默认可编辑，不许悄悄变只读）")
+	assert_false(_read_only_of_text(str(ed.call("_share_text_for_export"))),
+		"没勾 ⇒ 关卡文本里不该有只读声明")
+	chk.button_pressed = true
+	assert_true(_read_only_of_text(str(ed.call("_share_text_for_export"))),
+		"勾了 ⇒ 关卡文本形式也必须带只读声明（否则这一路就“说了不做”）")

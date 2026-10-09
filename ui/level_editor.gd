@@ -243,6 +243,8 @@ var _repair_plans: Array = []
 # ---- 短码分享（ShareCode 接线）----
 var _share_edit: LineEdit
 var _share_note: Label
+## 「只读分享」勾选（文档 §8）：勾上 ⇒ 对方编辑器里只能看/试玩，改不动。
+var _share_readonly_chk: CheckButton
 var _self_check: CheckBox
 var _preset_opt: OptionButton
 var _dirs_edit: LineEdit
@@ -356,9 +358,19 @@ var _lock_owner := ""
 ## 当前**持锁目录**（"" = 没持锁）。锁的是「每份存档自己的隐藏子目录」，不是存档目录——
 ## 存档平铺在 user://editor，直接锁那个目录会让「编辑别的关」的另一个窗口也撞锁（误伤）。
 var _locked_dir := ""
-## 只读打开（打开时发现别人正开着）：能看 / 能试玩，但不许覆盖；要留改动只能改标题另存。
+## 只读态的**两种成因**（文档 §8）。两者都落在 `_read_only` 这一个总闸上，
+## 但**文案必须分开说**：一个是“别人正开着”（等一会儿就能写），另一个是
+## “这就是只读分享件”（永远写不了）——混成一句含糊的“只读”会让人白等。
+const READ_ONLY_LOCK := "lock"       # 别人正开着这份存档（占用锁）
+const READ_ONLY_SHARE := "share"     # 这是一份只读分享件（作者只许玩、不许改）
+## 只读打开（占用锁 / 只读分享件）：能看 / 能试玩，但不许覆盖；要留改动只能改标题另存。
 var _read_only := false
 var _read_only_path := ""
+## 只读的**原因**（`READ_ONLY_LOCK` / `READ_ONLY_SHARE`）——存档被拦时据它给不同的话。
+var _read_only_reason := ""
+## 「只读分享件」的**来源文件名**（`_slug(载入那一刻的标题)`）。它不是路径——分享件本来就没有文件；
+## 它只回答一件事：**这次保存是不是还在覆盖那一份分享件**（文件名没变 = 还在覆盖 ⇒ 得先改标题）。
+var _read_only_share_slug := ""
 ## 缩略图预览控件与说明文字（节点在「存档与分享」段建，见 _build_* 里的 THUMB_VIEW）。
 ## 控件**不加类型标注**（同 _replay_model 的理由）：它的 set_thumb/thumb_hash 是本仓自定义方法，
 ## 声明成 Control 再调自定义方法会被 GDScript 静态检查判成编译失败。
@@ -804,6 +816,12 @@ func _build_left_bar() -> Control:
 	var share_in := _action_button("载入短码", _import_share_code)
 	share_in.tooltip_text = "把上面框里的短码（或剪贴板里的）读成一关；读不出会告诉你具体原因"
 	share_row.add_child(share_in)
+	_share_readonly_chk = CheckButton.new()
+	_share_readonly_chk.text = "只读分享（对方只能玩，不能改）"
+	_share_readonly_chk.tooltip_text = "勾上后，这一份分享件（短码 / 关卡文本 / 分享包）在对方手里都是**只读**的：能看、能试玩；要改必须另存成新关卡。"
+	box.add_child(_share_readonly_chk)
+	box.add_child(_plain_label("两种分享形式由内容决定：小关卡走短码（贴一行字）；含自定义形状 / 大棋盘必须走「生成分享包」的文件形式。\n"
+		+ "勾上「只读分享」 ⇒ 对方只能玩，改不动（要改只能另存成新关卡）。"))
 	box.add_child(share_row)
 	_share_note = _plain_label("")
 	box.add_child(_share_note)
@@ -4584,10 +4602,10 @@ func _save() -> void:
 	DirAccess.make_dir_recursive_absolute(EDITOR_DIR)
 	var path := _target_save_path()
 
-	# 【文档 §8·防事故】只读打开（打开时别人正开着）⇒ 不许覆盖；要留改动只能改标题另存。
-	if _read_only and (_read_only_path == "" or _read_only_path == path):
-		_toast("这份存档正被别的窗口占用，当前是**只读**打开。\n想保留改动：改一下标题再点保存，会存成新文件。",
-			true, 6.0)
+	# 【文档 §8·防事故】只读打开（占用锁 / 只读分享件）⇒ 不许覆盖**来源那一份**；
+	# 要留改动只能改标题另存（判据见 `_save_would_overwrite_read_only_source`）。
+	if _read_only and _save_would_overwrite_read_only_source(path):
+		_toast(_read_only_save_block_text(), true, 6.0)
 		return
 	# 【文档 §8·防事故】写盘前拿锁：拿不到就**拦下保存**并说清谁在占（绝不静默覆盖别人）。
 	var lk := _ensure_lock(path)
@@ -4613,8 +4631,7 @@ func _save() -> void:
 	_current_path = path
 	_dirty = false
 	# 自己保存过 ⇒ 之后不再按只读处理（文件是我写的，锁也在我手上）。
-	_read_only = false
-	_read_only_path = ""
+	_clear_read_only()
 	_refresh_open_list()
 	# 缩略图 sidecar：给别人 / 给未来的自己一眼认出这份存档是什么样（写失败不影响存档本身）。
 	_write_thumb_sidecar(path)
@@ -4698,10 +4715,10 @@ func _load_from_file(path: String) -> bool:
 	if held and holder != "" and holder != _lock_owner_id():
 		_read_only = true
 		_read_only_path = path
+		_read_only_reason = READ_ONLY_LOCK
 		_toast("这份存档正被别的窗口占用，已按**只读**打开（改动只能改标题另存）。", false, 6.0)
 	else:
-		_read_only = false
-		_read_only_path = ""
+		_clear_read_only()
 	var f := FileAccess.open(path, FileAccess.READ)
 	if f == null:
 		return false
@@ -4711,6 +4728,65 @@ func _load_from_file(path: String) -> bool:
 	if ok:
 		_current_path = path   # 之后"保存"就覆盖这个文件（符合人的预期）
 	return ok
+
+
+## 进入“只读分享件”态（文档 §8「只读分享（只能玩不能改）」）。
+## **不覆盖占用锁那个更具体的原因**：即使这份文件同时声明了只读，
+## “别人正开着”也比“作者设成只读”更该先告诉用户。
+func _enter_read_only_share() -> void:
+	if _read_only and _read_only_reason == READ_ONLY_LOCK:
+		return
+	_read_only = true
+	_read_only_path = ""      # 空 = 与路径无关：任何保存都先另存
+	_read_only_share_slug = _slug(doc.title)   # 记下来源文件名：同名保存 = 还在覆盖它
+	_read_only_reason = READ_ONLY_SHARE
+	_toast("这是一份**只读分享件**：可以看、可以试玩，但不能改。\n"
+		+ "想自己改：把标题改成别的名字再点保存，会存成你自己的新关卡。", false, 7.0)
+
+
+## 清掉只读态（换了一份新东西 ⇒ 旧的只读态不该粘着下一关）。
+func _clear_read_only() -> void:
+	_read_only = false
+	_read_only_path = ""
+	_read_only_reason = ""
+	_read_only_share_slug = ""
+
+
+## 只读态下点保存被拦时的文案（按**原因**分开，不许混成一句）。
+## 两种原因都给同一条出路：改标题 ⇒ 另存成新文件。
+func _read_only_save_block_text() -> String:
+	if _read_only_reason == READ_ONLY_SHARE:
+		return "这是一份**只读分享件**（作者设成只许玩、不许改）。\n想自己改：把标题改成别的名字再点保存，会存成你自己的新关卡。"
+	return "这份存档正被别的窗口占用，当前是**只读**打开。\n想保留改动：改一下标题再点保存，会存成新文件。"
+
+
+## 只读态下，这次保存是不是在**覆盖只读的那一份来源**（真正要拦的只有这个，别的一律放行）。
+## 两种成因的来源不同，判据也不同：
+##  - 占用锁：来源是一份**具体文件** ⇒ 目标还是它才算覆盖别人的（改标题 ⇒ 落到新文件 ⇒ 放行）。
+##  - 只读分享：来源是一份**分享件**（本来就没有文件）⇒ 判据是**目标文件名还没变**：
+##    同名 = 还在覆盖那一份 ⇒ 拦；改了标题 = 另存成自己的新关卡 ⇒ 放行。
+##（原来这里对分享件恒为 true ⇒ 连"改标题另存"这条唯一出路也被拦死，用户只能干瞪眼。）
+func _save_would_overwrite_read_only_source(path: String) -> bool:
+	if _read_only_reason == READ_ONLY_SHARE:
+		return _slug(doc.title) == _read_only_share_slug
+	return _read_only_path == "" or _read_only_path == path
+
+
+## 摘掉「只读分享」声明（`editor_meta.read_only`），其余 `editor_meta.*` 原样保留。
+## 返回**新字典**（不动调用方的对象）；`editor_meta` 若因此变空就连键一起去掉（别留空壳）。
+## 为什么必须摘：只读是**这一份分享件**的属性。接收方改标题另存以后，那份新关卡就是他自己的
+##（文档 §8「导入：别人的关卡可二次编辑」）——若让声明跟着写进他的文件，他下次打开自己的关卡
+## 又是只读、每存一次都得再改一次名（死循环），等于把"可二次编辑"整条作废。
+func _strip_read_only_declaration(level: Dictionary) -> Dictionary:
+	var out := level.duplicate(true)
+	var meta: Variant = out.get("editor_meta", null)
+	if not (meta is Dictionary):
+		return out
+	var m: Dictionary = meta
+	m.erase("read_only")
+	if m.is_empty():
+		out.erase("editor_meta")
+	return out
 
 
 func _load_from_text(text: String) -> bool:
@@ -4730,20 +4806,51 @@ func _load_from_text(text: String) -> bool:
 	if not bool(gate2["ok"]):
 		_toast("导入被拒：%s" % str(gate2["reason"]), true, 7.0)
 		return false
+	# 【文档 §8】这份文本声明了“只读分享” ⇒ 本次按只读打开。判据放在**这个唯一入口**
+	#（短码走自己那条），日后新增导入通道不会漏掉这条规则。
+	# 但声明本身**不跟着进文档**：只读是“这一份分享件”的属性，接收方另存出来的新关卡是他自己的
+	#（理由详见 `_strip_read_only_declaration`）。
+	var is_ro_share := SHARE_CODE.read_only_of(parsed)
+	if is_ro_share:
+		parsed = _strip_read_only_declaration(parsed as Dictionary)
 	_undo.append(doc.snapshot())
 	_redo.clear()
 	var r := doc.load_from(parsed)
 	if not bool(r["ok"]):
 		return false
+	if is_ro_share:
+		_enter_read_only_share()
+	elif _read_only_reason == READ_ONLY_SHARE:
+		# 换了一份**没有**只读声明的关卡 ⇒ 旧的“只读分享件”态必须清掉，否则新关卡被当成只读、
+		# 保存被白拦。占用锁不归这里管（那是 `_load_from_file` 的探测结果）。
+		_clear_read_only()
 	_doc_to_ui()
 	_mark_dirty()
 	_refresh_all()
 	return true
 
 
+## 「只读分享」勾选是否生效。控件的**唯一读取点**（控件没建出来时按“不勾”处理）。
+func _share_read_only_wanted() -> bool:
+	return _share_readonly_chk != null and _share_readonly_chk.button_pressed
+
+
+## 这一份「关卡文本」（复制关卡文本）要复制的内容。
+## 单独抽出来有两个理由：① 只读勾选要在**这一处**生效；② 测试能直接验内容，
+## 不必去碰无头环境里根本不存在的剪贴板（`_clipboard_available()` 为假）。
+func _share_text_for_export() -> String:
+	# 【文档 §8】勾了「只读分享」⇒ 文本形式的分享件也带只读声明（对方载入后只能玩、改不动）。
+	# 判据与短码（flags 位）/ 分享包（设计层）**同一个**：`editor_meta.read_only`。
+	var lv := doc.to_level_json()
+	if _share_read_only_wanted():
+		lv = SHARE_CODE.with_read_only(lv)
+	return JSON.stringify(lv, "  ")
+
+
 func _export_clipboard() -> void:
-	DisplayServer.clipboard_set(JSON.stringify(doc.to_level_json(), "  "))
-	_toast("已复制关卡文本：粘到聊天窗口就能发给朋友", false, 5.0)
+	DisplayServer.clipboard_set(_share_text_for_export())
+	_toast("已复制关卡文本：粘到聊天窗口就能发给朋友"
+		+ ("（只读分享件：对方只能玩、改不动）" if _share_read_only_wanted() else ""), false, 5.0)
 
 
 func _import_clipboard() -> void:
@@ -4753,6 +4860,9 @@ func _import_clipboard() -> void:
 		return
 	# 从剪贴板导入的是"新东西"⇒ 清掉当前路径，避免下次保存覆盖掉原来那个文件
 	_current_path = ""
+	# 同理：旧的只读态（例如刚才只读打开过别人的存档）不能粘到这份新关卡上。
+	# 若这份文本自己声明了只读分享，`_load_from_text` 会重新置上。
+	_clear_read_only()
 	if not _load_from_text(text):
 		_toast("粘贴板里的内容不是一份关卡\n（让对方在自己的编辑器里按「复制关卡文本」再发一次）", true, 7.0)
 
@@ -4765,7 +4875,9 @@ func _import_clipboard() -> void:
 
 ## 导出短码。含自定义形状 / 自由几何 / 大棋盘时 `ShareCode` 会给可读原因并建议走文件。
 func _export_share_code() -> void:
-	var r: Dictionary = SHARE_CODE.encode(doc.to_level_json())
+	# 只读意愿由 UI 传进纯逻辑层（`ShareCode` 不去读界面状态）。
+	var want_ro := _share_read_only_wanted()
+	var r: Dictionary = SHARE_CODE.encode(doc.to_level_json(), {"read_only": want_ro})
 	if not bool(r["ok"]):
 		_set_share_note("这份关卡做不成短码：%s" % str(r["reason"]))
 		_toast("短码导出失败：%s" % str(r["reason"]), true, 8.0)
@@ -4776,10 +4888,11 @@ func _export_share_code() -> void:
 	var copied := _clipboard_available()
 	if copied:
 		DisplayServer.clipboard_set(code)
-	_set_share_note("%s（载荷 %d 字节，码长 %d 字符）：贴到聊天窗口，"
+	_set_share_note("%s（载荷 %d 字节，码长 %d 字符%s）：贴到聊天窗口，"
 		% ["短码已复制到剪贴板" if copied else "短码已生成（本机没有剪贴板，请手动复制上面的码）",
-			int(r["bytes"]), code.length()]
-		+ "对方粘进上面的框点「载入短码」就能玩。")
+			int(r["bytes"]), code.length(), "，**只读分享**" if want_ro else ""]
+		+ "对方粘进上面的框点「载入短码」就能玩"
+		+ ("（只能玩，改不动）。" if want_ro else "。"))
 	_toast("短码已%s（%d 个字符）" % ["复制到剪贴板" if copied else "生成", code.length()], false, 5.0)
 
 
@@ -4819,12 +4932,18 @@ func _import_share_code() -> void:
 		_toast("短码内容读不出来：%s" % str(lr["reason"]), true, 8.0)
 		return
 	_current_path = ""
+	# 【文档 §8】作者把它设成了只读分享件 ⇒ 本窗口也只读（换了新东西，先清掉旧的只读态）。
+	if bool(r.get("read_only", false)):
+		_enter_read_only_share()
+	else:
+		_clear_read_only()
 	_doc_to_ui()
 	_mark_dirty()
 	_refresh_all()
-	_set_share_note("已载入短码：%d×%d、%d 颗雷（撤一步可退回原关卡）。" % [
-		doc.cols, doc.rows, doc.mine_count()])
-	_toast("已载入短码关卡：可以直接试玩", false, 5.0)
+	_set_share_note("已载入短码：%d×%d、%d 颗雷%s（撤一步可退回原关卡）。" % [
+		doc.cols, doc.rows, doc.mine_count(),
+		"（只读分享件：能玩、不能改）" if _read_only else ""])
+	_toast("已载入短码关卡：" + ("只读分享件，可以直接试玩（要改请改标题另存）" if _read_only else "可以直接试玩"), false, 5.0)
 
 
 ## 短码解出的关卡 → `EditorDoc.load_from` 认识的口径。
@@ -4855,7 +4974,9 @@ func _set_share_note(text: String) -> void:
 
 
 func _make_pack() -> void:
-	var r := WorkshopPack.build(doc, {})
+	# 只读意愿是「这一份分享件」的属性 ⇒ 生成包与装进游戏**必须同一份 opts**，
+	# 否则同一个勾选在两条路上表现不一样（本仓已有过一次这种分叉，见 `_install_pack` 的注释）。
+	var r := WorkshopPack.build(doc, {"read_only": _share_read_only_wanted()})
 	if not bool(r["ok"]):
 		_toast("生成分享包失败：%s\n（先照「本盘问题」里的红字改，再试一次）" % str(r["reason"]), true, 7.0)
 		return
@@ -4868,7 +4989,7 @@ func _make_pack() -> void:
 ## 一键安装：生成包 → 解包到 `user://mods/<id>/`（下次启动游戏即可见）。
 ## 不代做 Steam 上传（产品要求），但安装这步没必要让玩家手动解压。
 func _install_pack() -> void:
-	var built := WorkshopPack.build(doc, {})
+	var built := WorkshopPack.build(doc, {"read_only": _share_read_only_wanted()})
 	if not bool(built["ok"]):
 		_toast("生成分享包失败：%s\n（先照「本盘问题」里的红字改，再试一次）" % str(built["reason"]), true, 7.0)
 		return

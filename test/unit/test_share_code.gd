@@ -138,3 +138,66 @@ func test_decode_reports_content_over_limit() -> void:
 	var dec := ShareCode.decode(ShareCode._b64url_encode(full))
 	assert_false(bool(dec["ok"]), "超内容上限应被拒绝")
 	assert_true(str(dec["reason"]).find("内容超限") != -1, "要说明内容超限：%s" % str(dec["reason"]))
+
+# ==================== 只读分享（文档 §8「只读分享（只能玩不能改）」）====================
+# 这一位是 `flags` 第 3 位（值 4）。它的兼容性契约有三条，缺一条就会「静默改行为」：
+#   ① 不带声明 ⇒ 默认 false（**不许因为新增了这一位就默认变只读**，否则所有旧码全变只读）；
+#   ② 旧版本编出来的码（flags 里没这一位）⇒ 一样解成 false（向后兼容，不必升版本号）；
+#   ③ 勾了只读 ⇒ 关卡内容逐键不变（只多一个位，不改任何字段）。
+
+
+func test_read_only_flag_round_trips_and_level_is_unchanged() -> void:
+	var lv := _lv()
+	var enc := ShareCode.encode(lv, {"read_only": true})
+	assert_true(bool(enc["ok"]), "小关卡应能编码：%s" % str(enc["reason"]))
+	var dec := ShareCode.decode(str(enc["code"]))
+	assert_true(bool(dec["ok"]), "自己编的码应能解回来：%s" % str(dec["reason"]))
+	assert_true(bool(dec["read_only"]), "勾了只读 ⇒ 解出来必须是只读")
+	assert_eq(dec["level"], lv, "只读位不得改动关卡内容（尺寸/雷位/已翻/规则全保留）")
+
+
+func test_read_only_defaults_off_for_plain_and_legacy_codes() -> void:
+	# ① 不带任何只读信息 ⇒ 默认 false
+	var dec := ShareCode.decode(str(ShareCode.encode(_lv())["code"]))
+	assert_true(bool(dec["ok"]), "普通短码应能解码")
+	assert_false(bool(dec["read_only"]), "没声明只读就是可编辑（默认不许变）")
+	# ② 旧码：flags 第 3 位为 0（本仓加这一位之前编出来的码就是这个形状）⇒ 必须解成可编辑
+	var payload := PackedByteArray([ShareCode.CURRENT_VERSION, 0, 1, 1, 0, 0, 0])
+	var full := payload.duplicate()
+	var cs := ShareCode._fnv1a_bytes(payload)
+	full.append((cs >> 24) & 0xFF)
+	full.append((cs >> 16) & 0xFF)
+	full.append((cs >> 8) & 0xFF)
+	full.append(cs & 0xFF)
+	var legacy := ShareCode.decode(ShareCode._b64url_encode(full))
+	assert_true(bool(legacy["ok"]), "旧码仍要能解：%s" % str(legacy["reason"]))
+	assert_false(bool(legacy["read_only"]), "旧码没有只读位 ⇒ 必须解成可编辑")
+
+
+func test_read_only_declared_on_the_level_is_honoured_without_opts() -> void:
+	# 唯一事实来源是设计层 `editor_meta.read_only`：调用方不传 opts 时也必须认它。
+	var lv := _lv()
+	lv["editor_meta"] = {"read_only": true, "author": "someone"}
+	assert_true(ShareCode.read_only_of(lv), "read_only_of 应认设计层声明")
+	var dec := ShareCode.decode(str(ShareCode.encode(lv)["code"]))
+	assert_true(bool(dec["read_only"]), "关卡自己声明了只读 ⇒ 编出来的码也该是只读")
+	# 反向：没有 editor_meta / 显式 false ⇒ 都不是只读（别把"有元数据"当成"只读"）
+	assert_false(ShareCode.read_only_of(_lv()), "没有 editor_meta 就不是只读")
+	var off := _lv()
+	off["editor_meta"] = {"read_only": false}
+	assert_false(ShareCode.read_only_of(off), "显式 false 也不是只读")
+
+func test_with_read_only_stamps_metadata_without_mutating_the_caller() -> void:
+	# 写侧与读侧成对：`with_read_only` 盖的章，`read_only_of` 必须认；且**不得改写调用方字典**。
+	var lv := _lv()
+	var before := JSON.stringify(lv)
+	var stamped := ShareCode.with_read_only(lv)
+	assert_true(ShareCode.read_only_of(stamped), "盖过章的关卡必须被判成只读")
+	assert_eq(JSON.stringify(lv), before, "纯函数：不得改写调用方字典")
+	assert_eq(stamped["mines"], lv["mines"], "只加声明，不动关卡内容")
+	# 已有的 editor_meta 其它键要留着（只加 `read_only` 一个键，不许把元数据冲掉）
+	var lv2 := _lv()
+	lv2["editor_meta"] = {"author": "someone", "tags": ["a"]}
+	var meta: Dictionary = ShareCode.with_read_only(lv2)["editor_meta"]
+	assert_eq(str(meta.get("author", "")), "someone", "其余元数据原样保留")
+	assert_true(bool(meta.get("read_only", false)), "并加上只读声明")
