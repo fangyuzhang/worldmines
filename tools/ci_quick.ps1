@@ -96,6 +96,8 @@ $map = @{
     'level_thumb_view' = @('test_level_thumbnail', 'test_level_editor_smoke')
     # 2026-10-09 补：试玩期「检查进度」（文档 §7）——判据 + HUD/对局两端的接线。
     'progress_check' = @('test_progress_check')
+    # 2026-10-09 补：形状间空隙的「填充」（文档 §3「填充系统」）——判据 + UI 接线。
+    'shape_fill'     = @('test_shape_fill')
     'hud'            = @('test_ui_rework_contract', 'test_board_view_interaction', 'test_progress_check')
     'game_session'   = @('test_board_view_interaction', 'test_ui_rework_contract', 'test_progress_check')
 }

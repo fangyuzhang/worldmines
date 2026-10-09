@@ -512,3 +512,59 @@ func test_read_only_checkbox_stamps_the_text_form_too() -> void:
 	chk.button_pressed = true
 	assert_true(_read_only_of_text(str(ed.call("_share_text_for_export"))),
 		"勾了 ⇒ 关卡文本形式也必须带只读声明（否则这一路就“说了不做”）")
+# ==================== 填充空隙（文档 §3「填充系统」） ====================
+
+## 属性页必须有「填充空隙」区，且默认档就是"把洞补回来"（区域 = 障碍（洞）、挖去 = 空集）。
+func test_fill_section_is_wired_with_fill_the_holes_defaults() -> void:
+	var ed := _make_editor()
+	_bind(ed, _doc5())
+	var area := ed.get("_fill_area_opt") as OptionButton
+	var hole := ed.get("_fill_hole_opt") as OptionButton
+	var mode := ed.get("_fill_mode_opt") as OptionButton
+	var unit := ed.get("_fill_unit_opt") as OptionButton
+	assert_not_null(area, "应有「区域」下拉")
+	assert_not_null(hole, "应有「挖去」下拉")
+	assert_not_null(mode, "应有填充样式下拉（实心 / 环形 / 图案）")
+	assert_not_null(unit, "应有图案单元下拉")
+	assert_not_null(ed.get("_fill_note"), "应有常驻结果文案（失败必须有可读文案）")
+	if area == null or hole == null or mode == null:
+		return
+	assert_eq(str(area.get_item_metadata(area.selected)), "__obstacles__",
+		"「区域」默认应是「障碍（洞）」——直接点按钮就是把挖掉的洞补回来")
+	assert_eq(str(hole.get_item_metadata(hole.selected)), "__empty__",
+		"「挖去」默认应是「空集」（空集是合法输入，不需要先框选）")
+	assert_eq(mode.item_count, 3, "样式应有三档：实心 / 环形 / 图案")
+	assert_eq(str(ed.call("_fill_mode_key")), "solid", "默认样式应是实心")
+
+
+## 「填充」按钮的真往返：挖掉两个洞 → 点填充 → 洞被补回、盘回到满格。
+func test_fill_button_turns_carved_holes_back_into_cells() -> void:
+	var ed := _make_editor()
+	var d := EditorDoc.new(5, 5)
+	d.obstacles.append(Vector2i(4, 4))
+	d.obstacles.append(Vector2i(0, 4))
+	_bind(ed, d)
+	assert_eq(d.grid().cell_count(), 23, "前置：5×5 挖掉 2 格 = 23 格")
+	assert_false(d.grid().in_board(Vector2i(4, 4)), "前置：(4,4) 应是洞")
+	ed.call("_on_fill_gap")
+	assert_eq(d.obstacles.size(), 0, "填充应把两个洞都补回来（障碍清空）")
+	assert_eq(d.grid().cell_count(), 25, "补完应是满盘 25 格")
+	assert_true(d.grid().in_board(Vector2i(4, 4)), "(4,4) 应重新变成盘上的格")
+
+
+## 手工改过的格是硬约束：填充**不得覆盖**它，而且必须说出来（不许静默忽略）。
+func test_fill_never_overwrites_hand_edited_cells_and_says_so() -> void:
+	var ed := _make_editor()
+	var d := EditorDoc.new(5, 5)
+	d.obstacles.append(Vector2i(4, 4))
+	_bind(ed, d)
+	var hand: Dictionary = ed.get("_hand_edited")
+	hand[Vector2i(4, 4)] = true          # 标成"已脱离生成"
+	ed.call("_on_fill_gap")
+	assert_eq(d.obstacles.size(), 1, "手工改过的洞不许被填充覆盖")
+	assert_false(d.grid().in_board(Vector2i(4, 4)), "该格应仍是洞")
+	var note := ed.get("_fill_note") as Label
+	assert_not_null(note, "应有常驻文案")
+	var text := str(note.text) if note != null else ""
+	assert_true(text.contains("跳过"),
+		"跳过手工格必须说出来（实际文案：%s）" % text)

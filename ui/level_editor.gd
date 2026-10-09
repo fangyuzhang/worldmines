@@ -61,6 +61,9 @@ const DISCLOSURE := preload("res://core/editor_disclosure.gd")
 const DOMINO_MODEL := preload("res://core/domino_model.gd")
 ## 手绘轮廓 / 文字 → 格集（多边形栅格化在 core，UI 只转发；同 DOMINO_MODEL 理由不按 class_name 引用）。
 const TTS := preload("res://core/text_to_shape.gd")
+## 形状间空隙的「填充」（功能清单 §3「填充系统」：实心 / 环形 / 图案）。
+## 同 TTS / DOMINO_MODEL：**用 preload 引用、不按 class_name 引用**（坑 #26）。
+const FILL := preload("res://core/shape_fill.gd")
 
 
 ## 存档占用锁（功能清单 §8「防事故」前半）：**跨会话互斥** —— 同一份存档不允许两个编辑窗口同时写。
@@ -234,6 +237,14 @@ var _dag_b_opt: OptionButton              # 操作数 B（布尔右值 / 依赖�
 var _dag_note: Label                      # 常驻结果/拒绝原因（失败必须有可读文案，不许只弹 toast）
 var _dag_shape_made := 0                  # 已生成形状节点的序号（s1、s2…）
 var _dag_bool_made := 0                   # 已生成布尔节点的序号（b1、b2…）
+# ---- 填充空隙（ShapeFill 接线，2026-10-09：文档 §3「填充系统」）----
+## 空隙 = 「区域」−「挖去」（差集在 core）；这四个控件与 A / B 下拉**共用** `_operand_cells`
+## 与同一份选项表 ⇒ 新加进依赖图的形状两处同时能选到，不会一边有一边没有。
+var _fill_area_opt: OptionButton           # 区域
+var _fill_hole_opt: OptionButton           # 挖去
+var _fill_mode_opt: OptionButton           # 实心 / 环形 / 图案
+var _fill_unit_opt: OptionButton           # 图案单元（单格 / 方块 / 菱形 / 五角星）
+var _fill_note: Label                      # 常驻结果 / 拒绝原因（失败必须有可读文案）
 # ---- 修复建议（RepairSuggest 接线）----
 var _repair_btn: Button
 var _repair_msg: Label
@@ -1034,7 +1045,186 @@ func _build_shape_compose(box: VBoxContainer) -> void:
 	box.add_child(_action_button("把 A 求值并写回棋盘", _on_dag_eval))
 	_dag_note = _plain_label("依赖图还是空的：先点「加形状」。")
 	box.add_child(_dag_note)
+	_build_fill_section(box)
 	_refresh_dag_opts()
+
+
+## 填充空隙（文档 §3「填充系统」）：空隙 = 「区域」−「挖去」，再按样式填。
+##
+## 【为什么"空隙"让用户自己选 A / B】"两块形状之间是什么"是布尔运算的语义，本仓已有 `ShapeBoolean`
+## 负责；填充只负责"把一串格按实心/环形/图案变成盘上的格"。两件事解耦 ⇒ 多岛 / 护城河 / 任意挖洞
+## 都复用同一条路径，不必各写一份。
+##
+## 【填的是什么】在本仓的盘模型里「格不存在」由 `doc.obstacles`（洞）表达 ⇒ **填充 = 把洞补回成格**。
+## 落在底板形状之外（既不是格、也不是洞）的格补不进来 —— 那是"换底板"，不是填充；这种情况会在
+## 常驻文案里如实报出格数，绝不假装填上了。
+func _build_fill_section(box: VBoxContainer) -> void:
+	box.add_child(_section_label("填充空隙（实心 / 环形 / 图案）"))
+	box.add_child(_plain_label("空隙 = 「区域」减掉「挖去」。填好会把空虚的格补成格"
+		+ "（已有格不动，一步撤销）。默认「区域 = 障碍（洞）、挖去 = 空集」⇒ 直接点按钮就是把挖掉的洞补回来。\n"
+		+ "「环形」只填空隙的边缘一圈（内芯留空）；「图案」拿一个单元形状周期铺满空隙"
+		+ "（单元可以是任意形状，这里是四个常用档）。\n"
+		+ "你**手工改过**的格不会被填充覆盖（按「已脱离生成」跳过，并报出跳过了几格）。"))
+	_fill_area_opt = _operand_option()
+	_fill_hole_opt = _operand_option()
+	var arow := HBoxContainer.new()
+	arow.add_theme_constant_override("separation", 6)
+	arow.add_child(_plain_label("区域"))
+	arow.add_child(_fill_area_opt)
+	box.add_child(arow)
+	var brow := HBoxContainer.new()
+	brow.add_theme_constant_override("separation", 6)
+	brow.add_child(_plain_label("挖去"))
+	brow.add_child(_fill_hole_opt)
+	box.add_child(brow)
+	var srow := HBoxContainer.new()
+	srow.add_theme_constant_override("separation", 6)
+	_fill_mode_opt = OptionButton.new()
+	_fill_mode_opt.clip_text = true
+	_fill_mode_opt.fit_to_longest_item = false
+	for e in [["实心（全填）", FILL.MODE_SOLID], ["环形（只填边缘一圈）", FILL.MODE_RING],
+			["图案（按单元铺满）", FILL.MODE_PATTERN]]:
+		_fill_mode_opt.add_item(str(e[0]), _fill_mode_opt.item_count)
+		_fill_mode_opt.set_item_metadata(_fill_mode_opt.item_count - 1, str(e[1]))
+	_fill_mode_opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	srow.add_child(_fill_mode_opt)
+	_fill_unit_opt = OptionButton.new()
+	_fill_unit_opt.clip_text = true
+	_fill_unit_opt.fit_to_longest_item = false
+	# 两个下拉同处一行 ⇒ 都要 EXPAND_FILL：只让一个撑开会把另一个挤成"看着不像控件"的窄条
+	#（`test_editor_ux.gd` 的"按钮被挤成空盒"契约会当场判红——这里就是被它抓出来的）。
+	_fill_unit_opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for e in [["单格", 0], ["2×2 方块", 1], ["菱形", 2], ["五角星", 3]]:
+		_fill_unit_opt.add_item(str(e[0]), _fill_unit_opt.item_count)
+		_fill_unit_opt.set_item_metadata(_fill_unit_opt.item_count - 1, int(e[1]))
+	srow.add_child(_fill_unit_opt)
+	box.add_child(srow)
+	box.add_child(_action_button("填充空隙（补成棋盘格）", _on_fill_gap))
+	_fill_note = _plain_label("还没有填充过：选好「区域 / 挖去 / 样式」后点上面的按钮。")
+	_fill_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(_fill_note)
+
+
+func _set_fill_note(text: String) -> void:
+	if _fill_note != null:
+		_fill_note.text = text
+
+
+## 当前选中的填充样式（取自控件元数据；控件不在时退回实心）。
+func _fill_mode_key() -> String:
+	if _fill_mode_opt == null or _fill_mode_opt.selected < 0:
+		return FILL.MODE_SOLID
+	return str(_fill_mode_opt.get_item_metadata(_fill_mode_opt.selected))
+
+
+## 图案单元档位（0 单格 / 1 方块 / 2 菱形 / 3 五角星）。
+func _fill_unit_key() -> int:
+	if _fill_unit_opt == null or _fill_unit_opt.selected < 0:
+		return 0
+	return int(_fill_unit_opt.get_item_metadata(_fill_unit_opt.selected))
+
+
+## 图案单元格集（相对坐标；`ShapeFill` 会把它归零到自身左上角）。
+## 单格 / 方块 / 菱形是字面量；五角星**走既有生成器**（`ShapeGenerator.build_star`）——
+## 「图案单元可以是任意形状」这句话就由这条路径坐实，而不是再手画一份星形点阵（那就成了双实现）。
+func _fill_unit_cells() -> Array:
+	var out: Array = []
+	match _fill_unit_key():
+		1:
+			return [Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1)]
+		2:
+			return [Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1), Vector2i(2, 1), Vector2i(1, 2)]
+		3:
+			var topo := ShapeGenerator.build_star(5, 3)
+			if String(topo.get("error", "")) != "":
+				return [Vector2i(0, 0)]
+			var g := AdjacencyGrid.new()
+			g.setup_from_topo(topo)
+			for p in g.all_positions():
+				out.append(p)
+			if out.is_empty():
+				return [Vector2i(0, 0)]
+			return out
+	return [Vector2i(0, 0)]
+
+
+## 样式的中文名（按钮文案/结果行用它，别把英文键漏给用户）。
+func _fill_label() -> String:
+	if _fill_mode_opt == null or _fill_mode_opt.selected < 0:
+		return "实心"
+	return _fill_mode_opt.get_item_text(_fill_mode_opt.selected)
+
+
+## 「填充空隙」按钮：空隙 = 「区域」−「挖去」（判据只在 core 一处），再交给 `ShapeFill.fill` 按样式铺。
+##
+## 【为什么写回不走 `_write_board_shape`】那条路是"盘上**只**保留这些格"的**换盘**语义（且它只向下
+## 收缩：`in_board()` 排除洞格 ⇒ 洞补不回来）。填充是**加法** ⇒ 直接把填出来的格从 `doc.obstacles`
+## 里摘掉即可，语义精确、也不会误清已有的雷/翻开格。
+func _on_fill_gap() -> void:
+	var ra := _operand_cells(_opt_key(_fill_area_opt))
+	if not bool(ra["ok"]):
+		var wa := "「区域」不能用：%s" % str(ra["reason"])
+		_set_fill_note(wa)
+		_toast(wa, true, 7.0)
+		return
+	var rb := _operand_cells(_opt_key(_fill_hole_opt))
+	if not bool(rb["ok"]):
+		var wb := "「挖去」不能用：%s" % str(rb["reason"])
+		_set_fill_note(wb)
+		_toast(wb, true, 7.0)
+		return
+	var gap: Dictionary = SHAPE_BOOLEAN.difference(ra["cells"], rb["cells"])
+	if not bool(gap["ok"]):
+		var wg := "算空隙失败：%s" % str(gap["reason"])
+		_set_fill_note(wg)
+		_toast(wg, true, 7.0)
+		return
+	var mode := _fill_mode_key()
+	var opts := {"mode": mode, "hand_edited": _hand_edited}
+	if mode == FILL.MODE_PATTERN:
+		opts["unit"] = _fill_unit_cells()
+	var r: Dictionary = FILL.fill(gap["cells"], opts)
+	if not bool(r["ok"]):
+		var wf := "填充失败：%s" % str(r["reason"])
+		_set_fill_note(wf)
+		_toast(wf, true, 8.0)
+		return
+	var summary := FILL.describe(r)
+	var g := doc.grid()
+	var holes := {}
+	for o in doc.obstacles:
+		holes[o] = true
+	var addable: Array = []
+	var outside: Array = []
+	for p in (r["cells"] as Array):
+		if g.in_board(p):
+			continue                       # 本来就是格 ⇒ 无需改动
+		if holes.has(p):
+			addable.append(p)              # 是被挖掉的洞 ⇒ 补回来
+		else:
+			outside.append(p)              # 既不是格也不是洞 ⇒ 在底板形状之外，补不了
+	if addable.is_empty():
+		var tail0 := "" if outside.is_empty() else "（另有 %d 格在底板形状之外，本仓没有「扩底板」能力，补不了）" % outside.size()
+		_set_fill_note("没有可补的格（%s）%s：把「挖去」改成棋盘上的空洞，或先换个形状。" % [summary, tail0])
+		return
+	_push_undo(false)                      # 按钮命令 ⇒ 自成一步撤销
+	var remove := {}
+	for p in addable:
+		remove[p] = true
+	var kept: Array[Vector2i] = []
+	for o in doc.obstacles:
+		if not remove.has(o):
+			kept.append(o)
+	doc.obstacles = kept
+	_sync_declared_total()
+	_mark_dirty()
+	_refresh_all()
+	var tail := ""
+	if not outside.is_empty():
+		tail = "（另有 %d 格在底板形状之外补不了：那是「换底板」，不是填充）" % outside.size()
+	_set_fill_note("已按「%s」把空隙补成棋盘格：补回 %d 格%s%s 棋盘现在 %d 格（一步撤销，按左栏「撤销」可退回）。"
+		% [_fill_label(), addable.size(), tail, summary, doc.grid().cell_count()])
+	_toast("已填充空隙（一步撤销，按左栏「撤销」可退回）", false, 5.0)
 
 
 func _operand_option() -> OptionButton:
@@ -1047,16 +1237,25 @@ func _operand_option() -> OptionButton:
 	return opt
 
 
-## 刷新 A / B 下拉：三个内置集合 + 依赖图里的每个节点（保持原选中项，找不到就回到默认）。
+## 刷新 A / B（含填充区的「区域 / 挖去」）下拉：三个内置集合 + 依赖图里的每个节点
+## （保持原选中项，找不到就回到默认）。四处共用同一份选项表 ⇒ 新加的形状两处同时可选。
 func _refresh_dag_opts() -> void:
 	if _dag_a_opt == null or _dag_b_opt == null:
 		return
 	var keep_a := _opt_key(_dag_a_opt)
 	var keep_b := _opt_key(_dag_b_opt)
-	for opt in [_dag_a_opt, _dag_b_opt]:
+	var keep_fa := _opt_key(_fill_area_opt)
+	var keep_fh := _opt_key(_fill_hole_opt)
+	var opts: Array = [_dag_a_opt, _dag_b_opt]
+	if _fill_area_opt != null:
+		opts.append(_fill_area_opt)
+	if _fill_hole_opt != null:
+		opts.append(_fill_hole_opt)
+	for opt in opts:
 		opt.clear()
 		for e in [["整盘形状（当前棋盘）", "__board__"], ["框选区域", "__selection__"],
-				["初始翻开格", "__revealed__"]]:
+				["初始翻开格", "__revealed__"], ["障碍（洞：挖掉的格）", "__obstacles__"],
+				["空集（不挖）", "__empty__"]]:
 			opt.add_item(str(e[0]), opt.item_count)
 			opt.set_item_metadata(opt.item_count - 1, str(e[1]))
 		for nid in _dag.node_ids():
@@ -1070,6 +1269,18 @@ func _refresh_dag_opts() -> void:
 		_dag_a_opt.selected = 0
 	if _dag_b_opt.selected < 0:
 		_dag_b_opt.selected = mini(1, _dag_b_opt.item_count - 1)
+	# ⚠ 不能用 `selected < 0` 判"首次"：`add_item()` 会自动选中第 0 项 ⇒ clear+重填之后 selected 恒为 0。
+	# 首次填充时 keep_* 必为 ""（更新前 item_count == 0），用它判"还没有用户选择"，之后一律尊重现状。
+	if _fill_area_opt != null:
+		if keep_fa == "":
+			_fill_area_opt.selected = mini(3, _fill_area_opt.item_count - 1)   # 首次：默认「障碍（洞）」
+		else:
+			_select_opt_key(_fill_area_opt, keep_fa)
+	if _fill_hole_opt != null:
+		if keep_fh == "":
+			_fill_hole_opt.selected = mini(4, _fill_hole_opt.item_count - 1)   # 首次：默认「空集（不挖）」
+		else:
+			_select_opt_key(_fill_hole_opt, keep_fh)
 
 
 func _select_opt_key(opt: OptionButton, key: String) -> void:
@@ -1287,6 +1498,12 @@ func _operand_cells(key: String) -> Dictionary:
 		return {"ok": true, "cells": _cells_in_rect(canvas.selection), "reason": ""}
 	if key == "__revealed__":
 		return {"ok": true, "cells": doc.revealed.keys(), "reason": ""}
+	if key == "__obstacles__":
+		# 障碍（洞）= 盘上"不存在"的格。填充的默认「区域」就是它（把洞补回成格）。
+		return {"ok": true, "cells": doc.obstacles.duplicate(), "reason": ""}
+	if key == "__empty__":
+		# 显式空集：让它当「挖去」的默认值 —— 用户不框选也能直接填充（空集是合法输入，不是错误）。
+		return {"ok": true, "cells": [], "reason": ""}
 	return _dag_eval_cells(key)
 
 

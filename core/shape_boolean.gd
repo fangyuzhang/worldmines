@@ -93,6 +93,13 @@ static func apply_to_grid(cells: Variant, grid: Variant) -> Dictionary:
 	}
 
 
+## 公开的「格集归一化 + 上限硬阻」入口（内部实现是 `_normalize`）：给同族的形状模块复用**同一套**
+## 容器口径与 `MAX_CELL_BUDGET`，免得每个模块各写一份、日久彼此漂移（本仓老病；`ShapeFill` 已在用）。
+## 返回 `{ok, keys: Dictionary[Vector2i -> true], reason}`。
+static func normalize(cells: Variant) -> Dictionary:
+	return _normalize(cells)
+
+
 # ==================== 内部实现 ====================
 
 ## 二元运算主流程：先各自归一化（含上限硬阻），再按运算类型做字典运算。
