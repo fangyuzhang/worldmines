@@ -392,7 +392,7 @@ static func attach_fold(topo: Dictionary, fold: Dictionary) -> Dictionary:
 
 static func fold_meta(topo: Dictionary) -> Dictionary:
 	var v: Variant = topo.get("fold", {})
-	return (v as Dictionary).duplicate(true) if v is Dictionary else {}
+	return _norm_fold_decl(v) if v is Dictionary else {}
 
 
 ## 折痕声明：读**顶层 fold** 或 **view.fold**（生成器写的是后者）。
@@ -406,8 +406,20 @@ static func fold_decl(topo: Dictionary) -> Dictionary:
 	if view_v is Dictionary:
 		var fv: Variant = (view_v as Dictionary).get("fold", {})
 		if fv is Dictionary and not (fv as Dictionary).is_empty():
-			return (fv as Dictionary).duplicate(true)
+			return _norm_fold_decl(fv)
 	return {}
+
+
+## 折痕声明的 at 统一成 int：JSON 落盘/读回会把整数读成浮点（3 -> 3.0），
+## 不归一化就会在「打开官方关 -> 另存」时让折痕字段类型静默漂移。
+static func _norm_fold_decl(v: Variant) -> Dictionary:
+	if not (v is Dictionary):
+		return {}
+	var out: Dictionary = (v as Dictionary).duplicate(true)
+	var at_v: Variant = out.get("at", null)
+	if at_v is int or at_v is float:
+		out["at"] = int(at_v)
+	return out
 
 
 ## AdjacencyGrid 用的呈现元数据：view + 推断信息，供 BoardView 读取。
@@ -425,10 +437,13 @@ static func view_meta(topo: Dictionary) -> Dictionary:
 		out["wrap"] = {"horizontal": bool(ed.get("wrap", true)), "vertical": bool(ed.get("wrap", true))}
 	if kind == VIEW_WORMHOLE:
 		out["portals"] = portal_pairs(topo)
-	if kind == VIEW_FOLD:
-		out["fold"] = fold_meta(topo)
-	elif topo.has("fold"):
-		out["fold"] = fold_meta(topo)
+	# ⚠ 必须走 fold_decl（顶层 **或** view.fold）：生成器落盘的是 view.fold，
+	# 若这里用 fold_meta（只读顶层）就会把读回来的声明**覆盖成空** —— 呈现层于是
+	# 看不到折痕（"能生成、读不回"，正是本仓最恨的那类 bug）。
+	if kind == VIEW_FOLD or topo.has("fold"):
+		var fd := fold_decl(topo)
+		if not fd.is_empty():
+			out["fold"] = fd
 	return out
 
 

@@ -60,6 +60,8 @@ const BY_KIND := {
 	# 虫洞族（tools/gen_wormhole_levels.gd）：深蓝紫 —— 「管子/隧道」的稳定色相，
 	# 与其它族不撞色。不给它登记 = 生成器写出的 palette 过不了全库 theme 门禁。
 	"wormhole": "INDIGO",
+	# 折叠族（tools/gen_fold_levels.gd）：青 —— 「折纸/折痕」的清冷色相，与虫洞的深蓝紫分开。
+	"fold": "CYAN",
 }
 
 ## 纯风格族（同一 kind 有多关）的**逐关轮转**色表。

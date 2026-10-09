@@ -16,6 +16,7 @@ const GEN_FILES: Array = [
 	"res://tools/gen_geo_levels.gd",
 	"res://tools/gen_iso_cubes_levels.gd",
 	"res://tools/gen_wormhole_levels.gd",
+	"res://tools/gen_fold_levels.gd",
 ]
 
 
@@ -53,6 +54,7 @@ const STAGING_USERS: Array = [
 	"res://tools/gen_variant_shape_levels.gd",
 	"res://tools/gen_iso_cubes_levels.gd",
 	"res://tools/gen_wormhole_levels.gd",
+	"res://tools/gen_fold_levels.gd",
 ]
 
 

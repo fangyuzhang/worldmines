@@ -230,3 +230,24 @@ func test_clue_counts_the_folded_partner() -> void:
 	# 反向也成立（邻接是无向的）
 	var v2 := int(rule.call("compute_clue_topo", ms, Vector2i(2, 1), g, g.size()))
 	assert_eq(v2, 0, "覆层格自己不是雷的邻居（除非另有相邻雷）")
+
+
+# ==================== C2. 落盘格式（折痕走 view.fold） ====================
+
+## 生成器落盘走 `PuzzleGenerator._topology_to_dict`：折痕被写进 **view.fold**（顶层不留 fold）。
+## 读回时 `view_meta` 必须仍能凭 view.fold 认出折痕 —— 否则就是「能生成、读不回」，
+## 呈现层看不到折痕、叠合边还在，玩家只会觉得线索数错了（2026-10-09 生成器实测踩到）。
+func test_fold_survives_the_landed_view_only_format() -> void:
+	var base := _rect_topo(3, 4)
+	var res := TopologyModel.attach_fold(base, {"axis": "x", "at": 2})
+	var ag := AdjacencyGrid.new()
+	ag.setup_from_topo(res["topology"] as Dictionary)
+	var landed: Dictionary = PuzzleGenerator._topology_to_dict(ag)
+	assert_false(landed.has("fold"), "落盘格式不该有顶层 fold（折痕走 view）")
+	assert_eq(TopologyModel.view_kind(landed), TopologyModel.VIEW_FOLD, "落盘后仍应判成折叠")
+	assert_eq(TopologyModel.fold_decl(landed), {"axis": "x", "at": 2}, "折痕应能从 view.fold 读回")
+	var back := AdjacencyGrid.new()
+	back.setup_from_topo(landed)
+	assert_eq(TopologyModel.fold_decl(back.view_meta), {"axis": "x", "at": 2},
+		"读回的 view_meta 必须仍带折痕（否则呈现层看不到折痕）")
+	assert_true(back.get_neighbors(Vector2i(1, 1)).has(Vector2i(2, 1)), "读回后叠合边仍在")
