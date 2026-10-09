@@ -14,6 +14,10 @@ signal hint_ready(steps: Array)
 signal session_restored
 ## 猜测被拒绝时广播（UI 用于提示玩家「本模式不允许猜测」）
 signal guess_rejected(pos: Vector2i)
+## 试玩期「检查进度」请求（文档 §7，编辑器试玩**专用**）：HUD 发 → board_view 收。
+## `mark=true` 标出错旗、`false` 收起标记。正式游戏里 `playtest_return` 恒为空 ⇒
+## 那两个按钮根本不会被建出来 ⇒ 本信号永远不发（对玩家不是作弊入口）。
+signal progress_check_requested(mark: bool)
 
 enum State { IDLE, PLAYING, PAUSED, ENDED }
 

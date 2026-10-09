@@ -51,7 +51,7 @@ $map = @{
     'theme_manager'  = @('test_ui_mounts')
     'progress_store' = @('test_progress_store')
     'save_coordinator' = @('test_save_coordinator')
-    'board_view'     = @('test_single_cell_pop', 'test_wave_stagger')
+    'board_view'     = @('test_single_cell_pop', 'test_wave_stagger', 'test_progress_check')
     'puzzle_generator' = @('test_generator_multifaceted', 'test_solver_budget')
     'rule_registry'  = @('test_rule_platform', 'test_spec_schema')
     # 【2026-10-03 补】新增 core 模块长期没进映射表 ⇒ 改了它们却"映射不到用例"，
@@ -94,6 +94,10 @@ $map = @{
     'stroke_limits'  = @('test_drawing_stroke_limits')
     # 2026-10-09 补：缩略图显示控件（改它会影响编辑器面板的可见控件）。
     'level_thumb_view' = @('test_level_thumbnail', 'test_level_editor_smoke')
+    # 2026-10-09 补：试玩期「检查进度」（文档 §7）——判据 + HUD/对局两端的接线。
+    'progress_check' = @('test_progress_check')
+    'hud'            = @('test_ui_rework_contract', 'test_board_view_interaction', 'test_progress_check')
+    'game_session'   = @('test_board_view_interaction', 'test_ui_rework_contract', 'test_progress_check')
 }
 
 $want = New-Object System.Collections.Generic.List[string]

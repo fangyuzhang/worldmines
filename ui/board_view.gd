@@ -13,6 +13,9 @@ extends Control
 ## 伙伴骨架数据（只取 ASPECT 与 DESIGN_W/EDGE 做停靠尺寸换算）。纯数据脚本、不引用任何
 ## autoload，故这里的 preload 不会给 board_view 添运行时依赖。
 const RIGDATA := preload("res://ui/companion_rig.gd")
+## 试玩期「检查进度」的判据（文档 §7）。**preload 而不是引用全局类名**：
+## 本文件被 headless 工具链加载，依赖全局类缓存会多一个解析期风险点。
+const PROGRESS_CHECK := preload("res://core/progress_check.gd")
 ## 伙伴本体脚本，**当类型注解用**（Godot 4 允许把 const preload 的脚本作类型）：
 ## 于是 _pet.react() / _pet.frozen / _pet.hit_test() 都有静态检查，而不是先转 Control
 ## 再靠 `call("react")` 这种一改签名就静默失效的动态调用。
@@ -267,6 +270,9 @@ func _ready() -> void:
 	# 三个入口各管一段状态迁移，覆盖 PLAYING → PAUSED → PLAYING 与 PLAYING → WON/LOST。
 	if not GameSession.game_ended.is_connected(_on_game_ended_for_pet):
 		GameSession.game_ended.connect(_on_game_ended_for_pet)
+	# 试玩期「检查进度」（文档 §7）：HUD 发信号，本视图负责标/清（判据在 core/progress_check.gd）
+	if not GameSession.progress_check_requested.is_connected(_on_progress_check_requested):
+		GameSession.progress_check_requested.connect(_on_progress_check_requested)
 	# 鼠标移出棋盘：不再有 MouseMotion 事件，悬停高亮会永远定格在最后一格
 	mouse_exited.connect(_on_mouse_exited)
 	# 绘画层（棋盘之上、HUD 之下）+ 底栏工具栏
@@ -416,6 +422,10 @@ func _connect_board() -> void:
 
 func _on_cell_changed(pos: Vector2i) -> void:
 	_clear_hint()  # 盘面变化 → 旧推理结论失效
+	# 盘面一变，「哪里插错了旗」的结论立刻过期 ⇒ 红叉必须跟着消失。
+	# 留着就是**主动误导**：玩家会照着已经不对的红叉继续判断（比不标更糟）。
+	if not _wrong_flag_marks.is_empty():
+		_wrong_flag_marks.clear()
 	_group_dirty = true   # 插旗/翻开都会改变「分色剩余雷数」
 	# 伙伴反应：翻开/插旗都摸它一下。真机规格书里 track 5 只挂「点击」，本工程扩成
 	# 「玩家的每一个操作」—— 猫对盘面变化有反应，比只对点击有反应更像活物。
@@ -2228,6 +2238,10 @@ func _draw() -> void:
 	# 终局揭晓（非 PLAYING）：全部雷位画雷体 + 引爆格 danger 底
 	if endgame:
 		_draw_mines_reveal(board, scale)
+	else:
+		# 试玩期「检查进度」标出来的错旗（文档 §7）。终局那一遍已经把所有错旗都画了 ⇒
+		# 这里只在非终局补画，免得同一格叠出双线。
+		_draw_wrong_flag_marks(scale)
 
 	# 悬停反馈（§8.4.4；终局不响应）
 	# hover_highlight 只决定"是否连带高亮 8 邻"；关闭时仍高亮鼠标所在格本身，否则悬停将毫无反馈
@@ -2467,10 +2481,52 @@ func _draw_mines_reveal(board: Board, scale: float) -> void:
 			var wp := Vector2i(gx, gy)
 			if board.is_mine(wp):
 				continue
-			var wctr := _cell_center(wp)
-			var wr: float = 9.0 * scale
-			draw_line(wctr + Vector2(-wr, -wr), wctr + Vector2(wr, wr), wrong_col, 2.5 * scale)
-			draw_line(wctr + Vector2(wr, -wr), wctr + Vector2(-wr, wr), wrong_col, 2.5 * scale)
+			_draw_wrong_cross(wp, scale, wrong_col)
+
+
+## 「插错旗」的红叉——终局揭晓与试玩期「检查进度」**共用同一支笔**（线宽/颜色/大小只有一处定义，
+## 否则两处迟早长得不一样）。
+func _draw_wrong_cross(pos: Vector2i, scale: float, col: Color) -> void:
+	var c := _cell_center(pos)
+	var r: float = 9.0 * scale
+	draw_line(c + Vector2(-r, -r), c + Vector2(r, r), col, 2.5 * scale)
+	draw_line(c + Vector2(r, -r), c + Vector2(-r, r), col, 2.5 * scale)
+
+
+## 试玩期「检查进度」标出来的错旗（文档 §7）。空 = 没标记。
+## **只在试玩态落下**（见 `_on_progress_check_requested` 的闸），且**盘面一变就清**（见 `_on_cell_changed`）。
+var _wrong_flag_marks: Array[Vector2i] = []
+
+
+func _draw_wrong_flag_marks(scale: float) -> void:
+	if _wrong_flag_marks.is_empty():
+		return
+	var board: Board = GameSession.board
+	if board == null or board.grid == null:
+		return
+	var col := ThemeManager.danger()
+	for pos in _wrong_flag_marks:
+		if not board.grid.in_board(pos):
+			continue   # 异形盘的洞格：包围盒里但不是有效格
+		_draw_wrong_cross(pos, scale, col)
+
+
+## 试玩期「检查进度」（文档 §7「检查进度（标记插错的旗）」）：标出插错的旗 / 收起标记。
+## 【为什么只在试玩里生效】对局中当场判定旗的对错 == 泄露雷位（正式游戏是作弊）⇒
+## 这里按 `playtest_return` 再兜一道闸：就算将来有人在正式对局里发这个信号，也标不出任何东西。
+## 【为什么不是开关而是两个动作】标记会被盘面变化清掉，若做成"再次点击即收起"，
+## 按钮显示的状态就会和实际不一致（用户按了没反应）。标/清各是一个明确动作，没有隐藏状态。
+func _on_progress_check_requested(mark: bool) -> void:
+	if str(GameSession.playtest_return) == "":
+		return
+	var board: Board = GameSession.board
+	if not mark:
+		if not _wrong_flag_marks.is_empty():
+			_wrong_flag_marks.clear()
+			queue_redraw()
+		return
+	_wrong_flag_marks = PROGRESS_CHECK.wrong_flags(board)   # 判据在 core，这里只落笔
+	queue_redraw()
 
 
 ## §8.4.4 悬停高亮：中心格内陷（恒有，保证鼠标有落点反馈）

@@ -136,6 +136,23 @@ func _ready() -> void:
 			GameSession.playtest_return = ""
 			get_tree().change_scene_to_file(target))
 		_box.add_child(back_ed)
+		# 试玩专用（文档 §7「检查进度（标记插错的旗）」）：作者在试玩里核对"这关到底通没通"。
+		# 与「回编辑器」同一个闸（`playtest_return` 非空）⇒ 正式游戏里这两个按钮不存在，
+		# 玩家不可能靠它把雷位看出来（对局中判旗的对错 = 泄露雷位）。
+		var check_btn := Button.new()
+		check_btn.text = "检查进度"
+		check_btn.tooltip_text = "把插错的旗画上红叉（试玩专用：作者核对进度用，正式游戏里没有这个按钮）"
+		check_btn.focus_mode = Control.FOCUS_ALL
+		check_btn.custom_minimum_size = Vector2(120, 40)
+		check_btn.pressed.connect(func(): GameSession.progress_check_requested.emit(true))
+		_box.add_child(check_btn)
+		var clear_btn := Button.new()
+		clear_btn.text = "收起标记"
+		clear_btn.tooltip_text = "擦掉上一步画的红叉（盘面一变也会自动擦掉，免得看着过期的标记做判断）"
+		clear_btn.focus_mode = Control.FOCUS_ALL
+		clear_btn.custom_minimum_size = Vector2(120, 40)
+		clear_btn.pressed.connect(func(): GameSession.progress_check_requested.emit(false))
+		_box.add_child(clear_btn)
 	_box.add_child(_nav_btn)
 
 	# 雷数读数（⦿ + 数字）。语义「剩余 = 总雷数 − 已插旗」挪进 tooltip —— 2026-09-25
