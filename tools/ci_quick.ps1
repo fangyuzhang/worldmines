@@ -59,7 +59,7 @@ $map = @{
     'hotmap'         = @('test_hotmap')
     'replay_model'   = @('test_replay_model')
     'repair_suggest' = @('test_repair_suggest')
-    'mega_cell'      = @('test_mega_cell')
+    'mega_cell'      = @('test_mega_cell', 'test_mega_variant_matrix')
     'shape_dag'      = @('test_shape_dag', 'test_shape_dag_mapping')
     'shape_boolean'  = @('test_shape_boolean')
     'level_format'   = @('test_level_format_layers', 'test_level_format_integration')
@@ -68,7 +68,7 @@ $map = @{
     'share_code'     = @('test_share_code')
     'perf_ledger'    = @('test_perf_ledger')
     'difficulty'     = @('test_difficulty_stars')
-    'editor_verify'  = @('test_editor_verify')
+    'editor_verify'  = @('test_editor_verify', 'test_mega_variant_matrix')
     'proof_log'      = @('test_proof_log_limits')
     'editor_bindings' = @('test_editor_shortcuts')
     'editor_view_state' = @('test_editor_shortcuts')
@@ -76,6 +76,8 @@ $map = @{
     # ⚠ 不要在此重复已有键（`editor_canvas` 上方已定义）——PowerShell 哈希表重复键会**解析失败**，
     # 把整个增量门禁弄坏（2026-10-03 我当场犯过这个错，立刻撤回）。
     'shape_generator' = @('test_shape_generator_params', 'test_shape_outline_wiring', 'test_voronoi_tiling')
+    # 2026-10-09 补：复合格 × 变体兼容门禁（文档「五 · ⚠ 复合格 × 变体」）。
+    'mega_variant_matrix' = @('test_mega_variant_matrix')
     # 2026-10-09 补：(p) Voronoi 不规则镶嵌接进 `from_tiling`（自建棋盘路径）后，改了它也要重跑该用例。
     'adjacency_builder' = @('test_voronoi_tiling')
     # 由实跑输出补（只补**有据可查**的；`board`/`gen_common`/`gen_shape_levels`/`gen_style_shape_levels`

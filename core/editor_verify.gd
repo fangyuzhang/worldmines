@@ -101,13 +101,15 @@ static func _prepare(doc: EditorDoc) -> Dictionary:
 	return {"ok": true, "rule": rule, "globals": globals, "topo": topo, "values": pv["values"]}
 
 
-## 主入口。返回 `{state, label, reason, stats, issues, variant_grid_issues}`。
-## issues 非空 = 因为这个原因（没能给出结论，**或**变体×网格族被禁用 / 退化）——UI 应在验证面板里
+## 主入口。返回 `{state, label, reason, stats, issues, variant_grid_issues,
+## mega_variant_issues}`。
+## issues 非空 = 因为这个原因（没能给出结论，**或**矩阵门禁拦下的组合）——UI 应在验证面板里
 ## 逐条显示，不要只打控制台。每条都是 `{code, text, pos, level}`（与 `EditorDoc.validate()` 同结构）；
-## 变体×网格族条目另有一份单独拷贝在 `variant_grid_issues` 键下（code 前缀 `variant_grid_`）。
+## 两张矩阵的条目各有一份单独拷贝：`variant_grid_issues`（code 前缀 `variant_grid_`）与
+## `mega_variant_issues`（前缀 `mega_variant_` / `mega_mirror_`）。
 static func verify(doc: EditorDoc, opts: Dictionary = {}) -> Dictionary:
 	var res := _verify_body(doc, opts)
-	_attach_variant_grid(doc, res)
+	_attach_matrices(doc, res)
 	return res
 
 
@@ -254,7 +256,7 @@ static func _verify_body(doc: EditorDoc, opts: Dictionary = {}) -> Dictionary:
 ## 【单岛】直接复用 `verify()`（行为与旧口径逐一一致），只补一条岛摘要。
 static func verify_islands(doc: EditorDoc, opts: Dictionary = {}) -> Dictionary:
 	var res := _verify_islands_body(doc, opts)
-	_attach_variant_grid(doc, res)
+	_attach_matrices(doc, res)
 	return res
 
 
@@ -675,7 +677,7 @@ static func _out(state: String, reason: String, stats: Dictionary, issues: Array
 	return {"state": state, "label": state_label(state), "reason": reason, "stats": stats, "issues": issues}
 
 
-# ==================== 变体 × 网格族矩阵消费（W9 门禁） ====================
+# ==================== 矩阵消费（W9 门禁：变体 × 网格族 / 变体 × 复合格） ====================
 #
 # 【为什么放在验证器】`VariantGridMatrix` 自称「勾选即时禁用」的唯一事实源，但全仓实测
 # **没有任何生产代码消费它**（只有 test/unit/test_variant_grid_matrix.gd 等测试与
@@ -689,6 +691,12 @@ static func _out(state: String, reason: String, stats: Dictionary, issues: Array
 # 的网格族。故两条"取不到就跳过"：① 规则 id 不在注册表（AI 自定义 spec）——矩阵对它无话可说，
 # 硬查只会误报"未登记变体"；② 网格族取不到（外部拓扑 foreign_topology / 未登记 shape_kind）——
 # 同上。这不是漏检：**能判的组合一律判**。
+#
+# 【第二张矩阵：变体 × 复合格】`MegaVariantMatrix`（文档「五 · ⚠ 复合格 × 变体」）同理——
+# 复合格把一片基础格变成「逻辑一格」，而变体几乎都定义在基础格上；`MegaSolver.build`
+# 只建模经典 8 邻线索，其余变体一律拒绝（见 core/solver/mega_solver.gd:63-68）。本段把它也
+# 翻成同一结构的问题条目，并附文档点名的「镜像轴上的复合格必须成对」逐格检查（带位置可跳转）。
+# 盘上没有复合格 ⇒ 零条目（本矩阵只管「有复合格」这件事，不产噪音）。
 
 ## 当前文档的网格族（用 `VariantGridMatrix` 的口径）。取不到（空文档 / 外部拓扑 / 未登记族）→ ""。
 static func grid_kind_of(doc: EditorDoc) -> String:
@@ -745,17 +753,66 @@ static func variant_grid_issues(doc: EditorDoc) -> Array[Dictionary]:
 	return out
 
 
-## 把矩阵消费结果挂进验证结果：单独键 `variant_grid_issues`（便于 UI / 测试直接取）+ 合并进
-## `issues`（统一问题流）。**幂等**：先剔除旧的 `variant_grid_*` 条目再重挂——`verify_islands()`
+## 变体 × 复合格（Mega Cell）兼容问题（文档「五 · ⚠ 复合格 × 变体」）。
+## 盘上没有复合格 ⇒ 零条目（本矩阵只管「有复合格」这一件事，不产噪音）。
+## 有复合格时：① 每个活跃变体查 `MegaVariantMatrix`（未定义组合产可读条目）；
+## ② 文档点名的硬规则「镜像轴上的复合格必须成对」——**仅当 mx 是活跃变体时**才跑
+## （不勾镜像就不该被念），不是一对的复合格逐个报出来（带位置，UI 可跳转）。
+static func mega_variant_issues(doc: EditorDoc) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if doc == null or doc.mega_cells == null or doc.mega_cells.count() <= 0:
+		return out
+	var active := active_variant_ids(doc)
+	for vid in active:
+		var st := MegaVariantMatrix.status(vid, true)
+		if st == "" or st == MegaVariantMatrix.OK:
+			continue
+		var why := MegaVariantMatrix.reason(vid, true).strip_edges()
+		if why == "":
+			why = "矩阵未给出理由（状态 %s）" % st
+		var degraded := st == MegaVariantMatrix.DEGRADED
+		out.append({
+			"code": "mega_variant_%s" % st.to_lower(),
+			"text": "变体「%s」在含复合格的盘上%s：%s" % [
+				vid, "仅退化可用" if degraded else "不生效（复合格求解不建模该口径）", why],
+			"pos": Vector2i(-1, -1),
+			"level": EditorDoc.ISSUE_WARN if degraded else EditorDoc.ISSUE_ERROR,
+		})
+	if active.has("mx"):
+		for it in MegaVariantMatrix.mirror_pair_issues(doc.mega_cells, doc.cols):
+			out.append({
+				"code": str((it as Dictionary).get("code", "mega_mirror_unpaired")),
+				"text": str((it as Dictionary).get("text", "")),
+				"pos": (it as Dictionary).get("pos", Vector2i(-1, -1)),
+				"level": EditorDoc.ISSUE_WARN,
+			})
+	return out
+
+
+## 把两张矩阵的消费结果挂进验证结果：各自单独键（便于 UI / 测试直接取）+ 合并进
+## `issues`（统一问题流）。**幂等**：先剔除旧的矩阵条目再重挂——`verify_islands()`
 ## 的单岛路径会内部再调一次 `verify()`，不去重就会同一问题出现两遍。
-static func _attach_variant_grid(doc: EditorDoc, res: Dictionary) -> void:
+static func _attach_matrices(doc: EditorDoc, res: Dictionary) -> void:
 	var vg := variant_grid_issues(doc)
+	var mg := mega_variant_issues(doc)
 	res["variant_grid_issues"] = vg
+	res["mega_variant_issues"] = mg
 	var merged: Array = []
 	for it in res.get("issues", []):
-		if str((it as Dictionary).get("code", "")).begins_with("variant_grid_"):
+		if _is_matrix_issue(it):
 			continue
 		merged.append(it)
-	for it in vg:
-		merged.append(it)
+	for it2 in vg:
+		merged.append(it2)
+	for it3 in mg:
+		merged.append(it3)
 	res["issues"] = merged
+
+
+## 矩阵条目的识别口径（前缀约定）：`variant_grid_*` / `mega_variant_*` / `mega_mirror_*`。
+static func _is_matrix_issue(it: Variant) -> bool:
+	if not (it is Dictionary):
+		return false
+	var code := str((it as Dictionary).get("code", ""))
+	return code.begins_with("variant_grid_") or code.begins_with("mega_variant_") \
+			or code.begins_with("mega_mirror_")
