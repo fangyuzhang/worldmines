@@ -748,3 +748,44 @@ func test_portal_endpoint_on_a_hole_is_reported() -> void:
 	assert_true(codes.has("portal_off_board"),
 		"端点落在洞里的虫洞必须显式报错（收到的错误码：%s）" % str(codes))
 	assert_false(bool(rep["ok"]), "含坏虫洞的关卡不该通过校验")
+
+
+## 静态折叠必须真的改邻接（镜像叠合的两格互为邻居）+ 落盘回读保真。
+##
+## 【为什么必须钉住】折叠的「两层贴在一起」是玩法本体（预览 / 求解器 / 玩家都靠它）；
+## 落盘后那条边会和 8 邻边混在同一张邻接表里、分不出谁是谁 ⇒ 必须同时带 fold 声明。
+## 少任何一半，用户都会看到「编辑器里折了、进游戏没折」或「读回来折痕没了」。
+func test_fold_becomes_real_adjacency_and_round_trips() -> void:
+	var d := _doc(4, 4, [Vector2i(1, 1)])
+	d.fold = {"axis": "x", "at": 2}
+	# ① 拓扑：镜像叠合的两格必须真的互为邻居（不是只写了一条元数据）
+	var topo := d.topology()
+	assert_false(topo.is_empty(), "有折叠的盘必须产出 topology")
+	assert_eq(str((topo["view"] as Dictionary).get("kind", "")), "fold", "呈现种类应标成 fold")
+	assert_eq(TopologyModel.fold_decl(topo), {"axis": "x", "at": 2}, "拓扑里应带折痕声明")
+	var ag := AdjacencyGrid.new()
+	ag.setup_from_topo(topo)
+	assert_true(ag.get_neighbors(Vector2i(1, 1)).has(Vector2i(2, 1)),
+		"镜像叠合的两格必须互为邻居：%s" % str(ag.get_neighbors(Vector2i(1, 1))))
+	# ② 落盘 → 回读（能保存的必定能加载）
+	var back := EditorDoc.new()
+	assert_true(bool(back.load_from(d.to_level_json())["ok"]), "带折叠的关卡应能读回")
+	assert_eq(back.fold, {"axis": "x", "at": 2}, "折痕必须随关卡往返")
+	# ③ 回读出来的盘，叠合邻接依旧在
+	var ag2 := AdjacencyGrid.new()
+	ag2.setup_from_topo(back.topology())
+	assert_true(ag2.get_neighbors(Vector2i(1, 1)).has(Vector2i(2, 1)),
+		"回读后的盘也必须保持叠合邻接")
+
+
+## 非法折痕（at 越界）⇒ **必须报错**，不许静默丢掉或半挂。
+func test_bad_fold_is_reported_not_silently_dropped() -> void:
+	var d := _doc(4, 4, [Vector2i(1, 1)])
+	d.fold = {"axis": "x", "at": 99}
+	var rep := d.validate()
+	var codes: Array[String] = []
+	for it in rep["errors"]:
+		codes.append(str((it as Dictionary)["code"]))
+	assert_true(codes.has("fold_bad"),
+		"越界折痕必须显式报错（收到的错误码：%s）" % str(codes))
+	assert_false(bool(rep["ok"]), "含坏折痕的关卡不该通过校验")

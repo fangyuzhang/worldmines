@@ -86,6 +86,11 @@ var revealed: Dictionary = {}         # Vector2i -> null：初始翻开集合（
 ##（对比：wrap / dirs / shape_kind 是"由参数重算"的会话选择，载入时会清零）。
 var portals: Array[Vector2i] = []
 
+## 静态折叠（**关卡内容**，与虫洞同桶）：`{axis, at}` —— 沿一条折痕把远侧沿镜像翻到近侧，
+## 镜像位上有格 ⇒ 两层贴合 ⇒ 互为邻居（走 `TopologyModel.attach_fold`，与虫洞同一条「显式声明 + 加边」路径）。
+## 空 `{}` = 没有折叠。同样 `load_from` **不清零**（它是内容，不是会话选择）。
+var fold: Dictionary = {}
+
 # —— 规则 ——
 var rule_spec: Dictionary = {}        # spec v1 原文；空 = 用 clue_rule_id 或内置 classic
 var clue_rule_id := ""                # 空 ⇒ classic
@@ -485,6 +490,9 @@ func struct_signature() -> String:
 	h = (h ^ portals.size()) * 1099511628211
 	for pr in portals:
 		h = (h ^ (pr.x * 31 + pr.y)) * 1099511628211
+	# 折叠同样改邻接 ⇒ 必须进签名（漏了它 = 缓存不失效的幽灵 bug，与虫洞同一条理由）。
+	h = (h ^ str(fold.get("axis", "")).hash()) * 1099511628211
+	h = (h ^ int(fold.get("at", 0))) * 1099511628211
 	h = (h ^ shape_kind.hash()) * 1099511628211
 	h = (h ^ JSON.stringify(shape_params).hash()) * 1099511628211
 	h = (h ^ foreign_topology.size()) * 1099511628211
@@ -511,7 +519,7 @@ func _build_topology() -> Dictionary:
 	if raw.is_empty():
 		return raw
 	var built := raw if obstacles.is_empty() else _carve_holes(raw, obstacles)
-	return _apply_portals(built)
+	return _apply_fold(_apply_portals(built))
 
 
 ## 把编辑器里的虫洞对挂进拓扑（补双向边 + 写 `view.kind = wormhole`）。
@@ -528,6 +536,22 @@ func _apply_portals(topo: Dictionary) -> Dictionary:
 	var r: Dictionary = TopologyModel.attach_portals(topo, portal_dicts())
 	# 即便有条目被拒（端点在洞里），`attach_portals` 也会把**合法**的那些挂上；被拒的由
 	# `validate()` 显式报错，绝不静默吞掉。
+	var out: Variant = r.get("topology", null)
+	if out is Dictionary:
+		return out
+	return topo
+
+
+## 把编辑器里的静态折叠挂进拓扑（补镜像叠合的双向边 + 写 `view.kind = fold`）。
+## 与 `_apply_portals` 同一套路：只管「有折叠就挂」；声明合法性由 `validate()` 报给用户。
+## 空声明时**原样返回**（不无条件造 fold / view 键，理由同 `_apply_portals`：落盘 diff 会变噪音）。
+## 非法声明（轴名 / at 越界）⇒ 不挂、原样返回，等 `validate()` 报错让用户改。
+func _apply_fold(topo: Dictionary) -> Dictionary:
+	if fold.is_empty():
+		return topo
+	var r: Dictionary = TopologyModel.attach_fold(topo, fold)
+	if not bool(r.get("ok", false)):
+		return topo
 	var out: Variant = r.get("topology", null)
 	if out is Dictionary:
 		return out
@@ -568,7 +592,7 @@ func _build_topology_raw() -> Dictionary:
 	# 强制产出邻接表（`force=true`）的两种情形：① 有洞（RectGrid 没有"格不存在"的表示法）；
 	# ② 有虫洞（虫洞是**额外邻接**，默认矩形盘的快速路径给不出它 ⇒ 必须落到 AdjacencyGrid）。
 	var r := WrapTopology.build(rows, cols, dirs, include_self, wrap,
-		not obstacles.is_empty() or not portals.is_empty())
+		not obstacles.is_empty() or not portals.is_empty() or not fold.is_empty())
 	if not bool(r["ok"]):
 		return {}
 	return r["topology"]
@@ -932,6 +956,25 @@ func validate() -> Dictionary:
 									"虫洞端点 (%d,%d) 不在盘上（越界，或被挖成了洞）—— 这一对不会生效；请改端点，或把这个洞补回来" % [wp.x, wp.y],
 									wp, ISSUE_ERROR))
 					pi += 2
+				# 折叠声明体检：轴名 / at 范围（与加载侧同一判据 FoldModel.normalize）。
+				# 合法则再报"没有对家的格"——折角翘出盘外 / 对面被挖成洞，这些都只是提示（💡）：
+				# 叠不上就是少一层邻居，格子的数字/推理照常，作者该知道但不必被拦。
+				if not fold.is_empty():
+					var fpos: Array[Vector2i] = []
+					for p5 in ag.all_positions():
+						fpos.append(p5)
+					var fnorm := FoldModel.normalize(fold, fpos)
+					if not bool(fnorm["ok"]):
+						for fe_v: Variant in (fnorm["errors"] as Array):
+							_audit_errors.append(_issue("fold_bad",
+								"折叠声明无效：%s" % str(fe_v), Vector2i(-1, -1), ISSUE_ERROR))
+					else:
+						var frep := FoldModel.audit(fold, fpos)
+						var n_unpaired := int(frep.get("unpaired", 0))
+						if n_unpaired > 0:
+							_audit_warnings.append(_issue("fold_unpaired",
+								"折叠后有 %d 格没有对家（折角伸出盘外，或对面那格被挖成洞）—— 这些格只是少一层叠合邻居；检查折痕位置与洞" % n_unpaired,
+								Vector2i(-1, -1), ISSUE_INFO))
 			for e in _audit_errors:
 				errors.append(e)
 			# 审计里的"孤立格"恒为 💡info（只是作者该知道）；"含自身 / 没有邻接表"是 warn。
@@ -1329,6 +1372,8 @@ func snapshot() -> Dictionary:
 			# 虫洞对也是结构源（它改邻接）：快照省掉了 topology ⇒ 必须自己带上，
 			# 否则撤销一次"配对"回不到配之前（与 wrap / obstacles 同一条理由）。
 			"portals": portals.duplicate(),
+			# 折叠同样改邻接（内容）：快照省掉 topology ⇒ 必须自带，理由同上。
+			"fold": fold.duplicate(true),
 		},
 		"foreign": foreign_topology,
 		# ⚠ 形状参数也必须**显式**存（2026-10-03 修）：`load_from()` 会把 `shape_kind/shape_params`
@@ -1355,6 +1400,8 @@ func restore(snap: Dictionary) -> bool:
 		dirs.assign(s.get("dirs", []))
 		obstacles.assign(s.get("obstacles", []))
 		portals.assign(s.get("portals", []))
+		var fv: Variant = s.get("fold", {})
+		fold = (fv as Dictionary).duplicate(true) if fv is Dictionary else {}
 	var f: Variant = snap.get("foreign", {})
 	foreign_topology = f if f is Dictionary else {}
 	var sh: Variant = snap.get("shape", {})
@@ -1409,6 +1456,8 @@ func load_from(level: Dictionary) -> Dictionary:
 	# 虫洞对是**关卡内容**（与雷位同桶），**不**属于"能由参数重算"的东西 ⇒ 这里只清空，
 	# 真正的值在下面从 topology 的 view.portals 读回（读不到就是空）。
 	portals = []
+	# 折叠同理：内容，不清零；真正的值在下面从 topo 的 fold / view.fold 读回。
+	fold = {}
 	# 形状族是**当前会话的编辑选择**，不是关卡字段 ⇒ 载入关卡时清空
 	#（载入进来的异形盘一律走 foreign_topology 原样保留那条路）
 	shape_kind = ""
@@ -1432,6 +1481,8 @@ func load_from(level: Dictionary) -> Dictionary:
 			var pb: Vector2i = pr["b"]
 			portals.append(pa)
 			portals.append(pb)
+		# 静态折叠（内容）：顶层 fold 或 view.fold 二选一，`fold_decl` 都认。
+		fold = TopologyModel.fold_decl(t)
 		var present := {}
 		for p in t.get("positions", []):
 			var pd: Dictionary = p

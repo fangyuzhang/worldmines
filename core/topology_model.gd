@@ -251,14 +251,7 @@ static func canonicalize(topo: Dictionary) -> Dictionary:
 		var la: Array = neighbors[key_of(a)]
 		if not la.has(key_of(b)):
 			la.append(key_of(b))
-	for k: Variant in neighbors.keys():
-		var list: Array = neighbors[k]
-		list.sort_custom(func(x: String, y: String) -> bool:
-			var px := parse_key(x) as Vector2i
-			var py := parse_key(y) as Vector2i
-			if px.y != py.y:
-				return px.y < py.y
-			return px.x < py.x)
+	_sort_neighbor_lists(neighbors)
 	var out: Dictionary = {}
 	for k2: Variant in topo.keys():
 		if k2 != "neighbors" and k2 != "adjacency":
@@ -360,19 +353,61 @@ static func attach_portals(topo: Dictionary, portals: Array) -> Dictionary:
 	return {"ok": errors.is_empty(), "topology": out, "errors": errors}
 
 
-## 静态折叠：把折痕和面板元数据挂上；邻接表本身仍是唯一真源。
+## 静态折叠：把「哪两格叠在一起」写进邻接表，并挂上折痕元数据（渲染用）。
+## 返回 {ok, topology, errors, pairs, overhang, floating} —— 与 attach_portals 同形。
+##
+## 【语义】远侧（索引 ≥ at）沿折痕镜像翻到近侧：镜像位上有格 ⇒ 两层贴合 ⇒ 互为邻居。
+## 翻过头（镜像索引 < 0，折角翘出盘外）或对面被挖空 ⇒ **不加边**，只记进 overhang/floating
+## 供作者自检（挖洞盘天然会有悬空格，故它们不是错误）。非法参数才是错误：
+## ok=false 时邻接表**一格都不改**（宁可整块拒绝，也不留半张折过的盘）。
 static func attach_fold(topo: Dictionary, fold: Dictionary) -> Dictionary:
 	var out := canonicalize(topo)
-	out["fold"] = fold.duplicate(true)
+	var positions: Array[Vector2i] = []
+	for p_v: Variant in (out.get("positions", []) as Array):
+		var pv: Variant = parse_pos(p_v)
+		if pv != null:
+			positions.append(pv)
+	var rep := FoldModel.audit(fold, positions)
+	if not bool(rep["ok"]):
+		return {"ok": false, "topology": out, "errors": rep["errors"],
+				"pairs": [], "overhang": [], "floating": []}
+	var touched: Array = []
+	for pr_v: Variant in (rep["pairs"] as Array):
+		var pr: Dictionary = pr_v
+		var a: Vector2i = pr["a"]
+		var b: Vector2i = pr["b"]
+		_add_edge(out["neighbors"], a, b)
+		touched.append(key_of(a))
+		touched.append(key_of(b))
+	_sort_neighbor_lists(out["neighbors"], touched)
+	var norm := FoldModel.normalize(fold, positions)
+	out["fold"] = norm["fold"]
 	var view: Dictionary = out.get("view", {}) if out.get("view", {}) is Dictionary else {}
 	view["kind"] = VIEW_FOLD
 	out["view"] = view
-	return out
+	return {"ok": true, "topology": out, "errors": [],
+			"pairs": rep["pairs"], "overhang": rep["overhang"],
+			"uncovered": rep["uncovered"], "floating": rep["floating"]}
 
 
 static func fold_meta(topo: Dictionary) -> Dictionary:
 	var v: Variant = topo.get("fold", {})
 	return (v as Dictionary).duplicate(true) if v is Dictionary else {}
+
+
+## 折痕声明：读**顶层 fold** 或 **view.fold**（生成器写的是后者）。
+## 返回 {axis, at}（读不到 / 空 ⇒ 空字典）。与 `portal_pairs` 同形：加载侧与呈现侧都用它，
+## 免得两处各自解析、口径漂移。
+static func fold_decl(topo: Dictionary) -> Dictionary:
+	var out := fold_meta(topo)
+	if not out.is_empty():
+		return out
+	var view_v: Variant = topo.get("view", {})
+	if view_v is Dictionary:
+		var fv: Variant = (view_v as Dictionary).get("fold", {})
+		if fv is Dictionary and not (fv as Dictionary).is_empty():
+			return (fv as Dictionary).duplicate(true)
+	return {}
 
 
 ## AdjacencyGrid 用的呈现元数据：view + 推断信息，供 BoardView 读取。
@@ -430,6 +465,24 @@ static func _json_safe_array(src: Array) -> Array:
 		else:
 			out.append(it)
 	return out
+
+
+## 邻居列表的规范序：按 (y, x) 升序 —— 与声明式规格 refs=「topo」的索引序同口径。
+## 单一事实源：canonicalize 与 attach_fold 都调它（attach_portals 是**既有数据**路径，
+## 它的追加序原样保留，免得重写既有虫洞关卡的落盘 diff）。
+## only_keys 非空 ⇒ 只排这几个键（加完少数几条边后只整理动过的行）。
+static func _sort_neighbor_lists(neighbors: Dictionary, only_keys: Array = []) -> void:
+	var keys: Array = only_keys if not only_keys.is_empty() else neighbors.keys()
+	for k: Variant in keys:
+		if not neighbors.has(k):
+			continue
+		var list: Array = neighbors[k]
+		list.sort_custom(func(x: String, y: String) -> bool:
+			var px := parse_key(x) as Vector2i
+			var py := parse_key(y) as Vector2i
+			if px.y != py.y:
+				return px.y < py.y
+			return px.x < py.x)
 
 
 static func _add_edge(neighbors: Dictionary, a: Vector2i, b: Vector2i) -> void:

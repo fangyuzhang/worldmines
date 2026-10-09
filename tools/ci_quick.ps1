@@ -108,7 +108,9 @@ $map = @{
     # 2026-10-09 补：边缘平滑（腐蚀 / 膨胀）的「连通区域数量不变」硬校验（文档 §3）——判据 + UI 接线。
     'shape_smooth'   = @('test_shape_smooth')
     # 2026-10-09 补：拓扑族（安全门 + 呈现）——改任一拓扑相关文件都要重跑这组用例。
-    'topology_model' = @('test_topology_model', 'test_topology_view', 'test_wormhole_levels', 'test_level_loader_topology_gate')
+    'topology_model' = @('test_topology_model', 'test_topology_view', 'test_wormhole_levels', 'test_level_loader_topology_gate', 'test_fold_model')
+    # 2026-10-09 补：静态折叠（折痕几何 + 写进邻接表）——改它要重跑折叠门禁与拓扑门禁。
+    'fold_model'     = @('test_fold_model', 'test_topology_model')
     'wrap_topology'  = @('test_topology_model', 'test_wrap_topology', 'test_level_loader_topology_gate')
     'level_loader'   = @('test_level_loader', 'test_level_loader_topology_gate', 'test_wormhole_levels')
     # 2026-10-09 补：虫洞关生成器（离线工具）——改它要重跑产线门禁与虫洞关门禁。
