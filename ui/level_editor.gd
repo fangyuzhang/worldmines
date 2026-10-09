@@ -59,6 +59,8 @@ const HISTOGRAM := preload("res://core/stats_histogram.gd")
 const DISCLOSURE := preload("res://core/editor_disclosure.gd")
 ## 骨牌划分（`DominoModel`）：与 `MegaCell` 同为「关卡内容」，但**不复用 class_name**（同坑 #26）。
 const DOMINO_MODEL := preload("res://core/domino_model.gd")
+## 手绘轮廓 / 文字 → 格集（多边形栅格化在 core，UI 只转发；同 DOMINO_MODEL 理由不按 class_name 引用）。
+const TTS := preload("res://core/text_to_shape.gd")
 
 
 ## 存档占用锁（功能清单 §8「防事故」前半）：**跨会话互斥** —— 同一份存档不允许两个编辑窗口同时写。
@@ -508,6 +510,8 @@ func _build_ui() -> void:
 	canvas.cell_edit_started.connect(_on_cell_edit_started)
 	# 油漆桶结果：截断时必须说清"仅染了前 N 格"（否则用户以为整片都染了）
 	canvas.bucket_reported.connect(_on_bucket_reported)
+	# 手绘轮廓（文档 §3）：画布交出连续点列，这里转成格集写回盘型。
+	canvas.outline_drawn.connect(_on_outline_drawn)
 	body.add_child(canvas)
 	# 热力图不再挂"运行期子节点"：改由画布的正式叠加层 API 承载（`canvas.set_overlay("hotmap", …)`）。
 	# 缩放/平移/改盘后的重画由画布自己 `queue_redraw()` 负责 ⇒ 本文件不必再接 `draw/resized`。
@@ -668,10 +672,17 @@ func _build_left_bar() -> Control:
 			[EditorCanvas.Tool.SELECT, "区域选择",
 				"先框选一片区域，再用下面的「复制选区 / 粘贴到选区」整块复制格型——例如把一块障碍图案搬到别处", "L / ④"],
 			[EditorCanvas.Tool.PAN, "平移（或按住中键）", "拖动整张棋盘看（棋盘很大时用）；也可以直接按住鼠标中键拖",
-				"P / ⑤；或按住空格临时平移"]]:
+				"P / ⑤；或按住空格临时平移"],
+			# 文档 §3「手绘轮廓」：凭空画一个闭合轮廓，松手即刻成棋盘形状。
+			# 参数化形状（方/六边形/三角/圆/星/扇）覆盖不了"我就想要这么个歪形状"。
+			[EditorCanvas.Tool.OUTLINE, "手绘轮廓",
+				"按住鼠标画一个**闭合轮廓**，松手后整块刻成棋盘形状（撤销 Ctrl+Z；画歪了再画一次即可）",
+				"无"]]:
 		var tool_btn := _toggle_button(str(t[1]), _tool_group, func() -> void:
 			canvas.tool = int(t[0]))
 		tool_btn.tooltip_text = "%s（快捷键：%s）" % [str(t[2]), str(t[3])]
+		# 按钮下标**不能**当工具号用（见 `_set_tool`）：工具 id 记在 meta 上，加工具不会错位。
+		tool_btn.set_meta("tool_id", int(t[0]))
 		_tool_btns.append(tool_btn)
 		box.add_child(tool_btn)
 
@@ -2989,13 +3000,13 @@ func _refresh_status() -> void:
 		doc.rows * doc.cols, doc.cell_count(), doc.mine_count(), doc.density() * 100.0]
 	# 工具名**必须与 `EditorCanvas.Tool` 逐一对应**：数字快选 1~9 能选到直线/油漆桶，
 	# 旧表只有 5 项 ⇒ 会 IndexError（这就是"新工具追加在末尾"要同步的地方）。
-	var tool_names := ["画笔", "橡皮", "矩形填充", "区域选择", "平移", "直线", "油漆桶"]
+	var tool_names := ["画笔", "橡皮", "矩形填充", "区域选择", "平移", "直线", "油漆桶", "手绘轮廓"]
 	var kind_names := {"mine": "地雷", "obstacle": "障碍", "reveal": "初始已翻开", "clear": "清空"}
 	var err := str(canvas.get_meta("first_error", "")) if canvas != null else ""
 	var pos_text := "盘外" if canvas == null or canvas.hover.x < 0 else "(%d,%d)" % [canvas.hover.x, canvas.hover.y]
 	_status.text = "坐标 %s ｜ 格 %d×%d ｜ 雷 %d ｜ 密度 %.0f%% ｜ 工具 %s ｜ 格型 %s%s" % [
 		pos_text, doc.cols, doc.rows, doc.mine_count(), doc.density() * 100.0,
-		tool_names[canvas.tool] if canvas != null else "-",
+		tool_names[canvas.tool] if canvas != null and canvas.tool >= 0 and canvas.tool < tool_names.size() else "-",
 		kind_names.get(canvas.paint_kind, "-") if canvas != null else "-",
 		"" if err == "" else " ｜ ⚠ %s" % err]
 
@@ -3142,6 +3153,41 @@ func _apply_text_shape() -> void:
 	_set_text_shape_note("文字「%s」：%d 格%s" % [text, cells.size(), extra])
 	if bool(w.get("ok", false)):
 		_toast("已把「%s」刻成棋盘：%d 格%s" % [text, cells.size(), extra], false, 6.0)
+
+
+
+# ==================== 手绘轮廓 → 形状（文档 §3「手绘轮廓」） ====================
+#
+# 分工（与「文字转形状」同一条链，只是点从哪来不同）：
+#   · 画布：只交"一次手势的**连续棋盘坐标**点列"（`ui/editor_canvas.gd` 的 `outline_drawn`）；
+#   · core：闭合多边形 → 格集，栅格化与判界全在 `TextToShape.outline_to_cells`
+#     （判界一律 `grid.in_board()`，异形 / 挖洞盘不按包围盒猜）；
+#   · 写回：复用 `_write_board_shape`（"格集 → 盘型"的唯一入口 ⇒ 撤销 / 清雷 / 刷新不必重写）。
+
+## 画布拖完一个闭合轮廓时调用。失败必须说清**为什么**（点太少 / 自交 / 盘内无格），
+## 不许静默丢弃——用户画了半天必须得到一个解释。
+func _on_outline_drawn(points: PackedVector2Array) -> void:
+	if doc == null:
+		return
+	# tolerance ≤ 0 ⇒ 取 StrokeLimits.EPSILON（与手绘落盘同口径，见 TextToShape 注释）。
+	var r: Dictionary = TTS.outline_to_cells(points, doc.grid(), -1.0)
+	if not bool(r.get("ok", false)):
+		var why := str(r.get("reason", ""))
+		_set_text_shape_note("手绘轮廓转不出形状：%s" % why)
+		_toast("手绘轮廓没刻成：%s" % why, true, 8.0)
+		return
+	var cells: Array = []
+	for p in (r["cells"] as Dictionary).keys():
+		cells.append(p)
+	cells.sort_custom(_pos_less_xy)
+	var extra := ""
+	var clipped := int(r.get("clipped", 0))
+	if clipped > 0:
+		extra += "（有 %d 格落在盘外，已裁掉）" % clipped
+	var w: Dictionary = _write_board_shape(cells, "手绘轮廓")
+	_set_text_shape_note("手绘轮廓：%d 格%s" % [cells.size(), extra])
+	if bool(w.get("ok", false)):
+		_toast("已把手绘轮廓刻成棋盘：%d 格%s" % [cells.size(), extra], false, 6.0)
 
 
 # ==================== 骨牌划分编辑器（文档 §5） ====================
@@ -5277,13 +5323,16 @@ func _set_tool(p_tool: int) -> void:
 	if canvas == null:
 		return
 	canvas.tool = p_tool
-	for i in _tool_btns.size():
-		(_tool_btns[i] as Button).button_pressed = (i == p_tool)
+	# 按 meta 里的工具 id 高亮，**不按按钮下标**：LINE / BUCKET 是键盘专用（没有按钮），
+	# 一旦再补按钮（本轮补的 OUTLINE），"下标 = 工具号"就会静默点错工具。
+	for b in _tool_btns:
+		var btn := b as Button
+		btn.button_pressed = int(btn.get_meta("tool_id", -1)) == p_tool
 	_toast("工具：%s" % _tool_name(p_tool))
 
 
 func _tool_name(t: int) -> String:
-	var names := ["画笔", "橡皮", "矩形填充", "区域选择", "平移", "直线", "油漆桶"]
+	var names := ["画笔", "橡皮", "矩形填充", "区域选择", "平移", "直线", "油漆桶", "手绘轮廓"]
 	return names[t] if t >= 0 and t < names.size() else "?"
 
 

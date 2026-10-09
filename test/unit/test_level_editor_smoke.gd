@@ -359,3 +359,60 @@ func test_second_editor_opens_a_locked_save_read_only() -> void:
 	assert_eq(FileAccess.get_file_as_string(path), before, "只读态保存不得覆盖别人正在编辑的文件")
 	a.call("_release_lock")
 	_cleanup_save(path)
+
+
+func test_outline_gesture_writes_a_board_shape() -> void:
+	# 【文档 §3「手绘轮廓」】画布交“一次手势的连续点列”，编辑器把它刻成棋盘形状。
+	# 这里走真实输入路径（按下 → 拖动 → 抬起）——验的正是“信号真的接到 _on_outline_drawn 上、
+	# 且写回走的是 _write_board_shape 那条唯一入口”。
+	var ed := _make_editor()
+	var d := EditorDoc.new(9, 9)
+	_bind(ed, d)
+	assert_eq(d.obstacles.size(), 0, "起始应是一张全可走的空盘（没有障碍格）")
+	var canvas := _canvas_of(ed)
+	canvas.size = Vector2(600, 600)
+	canvas.tool = EditorCanvas.Tool.OUTLINE
+	var a := canvas.cell_rect(Vector2i(2, 2)).get_center()
+	var b := canvas.cell_rect(Vector2i(7, 2)).get_center()
+	var e := canvas.cell_rect(Vector2i(7, 7)).get_center()
+	var down := InputEventMouseButton.new()
+	down.button_index = MOUSE_BUTTON_LEFT
+	down.pressed = true
+	down.position = a
+	canvas._gui_input(down)
+	for pt in [b, e]:
+		var mv := InputEventMouseMotion.new()
+		mv.position = pt
+		mv.button_mask = MOUSE_BUTTON_MASK_LEFT
+		canvas._gui_input(mv)
+	var up := InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_LEFT
+	up.pressed = false
+	up.position = e
+	canvas._gui_input(up)
+	# 口径：格集（三角形内部）= 可走，其余 = 障碍。所以三角形之外的格必须被刻成障碍。
+	assert_true(d.obstacles.size() > 0, "轮廓之外的格应被刻成障碍（实际障碍 %d 格）" % d.obstacles.size())
+	assert_true(d.obstacles.has(Vector2i(0, 0)), "三角形之外的 (0,0) 应成为障碍")
+	assert_false(d.obstacles.has(Vector2i(6, 5)), "三角形内部的 (6,5) 应保持可走")
+	assert_true(d.obstacles.size() < 81, "轮廓内部应留下可走的格（否则是把整盘刻死了）")
+	var note := ed.get("_text_shape_note") as Label
+	assert_not_null(note, "属性页应有形状说明标签（默认专家档 ⇒ 一定建出来了）")
+	if note != null:
+		assert_true(note.text.begins_with("手绘轮廓"), "说明标签应报告手绘轮廓结果：%s" % note.text)
+
+
+func test_status_bar_names_every_tool_slot() -> void:
+	# 【漂移闸门】`_refresh_status` 里的工具名表必须覆盖 EditorCanvas.Tool 的**每一个**取值。
+	# 新工具追加在枚举末尾却忘了加名字 ⇒ 这里会 IndexError（不是“界面难看”而是直接报错拖崩编辑器）。
+	var ed := _make_editor()
+	_bind(ed, EditorDoc.new(9, 9))
+	var canvas := _canvas_of(ed)
+	var status := ed.get("_status") as Label
+	assert_not_null(status, "应有底部状态栏")
+	var expected := ["画笔", "橡皮", "矩形填充", "区域选择", "平移", "直线", "油漆桶", "手绘轮廓"]
+	assert_eq(expected.size(), 8, "工具名表应与 EditorCanvas.Tool 一样有 8 项（新增工具时这里要一起加）")
+	for t in range(expected.size()):
+		canvas.tool = t
+		ed.call("_refresh_status")
+		assert_true(status.text.contains(expected[t]), "工具 %d（%s）时状态栏应报出名字：%s" % [t, expected[t], status.text])
+

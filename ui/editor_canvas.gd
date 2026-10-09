@@ -22,9 +22,13 @@ signal selection_changed(rect: Rect2i)
 ## 编辑器可连它弹提示；不连也不影响填充（结果同时可从 `bucket_cells()` 取）。
 signal bucket_reported(result: Dictionary)
 
+## 手绘轮廓完成：一次手势的**棋盘坐标**点列（1 单位 = 1 格；首尾不必重复，闭合是隐含的）。
+## 编辑器拿它去 `TextToShape.outline_to_cells`（判界一律走 `grid.in_board()`，不按包围盒猜盘内格）。
+signal outline_drawn(points: PackedVector2Array)
+
 ## 工具枚举。**新工具一律追加在末尾**：`PAINT..PAN` 的序号被 `level_editor.gd` 的按钮表
 ## 与既有测试直接引用，插在中间会静默错位（改的是"按钮点到的工具"）。
-enum Tool { PAINT, ERASE, RECT_FILL, SELECT, PAN, LINE, BUCKET }
+enum Tool { PAINT, ERASE, RECT_FILL, SELECT, PAN, LINE, BUCKET, OUTLINE }
 
 ## 单元格型（编辑器的"画笔颜色"）。与 `Cell`/`Cell.State` 的映射见 `_apply_kind`。
 const KIND_MINE := "mine"
@@ -104,6 +108,8 @@ var _pan_mode := false
 var _line_anchor := Vector2i(-1, -1)
 ## 直线工具预览格集合（拖动中随鼠标更新）。
 var _line_preview: Array[Vector2i] = []
+## 手绘轮廓正在记的点列（棋盘坐标，拖动中累积；抬起时发 `outline_drawn` 并清空）。
+var _outline_pts := PackedVector2Array()
 ## 小地图拖动中（点/拖小地图 = 移动视口）。
 var _minimap_dragging := false
 
@@ -234,6 +240,18 @@ func pos_at(local: Vector2) -> Vector2i:
 	if x < 0 or y < 0 or x >= doc.cols or y >= doc.rows:
 		return Vector2i(-1, -1)
 	return Vector2i(x, y)
+
+
+## 屏幕点 → **连续棋盘坐标**（1 单位 = 1 格：格 (i,j) 占 [i,i+1)×[j,j+1)）。
+## 手绘轮廓用它：轮廓是连续多边形，先落成整数格就把形状丢了（见 `TextToShape.outline_to_cells`）。
+## 与 `pos_at()` 的分工：`pos_at` 答"点在哪一格"（工具落笔用），本函数答"点在格内的什么位置"。
+func board_point(local: Vector2) -> Vector2:
+	if doc == null:
+		return Vector2.ZERO
+	var cp := cell_px()
+	if cp <= 0.0:
+		return Vector2.ZERO
+	return (local - board_origin()) / cp
 
 
 ## 可见格范围（视口裁剪：大棋盘上只画看得见的那些，避免每帧几千次绘制）。
@@ -373,6 +391,13 @@ func _handle_button(mb: InputEventMouseButton) -> void:
 			_panning = true
 			accept_event()
 			return
+		if tool == Tool.OUTLINE:
+			# 手绘轮廓：按下即开始记点（**棋盘坐标、全精度**）。起手允许在盘外——
+			# 多边形最终由 `grid.in_board()` 裁剪（见 TextToShape.outline_to_cells）。
+			_outline_pts = PackedVector2Array([board_point(mb.position)])
+			queue_redraw()
+			accept_event()
+			return
 		if pos.x >= 0:
 			# 油漆桶：按下即填（无拖动语义）。撤销点由 `_apply_bucket` 在改动前取。
 			if tool == Tool.BUCKET:
@@ -399,6 +424,13 @@ func _handle_button(mb: InputEventMouseButton) -> void:
 		# 【顺带修的真缺陷】`Tool.PAN` / 空格平移在按下时置 `_panning=true`，原先抬起**没清**它
 		# ⇒ 松手后鼠标一动仍整盘跟着跑（平移"粘住"）。抬起即结束平移。
 		_panning = false
+		if tool == Tool.OUTLINE:
+			# 抬手才成交：一笔 = 一个完整多边形（拖动中只记点、不动盘面）。
+			# 点太少（< 3）直接丢弃：那是一次普通点击，不是"轮廓"，弹提示只会变成噪音。
+			var pts := _outline_pts
+			_outline_pts = PackedVector2Array()
+			if pts.size() >= 3:
+				outline_drawn.emit(pts)
 		if tool == Tool.RECT_FILL and _drag_start.x >= 0 and pos.x >= 0:
 			var box := Rect2i(_drag_start, pos - _drag_start).abs()
 			# 【W1】整框先各记一次"改动前状态" ⇒ 这一步在撤销栈里是**一条 diff**（不是整盘快照），
@@ -447,6 +479,10 @@ func _handle_motion(mm: InputEventMouseMotion) -> void:
 	if tool == Tool.PAINT or tool == Tool.ERASE:
 		if pos.x >= 0:
 			_apply_tool(pos)
+	elif tool == Tool.OUTLINE:
+		# 拖动中只记点（采样节流已在上方统一做过）；成交在抬起时一次完成。
+		_outline_pts.append(board_point(mm.position))
+		queue_redraw()
 	elif tool == Tool.LINE:
 		if _line_anchor.x >= 0 and pos.x >= 0:
 			_line_preview = line_cells(_line_anchor, pos)
@@ -739,6 +775,14 @@ func _draw() -> void:
 	if tool == Tool.LINE and _dragging and not _line_preview.is_empty():
 		for lp in _line_preview:
 			draw_rect(cell_rect(lp), ThemeManager.accent(), false, 2.0)
+
+
+	# 手绘轮廓预览（拖动中的笔迹；闭合是隐含的，所以只画开链——所见即所画）
+	if tool == Tool.OUTLINE and _dragging and _outline_pts.size() >= 2:
+		var screen_pts := PackedVector2Array()
+		for op in _outline_pts:
+			screen_pts.append(o + op * cp)
+		draw_polyline(screen_pts, ThemeManager.accent(), 2.0)
 
 	# 选区 / 填充预览
 	var rect := _rect_preview if _rect_preview.size != Vector2i.ZERO else selection

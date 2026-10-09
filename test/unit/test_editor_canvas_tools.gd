@@ -232,3 +232,98 @@ func test_space_pan_mode_pans_without_painting() -> void:
 	c._gui_input(up)
 	assert_false(c._panning, "抬起后必须结束平移（否则松手后鼠标一动整盘还跟着跑）")
 	assert_eq(d.mines.size(), 0, "整个平移手势不得改盘面")
+
+
+# ==================== ⑦ 手绘轮廓（文档 §3） ====================
+
+## 一次手势成交的点列（信号回调写这里，供断言读取）。
+var _outline_events: Array = []
+
+
+func _record_outline(points: PackedVector2Array) -> void:
+	_outline_events.append(points)
+
+
+func test_board_point_is_inverse_of_cell_rect() -> void:
+	# 格 (i,j) 占 [i,i+1)×[j,j+1)：格中心的连续坐标必须是 (i+0.5, j+0.5)。
+	# 否则“笔尖画在哪”与“点亮哪一格”会错位半格，轮廓整体偏移 ⇒ 形状认不出。
+	var c := _make_canvas(600, 600)
+	c.set_doc(EditorDoc.new(9, 9))
+	for p in [Vector2i(0, 0), Vector2i(3, 4), Vector2i(8, 8)]:
+		var mid := c.board_point(c.cell_rect(p).get_center())
+		assert_almost_eq(mid.x, float(p.x) + 0.5, 0.001, "格 %s 中心的连续 x 坐标" % str(p))
+		assert_almost_eq(mid.y, float(p.y) + 0.5, 0.001, "格 %s 中心的连续 y 坐标" % str(p))
+	# 格左上角 ⇒ 落在整数格坐标上（这正是“1 单位 = 1 格”的口径）
+	var corner := c.board_point(c.cell_rect(Vector2i(2, 3)).position)
+	assert_almost_eq(corner.x, 2.0, 0.001, "格左上角的连续 x 应落在整数格边界")
+	assert_almost_eq(corner.y, 3.0, 0.001, "格左上角的连续 y 应落在整数格边界")
+	# 无文档不得崩（面板初始化时会在 set_doc 之外调用一次）
+	var empty := _make_canvas(300, 300)
+	assert_eq(empty.board_point(Vector2(10, 10)), Vector2.ZERO, "无文档时 board_point 应返回零向量")
+
+
+func test_outline_tool_emits_polygon_on_release() -> void:
+	# 走真实输入路径：按下 → 拖动 → 抬起。验证「拖动中只记点、抬起才成交」。
+	var c := _make_canvas(600, 600)
+	var d := EditorDoc.new(9, 9)
+	c.set_doc(d)
+	c.tool = EditorCanvas.Tool.OUTLINE
+	_outline_events = []
+	c.outline_drawn.connect(_record_outline)
+
+	var start := c.cell_rect(Vector2i(2, 2)).get_center()
+	var down := InputEventMouseButton.new()
+	down.button_index = MOUSE_BUTTON_LEFT
+	down.pressed = true
+	down.position = start
+	c._gui_input(down)
+	assert_eq(_outline_events.size(), 0, "轮廓不得在按下时成交")
+	assert_eq(d.mines.size() + d.obstacles.size(), 0, "画轮廓的过程中不得改动盘面")
+
+	# 沿三角形的另外两个角走：每次位移都远超采样节流阈值（DRAG_MIN_PX）
+	var a := c.cell_rect(Vector2i(7, 2)).get_center()
+	var b := c.cell_rect(Vector2i(7, 7)).get_center()
+	for pt in [a, b]:
+		var mv := InputEventMouseMotion.new()
+		mv.position = pt
+		mv.button_mask = MOUSE_BUTTON_MASK_LEFT
+		c._gui_input(mv)
+	assert_eq(_outline_events.size(), 0, "拖动中仍不得成交（一笔只有一个多边形）")
+	assert_eq(d.mines.size() + d.obstacles.size(), 0, "拖动中不得改动盘面")
+
+	var up := InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_LEFT
+	up.pressed = false
+	up.position = b
+	c._gui_input(up)
+	assert_eq(_outline_events.size(), 1, "抬起应恰好成交一次")
+	if _outline_events.size() == 1:
+		var pts: PackedVector2Array = _outline_events[0]
+		assert_true(pts.size() >= 3, "成交点列应 ≥ 3 点（实际 %d）" % pts.size())
+		# 首点 = 按下点（笔顺），且是**连续棋盘坐标**（不是整数格坐标）
+		assert_almost_eq(pts[0].x, c.board_point(start).x, 0.001, "首点应是按下点")
+		assert_almost_eq(pts[0].y, c.board_point(start).y, 0.001, "首点应是按下点")
+
+
+func test_outline_tool_drops_single_click() -> void:
+	# 点太少（< 3）⇒ 视为一次普通点击，静默丢弃：不发信号、不改盘面、不弹提示（弹了就是噪音）。
+	var c := _make_canvas(600, 600)
+	var d := EditorDoc.new(9, 9)
+	c.set_doc(d)
+	c.tool = EditorCanvas.Tool.OUTLINE
+	_outline_events = []
+	c.outline_drawn.connect(_record_outline)
+
+	var p := c.cell_rect(Vector2i(4, 4)).get_center()
+	var down := InputEventMouseButton.new()
+	down.button_index = MOUSE_BUTTON_LEFT
+	down.pressed = true
+	down.position = p
+	c._gui_input(down)
+	var up := InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_LEFT
+	up.pressed = false
+	up.position = p
+	c._gui_input(up)
+	assert_eq(_outline_events.size(), 0, "单点点击不得成交成形")
+	assert_eq(d.mines.size() + d.obstacles.size(), 0, "单点点击不得改动盘面")
