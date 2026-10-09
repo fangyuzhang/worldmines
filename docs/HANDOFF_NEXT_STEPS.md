@@ -1,8 +1,8 @@
 # 下一步要做什么（交接清单）
 
 > 承接：`HANDOFF_START_HERE.md`（先按它把环境和工程还原好，并跑通门禁）
-> 基线：`main` @ `6580c43`（`git log -1` 可见）；门禁 **GREEN**（2026-10-09 实测）：
-> unit **209 脚本 / 1578 用例 / 89757 断言**、ui **33 脚本 / 212 用例 / 7976 断言**、build **0 警告 0 错误**
+> 基线：`main` @ `2ed67db`（`git log -1` 可见）；门禁 **GREEN**（2026-10-09 实测）：
+> unit **215 脚本 / 1638 用例 / 92651 断言**、ui **34 脚本 / 232 用例 / 8581 断言**、build **0 警告 0 错误**
 
 ---
 
@@ -16,7 +16,8 @@
 | 形状与生成 | 环形（annulus）/ 正 N 边形生成器、**栅格化三档精度**（默认档与旧行为**逐格一致**，有测试钉住）、**边缘平滑（腐蚀/膨胀，连通区域守恒是硬闸）**、**Voronoi 不规则镶嵌**（抖动晶格撒种 → 多源 BFS → 矩形化边界；种子 1/65536 量化 + 回显）、**变体×网格矩阵**与**变体×复合格矩阵**均被 `editor_verify` 消费 |
 | 编辑器功能接线 | **形状布尔 / 形状 DAG（含环检测拒绝理由显示）/ 修复建议（1~3 修法 + 一键应用）/ 短码分享 / 只读分享 / 认证提交（本地审核队列 + 流转状态）/ 文字→形状 / 四象染色预览 / 行容量侧栏 / 统计直方图 / 配色锁定 / 简单-专家渐进披露 / 重栅格化保留手工格 / 试玩「检查进度」** 接进 UI；快捷键全套 + 绑定表存储；Mega 复合格**下钻 UI**；问题面板**三级**；热力图改用画布叠加 API |
 | 新模块（core + 测试齐） | `core/shape_reflow.gd`（重栅格化保留手工格）、`core/domino_model.gd` 骨牌**划分/校验**、`core/text_to_shape.gd`（文字/手绘→形状）、`core/stats_histogram.gd`、`core/editor_disclosure.gd`（渐进披露 + 配色锁定）、`core/file_lock.gd`（存档占用锁）、`core/level_thumbnail.gd`（数据缩略图）、`core/stroke_limits.gd`（笔迹常量单源）、`core/mega_variant_matrix.gd`（复合格 × 变体门禁表） |
-| 自定义格形（§3） | 六边形 / 三角形 / **Voronoi** 三族齐；每族**四处登记齐活**才算接线：`to_adjacency_grid` + `EditorDoc.estimate_cells` + `VariantGridMatrix` + `AdjacencyBuilder.from_tiling`；UI 形状下拉 6→7 项 |
+| 自定义格形（§3） | 六边形 / 三角形 / **Voronoi** 三族齐；每族**四处登记齐活**才算接线：`to_adjacency_grid` + `EditorDoc.estimate_cells` + `VariantGridMatrix` + `AdjacencyBuilder.from_tiling`；UI 形状下拉 6→8 项（含等轴菱面错觉盘） |
+| 拓扑玩法（第五期） | 虫洞配对 → 环绕盘 → 形状安全门 → 不可能几何（等轴菱面）→ 静态折叠 → **折纸族（多折痕顺序折叠）**；`core/fold_model.gd` / `topology_model.gd` 已进加载/呈现/生成器，`fold_01..12` 共 12 张折叠官方关；编辑器属性页已补折痕**加/删**面板与画布折线 |
 | 计算内存（§G） | 空间哈希（`core/shape_fill.gd` 只按整数格集做碰撞，无 O(N²) 多边形对；`ShapeBoolean.MAX_CELL_BUDGET` 前置硬阻）、**换形状滑杆去抖**（`ui/level_editor.gd` 的 `SHAPE_COALESCE_MS` / `_on_shape_size_changed` / `_shape_change_due`：拖动只登记待办，`_process` 合并成一次；离散换族立即执行并清空待办 —— 文档 §G4「新任务入队即取消排队中未开始的旧任务」在本仓**同步路径**上的等价实现，有 3 个用例钉住） |
 | 门禁工具 | `tools/gut_shards.ps1`（**并行分片** + 碰 `user://` 文件自动串行片 + **缺摘要分片定向重跑** + 红时保留证据 + `-SimulateMissingShard` 自测开关）、`tools/ci_quick.ps1`（增量门禁）、`tools/ci_lock.ps1`（跨进程锁） |
 
@@ -38,6 +39,7 @@
 | **四象染色预览 / 行容量侧栏** | 预览开关在 `_build_left_bar`、`_toggle_quadrant_preview`（色号走 `ConstraintEngine.quadrant_of`）；行容量在 `_build_props_tab`（可行性走 `ColoringPreview.row_report`，行语义未定义的族由矩阵门禁拒绝） |
 | **检查进度（标记插错的旗）** | 试玩态：`ui/hud.gd` 发信号 → `ui/board_view.gd` 标/清（判据 `core/progress_check.gd`；红叉与终局**共用同一支笔**）。**仅试玩态可用**（硬约束） |
 | **只读分享 / 认证提交入口** | 短码分享面板（`_export_share_code` / `_import_share_code` / `_enter_read_only_share`）；认证提交 = `SubmissionQueue` 本地队列 + 流转状态（**不假装联网**） |
+| **折痕作者入口** | `ui/level_editor.gd` 的 `_build_fold_panel` / `_on_fold_added` / `_on_fold_delete`；画布线段 `ui/editor_canvas.gd` 的 `fold_crease_segments`；非法追加只提示不脏写，序列可撤销、可落盘往返 |
 
 > ⚠ 两个已定口径，**已接线**但仍不许改：① `shape_reflow` 的 `grid` = 新形状盘；② `ShapeDag` 的 `ring` = **annulus**，而 `to_adjacency_grid` 的 `"ring"` = **同心环盘**（同名不同义！UI 必须**按 `builder_name` 派发**，见 `ui/level_editor.gd` 的 `_call_shape_builder`）。
 
@@ -85,7 +87,7 @@
 ## D. 常用命令速查
 
 ```powershell
-# 全量门禁（判定：CI GREEN + unit 209/1578 + ui 33/212 + build 0 警告 0 错误）
+# 全量门禁（判定：CI GREEN + unit 215/1638 + ui 34/232 + build 0 警告 0 错误）
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\ci_check.ps1
 
 # 增量门禁（日常迭代）
