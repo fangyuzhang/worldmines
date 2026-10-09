@@ -141,6 +141,169 @@ static func audit(fold: Dictionary, positions: Array[Vector2i]) -> Dictionary:
 	return out
 
 
+## 解析折痕声明 → 折痕数组。两种形态**都认**（读侧不许二选一）：
+##   · 单折 {axis, at}                  —— 官方 fold_01..06 落盘用的就是它（历史格式，别改）；
+##   · 多折 {folds: [{axis, at}, ...]}  —— 折纸族：一张盘按顺序折多次。
+## 返回的是**未校验**的原始折痕（轴名可能非法 / at 可能是 JSON 读回来的浮点）；
+## 校验与归一化走 normalize_folds。
+static func fold_list(decl: Dictionary) -> Array:
+	var out: Array = []
+	var fs_v: Variant = decl.get("folds", null)
+	if fs_v is Array:
+		for f_v: Variant in (fs_v as Array):
+			if not (f_v is Dictionary):
+				continue
+			var fd: Dictionary = f_v
+			out.append({"axis": str(fd.get("axis", "")), "at": int(fd.get("at", 0))})
+		return out
+	if decl.has("axis") or decl.has("at"):
+		out.append({"axis": str(decl.get("axis", "")), "at": int(decl.get("at", 0))})
+	return out
+
+
+## 折痕序列的显示文本（编辑器提示 / 报错文案共用，免得两处各拼一遍）。
+static func describe(folds: Array) -> String:
+	var parts: Array[String] = []
+	for f_v: Variant in folds:
+		if not (f_v is Dictionary):
+			continue
+		var fd: Dictionary = f_v
+		parts.append("%s@%d" % [str(fd.get("axis", "?")), int(fd.get("at", 0))])
+	return " → ".join(parts)
+
+
+## 折一次之后剩下的纸：只剩**近侧**（该轴索引 < at）那一半。
+## 这是多折的关键不变量 —— 后一折只能折到前一折之内，折不到已经翻走的部分。
+static func footprint_after(positions: Array[Vector2i], axis: String, at: int) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	for p in positions:
+		if index_of(p, axis) < at:
+			out.append(p)
+	return out
+
+
+## 校验一串折痕（顺序折叠）。比单折多两条规则：
+##   · 每一折都按**当前**纸面校验（at 落在当下这张纸内，不是原始盘面内）；
+##   · **同一条轴上的 at 必须严格递减**：折过一次后纸只剩近侧那么宽，后一折若不更靠内，
+##     就一格都折不到 —— 那是作者的 bug，直接拒（而不是默默产出一张"少折一次"的盘）。
+## 返回 {ok, folds, errors}；folds 是规范化后的折痕（at 已转 int，JSON 读回的浮点也归一）。
+static func normalize_folds(folds: Array, positions: Array[Vector2i]) -> Dictionary:
+	var errors: Array[String] = []
+	var out: Array = []
+	var last_at: Dictionary = {}
+	var cur: Array[Vector2i] = positions.duplicate()
+	for i in folds.size():
+		var f: Dictionary = folds[i] if folds[i] is Dictionary else {}
+		# 【判据顺序】先判「同轴必须严格递减」，再判「落在当前纸面内」：
+		# 后者对前者是蕴含关系（折过之后 extent ≤ 上一折的 at），谁先判决定用户看到哪句报错。
+		# 同一条折痕写两遍时，「at=4 落在盘外（该轴只有 4 格宽）」虽然也没错，但点不出真正原因 ——
+		# 先判递减，报错才是作者能直接改的那一句。
+		var raw_axis := str(f.get("axis", ""))
+		var raw_at := int(f.get("at", 0))
+		if last_at.has(raw_axis) and raw_at >= int(last_at[raw_axis]):
+			errors.append("第 %d 折：折痕 at=%d 没有比同轴上一折（at=%d）更靠内 —— 折过一次后纸只剩近侧那么宽，后一折必须严格递减" % [i + 1, raw_at, int(last_at[raw_axis])])
+			continue
+		var norm := normalize(f, cur)
+		if not bool(norm["ok"]):
+			for e_v: Variant in (norm["errors"] as Array):
+				errors.append("第 %d 折：%s" % [i + 1, str(e_v)])
+			continue
+		var nf: Dictionary = norm["fold"]
+		var axis := str(nf["axis"])
+		var at := int(nf["at"])
+		last_at[axis] = at
+		out.append(nf)
+		cur = footprint_after(cur, axis, at)
+	return {"ok": errors.is_empty(), "folds": out, "errors": errors}
+
+
+## 顺序折叠的审计。**逐折复用单折 audit()** —— 同一套 overhang / uncovered / floating 分类，
+## 绝不在这里另写一套口径（本仓最恨"两处判据漂移"）：每一折算出这一折的配对，
+## 把远侧那一摞整体叠到近侧那一摞上面，再折下一折。
+##
+## 返回 {ok, errors, folds, pairs, stacks, layers_max, overhang, uncovered, floating, unpaired, dropped}：
+##   · pairs      —— 全部叠合对（含第 1 折就叠上的）；a 恒为**底层**、b 恒为**覆层**；
+##   · stacks     —— 只列 ≥2 层的摞（层序：底层在前、覆层在后）；渲染与测试都读它；
+##   · layers_max —— 最厚那一摞有几层（生成器按它挑难度，玩家按它估读盘难度）；
+##   · unpaired   —— 折完仍然单着的格数（含被折出纸外的）；
+##   · dropped    —— 折过头落到纸外的格（镜像索引 < 0）。它们已不在折好的纸上 ⇒
+##                   后续折不再参与，也不再重复计入后面几折的分类。
+## 单折输入 ⇒ 与 audit() 逐字段一致（有对拍用例钉住，见 test_fold_model.gd）。
+static func audit_folds(folds: Array, positions: Array[Vector2i]) -> Dictionary:
+	var norm := normalize_folds(folds, positions)
+	var out := {"ok": false, "errors": norm["errors"], "folds": norm["folds"],
+			"pairs": [], "stacks": [], "layers_max": 1, "overhang": [], "uncovered": [],
+			"floating": [], "unpaired": positions.size(), "dropped": []}
+	if not bool(norm["ok"]):
+		return out
+	# 摞：key → {pos, layers}。初始每格各成一摞，折一次把两摞并成一摞。
+	var stacks: Dictionary = {}
+	for p in positions:
+		stacks[key_of(p)] = {"pos": p, "layers": [p]}
+	var overhang: Array = []
+	var uncovered: Array = []
+	var floating: Array = []
+	var dropped: Array = []
+	for f_v: Variant in (norm["folds"] as Array):
+		var f: Dictionary = f_v
+		var axis := str(f["axis"])
+		var at := int(f["at"])
+		var cur: Array[Vector2i] = []
+		for k_v: Variant in stacks:
+			cur.append(stacks[k_v]["pos"])
+		var rep := audit(f, cur)
+		for o_v: Variant in (rep["overhang"] as Array):
+			overhang.append(o_v)
+		for u_v: Variant in (rep["uncovered"] as Array):
+			uncovered.append(u_v)
+		for fl_v: Variant in (rep["floating"] as Array):
+			floating.append(fl_v)
+		# 远侧那摞整体叠到近侧那摞上面（层序：底层在前 ⇒ 用 append）。
+		for pr_v: Variant in (rep["pairs"] as Array):
+			var pr: Dictionary = pr_v
+			var ka := key_of(pr["a"])
+			var kb := key_of(pr["b"])
+			if not (stacks.has(ka) and stacks.has(kb)):
+				continue
+			var la: Array = stacks[ka]["layers"]
+			for ly_v: Variant in (stacks[kb]["layers"] as Array):
+				la.append(ly_v)
+			stacks.erase(kb)
+		# 折完之后纸只剩近侧：没配上的远侧格已被折出纸外 —— 退出后续折。
+		for k2_v: Variant in stacks.keys():
+			var pos2: Vector2i = stacks[k2_v]["pos"]
+			if index_of(pos2, axis) >= at:
+				dropped.append(pos2)
+				stacks.erase(k2_v)
+	var pairs: Array = []
+	var stacks_out: Array = []
+	var layers_max := 1
+	var singles := 0
+	for k3_v: Variant in stacks:
+		var layers: Array = stacks[k3_v]["layers"]
+		layers_max = maxi(layers_max, layers.size())
+		if layers.size() < 2:
+			singles += 1
+			continue
+		stacks_out.append({"pos": stacks[k3_v]["pos"], "layers": layers.duplicate()})
+		for i in layers.size():
+			for j in range(i + 1, layers.size()):
+				pairs.append({"a": layers[i], "b": layers[j]})
+	pairs.sort_custom(_pair_before)
+	stacks_out.sort_custom(_stack_before)
+	dropped.sort_custom(_pos_before)
+	out["ok"] = true
+	out["pairs"] = pairs
+	out["stacks"] = stacks_out
+	out["layers_max"] = layers_max
+	out["overhang"] = overhang
+	out["uncovered"] = uncovered
+	out["floating"] = floating
+	out["unpaired"] = singles + dropped.size()
+	out["dropped"] = dropped
+	return out
+
+
 ## 只取配对表（audit 的薄封装；参数非法 ⇒ 空数组，问题由 normalize/attach 报）。
 static func pairs_of(fold: Dictionary, positions: Array[Vector2i]) -> Array:
 	return audit(fold, positions)["pairs"] as Array
@@ -171,12 +334,25 @@ static func key_of(p: Vector2i) -> String:
 	return "%d,%d" % [p.x, p.y]
 
 
+## 配对排序：先按 a（底层）升序；a 相同时按 b（覆层）升序。
+## 【为什么带 b 这一层】多折时同一格可以叠好几层 ⇒ 同一个 a 会出多条；单折时 a 唯一，
+## 加这一层不影响既有顺序（落盘 diff 不会因此变化）。
 static func _pair_before(x: Dictionary, y: Dictionary) -> bool:
 	var a: Vector2i = x["a"]
 	var b: Vector2i = y["a"]
 	if a.y != b.y:
 		return a.y < b.y
-	return a.x < b.x
+	if a.x != b.x:
+		return a.x < b.x
+	var c: Vector2i = x["b"]
+	var d: Vector2i = y["b"]
+	if c.y != d.y:
+		return c.y < d.y
+	return c.x < d.x
+
+
+static func _stack_before(x: Dictionary, y: Dictionary) -> bool:
+	return _pos_before(x["pos"], y["pos"])
 
 
 static func _pos_before(a: Vector2i, b: Vector2i) -> bool:

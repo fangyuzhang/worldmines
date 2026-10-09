@@ -367,10 +367,18 @@ static func attach_fold(topo: Dictionary, fold: Dictionary) -> Dictionary:
 		var pv: Variant = parse_pos(p_v)
 		if pv != null:
 			positions.append(pv)
-	var rep := FoldModel.audit(fold, positions)
+	var empty := {"ok": false, "topology": out, "errors": [],
+			"pairs": [], "stacks": [], "overhang": [], "uncovered": [],
+			"floating": [], "dropped": [], "layers_max": 1}
+	# 两种声明都认（单折 {axis, at} / 多折 {folds: [...]}），统一成折痕数组再算。
+	var folds := FoldModel.fold_list(fold)
+	if folds.is_empty():
+		empty["errors"] = ["折痕声明为空：至少要有一折（{axis, at} 或 {folds: [{axis, at}, ...]}）"]
+		return empty
+	var rep := FoldModel.audit_folds(folds, positions)
 	if not bool(rep["ok"]):
-		return {"ok": false, "topology": out, "errors": rep["errors"],
-				"pairs": [], "overhang": [], "floating": []}
+		empty["errors"] = rep["errors"]
+		return empty
 	var touched: Array = []
 	for pr_v: Variant in (rep["pairs"] as Array):
 		var pr: Dictionary = pr_v
@@ -380,14 +388,17 @@ static func attach_fold(topo: Dictionary, fold: Dictionary) -> Dictionary:
 		touched.append(key_of(a))
 		touched.append(key_of(b))
 	_sort_neighbor_lists(out["neighbors"], touched)
-	var norm := FoldModel.normalize(fold, positions)
-	out["fold"] = norm["fold"]
+	var norm_folds: Array = rep["folds"]
+	# 单折仍落旧格式 {axis, at} —— 官方 fold_01..06 的历史格式，改它等于凭空造全库 diff；
+	# 多折才落 {folds: [...]}。读侧两边都认（FoldModel.fold_list）。
+	out["fold"] = norm_folds[0] if norm_folds.size() == 1 else {"folds": norm_folds}
 	var view: Dictionary = out.get("view", {}) if out.get("view", {}) is Dictionary else {}
 	view["kind"] = VIEW_FOLD
 	out["view"] = view
 	return {"ok": true, "topology": out, "errors": [],
 			"pairs": rep["pairs"], "overhang": rep["overhang"],
-			"uncovered": rep["uncovered"], "floating": rep["floating"]}
+			"uncovered": rep["uncovered"], "floating": rep["floating"],
+			"stacks": rep["stacks"], "layers_max": rep["layers_max"], "dropped": rep["dropped"]}
 
 
 static func fold_meta(topo: Dictionary) -> Dictionary:
@@ -416,6 +427,20 @@ static func _norm_fold_decl(v: Variant) -> Dictionary:
 	if not (v is Dictionary):
 		return {}
 	var out: Dictionary = (v as Dictionary).duplicate(true)
+	# 多折形态：逐条把 at 归一成 int（JSON 读回会把 3 读成 3.0）。
+	var fs_v: Variant = out.get("folds", null)
+	if fs_v is Array:
+		var fixed: Array = []
+		for f_v: Variant in (fs_v as Array):
+			if not (f_v is Dictionary):
+				continue
+			var fd: Dictionary = (f_v as Dictionary).duplicate(true)
+			var at_f: Variant = fd.get("at", null)
+			if at_f is int or at_f is float:
+				fd["at"] = int(at_f)
+			fixed.append(fd)
+		out["folds"] = fixed
+		return out
 	var at_v: Variant = out.get("at", null)
 	if at_v is int or at_v is float:
 		out["at"] = int(at_v)

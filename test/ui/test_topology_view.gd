@@ -336,3 +336,76 @@ func test_hud_fold_button_appears_only_on_fold_boards() -> void:
 	fold_btn.pressed.emit()
 	assert_true(_view.fold_flat_enabled(), "点折叠按钮应真的切到 BoardView 的开关")
 	hud_b.queue_free()
+
+# ==================== D. 折纸族（多折痕）的呈现契约 ====================
+#
+# 单折与多折共用同一条绘制路径（_draw_fold_hints），区别只在折痕有几条。
+# 这里只断言**纯几何 / 纯状态**：每折各一条折痕线、每一折的"翻走的纸"互不重叠、
+# 同一格的所有叠合层都连得出来（画布函数没法断言，几何查询测得动）。
+
+## 一块 6x6 双折盘：先左右折（x@3）、再上下折（y@3）⇒ 左上 3x3 区每格摞 4 层。
+func _paper_fold_level() -> Dictionary:
+	var built := WrapTopology.build(6, 6, ShapeGenerator.MOORE8, false, false, true)
+	assert_true(bool(built["ok"]), "应能构建 6x6 拓扑：%s" % str(built.get("reason", "")))
+	var decl := {"folds": [{"axis": "x", "at": 3}, {"axis": "y", "at": 3}]}
+	var attached := TopologyModel.attach_fold(built["topology"] as Dictionary, decl)
+	assert_true(bool(attached["ok"]), "双折应能写入：%s" % str(attached["errors"]))
+	return {
+		"name": "折纸测试",
+		"size": {"rows": 6, "cols": 6},
+		"total_mines": 2,
+		"mines": [{"r": 1, "c": 2}, {"r": 0, "c": 3}],
+		"revealed": [{"r": 0, "c": 0}],
+		"topology": attached["topology"] as Dictionary,
+	}
+
+
+## 两条折痕都要被认出来、都要有落位线段（横折竖折各一条），且 HUD 开关照样装上。
+func test_paper_fold_board_shows_every_crease() -> void:
+	_install_board(_paper_fold_level())
+	assert_true(_view.supports_fold(), "折纸盘（多折）也要支持折叠视图")
+	var folds: Array = _view._fold_folds()
+	assert_eq(folds.size(), 2, "应读出两条折痕（读侧只认单折 = 折纸族按钮装不上）")
+	assert_eq(str(folds[0]["axis"]), "x", "第一条是左右折")
+	assert_eq(str(folds[1]["axis"]), "y", "第二条是上下折")
+	var creases: Array = _view._fold_creases()
+	assert_eq(creases.size(), 2, "每一折都该画出一条折痕线")
+	var c0: Dictionary = creases[0]
+	var c1: Dictionary = creases[1]
+	var s0: PackedVector2Array = c0["seg"]
+	var s1: PackedVector2Array = c1["seg"]
+	assert_almost_eq(s0[0].x, s0[1].x, 0.001, "x 轴折痕该是竖直线")
+	assert_almost_eq(s1[0].y, s1[1].y, 0.001, "y 轴折痕该是水平线")
+
+
+## 两折各自的"翻走的纸"必须**互不重叠**，且合起来正好是被折掉的那些格。
+func test_paper_fold_flaps_are_disjoint_and_cover_the_folded_area() -> void:
+	_install_board(_paper_fold_level())
+	var folds: Array = _view._fold_folds()
+	var flap0: Array = _view._fold_flap_cells(folds, 0)
+	var flap1: Array = _view._fold_flap_cells(folds, 1)
+	assert_eq(flap0.size(), 18, "第 1 折翻走右半 3 列 × 6 行 = 18 格")
+	assert_eq(flap1.size(), 9, "第 2 折只翻剩下纸面的下半 3 行 × 3 列 = 9 格（不是 18）")
+	for p: Vector2i in flap1:
+		assert_false(flap0.has(p), "两折翻走的纸不许重叠：%s" % str(p))
+	assert_true(flap0.has(Vector2i(5, 5)), "右上角应被第 1 折翻走")
+	assert_false(flap1.has(Vector2i(5, 5)), "右上角已不在纸面上，不该再算进第 2 折")
+
+
+## 同一格被好几层压着时，每一层都要连得出来（悬停要能一次看清整摞）。
+func test_paper_fold_links_every_layer_of_a_stack() -> void:
+	var b := _install_board(_paper_fold_level())
+	var pairs: Array = _view._fold_pairs()
+	assert_eq(pairs.size(), 54, "6x6 两折 ⇒ 只剩 9 摞、每摞 4 层：9 × C(4,2) = 54 对（摞内两两相连）")
+	var partners: Array = []
+	for pr_v: Variant in pairs:
+		var pr: Dictionary = pr_v
+		if pr["a"] == Vector2i(0, 0):
+			partners.append(pr["b"])
+		elif pr["b"] == Vector2i(0, 0):
+			partners.append(pr["a"])
+	assert_eq(partners.size(), 3, "左上角那一格被 3 层压着 ⇒ 该连出 3 条叠合线")
+	var grid: GridInterface = b.grid
+	for q: Vector2i in partners:
+		assert_true(grid.get_neighbors(Vector2i(0, 0)).has(q),
+			"每一条叠合线都必须对应真实的邻接边：%s" % str(q))

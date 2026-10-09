@@ -147,9 +147,11 @@ var _impl_ghosts: Array = []
 ## 静态折叠视图开关 + 配对缓存（**折叠盘专属**；见 supports_fold 的判据）。
 ##   · `_fold_flat`  —— false = 「折起来」观感（远侧压暗、折痕上的记号指向近侧）；
 ##     true = 「摊平看」：把每对 a↔b 的镜像虚线画出来，顺着线就能数清叠了几层。默认折起来。
-##   · `_fold_pairs_cache` —— 见 _fold_pairs()：按 board 实例 id 缓存配对表（换关自动失效）。
+##   · `_fold_audit_cache` —— 见 _fold_audit()：按 board 实例 id 缓存整份折叠审计
+##     （配对表 + 摞 + 最厚层数；换关自动失效）。一次算好，绘制/悬停/测试都读它。
 var _fold_flat := false
 var _fold_key: int = 0
+var _fold_audit_cache: Dictionary = {}
 var _fold_pairs_cache: Array = []
 ## 鼠标悬停格（-1,-1 = 无）
 var hover_pos: Vector2i = Vector2i(-1, -1)
@@ -3405,18 +3407,23 @@ func _draw_impl_ghost(world_at: Vector2, hot: bool) -> void:
 #
 # 【为什么需要】折叠只改了邻接表：远侧翻过去压在近侧上，(5,y) 与 (0,y) 变成真邻居，
 # 但屏幕上它们仍隔着一整排格子。不画出来玩家只会觉得线索数错。呈现分两层：
-#   · 常驻：折痕线（一条虚线折痕 + 指向近侧的「合拢」记号）+ 折起来时把远侧压暗
-#     （读作"这半边是被翻过来盖住的"）；
+#   · 常驻：折痕线（一条虚线折痕 + 指向近侧的「合拢」记号）+ 折起来时把**每一折翻走的
+#     那片纸**各压暗一层（读作"这片是被翻过来盖住的"）；
 #   · 摊平视图（HUD 开关）：把每对 a↔b 的镜像虚线画出来，顺着线就能看清"谁盖在谁身上"。
-# 悬停任一格时把它的叠合对家当场连起来并描边（与虫洞的悬停通道同一读法）。
+# 悬停任一格时把它的**所有**叠合对家当场连起来并描边（与虫洞的悬停通道同一读法）。
+#
+# 【多折（折纸族）】一条盘可以按顺序折好几次（风琴折 / 十字折 / 阶梯折）：
+# 第 k 折翻走的那片纸 = 满足前面每一折的近侧约束、且落在第 k 折远侧的格（_fold_flap_cells）。
+# 折痕线按折序画，外折实、内折淡；悬停时同一格可能连出好几条叠合线 —— 这正是"摞了几层"的读法。
 
 ## 本盘是否支持折叠视图 = 呈现种类为「折叠」**且**带折痕声明（缺一不可，理由同 supports_lens：
 ## 少了折痕就没有"谁盖在谁身上"可言，按钮点了没东西）。
 func supports_fold() -> bool:
 	if str(_view_meta().get("kind", "")) != TopologyModel.VIEW_FOLD:
 		return false
-	var f: Variant = _view_meta().get("fold", {})
-	return f is Dictionary and not (f as Dictionary).is_empty()
+	# 走 fold_list（两种声明形态都认）：单折 {axis, at} 与多折 {folds: [...]} 等价对待，
+	# 免得这里只认单折 ⇒ 折纸族（多折）的按钮装不上（"core 有、UI 零引用"的老病）。
+	return not _fold_folds().is_empty()
 
 
 func fold_flat_enabled() -> bool:
@@ -3439,25 +3446,76 @@ func _fold_decl() -> Dictionary:
 	return (f as Dictionary).duplicate(true) if f is Dictionary else {}
 
 
-## 配对表（a 底层 / b 覆层），按 board 实例 id 缓存 —— 与 _impossible_pairs 同一套路：
-## 折痕随关卡 JSON 一次性载入、不可变，一局只算一次。
-func _fold_pairs() -> Array:
+## 折痕序列（规范化成 [{axis, at}, ...]，多折时按折序）。不是折叠盘 ⇒ 空数组。
+func _fold_folds() -> Array:
+	return FoldModel.fold_list(_fold_decl())
+
+
+## 折叠审计（配对表 + 摞 + 最厚层数），按 board 实例 id 缓存 —— 与 _impossible_pairs 同一套路：
+## 折痕随关卡 JSON 一次性载入、不可变，一局只算一次。判据完全走 FoldModel.audit_folds，
+## 呈现层不自己算折痕（本仓铁律：判据只有一个事实源）。
+func _fold_audit() -> Dictionary:
 	var b: Board = GameSession.board
 	if b == null or b.grid == null:
-		return []
+		return {}
 	var key: int = b.get_instance_id()
 	if key == _fold_key:
-		return _fold_pairs_cache
+		return _fold_audit_cache
 	_fold_key = key
+	_fold_audit_cache = {}
 	_fold_pairs_cache = []
-	var decl := _fold_decl()
-	if decl.is_empty():
-		return _fold_pairs_cache
+	var folds := _fold_folds()
+	if folds.is_empty():
+		return _fold_audit_cache
 	var positions: Array[Vector2i] = []
 	for p in b.grid.all_positions():
 		positions.append(p)
-	_fold_pairs_cache = FoldModel.audit(decl, positions)["pairs"] as Array
+	_fold_audit_cache = FoldModel.audit_folds(folds, positions)
+	_fold_pairs_cache = _fold_audit_cache["pairs"] as Array
+	return _fold_audit_cache
+
+
+## 配对表（a 底层 / b 覆层）。摊平视图、悬停连线与用例都读这一份。
+func _fold_pairs() -> Array:
+	_fold_audit()
 	return _fold_pairs_cache
+
+
+## 每一折画在屏幕上的位置：按折序返回 [{axis, at, seg}, ...]。
+## 落位算不出来的折（盘太窄 / 洞把折痕那一列挖空）会被跳过 —— 返回条数可能少于折痕数。
+## 【为什么给用例留这个口子】画布函数没法断言，把"每折各有一条折痕线"拆成几何查询就测得了。
+func _fold_creases() -> Array:
+	var out: Array = []
+	for f_v: Variant in _fold_folds():
+		var f: Dictionary = f_v
+		var axis := str(f.get("axis", ""))
+		var at := int(f.get("at", 0))
+		var seg := _fold_crease_segment(axis, at)
+		if seg.size() == 2:
+			out.append({"axis": axis, "at": at, "seg": seg})
+	return out
+
+
+## 第 k 折翻走的那片纸：满足**前面每一折**的近侧约束，且落在第 k 折的远侧。
+## 多折时"哪片纸是被哪一折翻走的"要按这个顺序算 —— 直接按 idx ≥ at 涂会重复涂到已被前面折走的区域。
+func _fold_flap_cells(folds: Array, k: int) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	var b: Board = GameSession.board
+	if b == null or b.grid == null or k < 0 or k >= folds.size():
+		return out
+	var fk: Dictionary = folds[k]
+	var k_axis := str(fk.get("axis", ""))
+	var k_at := int(fk.get("at", 0))
+	for p in b.grid.all_positions():
+		var inside := true
+		for j in k:
+			var fj: Dictionary = folds[j]
+			if FoldModel.index_of(p, str(fj.get("axis", ""))) >= int(fj.get("at", 0)):
+				inside = false
+				break
+		if inside and FoldModel.index_of(p, k_axis) >= k_at:
+			out.append(p)
+	return out
 
 
 ## 折痕在屏幕上的坐标（axis x ⇒ 竖直线 x 坐标；axis y ⇒ 水平线 y 坐标）。
@@ -3506,7 +3564,8 @@ func _fold_crease_segment(axis: String, at: int) -> PackedVector2Array:
 	return PackedVector2Array([Vector2(frame.position.x, coord), Vector2(frame.end.x, coord)])
 
 
-## 折叠呈现主入口。
+## 折叠呈现主入口。单折（fold_01..06）与多折（折纸族）共用这一条路径 ——
+## 区别只在 _fold_folds() 返回几条折痕，绘制逻辑不做分支（免得两套画法各自跑偏）。
 func _draw_fold_hints() -> void:
 	if not supports_fold():
 		return
@@ -3514,11 +3573,7 @@ func _draw_fold_hints() -> void:
 	if b == null or b.grid == null:
 		return
 	var grid: GridInterface = b.grid
-	var decl := _fold_decl()
-	var axis := str(decl.get("axis", ""))
-	var at := int(decl.get("at", 0))
-	if axis == "" or at <= 0:
-		return
+	var folds := _fold_folds()
 	var acc := ThemeManager.accent()
 	var pairs := _fold_pairs()
 	# 1) 摊平视图：常驻画出每对 a↔b 的镜像虚线（谁盖在谁身上一眼可见）
@@ -3529,18 +3584,23 @@ func _draw_fold_hints() -> void:
 			var pr: Dictionary = pr_v
 			_draw_fold_link(pr["a"], pr["b"], link_col, 1.0)
 	else:
-		# 2) 折起来：把远侧（覆层）压暗 —— 读作"这半边被翻过来盖住了"
-		_draw_fold_flap_tint(axis, at)
-	# 3) 折痕线（常驻）+ 合拢记号
-	var seg := _fold_crease_segment(axis, at)
-	if seg.size() == 2:
+		# 2) 折起来：把**每一折翻走的那片纸**压暗 —— 读作"这片被翻过去盖住了"。
+		#    越晚折的片涂得越浅（折序由外到内 ⇒ 视觉上正好是一层层盖上来）。
+		_draw_fold_flaps(folds)
+	# 3) 折痕线（常驻）+ 合拢记号：每一折各画一条，外折实、内折淡（折序一眼可辨）
+	var lw := maxf(1.0, float(cell_px) * 0.045)
+	var dash := maxf(3.0, float(cell_px) * 0.20)
+	var k := 0
+	for cr_v: Variant in _fold_creases():
+		var cr: Dictionary = cr_v
+		var seg: PackedVector2Array = cr["seg"]
 		var crease_col := acc
-		crease_col.a = 0.55
-		var lw := maxf(1.0, float(cell_px) * 0.045)
-		var dash := maxf(3.0, float(cell_px) * 0.20)
+		crease_col.a = maxf(0.28, 0.55 - 0.13 * float(k))
 		draw_dashed_line(seg[0], seg[1], crease_col, lw, dash)
-		_draw_fold_crease_marks(seg, axis, crease_col)
-	# 4) 悬停：把这一格的叠合对家当场连起来 + 描边（与虫洞的悬停通道同一读法）
+		_draw_fold_crease_marks(seg, str(cr["axis"]), crease_col)
+		k += 1
+	# 4) 悬停：把这一格的叠合对家当场连起来 + 描边（与虫洞的悬停通道同一读法）。
+	#    多折时同一格可能被好几层压着 ⇒ 这里**不 break**，逐条全画（单折时最多一条，行为不变）。
 	if hover_pos.x >= 0 and grid.in_board(hover_pos):
 		for pr2_v: Variant in pairs:
 			var pr2: Dictionary = pr2_v
@@ -3550,19 +3610,17 @@ func _draw_fold_hints() -> void:
 				var other: Vector2i = pb if hover_pos == pa else pa
 				_draw_fold_link(hover_pos, other, acc, 1.6)
 				_draw_cell_outline(other, acc, 2.5, 1.0)
-				break
 
 
-## 远侧压暗：只覆盖「翻过来盖住近侧」的那半边格（idx ≥ at）——用格填充色叠一层低 alpha 暗色。
+## 每一折「翻走的那片纸」各压暗一层 —— 用格填充色叠低 alpha 暗色。
 ## 只做低 alpha：提示层晚于数字绘制，压太狠会让线索读不清。
-func _draw_fold_flap_tint(axis: String, at: int) -> void:
-	var b: Board = GameSession.board
-	if b == null or b.grid == null:
-		return
-	var tint := ThemeManager.text_secondary()
-	tint.a = 0.08
-	for p in b.grid.all_positions():
-		if FoldModel.index_of(p, axis) >= at:
+## 第 k 折那片由 _fold_flap_cells 算（它排除掉"前面几折已经折走的区域"），
+## 所以多折时既不会重复涂、也不会把已经不在纸上的格子算进来。
+func _draw_fold_flaps(folds: Array) -> void:
+	for k in folds.size():
+		var tint := ThemeManager.text_secondary()
+		tint.a = maxf(0.03, 0.08 - 0.025 * float(k))
+		for p in _fold_flap_cells(folds, k):
 			_draw_cell_fill(p, tint)
 
 

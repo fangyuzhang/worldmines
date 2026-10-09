@@ -251,3 +251,148 @@ func test_fold_survives_the_landed_view_only_format() -> void:
 	assert_eq(TopologyModel.fold_decl(back.view_meta), {"axis": "x", "at": 2},
 		"读回的 view_meta 必须仍带折痕（否则呈现层看不到折痕）")
 	assert_true(back.get_neighbors(Vector2i(1, 1)).has(Vector2i(2, 1)), "读回后叠合边仍在")
+
+# ==================== D. 顺序折叠（多折痕 = 折纸族） ====================
+#
+# 一张盘按顺序折多次：每折一次，纸只剩**近侧**那一半，后一折只能折到前一折之内。
+# 折完 N 次，同一格位置上会摞起最多 2^N 层，层与层两两互为邻居 —— 这就是本族的玩法核心。
+# 本节守两件事：
+#   A. 多折必须**逐折复用单折口径**（有对拍用例钉住，不许两处判据漂移）；
+#   B. 折痕序列的非法形态（同轴不递减 / 折到纸外）必须**报出来且整块拒绝**，不许静默少折。
+
+
+## 声明解析：单折与多折两种形态都认（读侧二选一是本仓历史上反复踩的坑）。
+func test_fold_list_parses_both_declaration_shapes() -> void:
+	assert_eq(FoldModel.fold_list({}), [], "空声明 ⇒ 空折痕表")
+	assert_eq(FoldModel.fold_list({"axis": "x", "at": 3}), [{"axis": "x", "at": 3}],
+		"单折形态应解析成一条折痕")
+	var seq := FoldModel.fold_list({"folds": [{"axis": "x", "at": 4}, {"axis": "y", "at": 2}]})
+	assert_eq(seq.size(), 2, "多折形态应解析出两条折痕")
+	assert_eq(str(seq[1]["axis"]), "y", "第二条折痕的轴要保真")
+	# JSON 读回：整数会变成浮点 —— fold_list 必须当场归一成 int（不然落盘类型会漂移）
+	var back: Dictionary = JSON.parse_string(JSON.stringify({"folds": [{"axis": "x", "at": 4.0}]}))
+	var seq2 := FoldModel.fold_list(back)
+	assert_eq(int(seq2[0]["at"]), 4, "JSON 读回的浮点 at 应归一成 int")
+	assert_true(seq2[0]["at"] is int, "归一后必须是 int（落盘再读才不会二次漂移）")
+	assert_eq(FoldModel.describe(seq), "x@4 → y@2", "折痕序列的描述文本供报错与提示共用")
+
+
+## 对拍：单折输入下，顺序折叠的实现必须与单折 audit() **逐字段一致**。
+## 【为什么要这条】多折是在单折之上叠出来的；若两套口径在某处漂移，
+## 单折关（官方 fold_01..06）就会与多折关行为不一致 —— 这类 bug 最难查。
+func test_fold_sequence_matches_single_fold_audit() -> void:
+	var cases: Array = [
+		{"rows": 4, "cols": 6, "at": 3},
+		{"rows": 4, "cols": 6, "at": 2},
+		{"rows": 5, "cols": 7, "at": 4},
+		{"rows": 6, "cols": 8, "at": 3},
+		{"rows": 3, "cols": 5, "at": 4},
+	]
+	for c_v: Variant in cases:
+		var c: Dictionary = c_v
+		var rows := int(c["rows"])
+		var cols := int(c["cols"])
+		var at := int(c["at"])
+		var ps := _positions(rows, cols)
+		var one := FoldModel.audit({"axis": "x", "at": at}, ps)
+		var seq := FoldModel.audit_folds([{"axis": "x", "at": at}], ps)
+		assert_true(bool(seq["ok"]), "单折序列应合法：%dx%d at=%d" % [rows, cols, at])
+		assert_eq(seq["pairs"], one["pairs"], "配对表必须逐条一致（%dx%d at=%d）" % [rows, cols, at])
+		assert_eq(seq["overhang"], one["overhang"], "overhang 必须一致（%dx%d at=%d）" % [rows, cols, at])
+		assert_eq(seq["uncovered"], one["uncovered"], "uncovered 必须一致（%dx%d at=%d）" % [rows, cols, at])
+		assert_eq(seq["floating"], one["floating"], "floating 必须一致（%dx%d at=%d）" % [rows, cols, at])
+		assert_eq(int(seq["unpaired"]), int(one["unpaired"]), "没对家的格数必须一致（%dx%d at=%d）" % [rows, cols, at])
+
+
+## 风琴折：8 格宽连折两次（4 → 2），左边 2 格各摞 4 层。
+func test_accordion_fold_stacks_four_layers() -> void:
+	var ps := _positions(1, 8)
+	var folds: Array = [{"axis": "x", "at": 4}, {"axis": "x", "at": 2}]
+	var rep := FoldModel.audit_folds(folds, ps)
+	assert_true(bool(rep["ok"]), "风琴折应合法：%s" % str(rep["errors"]))
+	assert_eq(int(rep["layers_max"]), 4, "折两次 ⇒ 最厚一摞 4 层")
+	assert_eq((rep["stacks"] as Array).size(), 2, "8 格折两次 ⇒ 只剩 2 摞")
+	assert_eq((rep["pairs"] as Array).size(), 12, "每摞 4 层 ⇒ C(4,2)=6 对，两摞共 12 对")
+	assert_eq(int(rep["unpaired"]), 0, "整条盘都折进去了 ⇒ 没有单着的格")
+	# 叠合顺序必须是「底层在前、覆层在后」，且第 1 折的两层排在第 2 折那两层之前。
+	var st: Dictionary = (rep["stacks"] as Array)[0]
+	var layers: Array = st["layers"]
+	assert_eq((layers as Array).size(), 4, "这一摞应有 4 层")
+	assert_eq(layers[0], Vector2i(0, 0), "最底层应是没动过的近侧格")
+	assert_eq(layers[1], Vector2i(7, 0), "第二层应是第 1 折翻过来的最远格")
+
+
+## 十字折：先左右折、再上下折 ⇒ 四个角摞成一摞（"一张纸折成四分之一"的读法）。
+func test_cross_fold_stacks_the_four_corners() -> void:
+	var ps := _positions(4, 4)
+	var folds: Array = [{"axis": "x", "at": 2}, {"axis": "y", "at": 2}]
+	var rep := FoldModel.audit_folds(folds, ps)
+	assert_true(bool(rep["ok"]), "十字折应合法：%s" % str(rep["errors"]))
+	assert_eq(int(rep["layers_max"]), 4, "两轴各折一次 ⇒ 最厚 4 层")
+	var corner: Array = []
+	for st_v: Variant in (rep["stacks"] as Array):
+		var st: Dictionary = st_v
+		if st["pos"] == Vector2i(0, 0):
+			corner = st["layers"]
+	assert_eq((corner as Array).size(), 4, "左上角那一摞应摞 4 层")
+	for want: Vector2i in [Vector2i(0, 0), Vector2i(3, 0), Vector2i(0, 3), Vector2i(3, 3)]:
+		assert_true(corner.has(want), "四个角都应落在同一摞里：%s" % str(want))
+
+
+## 同轴的折痕必须一次比一次靠内 —— 否则后一折一格都折不到（作者的 bug，不许静默少折）。
+func test_repeated_axis_crease_must_shrink() -> void:
+	var ps := _positions(1, 8)
+	var same := FoldModel.normalize_folds([{"axis": "x", "at": 4}, {"axis": "x", "at": 4}], ps)
+	assert_false(bool(same["ok"]), "同轴等值折痕必须拒绝（折不到任何一格）")
+	assert_true("；".join(same["errors"]).contains("严格递减"), "拒绝原因应点名「严格递减」")
+	var grow := FoldModel.normalize_folds([{"axis": "x", "at": 3}, {"axis": "x", "at": 5}], ps)
+	assert_false(bool(grow["ok"]), "同轴变大折痕必须拒绝（纸只剩近侧，折不到）")
+	assert_eq(int((grow["folds"] as Array).size()), 1, "出错时已通过的那一折仍要如实报出来（供作者定位）")
+
+
+## 第二条折痕按**当前纸面**校验：折过 at=4 之后纸只剩 4 格宽，at=6 已落在纸外。
+func test_second_fold_is_validated_against_the_current_footprint() -> void:
+	var ps := _positions(1, 8)
+	var rep := FoldModel.normalize_folds([{"axis": "x", "at": 4}, {"axis": "x", "at": 6}], ps)
+	assert_false(bool(rep["ok"]), "折到当前纸面之外的第二折必须拒绝")
+	assert_true("；".join(rep["errors"]).contains("第 2 折"), "报错要点名是第几折")
+	assert_eq(FoldModel.footprint_after(ps, "x", 4).size(), 4, "折一次后纸只剩近侧 4 格")
+	assert_eq(FoldModel.describe(rep["folds"] as Array), "x@4", "出错时只保留通过校验的折痕")
+
+
+## 折出纸外的格只报一次：它们在第一次折就已离开纸面，后续折不许再重复计数。
+func test_overhang_cells_are_dropped_once() -> void:
+	var ps := _positions(1, 8)
+	var one := FoldModel.audit_folds([{"axis": "x", "at": 3}], ps)
+	assert_eq((one["dropped"] as Array).size(), 2, "8 格折 at=3 ⇒ 最外两格折出纸外")
+	assert_eq(one["dropped"], [Vector2i(6, 0), Vector2i(7, 0)], "折出纸外的应是最外侧两格，按坐标升序")
+	assert_eq(int(one["unpaired"]), 2, "折出纸外的两格没有对家")
+	var two := FoldModel.audit_folds([{"axis": "x", "at": 3}, {"axis": "x", "at": 2}], ps)
+	assert_eq((two["dropped"] as Array).size(), 2, "第二折不许把已折出纸外的格再报一次")
+	assert_true(bool(two["ok"]), "第二折本身合法：%s" % str(two["errors"]))
+
+
+## 写进邻接表：多折的每一对叠格都要有双向边，元数据走 {folds: [...]}，读回同口径。
+func test_attach_fold_sequence_writes_every_stacked_edge() -> void:
+	var base := _rect_topo(4, 4)
+	var decl := {"folds": [{"axis": "x", "at": 2}, {"axis": "y", "at": 2}]}
+	var res := TopologyModel.attach_fold(base, decl)
+	assert_true(bool(res["ok"]), "多折应能挂进拓扑：%s" % str(res["errors"]))
+	var topo: Dictionary = res["topology"]
+	assert_eq(topo["fold"], decl, "多折元数据应原样写进拓扑")
+	assert_eq(int(res["layers_max"]), 4, "返回值要带上最厚层数（生成器按它挑难度）")
+	var g := _grid_of(topo)
+	assert_eq(str(g.view_meta.get("kind", "")), TopologyModel.VIEW_FOLD, "呈现类型应是折叠")
+	for pr: Dictionary in (res["pairs"] as Array):
+		var a: Vector2i = pr["a"]
+		var b: Vector2i = pr["b"]
+		assert_true(g.get_neighbors(a).has(b), "叠合边必须成双向：%s -> %s" % [str(a), str(b)])
+		assert_true(g.get_neighbors(b).has(a), "叠合边必须成双向：%s -> %s" % [str(b), str(a)])
+	# 落盘格式（折痕走 view）+ 真实 JSON 往返：读回必须还是同一串折痕
+	var landed: Dictionary = PuzzleGenerator._topology_to_dict(g)
+	assert_false(landed.has("fold"), "落盘格式不该有顶层 fold（折痕走 view）")
+	var decl_back := TopologyModel.fold_decl(landed)
+	assert_eq(decl_back, decl, "折痕序列应能从 view.fold 读回")
+	assert_eq(FoldModel.fold_list(decl_back).size(), 2, "读回的折痕条数要保真")
+	var json_back: Dictionary = JSON.parse_string(JSON.stringify(landed))
+	assert_eq(TopologyModel.fold_decl(json_back), decl, "过一遍 JSON（整数变浮点）后折痕仍要原样")

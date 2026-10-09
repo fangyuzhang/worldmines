@@ -3,13 +3,19 @@
 # 运行： godot --headless --path . -s res://tools/gen_fold_levels.gd [-- 关卡文件名...]
 # 产出： res://levels/fold_*.json
 #
-# 这一族把**纸的对折**搬进扫雷：盘面还是普通方阵，但一条折痕把远侧沿镜像翻过来、
+# 这一族把**折纸**搬进扫雷：盘面还是普通方阵，但折痕把远侧沿镜像翻过来、
 # 压在近侧上 —— 镜像位上有格 ⇒ 两层贴合 ⇒ 互为邻居。线索数照拓扑邻域计数 ⇒ 压在
 # 近侧的远侧格会**跨半张盘**参与计数，而屏幕上它们看着离得很远。玩家要读对数字，
 # 就得先认出折痕、再在心里把远侧翻回去。
 #
-# 呈现层（ui/board_view.gd 的 _draw_fold_hints）画折痕线 + 折起来/摊平看双视图；
-# 本工具只需保证 topology 里带 view.kind=fold 与 view.fold={axis, at}（走
+# 【一次折 vs 连着折】同一张盘可以按顺序折多次（折纸族）：
+#   · 单折 —— 规格给 axis / at，落盘 view.fold = {axis, at}（fold_01..06，历史格式）；
+#   · 多折 —— 规格给 folds: [{axis, at}, ...]，落盘 view.fold = {folds: [...]}（fold_07 起）。
+#   多折的语义在 core/fold_model.gd：每折一次纸只剩近侧，后一折只能折到前一折之内
+#   （同轴 at 必须严格递减），折完 N 次同一位置最多摞 2^N 层、层与层两两互为邻居。
+#
+# 呈现层（ui/board_view.gd 的 _draw_fold_hints）画每一折的折痕线 + 折起来/摊平看双视图；
+# 本工具只需保证 topology 里带 view.kind=fold 与折痕声明（走
 # PuzzleGenerator._topology_to_dict 的 view 通道），读回即可还原。
 #
 # ⚠️ 生成走第一帧 _process（不是 _initialize）：规则/CP-SAT 由 autoload 装配。
@@ -64,6 +70,25 @@ const SPECS: Array = [
 	{"file": "fold_06.json", "rows": 6, "cols": 8, "axis": "x", "at": 4,
 		"name": "折叠 06 · 残洞", "desc": "6×8 · 半分对折 + 中央挖掉两格：对面没格的那一层叠不上",
 		"seed": 42051, "holes": [Vector2i(1, 2), Vector2i(6, 3)]},
+	# ---- 折纸族（多折痕）：一张盘连着折，同一位置摞起三层、四层 ----
+	{"file": "fold_07.json", "rows": 4, "cols": 12, "folds": [{"axis": "x", "at": 8}, {"axis": "x", "at": 4}],
+		"name": "折叠 07 · 风琴折", "desc": "4×12 · 连着折两次折到四分之一宽：每一摞三层，读一个格要看三处",
+		"seed": 42061, "min_peak": 4, "holes": [], "layers": 3},
+	{"file": "fold_08.json", "rows": 6, "cols": 6, "folds": [{"axis": "x", "at": 3}, {"axis": "y", "at": 3}],
+		"name": "折叠 08 · 十字折", "desc": "6×6 · 先左右折再上下折：四个角摞成一摞，整盘只剩九个位置",
+		"seed": 42071, "min_peak": 4, "holes": [], "layers": 4},
+	{"file": "fold_09.json", "rows": 5, "cols": 12, "folds": [{"axis": "x", "at": 9}, {"axis": "x", "at": 6}, {"axis": "x", "at": 3}],
+		"name": "折叠 09 · 三折回廊", "desc": "5×12 · 由外向内连折三次：最内侧每摞四层，越往里越厚",
+		"seed": 42081, "min_peak": 4, "holes": [], "layers": 4},
+	{"file": "fold_10.json", "rows": 10, "cols": 5, "folds": [{"axis": "y", "at": 6}, {"axis": "y", "at": 3}],
+		"name": "折叠 10 · 上下风琴", "desc": "10×5 · 沿水平折痕连折两次：下四行翻上来，最上层摞到四层",
+		"seed": 42091, "min_peak": 4, "holes": [], "layers": 4},
+	{"file": "fold_11.json", "rows": 6, "cols": 8, "folds": [{"axis": "x", "at": 4}, {"axis": "x", "at": 2}],
+		"name": "折叠 11 · 双折残洞", "desc": "6×8 · 连着折两次 + 左沿挖洞：往里折的那两处叠不上，只能停在半路",
+		"seed": 42101, "min_peak": 4, "holes": [Vector2i(0, 1), Vector2i(0, 4)], "layers": 4},
+	{"file": "fold_12.json", "rows": 8, "cols": 6, "folds": [{"axis": "x", "at": 3}, {"axis": "y", "at": 4}],
+		"name": "折叠 12 · 回形折", "desc": "8×6 · 先左右、再上下各折一次：横向三等分、纵向四等分，摞成四层一摞",
+		"seed": 42111, "min_peak": 4, "holes": [], "layers": 4},
 ]
 
 var _started := false
@@ -141,13 +166,30 @@ func _selected() -> Array:
 	return out
 
 
+## 规格 → 折痕数组。单折规格（axis / at）与多折规格（folds）都认；
+## 统一交给 FoldModel.fold_list 解析，避免这里再写一套"读规格"的口径。
+func _folds_of(spec: Dictionary) -> Array:
+	if spec.has("folds"):
+		return FoldModel.fold_list({"folds": spec["folds"]})
+	return FoldModel.fold_list({"axis": str(spec.get("axis", "")), "at": int(spec.get("at", 0))})
+
+
 func _gen_one(spec: Dictionary) -> bool:
 	var file_name := str(spec["file"])
 	var path := OUT_DIR + "/" + file_name
 	var rows := int(spec["rows"])
 	var cols := int(spec["cols"])
-	var axis := str(spec["axis"])
-	var at := int(spec["at"])
+	var folds := _folds_of(spec)
+	if folds.is_empty():
+		push_error("%s: 规格里没有折痕（单折要给 axis/at，多折要给 folds）" % file_name)
+		return false
+	# 多折时密度要单独给：四层摞起来，一格最多能数到四处的雷，密度高了线索会顶到两位数。
+	var ratio := float(spec.get("ratio", MINE_RATIO))
+	# 难度下限：默认 easy 下沿（与其余异形族同口径）；折纸族要靠规格显式抬高。
+	# 【为什么】生成器取**第一个达标**的候选，不是最强的那个 ⇒ 下限给 2（"一眼盘"的邻档）时，
+	# 折纸关很容易停在 peak=2 的浅盘上（本批实测就中过：多折盘的"融合线索"信息量本来就大，
+	# 下限定低了会直接产出无聊盘）。下限给 4 ⇒ 至少落在「困难」档。
+	var min_peak := int(spec.get("min_peak", MIN_PEAK))
 
 	# 1. 拓扑：方阵（强制产出邻接表——带折叠的盘必须走 AdjacencyGrid）→ 挖洞 → 挂折痕
 	var built := WrapTopology.build(rows, cols, ShapeGenerator.MOORE8, false, false, true)
@@ -156,7 +198,8 @@ func _gen_one(spec: Dictionary) -> bool:
 		return false
 	var topo_dict: Dictionary = built["topology"]
 	topo_dict = _carve(topo_dict, spec.get("holes", []))
-	var attach := TopologyModel.attach_fold(topo_dict, {"axis": axis, "at": at})
+	# 统一用 {folds: [...]} 传：单折时 attach_fold 仍会落成旧的 {axis, at}（见 core/topology_model.gd）。
+	var attach := TopologyModel.attach_fold(topo_dict, {"folds": folds})
 	if not bool(attach["ok"]):
 		push_error("%s: 折痕写入失败：%s" % [file_name, str(attach["errors"])])
 		return false
@@ -171,7 +214,7 @@ func _gen_one(spec: Dictionary) -> bool:
 	var n := topo.cell_count()
 
 	# 2. 生成（内建 R01 序贯无猜）→ 峰值验收 → ProofLog 复核
-	var mines := maxi(1, int(round(float(n) * MINE_RATIO)))
+	var mines := maxi(1, int(round(float(n) * ratio)))
 	var gen := PuzzleGenerator.new()
 	var level: Dictionary = {}
 	var used_mines := 0
@@ -195,7 +238,7 @@ func _gen_one(spec: Dictionary) -> bool:
 				continue
 			var prof: Dictionary = cand.get("difficulty_profile", {})
 			best_peak = maxi(best_peak, int(prof.get("max_complexity", -1)))
-			if int(prof.get("max_complexity", 0)) < MIN_PEAK:
+			if int(prof.get("max_complexity", 0)) < min_peak:
 				continue
 			if not _proof_ok(cand):
 				continue
@@ -205,7 +248,7 @@ func _gen_one(spec: Dictionary) -> bool:
 		if not level.is_empty():
 			break
 	if level.is_empty():
-		push_error("%s: %d 次尝试无一达到峰值 >= %d（最高 %d）" % [file_name, tries, MIN_PEAK, best_peak])
+		push_error("%s: %d 次尝试无一达到峰值 >= %d（最高 %d）" % [file_name, tries, min_peak, best_peak])
 		return false
 
 	# 3. 落盘：标题 + 形状标签 + 主题配色（必须过 ThemeMarks.apply，否则全库门禁判红）
@@ -237,20 +280,28 @@ func _gen_one(spec: Dictionary) -> bool:
 		return false
 	var got_fold: Variant = ag.view_meta.get("fold", {})
 	if not (got_fold is Dictionary):
-		push_error("%s: 自校验失败（读回后缺 fold 声明）" % file_name)
+		push_error("%s: 自校验失败（读回后缺折痕声明）" % file_name)
 		LevelStaging.discard(tmp)
 		return false
-	var gf: Dictionary = got_fold
-	if str(gf.get("axis", "")) != axis or int(gf.get("at", -1)) != at:
-		push_error("%s: 自校验失败（折痕 %s != 期望 %s）" % [file_name, str(gf), str({"axis": axis, "at": at})])
+	var got_folds := FoldModel.fold_list(got_fold as Dictionary)
+	if FoldModel.describe(got_folds) != FoldModel.describe(folds):
+		push_error("%s: 自校验失败（折痕 %s != 期望 %s）" % [
+			file_name, FoldModel.describe(got_folds), FoldModel.describe(folds)])
 		LevelStaging.discard(tmp)
 		return false
 	var ps: Array[Vector2i] = []
 	for p in ag.all_positions():
 		ps.append(p)
-	var rep := FoldModel.audit(gf, ps)
+	var rep := FoldModel.audit_folds(got_folds, ps)
 	if not bool(rep["ok"]):
 		push_error("%s: 自校验失败（折痕审计不过：%s）" % [file_name, str(rep["errors"])])
+		LevelStaging.discard(tmp)
+		return false
+	# 折到几层是规格里承诺的事（"风琴折三层""十字折四层"）——读回来必须对得上，
+	# 对不上说明折痕在落盘/读回的路上被改了，这种"能生成、读回变形"必须当场红。
+	if spec.has("layers") and int(rep["layers_max"]) != int(spec["layers"]):
+		push_error("%s: 自校验失败（最厚 %d 层，规格承诺 %d 层）" % [
+			file_name, int(rep["layers_max"]), int(spec["layers"])])
 		LevelStaging.discard(tmp)
 		return false
 	var pairs: Array = rep["pairs"]
@@ -267,9 +318,10 @@ func _gen_one(spec: Dictionary) -> bool:
 		push_error("%s: 暂存转正失败，正式文件未改动" % file_name)
 		return false
 	var prof2: Dictionary = level.get("difficulty_profile", {})
-	print("  OK   %-14s %-22s %d 格 · %d 雷 · 峰值 %s · %d 对叠格 · %d 次" % [
+	print("  OK   %-14s %-22s %d 格 · %d 雷 · 峰值 %s · 折 %d 次（最厚 %d 层）· %d 对叠格 · %d 次" % [
 		file_name, str(spec["name"]), n, used_mines,
-		str(prof2.get("max_complexity", "?")), pairs.size(), tries])
+		str(prof2.get("max_complexity", "?")), got_folds.size(), int(rep["layers_max"]),
+		pairs.size(), tries])
 	return true
 
 

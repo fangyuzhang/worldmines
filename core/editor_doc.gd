@@ -491,8 +491,13 @@ func struct_signature() -> String:
 	for pr in portals:
 		h = (h ^ (pr.x * 31 + pr.y)) * 1099511628211
 	# 折叠同样改邻接 ⇒ 必须进签名（漏了它 = 缓存不失效的幽灵 bug，与虫洞同一条理由）。
-	h = (h ^ str(fold.get("axis", "")).hash()) * 1099511628211
-	h = (h ^ int(fold.get("at", 0))) * 1099511628211
+	# 折痕条数也要进：1 折与 2 折即使第一条相同，邻接表也完全不同。
+	var fold_seq := FoldModel.fold_list(fold)
+	h = (h ^ fold_seq.size()) * 1099511628211
+	for fdesc_v: Variant in fold_seq:
+		var fdesc: Dictionary = fdesc_v
+		h = (h ^ str(fdesc.get("axis", "")).hash()) * 1099511628211
+		h = (h ^ int(fdesc.get("at", 0))) * 1099511628211
 	h = (h ^ shape_kind.hash()) * 1099511628211
 	h = (h ^ JSON.stringify(shape_params).hash()) * 1099511628211
 	h = (h ^ foreign_topology.size()) * 1099511628211
@@ -963,17 +968,23 @@ func validate() -> Dictionary:
 					var fpos: Array[Vector2i] = []
 					for p5 in ag.all_positions():
 						fpos.append(p5)
-					var fnorm := FoldModel.normalize(fold, fpos)
+					var fold_seq := FoldModel.fold_list(fold)
+					var fnorm := FoldModel.normalize_folds(fold_seq, fpos)
 					if not bool(fnorm["ok"]):
 						for fe_v: Variant in (fnorm["errors"] as Array):
 							_audit_errors.append(_issue("fold_bad",
 								"折叠声明无效：%s" % str(fe_v), Vector2i(-1, -1), ISSUE_ERROR))
 					else:
-						var frep := FoldModel.audit(fold, fpos)
+						var frep := FoldModel.audit_folds(fold_seq, fpos)
 						var n_unpaired := int(frep.get("unpaired", 0))
 						if n_unpaired > 0:
 							_audit_warnings.append(_issue("fold_unpaired",
 								"折叠后有 %d 格没有对家（折角伸出盘外，或对面那格被挖成洞）—— 这些格只是少一层叠合邻居；检查折痕位置与洞" % n_unpaired,
+								Vector2i(-1, -1), ISSUE_INFO))
+						var n_layers := int(frep.get("layers_max", 1))
+						if n_layers >= 3:
+							_audit_warnings.append(_issue("fold_deep_stack",
+								"这张盘最厚的一摞叠了 %d 层（折 %d 次）—— 每多一层，读数要同时看更多格；确认这是你要的难度" % [n_layers, fold_seq.size()],
 								Vector2i(-1, -1), ISSUE_INFO))
 			for e in _audit_errors:
 				errors.append(e)
