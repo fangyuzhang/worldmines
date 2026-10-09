@@ -515,7 +515,10 @@ func test_no_button_is_squeezed_into_an_empty_box() -> void:
 		var bad: Array[String] = []
 		for c in (ed as Node).find_children("*", "Button", true, false):
 			var b := c as Button
-			if b == null or not b.visible:
+			# 【2026-10-09 重构后改判据】属性页改成"可折叠组"之后，收起的组里那些按钮
+			# **局部 `visible` 仍为真、只是不在树上可见**（容器不排版它们）。判据要看
+			# `is_visible_in_tree()`：用户根本看不到的控件不可能"看着像空按钮"。
+			if b == null or not b.is_visible_in_tree():
 				continue
 			# 非当前页的控件还没跑布局，尺寸不可信 ⇒ 跳过（各自在自己那轮里被检查）
 			if tabs != null:
@@ -1263,6 +1266,158 @@ func test_layout_rule_picker_adds_and_clears() -> void:
 	assert_eq(d.global_rule_ids.size(), 0, "全部去掉应清空")
 	assert_true((ed.get("_global_list") as Label).text.find("没有布局规则") != -1,
 		"清空后要**明说没有**，不留白：%s" % (ed.get("_global_list") as Label).text)
+
+
+func test_props_default_open_groups_cover_the_core_creation_path() -> void:
+	# 重构（2026-10-09）：属性页默认只展开"创建一关的核心路径"，其余高级组收起。
+	# 这条契约把"默认展开集"钉住：漏了核心组 ⇒ 新手第一眼找不到；多开高级组 ⇒ 又变成长条。
+	var ed := await _make_editor()
+	_bind(ed, _doc5())
+	var headers: Array = ed.get("_props_group_headers")
+	assert_true(headers.size() > 5, "属性页应有多组可折叠区块（实际 %d 组）" % headers.size())
+	var open_titles: Array[String] = []
+	for h in headers:
+		var body: Variant = (h as Label).get_meta("collapse_body", null)
+		if body is Control and (body as Control).visible:
+			open_titles.append(str((h as Label).text))
+	for want in ["关卡名字", "棋盘", "边界与邻域", "本盘问题", "形状（六边形", "折叠（一张盘"]:
+		var hit := false
+		for t in open_titles:
+			if t.begins_with(want):
+				hit = true
+		assert_true(hit, "核心组「%s」应默认展开（当前展开：%s）" % [want, str(open_titles)])
+	for closed in ["布局规则", "行容量", "形状组合", "填充空隙", "边缘平滑", "文字转形状",
+			"复合格", "骨牌划分", "统计", "配色锁定"]:
+		var hit := false
+		for t in open_titles:
+			if t.begins_with(closed):
+				hit = true
+		assert_false(hit, "高级组「%s」应默认收起（当前展开：%s）" % [closed, str(open_titles)])
+	assert_true(open_titles.size() <= 7,
+		"默认展开的组不要超过 7 个，否则又回到「一条长条」：%s" % str(open_titles))
+
+
+func test_props_page_stays_short_enough_to_use() -> void:
+	# 用户原话："现在的编辑器太丑了，根本没法用"。实测属性页曾是一条 5000+ px 的长条
+	#（要滚 8 屏才到底）。这条契约把"默认状态又变回长条"变成红灯。
+	var ed := await _make_editor()
+	_bind(ed, _doc5())
+	await wait_process_frames(2)
+	var tabs := _tabs_of(ed)
+	assert_not_null(tabs, "应有页签容器")
+	if tabs == null:
+		return
+	var props := tabs.get_child(0) as Control
+	assert_not_null(props, "属性页应是第一页")
+	if props == null or props.get_child_count() == 0:
+		return
+	var box := props.get_child(0) as Control
+	var content_h := box.get_combined_minimum_size().y
+	assert_true(content_h <= 2200.0,
+		"属性页默认内容高 %.0fpx > 2200 ⇒ 又变回几千像素的长条了（视口只有 %.0fpx）" % [
+			content_h, props.size.y])
+
+
+func test_topbar_shows_level_name_and_unsaved_mark() -> void:
+	# 重构（2026-10-09）：全局动作（撤销/重做/试玩/保存/说明/返回）从长侧栏搬到常驻顶栏；
+	# 顶栏还要一眼看出"这是哪一关、有没有还没存的改动"。
+	var ed := await _make_editor()
+	var title := ed.get("_top_title_label") as Label
+	assert_not_null(title, "编辑器应有常驻顶栏标题")
+	if title == null:
+		return
+	var d := _doc5()
+	d.title = "顶栏测试关"
+	_bind(ed, d)
+	assert_true(title.text.find("顶栏测试关") != -1,
+		"顶栏要显示当前关卡名（实际：%s）" % title.text)
+	assert_true(title.text.find("*") == -1,
+		"刚绑定的关卡还没改动，不该有未保存星号（实际：%s）" % title.text)
+	ed.call("_mark_dirty")
+	assert_true(title.text.find("*") != -1,
+		"改过之后顶栏要标出未保存（实际：%s）" % title.text)
+
+
+func test_global_actions_live_in_the_topbar_not_a_scroll_area() -> void:
+	# 重构（2026-10-09）：撤销/重做/试玩/保存/说明/返回选关 必须待在常驻顶栏里（不在任何滚动区），
+	# 否则矮窗口下又会回到"关键按钮在屏幕外"的老毛病。
+	var ed := await _make_editor()
+	_bind(ed, _doc5())
+	var bar := (ed as Node).find_child("编辑器顶栏", true, false) as Control
+	assert_not_null(bar, "应有常驻顶栏")
+	if bar == null:
+		return
+	assert_eq(_scroll_ancestors_below(bar, ed as Node), 0, "顶栏不许被放进滚动区")
+	for prefix in ["撤销", "重做", "试玩", "保存", "说明", "返回选关"]:
+		var b := _find_button(ed, prefix)
+		assert_not_null(b, "顶栏应有「%s」" % prefix)
+		if b != null:
+			assert_true(bar.is_ancestor_of(b), "「%s」应在顶栏里（不是埋在侧栏）" % prefix)
+
+
+func test_left_bar_does_not_duplicate_topbar_actions() -> void:
+	# 同一个功能在两处重复出现，既显得乱，又让人怀疑"这两个是不是不一样"。
+	var ed := await _make_editor()
+	_bind(ed, _doc5())
+	var left := ed.get("_left_bar") as Control
+	assert_not_null(left, "应有左栏")
+	if left == null:
+		return
+	for prefix in ["撤销", "重做", "返回选关"]:
+		var hits := 0
+		for n in left.find_children("*", "Button", true, false):
+			if (n as Button).text.begins_with(prefix):
+				hits += 1
+		assert_eq(hits, 0, "左栏不该再有「%s」（已经搬去顶栏，避免重复入口）" % prefix)
+
+
+func test_props_groups_collapse_and_expand_all() -> void:
+	# 重构（2026-10-09）：属性页原本是一条约 5000px 的长条（要一直滚）。现在每组可折叠，
+	# 「展开全部 / 收起全部」是总开关；折叠只改可见性，控件与信号都还在（不许丢功能）。
+	var ed := await _make_editor()
+	_bind(ed, _doc5())
+	var headers: Array = ed.get("_props_group_headers")
+	assert_true(headers.size() > 5, "属性页应有多组可折叠区块（实际 %d 组）" % headers.size())
+	assert_true(_press(ed, "收起全部"), "属性页应有「收起全部」")
+	var bodies: Array[Control] = []
+	for h in headers:
+		var body: Variant = (h as Label).get_meta("collapse_body", null)
+		assert_true(body is Control, "每个组标题都要绑一个可折叠正文")
+		if body is Control:
+			bodies.append(body as Control)
+			assert_false((body as Control).visible, "「收起全部」之后组正文应隐藏")
+	assert_eq(bodies.size(), headers.size(), "每一组都要有正文容器")
+	assert_true(_press(ed, "展开全部"), "属性页应有「展开全部」")
+	for body in bodies:
+		assert_true(body.visible, "「展开全部」之后组正文应重新显示")
+
+
+func test_collapsed_group_expands_into_a_usable_button_row() -> void:
+	# 折叠不能只是"藏起来"：展开后里面的按钮必须真的排好版（不许还是被挤成小方块）。
+	var ed := await _make_editor()
+	_bind(ed, _doc5())
+	assert_true(_press(ed, "收起全部"), "先全部收起")
+	assert_true(_press(ed, "展开全部"), "再全部展开")
+	await wait_process_frames(2)
+	var tabs := _tabs_of(ed)
+	assert_not_null(tabs, "应有页签容器")
+	if tabs == null:
+		return
+	tabs.current_tab = 0
+	await wait_process_frames(2)
+	var checked := 0
+	for c in (ed as Node).find_children("*", "Button", true, false):
+		var b := c as Button
+		if b == null or not b.is_visible_in_tree():
+			continue
+		if b.text.strip_edges() == "":
+			continue
+		# 只查属性页里那些曾经被挤扁的"面板按钮"（顶栏/流程条的按钮有自己的最小宽）
+		if not tabs.get_child(0).is_ancestor_of(b):
+			continue
+		checked += 1
+		assert_true(b.size.x >= 60.0, "「%s」展开后仍被挤成 %s" % [b.text.substr(0, 14), str(b.size)])
+	assert_true(checked > 0, "属性页展开后应能查到按钮（实际 %d 个）" % checked)
 
 
 ## 弹窗内容必须装得进弹窗（无头下只设尺寸跑布局，不 popup）——新增参数会把它撑爆。

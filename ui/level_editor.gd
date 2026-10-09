@@ -134,6 +134,10 @@ var _help_layer: Control = null
 var _help_btn: Button
 ## 左栏根节点：「说明」层要扫描它的按钮来生成条目
 var _left_bar: Control = null
+## 顶栏标题：显示“当前关卡名 + 是否有未保存改动”。
+var _top_title_label: Label = null
+## 属性检查器里所有可折叠组的标题；“展开全部 / 收起全部”只操作它们。
+var _props_group_headers: Array[Label] = []
 ## 右侧页签容器：「说明」层要显示**当前页**的说明，并跟着页签切换更新
 var _tabs: TabContainer = null
 ## 【审查 D12 删除】`TAB_HELP` 与 `_tab_help_title/_tab_help_text` 已无调用方（说明层 v4 改走
@@ -520,6 +524,8 @@ func _build_ui() -> void:
 	root.add_theme_constant_override("separation", 4)
 	add_child(root)
 
+	# 真正的编辑器顶栏：关卡名、撤销/重做、试玩/保存/返回都固定在顶部，核心动作不再埋在长侧栏里。
+	root.add_child(_build_editor_topbar())
 	# 首屏"三句话"：实测小白打开后看不懂"这是干什么的、从哪开始"（全界面没有标题/说明）。
 	root.add_child(_build_intro_bar())
 	# 危险操作确认条（默认隐藏，见 _build_confirm_bar）
@@ -569,6 +575,58 @@ func _build_ui() -> void:
 	body.add_child(_build_right_panel())
 
 	root.add_child(_build_status_bar())
+
+
+## 编辑器顶栏：把“全局动作”从左右长栏里抽出来，形成固定的软件框架。
+## 只做接线，动作本身仍复用原来的 `_undo_once` / `_playtest` / `_save` / `_back_to_select`。
+func _build_editor_topbar() -> Control:
+	var panel := PanelContainer.new()
+	panel.name = "编辑器顶栏"
+	panel.set_meta("editor_topbar", true)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	_top_title_label = _plain_label("关卡编辑器")
+	_top_title_label.add_theme_font_size_override("font_size", 17)
+	_top_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_top_title_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(_top_title_label)
+	# 【为什么逐个设 SIZE_FILL】`_action_button` 默认是 SIZE_EXPAND_FILL（左右栏里要均分宽度）；
+	# 顶栏里若照搬，六个按钮会把整条顶栏**平分**掉（实测各 178px），标题只剩不到 200px。
+	# 顶栏按钮只要"够放文字"（SIZE_FILL = 用最小宽），剩下的横向空间全留给关卡名。
+	var undo := _action_button("撤销", _undo_once)
+	undo.custom_minimum_size = Vector2(76, 34)
+	undo.size_flags_horizontal = Control.SIZE_FILL
+	undo.tooltip_text = "撤销上一步（Ctrl+Z）"
+	row.add_child(undo)
+	var redo := _action_button("重做", _redo_once)
+	redo.custom_minimum_size = Vector2(76, 34)
+	redo.size_flags_horizontal = Control.SIZE_FILL
+	redo.tooltip_text = "重做刚撤销的一步（Ctrl+Y）"
+	row.add_child(redo)
+	var play := _action_button("试玩", _playtest)
+	play.custom_minimum_size = Vector2(76, 34)
+	play.size_flags_horizontal = Control.SIZE_FILL
+	play.tooltip_text = "用现在这块棋盘直接开一局（等同正式游戏）"
+	row.add_child(play)
+	var save := _action_button("保存", _save)
+	save.custom_minimum_size = Vector2(76, 34)
+	save.size_flags_horizontal = Control.SIZE_FILL
+	save.tooltip_text = "存到游戏存档文件夹（Ctrl+S 同效）"
+	row.add_child(save)
+	var help := _action_button("说明", _toggle_help)
+	help.custom_minimum_size = Vector2(76, 34)
+	help.size_flags_horizontal = Control.SIZE_FILL
+	help.toggle_mode = true
+	help.tooltip_text = "展开/收起控件说明（解释会贴在对应控件旁边）"
+	_help_btn = help
+	row.add_child(help)
+	var back := _action_button("返回选关", _back_to_select)
+	back.custom_minimum_size = Vector2(92, 34)
+	back.size_flags_horizontal = Control.SIZE_FILL
+	back.tooltip_text = "回到关卡列表（会先自动存档）"
+	row.add_child(back)
+	panel.add_child(row)
+	return panel
 
 
 ## 首屏"三句话"引导条。
@@ -651,33 +709,15 @@ func _resolve_confirm(ok: bool) -> void:
 
 
 func _build_left_bar() -> Control:
-	# 【2026-10-02 小白实测后的结构改动】原来左栏是一整个滚动区：内容高 1010px、窗口只有 691px
-	# ⇒ 「保存」「试玩」这两个**最关键**的按钮在屏幕外，不滚滚轮根本看不到。
-	# 现在把「试玩 / 保存」常驻顶部（不随滚动），其余说明性/高级功能留在下面的滚动区。
+	# 【2026-10-02 小白实测】原来左栏是一整个滚动区：内容高 1010px、窗口只有 691px
+	# ⇒「保存」「试玩」这两个**最关键**的按钮在屏幕外，不滚滚轮根本看不到。
+	# 【2026-10-09 重构】这两个动作连同撤销 / 重做 / 说明 / 返回选关一起搬进了**常驻顶栏**
+	#（见 `_build_editor_topbar`）——比"钉在左栏顶部"更彻底：左栏怎么滚都不影响它们。
+	# 左栏从此只负责"这一关要怎么改"：流程 + 工具 + 格型 + 布雷 + 编辑 + 存档与分享。
 	var outer := VBoxContainer.new()
-	outer.custom_minimum_size = Vector2(196, 0)
+	# 宽 236 是实测折中：够放两列工具按钮，又不把中央画布再挤窄（画布实测 702px）。
+	outer.custom_minimum_size = Vector2(236, 0)
 	outer.add_theme_constant_override("separation", 4)
-	var top := HBoxContainer.new()
-	top.add_theme_constant_override("separation", 6)
-	var play_btn := _action_button("试玩", _playtest)
-	play_btn.custom_minimum_size = Vector2(92, 40)
-	play_btn.add_theme_font_size_override("font_size", 15)
-	play_btn.tooltip_text = "用现在这块棋盘直接开一局（等同正式游戏）"
-	top.add_child(play_btn)
-	var save_btn := _action_button("保存", _save)
-	save_btn.custom_minimum_size = Vector2(92, 40)
-	save_btn.add_theme_font_size_override("font_size", 15)
-	save_btn.tooltip_text = "存到游戏存档文件夹（Ctrl+S 同效）"
-	top.add_child(save_btn)
-	# 「说明」开关（2026-10-02 用户需求）：独立的第三个常驻按钮，默认收起。
-	# 点开把每个按钮的用法贴在**它自己右边**并用折线连起来（见 _toggle_help / ui/editor_help.gd）。
-	_help_btn = _action_button("说明", _toggle_help)
-	_help_btn.custom_minimum_size = Vector2(92, 40)
-	_help_btn.add_theme_font_size_override("font_size", 15)
-	_help_btn.toggle_mode = true          # 展开时显"按下"，一眼看出现在是不是开着
-	_help_btn.tooltip_text = "展开/收起按钮说明（解释贴在每个按钮右边，用线连起来）"
-	top.add_child(_help_btn)
-	outer.add_child(top)
 
 	var box := VBoxContainer.new()
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -692,8 +732,11 @@ func _build_left_bar() -> Control:
 	# 新手得自己拼"下一步该干嘛"；这里给一条**有序**的直达通道（每步一句说明）。
 	# 放在工具清单**之前**是刻意的：第一次打开的人先要看到"流程"，而不是"一堆工具"。
 	box.add_child(_section_label("一关做完的四个步骤（点按钮直达）"))
-	var flow := HBoxContainer.new()
-	flow.add_theme_constant_override("separation", 4)
+	# 四个流程按钮改成 2×2，而不是挤成一行 4 个：省下约 120px 宽度给画布。
+	var flow := GridContainer.new()
+	flow.columns = 2
+	flow.add_theme_constant_override("h_separation", 4)
+	flow.add_theme_constant_override("v_separation", 4)
 	for step in [
 			["① 验证", "检查这关能不能不靠猜推完；过不了就按提示改盘面（会顺手切到「验证」页）",
 				Callable(self, "_flow_verify")],
@@ -809,10 +852,8 @@ func _build_left_bar() -> Control:
 	box.add_child(_action_button("清空全部雷/障碍/翻开", _clear_all))
 
 	box.add_child(_section_label("编辑"))
-	var r2 := HBoxContainer.new()
-	r2.add_child(_action_button("撤销", _undo_once))
-	r2.add_child(_action_button("重做", _redo_once))
-	box.add_child(r2)
+	# 撤销 / 重做已挪到顶部工具条（全局动作常驻顶部，不随左栏滚动消失）；
+	# 这里只留"选区类"编辑动作，同一个功能不在两处重复出现。
 	var r3 := HBoxContainer.new()
 	r3.add_child(_action_button("复制选区", _copy_selection))
 	r3.add_child(_action_button("粘贴到选区", _paste_selection))
@@ -889,7 +930,7 @@ func _build_left_bar() -> Control:
 	forge_btn.tooltip_text = "勾选棋盘大小、填每个难度要几关，一次生成一批；带进度条与预计时间，随时可停"
 	box.add_child(forge_btn)
 	box.add_child(_action_button("安装分享包（装进游戏）", _install_pack))
-	box.add_child(_action_button("返回选关", _back_to_select))
+	# 「返回选关」已在顶部工具条常驻，左栏不再重复一份。
 	box.add_child(_action_button("新手引导（怎么用）", func() -> void: _set_intro_visible(true, false)))
 	# 【为什么写这么长】2026-10-02 以"手机扫雷玩家"身份实测：他的第一反应是**左键点格子想开格**，
 	# 但在编辑器里左键 = 放雷；他还会**右键想插旗**，而编辑器里右键什么都不做（编辑器没有"旗帜"格型）。
@@ -1902,6 +1943,12 @@ func _build_props_tab() -> Control:
 	var box := VBoxContainer.new()
 	box.name = "属性"
 	box.add_theme_constant_override("separation", 4)
+	# 属性页太长时，先给一排“总开关”，再让每一组可折叠；不再要求用户一路滚 5000px。
+	var group_nav := HBoxContainer.new()
+	group_nav.add_theme_constant_override("separation", 6)
+	group_nav.add_child(_action_button("展开全部", func() -> void: _set_props_groups_collapsed(false)))
+	group_nav.add_child(_action_button("收起全部", func() -> void: _set_props_groups_collapsed(true)))
+	box.add_child(group_nav)
 	# 属性页最长（含"本盘问题"清单）：包一层滚动，避免矮窗口下把底部内容裁掉
 	var scroll := ScrollContainer.new()
 	# 页签名取这里（TabContainer 拿子节点名当标题）：实测它原来显示成内部名「属性页滚动」
@@ -2040,6 +2087,8 @@ func _build_props_tab() -> Control:
 	_build_domino_panel(box)
 	_build_stats_panel(box)
 	_build_color_lock_panel(box)
+	# 后处理：把“组标题 + 该组控件”包成可折叠区块。基础组默认展开，高级组默认收起。
+	_frame_props_groups(box)
 	scroll.add_child(box)
 	return scroll
 
@@ -2412,32 +2461,130 @@ func _find_group_host(node: Node) -> Container:
 	return null
 
 
+## 右栏属性页的组也做同样的可折叠后处理。基础组展开，高级组默认收起。
+func _frame_props_groups(root: Node) -> void:
+	var host := _find_group_host(root)
+	if host == null:
+		return
+	var runs: Array = []
+	var run: Array = []
+	for child in host.get_children():
+		if child is Label and (child as Label).has_meta("group_head") and not run.is_empty():
+			runs.append(run)
+			run = []
+		run.append(child)
+	if not run.is_empty():
+		runs.append(run)
+	for nodes in runs:
+		if (nodes as Array).is_empty():
+			continue
+		var header := (nodes as Array)[0] as Label
+		if header == null:
+			continue
+		var title := str(header.text)
+		_wrap_collapsible_group(host, nodes, _props_group_default_collapsed(title))
+		_props_group_headers.append(header)
+
+
+## 左栏套框：兼容旧调用名，但内部已经升级成“可折叠组”。
 func _wrap_in_frame(host: Container, nodes: Array) -> void:
+	var header := nodes[0] as Label
+	var title := str(header.text) if header != null else ""
+	_wrap_collapsible_group(host, nodes, _left_group_default_collapsed(title))
+
+
+## 真正的组容器：标题永远是 `inner` 的第 0 个子节点（兼容既有 UI 契约），正文放在 body 里。
+## 点击标题即可折叠/展开；折叠只影响可见性，控件、信号、文档状态都仍完整存在。
+func _wrap_collapsible_group(host: Container, nodes: Array, collapsed: bool) -> void:
 	var frame := PanelContainer.new()
-	# 主题面板自带的内边距是给弹窗用的（偏大）；左栏只有 356px 宽，套框后要留够文字宽度，
-	# 所以复制一份样式、换成薄边距 + 小圆角。拿不到 StyleBoxFlat（非平板主题）就不动它。
+	frame.set_meta("editor_group_frame", true)
+	# 主题面板自带的内边距是给弹窗用的（偏大）；左右只留 3px，避免面板内边距反过来撑宽画布。
 	var sb := frame.get_theme_stylebox("panel")
 	if sb is StyleBoxFlat:
 		var thin := (sb as StyleBoxFlat).duplicate() as StyleBoxFlat
-		# 【真机实测校准】左右只留 2px：左右内边距会**直接变成左栏的最小宽度** —— 实测 8+8 时
-		# 左栏从 356 撑到 372，棋盘被挤掉 16px（正是本仓明令防的"面板撑宽、棋盘变小"）。
-		# 边界的观感靠**框线 + 背景**，不靠内边距；上下留 6px 不占宽度，保住组内呼吸感。
-		thin.content_margin_left = 2.0
-		thin.content_margin_right = 2.0
+		thin.content_margin_left = 3.0
+		thin.content_margin_right = 3.0
 		thin.content_margin_top = 6.0
 		thin.content_margin_bottom = 6.0
 		thin.set_corner_radius_all(10)
 		frame.add_theme_stylebox_override("panel", thin)
 	frame.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var inner := VBoxContainer.new()
-	inner.add_theme_constant_override("separation", 6)
+	inner.add_theme_constant_override("separation", 4)
 	frame.add_child(inner)
 	var at := (nodes[0] as Node).get_index()
 	host.add_child(frame)
 	host.move_child(frame, at)
-	for n in nodes:
+	var header := nodes[0] as Label
+	if header != null:
+		host.remove_child(header)
+		inner.add_child(header)
+	var body := VBoxContainer.new()
+	body.add_theme_constant_override("separation", 4)
+	inner.add_child(body)
+	for i in range(1, nodes.size()):
+		var n: Node = nodes[i]
 		host.remove_child(n)
-		inner.add_child(n)
+		body.add_child(n)
+	if header != null:
+		_bind_collapsible(header, body, collapsed)
+
+
+func _bind_collapsible(header: Label, body: Control, collapsed: bool) -> void:
+	header.set_meta("collapse_base", header.text)
+	header.set_meta("collapse_body", body)
+	header.mouse_filter = Control.MOUSE_FILTER_STOP
+	# 手型光标：标题行现在**可点**，不给出这个提示的话没人知道它能点开。
+	header.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	header.tooltip_text = "点击展开 / 收起这一组"
+	header.gui_input.connect(func(ev: InputEvent) -> void:
+		if ev is InputEventMouseButton:
+			var mb := ev as InputEventMouseButton
+			if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+				_toggle_group(header))
+	_set_group_collapsed(header, body, collapsed)
+
+
+func _set_group_collapsed(header: Label, body: Control, collapsed: bool) -> void:
+	var base := str(header.get_meta("collapse_base", header.text))
+	header.text = base + ("  ▸" if collapsed else "  ▾")
+	header.set_meta("collapse_collapsed", collapsed)
+	body.visible = not collapsed
+
+
+func _toggle_group(header: Label) -> void:
+	var body_v: Variant = header.get_meta("collapse_body", null)
+	if not (body_v is Control):
+		return
+	_set_group_collapsed(header, body_v as Control, not bool(header.get_meta("collapse_collapsed", false)))
+
+
+func _set_props_groups_collapsed(collapsed: bool) -> void:
+	for header in _props_group_headers:
+		var body_v: Variant = header.get_meta("collapse_body", null)
+		if body_v is Control:
+			_set_group_collapsed(header, body_v as Control, collapsed)
+
+
+## 左栏默认只展开“当前图片要做的事”；设置、审核、自动生成这类低频组收起。
+func _left_group_default_collapsed(title: String) -> bool:
+	for keep in ["一关做完的四个步骤", "工具", "格型", "显示", "布雷", "编辑", "存档与分享"]:
+		if title.begins_with(keep):
+			return false
+	return true
+
+
+## 右栏属性默认只展开"创建一关的核心路径"，高级编辑能力一律收起。
+## 【真机实测 2026-10-09】收起后默认内容从 ≈5000px 降到 ≈1800px（视口 603px）：
+## 首屏看到的是"名字 / 棋盘 / 邻域 / 本盘问题 / 形状 / 折叠"，其余工具点一次标题就展开。
+## 【口径】这里用**前缀白名单**：新加的组不在名单里 ⇒ 默认收起（失败方向是安全的，
+## "多收一个"只是多点一下，"多开一个"就会把页面重新拉成一条几千像素的长条）。
+## 前缀要写全（「形状（六边形」而不是「形状」），否则会把「形状组合」这类高级组一起放过。
+func _props_group_default_collapsed(title: String) -> bool:
+	for keep in ["关卡名字", "棋盘", "边界与邻域", "本盘问题", "形状（六边形", "折叠（一张盘"]:
+		if title.begins_with(keep):
+			return false
+	return true
 
 
 func _plain_label(text: String) -> Label:
@@ -3462,6 +3609,8 @@ func _mega_drill_restore(d: Variant) -> bool:
 func _mark_dirty() -> void:
 	_dirty = true
 	_last_change_ms = Time.get_ticks_msec()
+	# 顶栏标题带「有没有未保存改动」的星号：它是全局状态，任何一次改动都要同步。
+	_refresh_topbar_title()
 	# 文档一变，热力图/回放这些"按当时盘面算出来的"派生视图立刻作废（见 `_invalidate_derived_views`）。
 	_invalidate_derived_views()
 
@@ -3624,9 +3773,23 @@ func _refresh_rule_report() -> void:
 	_rule_report.text = "\n".join(lines)
 
 
+## 顶栏标题：`关卡名 + 未保存星号`。全局状态，任何改动 / 存盘 / 换文档都要经过它刷新。
+func _refresh_topbar_title() -> void:
+	if _top_title_label == null:
+		return
+	if doc == null:
+		_top_title_label.text = "关卡编辑器"
+		return
+	var title := str(doc.title).strip_edges()
+	if title == "":
+		title = "未命名关卡"
+	_top_title_label.text = "%s%s   ｜ 关卡编辑器" % [title, " *" if _dirty else ""]
+
+
 func _refresh_status() -> void:
 	if doc == null:
 		return
+	_refresh_topbar_title()
 	_density_label.text = "总格数 %d，可用 %d，雷 %d，密度 %.1f%%" % [
 		doc.rows * doc.cols, doc.cell_count(), doc.mine_count(), doc.density() * 100.0]
 	# 状态栏的工具名**只有一份**（走 `_tool_name`）：这里原先**又抄了一张表**，于是新增工具要改两处，
@@ -5243,6 +5406,7 @@ func _save() -> void:
 		return
 	_current_path = path
 	_dirty = false
+	_refresh_topbar_title()
 	# 自己保存过 ⇒ 之后不再按只读处理（文件是我写的，锁也在我手上）。
 	_clear_read_only()
 	_refresh_open_list()
@@ -5898,6 +6062,7 @@ func _write_autosave() -> void:
 	# 三段式原子写：先写 tmp 再改名，避免断电/崩溃留下半截文件
 	DirAccess.rename_absolute(tmp, AUTOSAVE_PATH)
 	_dirty = false
+	_refresh_topbar_title()
 	_perf.report_ms(PERF_LEDGER.JOB_AUTOSAVE, float(Time.get_ticks_msec() - _auto_t0))
 
 
