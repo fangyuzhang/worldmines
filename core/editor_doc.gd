@@ -342,6 +342,16 @@ static func estimate_cells(shape_kind: String, shape_params: Dictionary, rows: i
 					if ShapeGenerator.MASK_FILLED.contains(s[i]):
 						n4 += 1
 			return n4
+		"voronoi":
+			# (p) Voronoi 不规则镶嵌：与 build_voronoi 同口径——复用同一批纯几何原语（确定性撒种 +
+			# 多源波前进归属 + 单体素轮廓），**不建 AdjacencyGrid、不写任何状态**。
+			# 种子来源二选一：显式 seeds（UI 拖动）优先，否则 sites/seed/jitter 确定性生成。
+			var v_cols := int(shape_params.get("cols", cols))
+			var v_rows := int(shape_params.get("rows", rows))
+			if v_cols <= 0 or v_rows <= 0:
+				return 0                     # 与 build_voronoi 的拒绝条件一致 ⇒ 0 格
+			return ShapeGenerator.voronoi_cells_geo(v_cols, v_rows,
+					ShapeGenerator.voronoi_seeds_of_params(v_cols, v_rows, shape_params)).size()
 		_:
 			return maxi(rows, 0) * maxi(cols, 0)
 

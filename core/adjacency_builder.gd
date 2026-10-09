@@ -131,6 +131,8 @@ static func from_polygons(cells: Variant, eps: float = EPS_DEFAULT,
 ##                      邻接始终由共边推得。
 ##   "tri"           —— {"cols":C, "rows":R}：等边三角网格（复用 ShapeGenerator 的三角几何）。
 ##   "mixed_hex_tri" —— {"cols":C, "rows":R}：六边形 + 三角形混合镶嵌（3.6.3.6）。
+##   "voronoi"     —— {"cols":C, "rows":R, "sites":S, "seed":N, ...}：(p) Voronoi 不规则镶嵌
+##                      （种子驱动的平面划分；同样只用几何，邻接由共边推得）。
 ## 形状为空 / 参数非法 / kind 未注册 → push_error + 返回 null。
 static func from_tiling(kind: String, params: Dictionary) -> AdjacencyGrid:
 	if kind == "rect":
@@ -162,6 +164,14 @@ static func from_tiling(kind: String, params: Dictionary) -> AdjacencyGrid:
 			recs = ShapeGenerator.tri_grid_cells_geo(
 					int(params.get("cols", 0)), int(params.get("rows", 0)))
 			style = "tri_grid"
+		"voronoi":
+			# (p) Voronoi 不规则镶嵌：几何复用 ShapeGenerator（同一批种子 / 波前进 / 轮廓原语），
+			# 邻接**不取它的边表**，而是把几何喂给 from_polygons 由共边重推 —— 这正是「用户自建棋盘」的同一路径。
+			var vc := int(params.get("cols", 0))
+			var vr := int(params.get("rows", 0))
+			recs = ShapeGenerator.voronoi_cells_geo(vc, vr,
+					ShapeGenerator.voronoi_seeds_of_params(vc, vr, params))
+			style = "voronoi"
 		"mixed_hex_tri":
 			# 3.6.3.6：蜂窝顶点长出六边形、晶格三角形长出小三角。几何复用 ShapeGenerator
 			# （同族已在 test_shape_generator / test_geo_levels 逐边复验），但**邻接不取它的边表**，
@@ -170,7 +180,7 @@ static func from_tiling(kind: String, params: Dictionary) -> AdjacencyGrid:
 					int(params.get("cols", 0)), int(params.get("rows", 0)))
 			style = "trihex"
 		_:
-			push_error("AdjacencyBuilder.from_tiling: 未注册的镶嵌 kind \"%s\"（可用：rect/hex/tri/mixed_hex_tri）" % kind)
+			push_error("AdjacencyBuilder.from_tiling: 未注册的镶嵌 kind \"%s\"（可用：rect/hex/tri/mixed_hex_tri/voronoi）" % kind)
 			return null
 	if recs.is_empty():
 		push_error("AdjacencyBuilder.from_tiling: %s 产出空形状（参数非法或规模为 0）" % kind)

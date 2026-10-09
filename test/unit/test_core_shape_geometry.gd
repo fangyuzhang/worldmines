@@ -504,7 +504,7 @@ func test_supported_combinations_yield_no_issue_and_unjudgeable_ones_are_skipped
 	assert_eq(EditorVerify.variant_grid_issues(foreign).size(), 0, "不臆造：外部拓扑不产条目")
 	# 不臆造③：未登记的 shape_kind ⇒ 同上。
 	var unknown := EditorDoc.new(9, 9)
-	unknown.shape_kind = "voronoi"
+	unknown.shape_kind = "hyperbolic"
 	unknown.clue_rule_id = "mx"
 	assert_eq(EditorVerify.grid_kind_of(unknown), "", "未登记族 ⇒ 空串")
 	assert_eq(EditorVerify.variant_grid_issues(unknown).size(), 0, "不臆造：未登记族不产条目")
@@ -599,11 +599,13 @@ func test_to_adjacency_grid_ring_is_a_dish_not_an_annulus() -> void:
 func test_to_adjacency_grid_unknown_kind_fails_loud() -> void:
 	# 【前/后行为】改前改后一致：未注册 kind ⇒ push_error + null（`_:` 分支**没有**任何默认几何）。
 	# 这条断言的意义是把"绝不静默兜底"钉死：将来若有人加"落到默认方阵/环盘"的分支，这里必红。
-	for bad: Variant in ["", "voronoi", "annulus_wrap", "ngon2", "rings", "Ring", " annulus",
+	for bad: Variant in ["", "hyperbolic", "annulus_wrap", "ngon2", "rings", "Ring", " annulus",
 			"annulus ", "ANNULUS", "default", "build_annulus"]:
 		assert_null(ShapeGenerator.to_adjacency_grid(str(bad), {}),
 				"未注册 kind「%s」必须显式失败（null），绝不许画出另一种几何" % str(bad))
 	# 已注册但参数类型错的 kind，也在入口处显式失败（既有 mask 分支），不产半成品。
+	# 已登记但参数退化的 kind 同样必须显式失败：voronoi 缺 cols / rows ⇒ 拒绝（null）。
+	assert_null(ShapeGenerator.to_adjacency_grid("voronoi", {}), "voronoi 缺 cols/rows ⇒ null")
 	assert_null(ShapeGenerator.to_adjacency_grid("mask", {"style": "hex", "mask": "not-an-array"}),
 			"mask 参数类型错误 ⇒ null")
 	assert_null(ShapeGenerator.to_adjacency_grid("ring", {"sectors": [2]}),

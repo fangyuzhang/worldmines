@@ -1987,6 +1987,7 @@ func _build_props_tab() -> Control:
 	_shape_opt.add_item("圆形", 3)
 	_shape_opt.add_item("星形（五角）", 4)
 	_shape_opt.add_item("扇形（90°）", 5)
+	_shape_opt.add_item("Voronoi 不规则镶嵌", 6)
 	_shape_opt.item_selected.connect(func(_i: int) -> void: _on_shape_selected())
 	box.add_child(_shape_opt)
 	var srow := HBoxContainer.new()
@@ -2368,6 +2369,9 @@ func _doc_to_ui() -> void:
 		"sector":
 			_shape_opt.selected = 5
 			_shape_size.value = int(doc.shape_params.get("radius", 4))
+		"voronoi":
+			_shape_opt.selected = 6
+			_shape_size.value = int(doc.shape_params.get("sites", 12))
 		_:
 			_shape_opt.selected = 0
 	_syncing = false
@@ -2506,6 +2510,8 @@ func _shape_kind_label(kind: String) -> String:
 			return "星形"
 		"sector":
 			return "扇形"
+		"voronoi":
+			return "Voronoi 不规则镶嵌"
 	return kind
 
 
@@ -2592,11 +2598,23 @@ func _on_shape_selected() -> void:
 			# 扇形：默认 0°→90° 的四分之一扇（顶点在下方）。
 			kind = "sector"
 			params = {"radius": shape_dim, "start_deg": 0.0, "end_deg": 90.0}
+		6:
+			# (p) Voronoi 不规则镶嵌：**盘面 = 当前棋盘的包围盒**（不像圆/星/扇那样自带尺寸），
+			# 「形状尺寸」在本族下 = **种子数**（每个种子一个不规则胞，形状随布局而变）。
+			# seed 固定 1：同一关重开得同一张盘（落盘后 params 里还会回显量化后的种子点）。
+			kind = "voronoi"
+			params = {"cols": int(_cols_spin.value), "rows": int(_rows_spin.value),
+					"sites": shape_dim, "seed": 1}
 		_:
 			kind = ""
 			params = {}
 	var est_rows := shape_dim if kind != "" else int(_rows_spin.value)
 	var est_cols := shape_dim if kind != "" else int(_cols_spin.value)
+	if kind == "voronoi":
+		# 本族的盘面尺寸就是棋盘包围盒（上面已写进 params）⇒ 估算必须用棋盘行列，
+		# 而不是 shape_dim（那是种子数）。否则估算会把 81×81 的盘当成 4×4。
+		est_rows = int(_rows_spin.value)
+		est_cols = int(_cols_spin.value)
 	# 【已删掉旧的包围盒兜底】那段曾把圆/星/扇的 est_rows/est_cols 覆盖成 (2r+1)²，
 	# 但 `EditorDoc.estimate_cells` 现在对这三族**按 shape_params 算精确几何格数**、根本不看
 	# 这两个参数 ⇒ 兜底早已失效（只有副作用：让人误以为它是防线）。真正的防线是

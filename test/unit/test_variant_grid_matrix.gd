@@ -28,9 +28,11 @@ const M := preload("res://core/variant_grid_matrix.gd")
 ## core/variant_grid_matrix.gd 的 ALL_KINDS / BBOX_SUBSET_KINDS）。
 ## 旧期望失效的原因：⑥ 的第二段要求"矩阵不得多出未对应任何生成入口的族"⇒ 生成入口进了两族、
 ## 本名单没跟，登记后反而会把矩阵判红 —— 是名单过期，不是断言过严。两条断言都原样保留。
+## 【2026-10-09】同一道理由再补一次（属“期望过期”）：(p) Voronoi 不规则镶嵌落地
+## （core/shape_generator.gd 的 (p) 段）并接入 to_adjacency_grid 与本矩阵 ⇒ 本名单 +1。
 const GENERATOR_KINDS: Array = [
 	"holed_grid", "hex", "t488", "iso_cubes", "tri_grid", "trihex", "t31212", "ring",
-	"circle", "star", "sector", "ngon", "annulus", "mask",
+	"circle", "star", "sector", "ngon", "annulus", "mask", "voronoi",
 ]
 
 
@@ -107,13 +109,14 @@ func test_degraded_cells_have_reason_and_list() -> void:
 func test_unknown_variant_and_grid_fall_back_to_disabled() -> void:
 	assert_eq(M.status("no_such_variant", M.RECT), M.DISABLED)
 	assert_ne(M.reason("no_such_variant", M.RECT).strip_edges(), "")
-	for bad_kind in ["voronoi", "", "hex6", "union", "rect_wap"]:
+	# 【2026-10-09】"voronoi" 已登记 ⇒ 本处换成真未登记的名字（不能用已有效的 kind 当反例）。
+	for bad_kind in ["hyperbolic", "", "hex6", "union", "rect_wap"]:
 		assert_eq(M.status("classic", bad_kind), M.DISABLED,
 				"未登记的网格族 %s 必须兜底为 DISABLED" % str(bad_kind))
 		assert_ne(M.reason("classic", bad_kind).strip_edges(), "",
 				"未登记的网格族 %s 必须给出原因" % str(bad_kind))
 	assert_eq(M.status("", ""), M.DISABLED, "双空查询也不得崩")
-	assert_eq(M.enabled_variants("voronoi").size(), 0, "未知族上没有可用变体")
+	assert_eq(M.enabled_variants("hyperbolic").size(), 0, "未知族上没有可用变体")
 
 
 func test_declared_geometry_matches_rule_plugin() -> void:

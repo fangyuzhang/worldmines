@@ -10,9 +10,10 @@
 #   本文件把「变体 × 网格族」钉成一张**数据表 + 三态查询**，门禁直接消费它，不必各自猜。
 #
 # 【网格族来自代码，不凭想象】
-#   14 族 = `core/shape_generator.gd` 的 `to_adjacency_grid(kind, ...)` 的 kind
+#   15 族 = `core/shape_generator.gd` 的 `to_adjacency_grid(kind, ...)` 的 kind
 #   （holed_grid / hex / t488 / iso_cubes / tri_grid / trihex / t31212 / ring / mask，
-#   加 (j)~(n) 参数化轮廓族 circle / star / sector / ngon / annulus），
+#   加 (j)~(n) 参数化轮廓族 circle / star / sector / ngon / annulus，
+#   加 2026-10-09 落地的 (p) Voronoi 不规则镶嵌 voronoi），
 #   与 HANDOFF 的形状族表、`ui/variant_catalog.gd:416-424` 的形状卡片同源。
 #   【2026-10-03 登记完成】`ngon` / `annulus` 随生成器落地（core/shape_generator.gd:846 / :869）
 #   与 `to_adjacency_grid` 的注册（:1155 / :1159）一并接入本矩阵；同轮补齐了
@@ -21,12 +22,16 @@
 #   其中 circle / star / sector / ngon / annulus 与 holed_grid 同为「整数格上的 Moore 8 邻子集」
 #   ——坐标轴仍是包围盒行列，只是盘内格不铺满（annulus 另有洞格）；
 #   故全局约束型在这五族上的三态与 holed_grid 同判（见下）。
+#   新增的 voronoi 是**第二类**（非缺格：它铺满包围盒，但格心不共行列）
+#   ⇒ 三态与缺格族**同判**（都是 DISABLED），但原因文案另写一类（见 _missing_axis_clause）。
 #   另加两个基线/结构族（都是仓库里真实走得到的盘）：
 #     · `rect`      —— 默认矩形盘：关卡无 `topology` ⇒ RectGrid（core/board.gd:164-171 else 分支）；
 #     · `rect_wrap` —— 环绕矩形盘：WrapTopology.build 产出邻接表（core/wrap_topology.gd:51-108）
 #                      ⇒ 关卡带 topology ⇒ 走 AdjacencyGrid ⇒ 同一道异形门控。
-#   Voronoi / 布尔复合格**在仓库里不存在**（docs/plans/2026-10-03-editor-feature-program.md:26
+#   布尔复合格**在仓库里不存在**（docs/plans/2026-10-03-editor-feature-program.md:26
 #   列为「必须先建子系统」）⇒ 查询落到未知族兜底（DISABLED + 原因），不臆造语义。
+#   【2026-10-09】Voronoi 已落地（shape_generator.gd 的 (p) 段 + to_adjacency_grid 的 voronoi 分支）
+#   ⇒ 从「未知族」移入本表，与其余异形族同口径（DISABLED + 可读原因）。
 #
 # 【变体的几何声明来自代码，不凭想象】
 #   适用性由变体自己的 `RulePlugin.geometry_kind()` 声明（core/rule_plugin.gd:47-58）决定：
@@ -78,9 +83,10 @@ const SECTOR := "sector"
 const NGON := "ngon"
 const ANNULUS := "annulus"
 const MASK := "mask"
+const VORONOI := "voronoi"
 
 const ALL_KINDS: Array = [RECT, RECT_WRAP, HOLED_GRID, HEX, T488, ISO_CUBES,
-		TRI_GRID, TRIHEX, T31212, RING, CIRCLE, STAR, SECTOR, NGON, ANNULUS, MASK]
+		TRI_GRID, TRIHEX, T31212, RING, CIRCLE, STAR, SECTOR, NGON, ANNULUS, MASK, VORONOI]
 
 # 「整数格上 Moore 8 邻的子集」= 缺格族：坐标轴仍是包围盒行列，但盘内格不铺满。
 # 用途有二（都是**族等价类**，不是三态判据本身）：
@@ -95,6 +101,12 @@ const ALL_KINDS: Array = [RECT, RECT_WRAP, HOLED_GRID, HEX, T488, ISO_CUBES,
 # （core/shape_generator.gd:861 / :890 → :967），而 `_outline_topo` = `_graph_from_dirs(cells, MOORE8)`
 # ⇒ 两者都是「整数格 + Moore 8 邻的子集」，与 circle / star / sector 同一几何族（annulus 还带洞格）。
 const BBOX_SUBSET_KINDS: Array = [HOLED_GRID, CIRCLE, STAR, SECTOR, NGON, ANNULUS]
+
+# 不规则镶嵌族（Voronoi）：**铺满**包围盒（不是缺格），但格心由种子布局决定
+#「行 / 列」不再是一条直线。与 BBOX_SUBSET_KINDS 的几何问题**不同源**（一个是缺格、
+#一个是不共行列）⇒ 三态同判（DISABLED）但**原因文案另写一类**
+#（见 _missing_axis_clause；硬塞进缺格类会把「铺满的盘」说成「有洞」，语义错）。
+const IRREGULAR_KINDS: Array = [VORONOI]
 
 # `mask` 是轮廓容器族：几何由 style 决定，取值 ⊆ ShapeGenerator.MASK_STYLES
 #（core/shape_generator.gd:53-54）。本表按这 3 族取**最保守者**（由 test 与常量交叉校验）。
@@ -152,7 +164,7 @@ static func reason(variant_id: String, grid_kind: String) -> String:
 	if not _variants().has(variant_id):
 		return "未登记的变体 id「%s」：矩阵只覆盖 VariantRegistry.all_codes() 的内置变体，未知变体一律禁用（不猜语义）。" % variant_id
 	if not is_known_grid_kind(grid_kind):
-		return "未登记的网格族「%s」：仓库里真实存在的只有 %s；不存在的族（如 Voronoi / 布尔复合格）一律禁用。" % [
+		return "未登记的网格族「%s」：仓库里真实存在的只有 %s；不存在的族（如布尔复合格 / 球面镶嵌）一律禁用。" % [
 			grid_kind, str(grid_kinds())]
 	var st := status(variant_id, grid_kind)
 	if st == OK:
@@ -351,6 +363,8 @@ static func _variants() -> Dictionary:
 ## DISABLED 原因里的「缺失的几何轴」一句——按族给，避免把环绕盘说成「有缺格」。
 ## 缺格族（BBOX_SUBSET_KINDS）与其余异形族几何问题不同源，文案也要不同源。
 static func _missing_axis_clause(grid_kind: String) -> String:
+	if IRREGULAR_KINDS.has(grid_kind):
+		return "对应的行 / 列 / 2×2 窗口 / 中轴 / 染色几何轴（不规则镶嵌：格心不共行列、胞的形状与大小随种子布局而异，包围盒坐标轴与盘面几何轴不再重合）"
 	if BBOX_SUBSET_KINDS.has(grid_kind):
 		return "对应的行 / 列 / 2×2 窗口 / 中轴 / 染色几何轴（缺格：洞格 / 轮廓外格使包围盒坐标轴与盘面几何轴不再重合）"
 	if grid_kind == RECT_WRAP:

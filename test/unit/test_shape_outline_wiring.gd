@@ -190,8 +190,9 @@ func test_matrix_only_generic_variant_is_ok_on_outline_kinds() -> void:
 
 
 func test_matrix_unknown_outline_like_kinds_still_fall_back() -> void:
-	# 不猜语义：未登记的相近名字（如布尔复合格 / Voronoi）必须 DISABLED + 原因，不崩。
-	for bad in ["circle_wrap", "star6", "sectorize", "voronoi", "union"]:
+	# 不猜语义：未登记的相近名字（如布尔复合格 / 双曲镶嵌）必须 DISABLED + 原因，不崩。
+	# 【2026-10-09】voronoi 已登记（(p) 段）⇒ 从本反例名单移出，改用仍未登记的近似名。
+	for bad in ["circle_wrap", "star6", "sectorize", "hyperbolic", "union"]:
 		assert_eq(M.status("classic", bad), M.DISABLED, "未登记族 %s 应 DISABLED" % bad)
 		assert_ne(M.reason("classic", bad).strip_edges(), "", "未登记族 %s 应给原因" % bad)
 
@@ -207,9 +208,11 @@ func test_shape_dropdown_selects_outline_families() -> void:
 	var sb := ed.get("_shape_size") as SpinBox
 	assert_not_null(opt, "应有形状下拉")
 	assert_not_null(sb, "应有形状尺寸控件")
-	assert_eq(opt.item_count, 6, "形状下拉应含 方阵/六边形/三角/圆/星/扇 六项")
+	assert_eq(opt.item_count, 7, "形状下拉应含 方阵/六边形/三角/圆/星/扇/Voronoi 七项")
 	# 索引 → (kind, 半径参数名)
-	var cases: Array = [[3, "circle", "radius"], [4, "star", "outer_radius"], [5, "sector", "radius"]]
+	# 【2026-10-09】+ (p) Voronoi：它的「形状尺寸」= 种子数（2 个以上），故 key 是 "sites" 而非半径。
+	var cases: Array = [[3, "circle", "radius"], [4, "star", "outer_radius"], [5, "sector", "radius"],
+			[6, "voronoi", "sites"]]
 	for c: Variant in cases:
 		var idx := int(c[0])
 		var kind := str(c[1])

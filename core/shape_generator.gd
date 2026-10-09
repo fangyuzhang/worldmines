@@ -1095,6 +1095,276 @@ static func _angle_deg(d: Vector2) -> float:
 	return fposmod(rad_to_deg(atan2(d.y, d.x)), 360.0)
 
 
+# ---------- (p) Voronoi 不规则镶嵌（种子点驱动、格心最近邻） ----------
+#
+# 【是什么】把包围盒 [0,cols)×[0,rows) 里的每个整数格交给**最近的种子**，同一个种子拿到的
+# 那一片格 = 一个**不规则多边形格**（Voronoi 胞）。种子不是纯随机撒点，而是“抖动晶格”：先按包围盒长宽比
+# 铺一层近方形的种子槽，再让每个种子在**自己的槽内**有界抖动。
+#   · 同参数 + 同 seed ⇒ 逐格 / 逐边 / 逐坐标完全一致的产物（落盘 / 回放 / 跨机器可复现）；
+#   · 抖动 ≤ 槽的半宽 ⇒ 不会出现纯随机撒点那种细长碎片（形状有变化但没有退化格）。
+#
+# 【为何是“格心分配”而不是解析半平面裁剪】本仓库的格身份就是整数 Vector2i（稀疏坐标 / 落盘
+# positions / CP-SAT 索引）。解析 Voronoi 的顶点是浮点，跨格共享的顶点必须**逐位相同**才对得上
+# `_vkey` 的量化键；格心分配让共享边天然落在**整数格角**上（顶点恒为整点），零浮点误差、
+# 零量化键风险 —— 与 (f)~(i) 四族「几何反推邻接」同一套口径。最近邻用**4 邻演化的
+# 多源波前进**（等价于格上的 L1 距离）而非欧氏距离：区域**恒为 4 连通**（构造保证，而非
+# 事后检查）⇒ 轮廓恒为单一简单环，不会出现对角掐点导致的自交多边形。
+#
+# 【邻接】复用 `build_from_cells`（共边判据）：两胞相邻 ⇔ 共享 ≥ min_edge 长度的边界。
+# 这就是 GDD §3 那条「两格共边很短就不算邻居」—— 本族把它落成 `min_edge`
+#（单位：格，默认 1.0 = 至少一整条单位边）；种子微动不会让邻接闪变（阈值吸收抖动），
+# 且**种子坐标落盘前一律经 quantize_seed 量化**（1/65536）⇒ 跨机器重生成结果一致。
+#
+# 【形状】胞是矩形化（rectilinear）多边形（放大看是阶正边）—— 这正是整数格上的 Voronoi。
+# 每个胞的边长序列 / 面积由种子布局决定 ⇒ 「种类多、好看」来自种子布局，而非硬编码形状表。
+
+
+## 种子坐标量化（1/65536）。GDD §3「Voronoi 种子坐标序列化要量化」的落点。
+static func quantize_seed(v: float) -> float:
+	var q := roundf(v * 65536.0)
+	return q / 65536.0
+
+
+## 抖动晶格撒种：count 个种子，落在 [0,cols]×[0,rows] 内，坐标已量化。
+## 确定性：同一组 (cols, rows, count, seed, jitter) ⇒ 逐点相同（RandomNumberGenerator 定种子）。
+## jitter ∈ [0, 0.9]：0 = 规则晶格（呆板但最均匀），0.9 = 最大抖动（仍不越槽 ⇒ 不产碎片）。
+static func voronoi_seeds(cols: int, rows: int, count: int, rng_seed: int, jitter: float = 0.9) -> Array:
+	var out: Array = []
+	if cols <= 0 or rows <= 0 or count <= 0:
+		return out
+	var j := clampf(jitter, 0.0, 0.9)
+	# 种子槽：按包围盒长宽比开方分配，槽数 ≥ count（多余的槽不用 ⇒ 产物确定）
+	var slots_c := maxi(1, mini(count, int(round(sqrt(float(count) * float(cols) / float(rows))))))
+	var slots_r := ceili(float(count) / float(slots_c))
+	var sw := float(cols) / float(slots_c)
+	var sh := float(rows) / float(slots_r)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = rng_seed
+	for idx in count:
+		var sc := idx % slots_c
+		@warning_ignore("integer_division")
+		var sr := idx / slots_c
+		var ox := (rng.randf() * 2.0 - 1.0) * 0.5 * j * sw
+		var oy := (rng.randf() * 2.0 - 1.0) * 0.5 * j * sh
+		out.append(Vector2(
+				quantize_seed(clampf((float(sc) + 0.5) * sw + ox, 0.0, float(cols))),
+				quantize_seed(clampf((float(sr) + 0.5) * sh + oy, 0.0, float(rows)))))
+	return out
+
+
+## 种子 → 每个种子的**唯一**格坐标（= 含该种子的那个格；撞位时按确定性的最近空位挪开）。
+## 同一个格只能当一个胞的身份：这是 `build_from_cells`（pos 不得重复）的硬前置。
+static func voronoi_seed_positions(seeds: Array, cols: int, rows: int) -> Array:
+	var used := {}
+	var out: Array = []
+	for i in seeds.size():
+		var s: Vector2 = seeds[i]
+		var base := Vector2i(clampi(floori(s.x), 0, maxi(cols - 1, 0)),
+				clampi(floori(s.y), 0, maxi(rows - 1, 0)))
+		var p := base
+		if used.has(p):
+			p = _nearest_free_lattice(base, used, cols, rows)
+		used[p] = true
+		out.append(p)
+	return out
+
+
+## 从 base 出发按 (距离, y, x) 序找最近的未占用整点（确定性；区域 ≤ cols×rows ⇒ 必有解）。
+static func _nearest_free_lattice(base: Vector2i, used: Dictionary, cols: int, rows: int) -> Vector2i:
+	var best := Vector2i(-1, -1)
+	var best_d := 1 << 60
+	for y in rows:
+		for x in cols:
+			var p := Vector2i(x, y)
+			if used.has(p):
+				continue
+			var dd := (p - base).length_squared()
+			if dd < best_d or (dd == best_d and _lattice_lt(p, best)):
+				best_d = dd
+				best = p
+	return best
+
+
+## 整点字典序（y 优先，再 x）—— 抬头平局时的确定性拆线器。
+static func _lattice_lt(a: Vector2i, b: Vector2i) -> bool:
+	return a.y < b.y or (a.y == b.y and a.x < b.x)
+
+
+## 多源波前进（4 邻）：返回 {种子序号: Array[Vector2i]}。
+## 等价于「格上最近种子」（L1 距离）；同距时按**入队顺序**（= 种子序号）决定
+## ⇒ 与遍历顺序无关。区域**恒为 4 连通**（构造保证）。
+static func voronoi_regions(cols: int, rows: int, seed_positions: Array) -> Dictionary:
+	var owners := {}
+	var owner_of := {}
+	var queue: Array = []
+	for i in seed_positions.size():
+		var p: Vector2i = seed_positions[i]
+		owners[i] = []
+		if p.x < 0 or p.y < 0 or p.x >= cols or p.y >= rows:
+			continue
+		if owner_of.has(p):
+			continue
+		owner_of[p] = i
+		(owners[i] as Array).append(p)
+		queue.append(p)
+	var head := 0
+	while head < queue.size():
+		var cur: Vector2i = queue[head]
+		head += 1
+		var who: int = owner_of[cur]
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var nb: Vector2i = cur + (d as Vector2i)
+			if nb.x < 0 or nb.y < 0 or nb.x >= cols or nb.y >= rows:
+				continue
+			if owner_of.has(nb):
+				continue
+			owner_of[nb] = who
+			(owners[who] as Array).append(nb)
+			queue.append(nb)
+	return owners
+
+
+## 单位方格集合 → 矩形化边界多边形（顶点恒为**整点**；返回空数组 = 区域不是单一简单环）。
+## 单一简单环 ⇔ 每个整点最多一条出边（无对角掐点、无洞）。不满足时宁可返回空让调用方拒绝，
+## 也不产自交多边形（与 shape_generator 一贯的「不静默产半成品」同口径）。
+static func _region_outline(region: Array) -> PackedVector2Array:
+	var inset := {}
+	for p: Vector2i in region:
+		inset[p] = true
+	var nexts := {}
+	for p2: Vector2i in region:
+		var x := p2.x
+		var y := p2.y
+		if not inset.has(Vector2i(x, y - 1)) and not _add_dir_edge(nexts, Vector2i(x, y), Vector2i(x + 1, y)):
+			return PackedVector2Array()
+		if not inset.has(Vector2i(x + 1, y)) and not _add_dir_edge(nexts, Vector2i(x + 1, y), Vector2i(x + 1, y + 1)):
+			return PackedVector2Array()
+		if not inset.has(Vector2i(x, y + 1)) and not _add_dir_edge(nexts, Vector2i(x + 1, y + 1), Vector2i(x, y + 1)):
+			return PackedVector2Array()
+		if not inset.has(Vector2i(x - 1, y)) and not _add_dir_edge(nexts, Vector2i(x, y + 1), Vector2i(x, y)):
+			return PackedVector2Array()
+	if nexts.is_empty():
+		return PackedVector2Array()
+	var start: Vector2i = nexts.keys()[0]
+	var poly := PackedVector2Array()
+	var cur := start
+	while true:
+		poly.append(Vector2(cur))
+		if not nexts.has(cur):
+			return PackedVector2Array()
+		cur = nexts[cur]
+		if cur == start:
+			break
+	if poly.size() != nexts.size():
+		return PackedVector2Array()      # 多个回路（带洞 / 不连通）⇒ 拒绝
+	return poly
+
+
+## 收一条有向边界边；同一整点已经有出边 ⇒ 该顶点是「对角掐点」⇒ false。
+static func _add_dir_edge(nexts: Dictionary, a: Vector2i, b: Vector2i) -> bool:
+	if nexts.has(a):
+		return false
+	nexts[a] = b
+	return true
+
+
+## 归一化外部传入的二维点：接受 Vector2 / {"x","y"} / [x,y]；其余 → null。
+static func _to_vec2(v: Variant) -> Variant:
+	if v is Vector2:
+		return v
+	if v is Dictionary and (v as Dictionary).has("x") and (v as Dictionary).has("y"):
+		var dd: Dictionary = v
+		return Vector2(float(dd["x"]), float(dd["y"]))
+	if v is Array and (v as Array).size() == 2:
+		var aa: Array = v
+		return Vector2(float(aa[0]), float(aa[1]))
+	return null
+
+
+## 种子来源：显式 seeds 优先（UI 拖动种子点走这条）；否则按 sites/seed/jitter 确定性生成。
+## 静默返回空数组 = 参数不可用（报错交给 build_voronoi 的 _reject，保证估算路径不刷控制台）。
+static func voronoi_seeds_of_params(cols: int, rows: int, params: Dictionary) -> Array:
+	var raw: Variant = params.get("seeds", null)
+	if raw is Array and not (raw as Array).is_empty():
+		var out: Array = []
+		for e in (raw as Array):
+			var p: Variant = _to_vec2(e)
+			if p == null:
+				return []
+			var pv: Vector2 = p
+			out.append(Vector2(quantize_seed(pv.x), quantize_seed(pv.y)))
+		return out
+	var n := int(params.get("sites", 0))
+	if n <= 0:
+		return []
+	return voronoi_seeds(cols, rows, n, int(params.get("seed", 1)), float(params.get("jitter", 0.9)))
+
+
+## 种子 → 胞几何（[{pos, poly}]）。参数非法 / 病态种子 ⇒ 空数组。
+static func voronoi_cells_geo(cols: int, rows: int, seeds: Array) -> Array:
+	if cols <= 0 or rows <= 0 or seeds.is_empty():
+		return []
+	if seeds.size() > cols * rows:
+		push_error("ShapeGenerator.voronoi_cells_geo: 种子数 %d 超过可分配的格数 %d（%d×%d）" % [
+				seeds.size(), cols * rows, cols, rows])
+		return []
+	var seed_pos := voronoi_seed_positions(seeds, cols, rows)
+	var regions := voronoi_regions(cols, rows, seed_pos)
+	var out: Array = []
+	for i in seeds.size():
+		var region: Array = regions[i]
+		if region.is_empty():
+			continue
+		var poly := _region_outline(region)
+		if poly.is_empty():
+			push_error("ShapeGenerator.voronoi_cells_geo: 第 %d 号种子的胞不是单一简单环（病态种子布局）" % i)
+			return []
+		out.append({"pos": seed_pos[i], "poly": poly})
+	return out
+
+
+## 落盘用的 params 回显：种子点**量化后**写进产物（GDD：种子坐标序列化要量化），
+## 这样别的机器按 seeds 重建得到同一张盘（不依赖 RNG 实现细节）；min_edge 只在非默认时回显
+##（与 ngon/annulus 的 tier 同口径：默认档不写 ⇒ 既有产物字段零变化）。
+static func _voronoi_echo_params(cols: int, rows: int, params: Dictionary, seeds: Array) -> Dictionary:
+	var seed_list: Array = []
+	for s: Vector2 in seeds:
+		seed_list.append({"x": quantize_seed(s.x), "y": quantize_seed(s.y)})
+	var out := {"cols": cols, "rows": rows, "seeds": seed_list}
+	if params.has("min_edge") and not is_equal_approx(float(params["min_edge"]), 1.0):
+		out["min_edge"] = float(params["min_edge"])
+	return out
+
+
+## (p) Voronoi 不规则镶嵌：种子驱动、格心最近邻、共边反推邻接。
+## params：
+##   cols / rows  —— 包围盒尺寸（正整数；≤ 0 ⇒ 拒绝）
+##   sites        —— 种子数（≥ 1；与 seeds 二选一）
+##   seed         —— 确定性 RNG 种子（默认 1；同 seed 同产物）
+##   jitter       —— 抖动幅度 0..0.9（默认 0.9）
+##   min_edge     —— 邻接阈值：共边短于该长度（单位：格）不算邻居（默认 1.0）
+##   seeds        —— 显式种子 [{x,y}, …]（浮点，落盘前按 quantize_seed 量化）；
+##                   给了它就忽略 sites/seed/jitter（UI 拖动种子点走这条）
+static func build_voronoi(cols: int, rows: int, params: Dictionary = {}) -> Dictionary:
+	if cols <= 0 or rows <= 0:
+		return _reject("build_voronoi", "cols / rows 必须为正整数（收到 %d×%d）" % [cols, rows])
+	var min_edge := float(params.get("min_edge", 1.0))
+	if not is_finite(min_edge) or min_edge < 0.0:
+		return _reject("build_voronoi", "min_edge 必须是非负有限数（收到 %s）：它是「共边短于该长度不算邻居」的阈值" % str(params.get("min_edge", null)))
+	var seeds := voronoi_seeds_of_params(cols, rows, params)
+	if seeds.is_empty():
+		return _reject("build_voronoi", "种子为空：sites 必须 ≥ 1（收到 %s），或直接给非空 seeds 列表" % str(params.get("sites", null)))
+	var why := _budget_reason(float(seeds.size()))
+	if why != "":
+		return _reject("build_voronoi", why)
+	var geo := voronoi_cells_geo(cols, rows, seeds)
+	if geo.is_empty():
+		return _reject("build_voronoi", "Voronoi 胞为空（种子过密或布局病态）")
+	# 邻接阈值 → 共边判据：共享 (L+1) 个顶点 ⇔ 共享边长 ≥ L
+	var min_shared := maxi(2, ceili(min_edge) + 1)
+	return build_from_cells(geo, "voronoi", _voronoi_echo_params(cols, rows, params, seeds), min_shared)
+
+
 ## 便利入口（供上层接线用）：按 kind + params 直接产出可用的 AdjacencyGrid。
 ## kind / params：
 ##   "holed_grid" —— {"rows":R, "cols":C, "holes":[...]}（holes 可省）
@@ -1113,6 +1383,9 @@ static func _angle_deg(d: Vector2) -> float:
 ##                    (n) 参数化轮廓族；precision 可省默认 24，可选 tier）
 ##   "mask"       —— {"style":S, "mask":[...]}（S ∈ holed_grid/hex/t488；mask = build_from_mask
 ##                    的 ASCII 轮廓；落盘 params = {"mask": mask}，供 JSON 审计）
+##   "voronoi"    —— {"cols":C, "rows":R, "sites":S, "seed":N, "jitter":j, "min_edge":L}
+##                    （(p) Voronoi 不规则镶嵌：抖动晶格撒种 + 格心最近邻；也可直接给
+##                     seeds=[{x,y},…]（形式），带源回显的种子点供重建。详见 (p) 段）
 ## ⚠ **这就是上面 (m)/(n) 的"正确落点"**：DAG（ShapeDag）的 primitive "ring" = annulus（内圆挖空），
 ##   而本入口的 kind "ring" = **同心环盘**（多格 + 角向闭环，参数 sectors/step_deg/r0/dr）——**同名不同义**。
 ##   调用方必须按自己的命名空间传 kind：拿 DAG 的 shape 名直接喂本函数就会撞名、静默产出错几何。
@@ -1170,10 +1443,13 @@ static func to_adjacency_grid(kind: String, params: Dictionary) -> AdjacencyGrid
 				return null
 			var mask_arr: Array = mask_v
 			topo = build_from_mask(str(params.get("style", "")), mask_arr, {"mask": mask_arr})
+		"voronoi":
+			# (p) Voronoi 不规则镶嵌：抖动晶格撒种 / 显式 seeds + 格心最近邻（细节见 (p) 段）。
+			topo = build_voronoi(int(params.get("cols", 0)), int(params.get("rows", 0)), params)
 		_:
 			# 显式失败（**唯一的兜底**）：不注册就报错 + null，绝不"就近挑一个盘画出来"。
 			# 这里刻意不写任何默认几何 —— 历史上"默认分支画方阵/环盘"正是静默错几何的根源。
-			push_error("ShapeGenerator.to_adjacency_grid: 未注册的形状 kind \"%s\"（可用：holed_grid/hex/t488/iso_cubes/tri_grid/trihex/t31212/ring/ngon/annulus/circle/star/sector/mask）" % kind)
+			push_error("ShapeGenerator.to_adjacency_grid: 未注册的形状 kind \"%s\"（可用：holed_grid/hex/t488/iso_cubes/tri_grid/trihex/t31212/ring/ngon/annulus/circle/star/sector/mask/voronoi）" % kind)
 			return null
 	var positions: Array = topo["positions"]
 	if positions.is_empty():

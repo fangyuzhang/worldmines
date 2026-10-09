@@ -41,7 +41,7 @@ $map = @{
     'level_editor'   = @('test_editor_ux', 'test_level_editor_smoke')
     'editor_canvas'  = @('test_level_editor_smoke')
     'editor_help'    = @('test_editor_ux')
-    'editor_doc'     = @('test_editor_doc', 'test_editor_verify', 'test_editor_ux')
+    'editor_doc'     = @('test_editor_doc', 'test_editor_verify', 'test_editor_ux', 'test_voronoi_tiling')
     'batch_forge'    = @('test_batch_forge', 'test_level_sets')
     'workshop_pack'  = @('test_workshop_pack', 'test_mod_import', 'test_example_mod')
     'level_sets'     = @('test_level_sets', 'test_batch_forge')
@@ -75,10 +75,12 @@ $map = @{
     # 由实测输出补：`shape_generator` 之前也漏（改它会映射不到用例）。
     # ⚠ 不要在此重复已有键（`editor_canvas` 上方已定义）——PowerShell 哈希表重复键会**解析失败**，
     # 把整个增量门禁弄坏（2026-10-03 我当场犯过这个错，立刻撤回）。
-    'shape_generator' = @('test_shape_generator_params', 'test_shape_outline_wiring')
+    'shape_generator' = @('test_shape_generator_params', 'test_shape_outline_wiring', 'test_voronoi_tiling')
+    # 2026-10-09 补：(p) Voronoi 不规则镶嵌接进 `from_tiling`（自建棋盘路径）后，改了它也要重跑该用例。
+    'adjacency_builder' = @('test_voronoi_tiling')
     # 由实跑输出补（只补**有据可查**的；`board`/`gen_common`/`gen_shape_levels`/`gen_style_shape_levels`
     # 目前没有确定对应的用例文件 ⇒ **故意不猜**，脚本会照旧提示"映射表里没有它"，提醒跑全量）。
-    'variant_grid_matrix' = @('test_variant_grid_matrix')
+    'variant_grid_matrix' = @('test_variant_grid_matrix', 'test_voronoi_tiling')
     'variant_registry' = @('test_variant_catalog')
     'gen_geo_levels'  = @('test_geo_levels')
     # 2026-10-09 补：本轮新增/接线用到的 core 模块（之前不在映射表 ⇒ 改了它们增量门禁会漏测）。

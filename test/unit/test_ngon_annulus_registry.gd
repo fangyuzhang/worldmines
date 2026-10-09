@@ -188,8 +188,11 @@ func test_legacy_kind_judgements_did_not_change() -> void:
 	var reg := RuleRegistry.default()
 	for k in LEGACY_GENERATOR_KINDS:
 		assert_true(M.is_known_grid_kind(str(k)), "既有族 %s 不得被改名 / 删除" % str(k))
-	assert_eq(M.grid_kinds().size(), LEGACY_GENERATOR_KINDS.size() + NEW_KINDS.size() + 2,
-		"族数应恰为 12（既有生成入口）+ 2（新增）+ 2（rect / rect_wrap 结构基线）")
+	# 【2026-10-09 契约变更（期望过期，非放松）】又新增了 (p) Voronoi 不规则镶嵌 1 族
+	# （core/shape_generator.gd 的 (p) 段 + to_adjacency_grid 的 voronoi 分支）。本文件为 ngon/annulus
+	# 的登记自证，故只同步“族数”这一条；voronoi 的细节组断言在 test_voronoi_tiling.gd。
+	assert_eq(M.grid_kinds().size(), LEGACY_GENERATOR_KINDS.size() + NEW_KINDS.size() + 1 + 2,
+		"族数应恰为 12（既有生成入口）+ 2（ngon/annulus）+ 1（voronoi）+ 2（rect / rect_wrap 结构基线）")
 	for id in VariantRegistry.all_codes():
 		var rule: Object = reg.resolve(StringName(id))
 		assert_not_null(rule, "%s 应已注册（依赖 test/_pre_run.gd 装配备用算子包）" % id)
