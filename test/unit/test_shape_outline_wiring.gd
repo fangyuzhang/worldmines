@@ -208,11 +208,12 @@ func test_shape_dropdown_selects_outline_families() -> void:
 	var sb := ed.get("_shape_size") as SpinBox
 	assert_not_null(opt, "应有形状下拉")
 	assert_not_null(sb, "应有形状尺寸控件")
-	assert_eq(opt.item_count, 7, "形状下拉应含 方阵/六边形/三角/圆/星/扇/Voronoi 七项")
-	# 索引 → (kind, 半径参数名)
+	assert_eq(opt.item_count, 8, "形状下拉应含 方阵/六边形/三角/圆/星/扇/Voronoi/等轴菱面 八项")
+	# 索引 → (kind, 尺寸参数名)
 	# 【2026-10-09】+ (p) Voronoi：它的「形状尺寸」= 种子数（2 个以上），故 key 是 "sites" 而非半径。
+	# 【2026-10-09】+ (q) 等轴菱面：它的「形状尺寸」= 方块域边长，key 是 "cols"（rows 同值）。
 	var cases: Array = [[3, "circle", "radius"], [4, "star", "outer_radius"], [5, "sector", "radius"],
-			[6, "voronoi", "sites"]]
+			[6, "voronoi", "sites"], [7, "iso_cubes", "cols"]]
 	for c: Variant in cases:
 		var idx := int(c[0])
 		var kind := str(c[1])
@@ -242,6 +243,61 @@ func test_shape_dropdown_selects_outline_families() -> void:
 	ed.call("_on_shape_selected")
 	assert_almost_eq(float(d.shape_params.get("start_deg", -1.0)), 0.0, 0.0001, "扇形默认 start=0°")
 	assert_almost_eq(float(d.shape_params.get("end_deg", -1.0)), 90.0, 0.0001, "扇形默认 end=90°")
+
+
+## (q) 等轴菱面：语义与既有族**不同**的地方要单独钉住，免得以后被"统一"掉。
+func test_iso_cubes_shape_writes_square_cube_domain() -> void:
+	var ed := _make_editor()
+	var d := EditorDoc.new(9, 9)
+	ed.doc = d
+	ed.call("_doc_to_ui")
+	var opt := ed.get("_shape_opt") as OptionButton
+	var sb := ed.get("_shape_size") as SpinBox
+	opt.selected = 7
+	sb.value = 3
+	ed.call("_on_shape_selected")
+	assert_eq(d.shape_kind, "iso_cubes", "第 8 项应写入 iso_cubes")
+	assert_eq(int(d.shape_params.get("cols", -1)), 3, "「形状尺寸」应写成方块域 cols")
+	assert_eq(int(d.shape_params.get("rows", -1)), 3, "「形状尺寸」应写成方块域 rows（正方形域）")
+	assert_eq(d.shape_params.get("holes", null), [], "编辑器入口只产实心方块阵列（洞留给离线生成器）")
+	# 盘面 = 3n × n，格数 = 3n²（每方块 3 个面）——与 build_iso_cubes 同口径。
+	var g := d.grid() as AdjacencyGrid
+	assert_not_null(g, "iso_cubes 应能建出 AdjacencyGrid")
+	assert_eq(g.cell_count(), 27, "3×3 个方块 = 27 格（每方块 3 个面）")
+	var sz := AdjacencyGrid.normalized(g).size()
+	assert_eq(Vector2i(sz.x, sz.y), Vector2i(9, 3), "盘面包围盒应为 3n × n")
+	assert_eq(Vector2i(d.cols, d.rows), Vector2i(9, 3), "doc 的 size 必须同步成包围盒（否则雷位会判越界）")
+	# 回填：打开这样一份关卡，下拉与尺寸控件要对得上。
+	d.cols = 9
+	d.rows = 3
+	ed.call("_doc_to_ui")
+	assert_eq(opt.selected, 7, "回读后下拉应指回等轴菱面")
+	assert_eq(int(sb.value), 3, "回读后「形状尺寸」应取 cols（3），不是包围盒宽度（9）")
+
+
+## (q) 等轴菱面的结构硬上限：盘面 3n² 格必须在 MAX_CELLS 以内，
+## 40×40 的方块域 = 120×40 = 4800 格 > 4096 ⇒ 必须被闸门拦住、不动文档（而不是"能编辑、不能玩"）。
+func test_iso_cubes_blocks_over_bbox_request() -> void:
+	var ed := _make_editor()
+	var d := EditorDoc.new(9, 9)
+	ed.doc = d
+	ed.call("_doc_to_ui")
+	var opt := ed.get("_shape_opt") as OptionButton
+	var sb := ed.get("_shape_size") as SpinBox
+	# 先验闸门本身（便宜上界 + 精确包围盒两道取更严）。
+	var over: Dictionary = {"cols": 40, "rows": 40, "holes": []}
+	assert_false(bool(ed.call("_budget_allows", "iso_cubes", over, 40, 40)),
+			"40×40 方块域（120×40=4800 格）应超结构硬上限")
+	assert_true(bool(ed.call("_budget_allows", "iso_cubes", {"cols": 36, "rows": 36, "holes": []}, 36, 36)),
+			"36×36 方块域（108×36=3888 格）应放行")
+	# 走真实路径：把尺寸控件放开上限后设为 40，选等轴菱面 ⇒ 文档不得被改动（下拉被拉回）。
+	opt.selected = 7
+	sb.allow_greater = true
+	sb.value = 40
+	ed.call("_on_shape_selected")
+	assert_eq(d.shape_kind, "", "超上限选择必须被闸门拦住：doc.shape_kind 不得改动")
+	assert_eq(d.shape_params, {}, "超上限选择必须被闸门拦住：doc.shape_params 不得写入")
+	assert_eq(opt.selected, 0, "被拦后下拉应被拉回文档当前值（方阵）")
 
 
 func test_shape_dropdown_blocks_over_budget_request() -> void:

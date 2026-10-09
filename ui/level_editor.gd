@@ -1998,7 +1998,7 @@ func _build_props_tab() -> Control:
 		+ "如果下面的「本盘问题」冒出红字，照着它说的改就行。"))
 
 	# 形状族：借 `ShapeGenerator` 的实现（这里接最常用的两族 + 参数化轮廓三族；加族只需再加一个分支）
-	box.add_child(_section_label("形状（六边形 / 三角 / 圆 / 星 / 扇）"))
+	box.add_child(_section_label("形状（六边形 / 三角 / 圆 / 星 / 扇 / 不规则 / 等轴菱面）"))
 	_shape_opt = OptionButton.new()
 	_shape_opt.add_item("方形网格（默认）", 0)
 	_shape_opt.add_item("蜂窝六边形", 1)
@@ -2007,6 +2007,7 @@ func _build_props_tab() -> Control:
 	_shape_opt.add_item("星形（五角）", 4)
 	_shape_opt.add_item("扇形（90°）", 5)
 	_shape_opt.add_item("Voronoi 不规则镶嵌", 6)
+	_shape_opt.add_item("等轴菱面（错觉立方体）", 7)
 	_shape_opt.item_selected.connect(func(_i: int) -> void: _on_shape_selected())
 	box.add_child(_shape_opt)
 	var srow := HBoxContainer.new()
@@ -2020,7 +2021,8 @@ func _build_props_tab() -> Control:
 	srow.add_child(_shape_size)
 	box.add_child(srow)
 	box.add_child(_plain_label("选形状后，邻域/边界控件不适用；雷位与障碍照常编辑。"
-		+ "「形状尺寸」对圆 / 星 / 扇形是半径（格）。"))
+		+ "「形状尺寸」对圆 / 星 / 扇形是半径（格），对 Voronoi 是种子个数，"
+		+ "对等轴菱面是方块域边长（棋盘按 3 格一行展开：每 3 格 = 同一个方块的三个面）。"))
 	_build_shape_compose(box)
 	# 文字转形状（文档 §3，「文字转形状」入口）：core 已单测，这里只补输入与写回。
 	_build_text_shape_entry(box)
@@ -2392,6 +2394,11 @@ func _doc_to_ui() -> void:
 		"voronoi":
 			_shape_opt.selected = 6
 			_shape_size.value = int(doc.shape_params.get("sites", 12))
+		"iso_cubes":
+			# 本族盘面是 3×cols × rows 的包围盒，但「形状尺寸」记的是**方块域边长**（cols），
+			# 回填必须取 cols（取 rows 也行——UI 只会写成正方形域），不能用包围盒宽度。
+			_shape_opt.selected = 7
+			_shape_size.value = int(doc.shape_params.get("cols", 4))
 		_:
 			_shape_opt.selected = 0
 	_syncing = false
@@ -2452,6 +2459,16 @@ func _shape_bbox_size(kind: String, params: Dictionary) -> Vector2i:
 ## ⇒ 不能拿 `estimate_cells`（格数）去比 4096。先用便宜上界 (2r+1)² 排除，只有它超了才真建一次盘
 ## 取精确包围盒——所以圆/星只在边界那一两档付这笔钱，常规半径零开销。
 func _shape_bbox_over(kind: String, params: Dictionary) -> bool:
+	if kind == "iso_cubes":
+		# 等轴菱面没有半径参数 ⇒ 上面那条 (2r+1)² 快速排除在本族会退化成 1×1、永远放行。
+		# 换成它的**便宜上界**：盘面 ≈ (3·cols) × rows（每方块 3 格一行，洞只会更小）。
+		# 上界都没超就直接放行；只有贴边（可能超 MAX_CELLS）才真建一次盘取精确包围盒。
+		var ic := maxi(int(params.get("cols", 0)), 0)
+		var ir := maxi(int(params.get("rows", 0)), 0)
+		if 3 * ic * ir <= EditorDoc.MAX_CELLS:
+			return false
+		var isz := _shape_bbox_size(kind, params)
+		return isz.x * isz.y > EditorDoc.MAX_CELLS
 	var side := 2 * _shape_radius_of(kind, params) + 1
 	if side * side <= EditorDoc.MAX_CELLS:
 		return false
@@ -2471,16 +2488,28 @@ func _shape_radius_allowed(kind: String, params: Dictionary) -> bool:
 ##   A. 生成器闭式上界 > MAX_CELL_BUDGET(5000) ⇒ `build_*` 直接返回 0 格（盘会变空）；
 ##   B. 包围盒 rows*cols > MAX_CELLS(4096) ⇒ 校验报错、不能试玩/保存、重导入被拒（能编辑、不能玩）。
 func _shape_upper_bound_reason(kind: String, params: Dictionary) -> String:
-	if kind != "circle" and kind != "star" and kind != "sector":
+	# 有"生成器闭式上界"的只有圆 / 星 / 扇三族（见 `_shape_upper_bound`）；等轴菱面没有那道闸，
+	# 但它有结构硬上限（盘面 3·n² 格 vs MAX_CELLS）⇒ 同样走本函数给可读原因。
+	var contour := kind == "circle" or kind == "star" or kind == "sector"
+	if not contour and kind != "iso_cubes":
 		return ""
 	var label := _shape_kind_label(kind)
 	var r := _shape_radius_of(kind, params)
-	if int(clampf(_shape_upper_bound(kind, params), 0.0, 9.0e18)) > EditorDoc.MAX_CELL_BUDGET:
+	if contour and int(clampf(_shape_upper_bound(kind, params), 0.0, 9.0e18)) > EditorDoc.MAX_CELL_BUDGET:
 		var rmax_gen := _max_usable_shape_radius(kind, params)
 		return "%s：当前半径 %d 过大——生成器为避免盘爆炸会直接放弃（返回 0 个格子，盘会变空）。\n" % [
 				label, r] + "可用上限约 %d 格：请把「形状尺寸」调到 %d 以内再试。" % [rmax_gen, rmax_gen]
 	if _shape_bbox_over(kind, params):
 		var sz := _shape_bbox_size(kind, params)
+		if kind == "iso_cubes":
+			# 可用上限：3·n² ≤ MAX_CELLS ⇒ n ≤ √(MAX_CELLS/3)（UI 只会写成 cols=rows 的正方形域）。
+			var nmax := maxi(int(sqrt(float(EditorDoc.MAX_CELLS) / 3.0)), 1)
+			return "%s：当前方块域 %d×%d 展开成盘面 %d×%d 共 %d 格，超过硬上限 %d" % [
+					label, int(params.get("cols", 0)), int(params.get("rows", 0)),
+					sz.x, sz.y, sz.x * sz.y, EditorDoc.MAX_CELLS] \
+					+ "（能编辑、不能试玩/保存，重新导入会被拒）。\n" \
+					+ "可用上限约 %d×%d 个方块域（每方块 3 格）：请把「形状尺寸」调到 %d 以内再试。" % [
+							nmax, nmax, nmax]
 		var rmax := _max_usable_shape_radius(kind, params)
 		return "%s：当前半径 %d 过大——盘面 %d×%d 共 %d 格，超过硬上限 %d" % [
 				label, r, sz.x, sz.y, sz.x * sz.y, EditorDoc.MAX_CELLS] \
@@ -2532,6 +2561,8 @@ func _shape_kind_label(kind: String) -> String:
 			return "扇形"
 		"voronoi":
 			return "Voronoi 不规则镶嵌"
+		"iso_cubes":
+			return "等轴菱面（错觉立方体）"
 	return kind
 
 
@@ -2637,6 +2668,13 @@ func _on_shape_selected() -> void:
 			kind = "voronoi"
 			params = {"cols": int(_cols_spin.value), "rows": int(_rows_spin.value),
 					"sites": shape_dim, "seed": 1}
+		7:
+			# (q) 等轴菱面：cols×rows 个方块，每个方块 = 3 个朝向面（= 3 格，两两共边 ⇒ 内部度 4）。
+			# 「形状尺寸」在本族下 = **方块域边长**（cols = rows = shape_dim）——与六边形/三角同是"域尺寸"，
+			# 不是半径（那三族的半径语义见 `_shape_upper_bound_reason`）。
+			# holes 留空：本入口只产"实心方块阵列"，挖洞交给离线生成器 / 后续的 face_holes（未实现，不猜语义）。
+			kind = "iso_cubes"
+			params = {"cols": shape_dim, "rows": shape_dim, "holes": []}
 		_:
 			kind = ""
 			params = {}
