@@ -64,6 +64,8 @@ const TTS := preload("res://core/text_to_shape.gd")
 ## 形状间空隙的「填充」（功能清单 §3「填充系统」：实心 / 环形 / 图案）。
 ## 同 TTS / DOMINO_MODEL：**用 preload 引用、不按 class_name 引用**（坑 #26）。
 const FILL := preload("res://core/shape_fill.gd")
+## 边缘平滑（腐蚀 / 膨胀）+ 文档点名的「连通区域数量不变」硬校验（core 里判、UI 只转发）。
+const SMOOTH := preload("res://core/shape_smooth.gd")
 
 
 ## 存档占用锁（功能清单 §8「防事故」前半）：**跨会话互斥** —— 同一份存档不允许两个编辑窗口同时写。
@@ -245,6 +247,11 @@ var _fill_hole_opt: OptionButton           # 挖去
 var _fill_mode_opt: OptionButton           # 实心 / 环形 / 图案
 var _fill_unit_opt: OptionButton           # 图案单元（单格 / 方块 / 菱形 / 五角星）
 var _fill_note: Label                      # 常驻结果 / 拒绝原因（失败必须有可读文案）
+# ---- 边缘平滑（ShapeSmooth 接线，2026-10-09：文档 §3「边缘平滑」）----
+## 判界走 `doc.space_grid()`（**未挖洞**的盘空间）——洞格必须存在，
+## 否则「膨胀把洞补回来」物理上不可达（理由见 core/editor_doc.gd:_build_topology_raw）。
+var _smooth_src_opt: OptionButton          # 作用对象（筜选区域 / 整盘 / DAG 形状…）
+var _smooth_note: Label                    # 常驻结果 / 拒绝原因（失败必须有可读文案）
 # ---- 修复建议（RepairSuggest 接线）----
 var _repair_btn: Button
 var _repair_msg: Label
@@ -1046,6 +1053,7 @@ func _build_shape_compose(box: VBoxContainer) -> void:
 	_dag_note = _plain_label("依赖图还是空的：先点「加形状」。")
 	box.add_child(_dag_note)
 	_build_fill_section(box)
+	_build_smooth_section(box)
 	_refresh_dag_opts()
 
 
@@ -1227,6 +1235,98 @@ func _on_fill_gap() -> void:
 	_toast("已填充空隙（一步撤销，按左栏「撤销」可退回）", false, 5.0)
 
 
+## 边缘平滑（腐蚀 / 膨胀去毛刺）——文档 §3 那条**硬约束**（连通区域数量不变，变了就拒绝）。
+##
+## 【为什么判界用 `space_grid()`】洞格必须「存在于盘上」，否则膨胀长不进洞里 ⇒ 按钮点了没反应（假功能）。
+## 写回口径与 `_on_fill_gap` 同源：本仓「格不存在」由 `doc.obstacles`（洞）表达 ⇒ 补格 = 摘洞、挖格 = 记洞。
+func _build_smooth_section(box: VBoxContainer) -> void:
+	box.add_child(_section_label("边缘平滑（腐蚀 / 膨胀去毛刺）"))
+	box.add_child(_plain_label("对「作用对象」做一次形态学：**膨胀**吃掉周围一圈、**腐蚀**削掉外沿一圈。\n"
+		+ "执行前会校验**连通区域数量不变**——把细梁弄断、或把 1 格宽的缝隙填死（两个洞意外连通）"
+		+ "一律**拒绝**并列出出问题的格（文档把这列为硬约束）。\n"
+		+ "「作用对象」默认 = 框选区域；判界走**未挖洞的盘空间** ⇒ 选「障碍（洞）」时腐蚀就是把洞边消一圈。\n"
+		+ "你**手工改过**的格保持原状（按「已脱离生成」跳过，并报出跳过了几格）。"))
+	_smooth_src_opt = _operand_option()
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.add_child(_plain_label("作用对象"))
+	row.add_child(_smooth_src_opt)
+	box.add_child(row)
+	var brow := HBoxContainer.new()
+	brow.add_theme_constant_override("separation", 6)
+	brow.add_child(_action_button("膨胀一圈（吃掉周围）", func() -> void: _on_smooth(SMOOTH.MODE_DILATE)))
+	brow.add_child(_action_button("腐蚀一圈（削掉外沿）", func() -> void: _on_smooth(SMOOTH.MODE_ERODE)))
+	box.add_child(brow)
+	_smooth_note = _plain_label("还没有平滑过：选好「作用对象」后点上面两个按钮之一。")
+	_smooth_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(_smooth_note)
+
+
+func _set_smooth_note(text: String) -> void:
+	if _smooth_note != null:
+		_smooth_note.text = text
+
+
+## 当前选中的作用对象（内置集合名或依赖图节点 id）。
+func _smooth_src_key() -> String:
+	return _opt_key(_smooth_src_opt)
+
+
+## 「膨胀 / 腐蚀一圈」的主流程：取对象 → 在未挖洞的盘空间上形态学 → 过连通性闸门
+## → 按**差分**写回（补格 = 摘洞、挖格 = 记洞）。整个动作自成**一步撤销**。
+func _on_smooth(mode: String) -> void:
+	var op := _operand_cells(_smooth_src_key())
+	if not bool(op["ok"]):
+		var w := "「作用对象」不能用：%s" % str(op["reason"])
+		_set_smooth_note(w)
+		_toast(w, true, 7.0)
+		return
+	var g := doc.space_grid()
+	var r: Dictionary = SMOOTH.apply(op["cells"], g, mode, {"hand_edited": _hand_edited})
+	var verb := "膨胀" if mode == SMOOTH.MODE_DILATE else "腐蚀"
+	if not bool(r["ok"]):
+		# 硬约束被触发：拒绝执行 + **列出出问题的格**（文档：「变了就拒绝操作并高亮出问题的位置」）。
+		var brief := _fmt_cells_brief(r["problem"])
+		_set_smooth_note("%s\n出问题的格：%s" % [str(r["reason"]), brief if brief != "" else "（未定位到具体格）"])
+		_toast("已拒绝%s：连通区域会被破坏" % verb, true, 8.0)
+		return
+	var summary := SMOOTH.describe(r)
+	var added: Array = r["added"]
+	var removed: Array = r["removed"]
+	if added.is_empty() and removed.is_empty():
+		_set_smooth_note("没有变化：%s" % summary)
+		return
+	_push_undo(false)                      # 按钮命令 ⇒ 自成一步撤销
+	# 写回：补格 = 把该格从「洞」里摘掉；挖格 = 把该格记成「洞」。其余格一律不动。
+	var holes := {}
+	for o in doc.obstacles:
+		holes[o] = true
+	for p in added:
+		holes.erase(p)
+	for p in removed:
+		holes[p] = true
+	# 保序：先保留原有洞的顺序，新挖的洞按 (y, x) 升序追加 ⇒ 可复现。
+	var kept: Array[Vector2i] = []
+	for o in doc.obstacles:
+		if holes.has(o):
+			kept.append(o)
+	var fresh: Array[Vector2i] = []
+	for p in removed:
+		if not kept.has(p):
+			fresh.append(p)
+	fresh.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+		if a.y != b.y:
+			return a.y < b.y
+		return a.x < b.x)
+	kept.append_array(fresh)
+	doc.obstacles = kept
+	_sync_declared_total()
+	_mark_dirty()
+	_refresh_all()
+	_set_smooth_note("%s（一步撤销，按左栏「撤销」可退回）" % summary)
+	_toast("已%s（一步撤销）" % verb, false, 5.0)
+
+
 func _operand_option() -> OptionButton:
 	var opt := OptionButton.new()
 	opt.clip_text = true
@@ -1246,6 +1346,7 @@ func _refresh_dag_opts() -> void:
 	var keep_b := _opt_key(_dag_b_opt)
 	var keep_fa := _opt_key(_fill_area_opt)
 	var keep_fh := _opt_key(_fill_hole_opt)
+	var keep_sm := _opt_key(_smooth_src_opt)
 	var opts: Array = [_dag_a_opt, _dag_b_opt]
 	if _fill_area_opt != null:
 		opts.append(_fill_area_opt)
@@ -1281,7 +1382,30 @@ func _refresh_dag_opts() -> void:
 			_fill_hole_opt.selected = mini(4, _fill_hole_opt.item_count - 1)   # 首次：默认「空集（不挖）」
 		else:
 			_select_opt_key(_fill_hole_opt, keep_fh)
+	_refresh_smooth_opts(keep_sm)
 
+
+## 刷新「边缘平滑」的作用对象下拉。
+##
+## 【为什么刻意**不**共用 A/B 那份选项表】平滑处理的是一批「格存在」的格，而 `__obstacles__`（障碍 = 洞）与
+## `__empty__`（空集）是它的**补集 / 空集**：选它们不管怎么形态学都不会产生下一步写回（假功能）。
+## 干脆不列出来 ⇒ 用户不会空点。（填充区仍用全表——那里「区域 = 障碍」正是默认档。）
+func _refresh_smooth_opts(keep: String) -> void:
+	if _smooth_src_opt == null:
+		return
+	_smooth_src_opt.clear()
+	for e in [["整盘形状（当前棋盘）", "__board__"], ["框选区域", "__selection__"]]:
+		_smooth_src_opt.add_item(str(e[0]), _smooth_src_opt.item_count)
+		_smooth_src_opt.set_item_metadata(_smooth_src_opt.item_count - 1, str(e[1]))
+	for nid in _dag.node_ids():
+		var n: Dictionary = _dag.node(str(nid))
+		var idx: int = _smooth_src_opt.item_count
+		_smooth_src_opt.add_item("%s（%s）" % [str(nid), _dag_shape_label(str(n["shape"]))], idx)
+		_smooth_src_opt.set_item_metadata(idx, str(nid))
+	if keep == "":
+		_smooth_src_opt.selected = mini(1, _smooth_src_opt.item_count - 1)   # 首次：默认「框选区域」
+	else:
+		_select_opt_key(_smooth_src_opt, keep)
 
 func _select_opt_key(opt: OptionButton, key: String) -> void:
 	if opt == null or key == "":

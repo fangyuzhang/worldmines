@@ -568,3 +568,51 @@ func test_fill_never_overwrites_hand_edited_cells_and_says_so() -> void:
 	var text := str(note.text) if note != null else ""
 	assert_true(text.contains("跳过"),
 		"跳过手工格必须说出来（实际文案：%s）" % text)
+
+
+## 属性页必须有「边缘平滑」区：默认档 = 框选区域，且**不列**障碍 / 空集
+##（那两个是「格存在」的补集，拿来平滑只会空转 = 假功能）。
+func test_smooth_section_is_wired_and_hides_the_complement_sets() -> void:
+	var ed := _make_editor()
+	_bind(ed, _doc5())
+	var src := ed.get("_smooth_src_opt") as OptionButton
+	assert_not_null(src, "应有「作用对象」下拉")
+	assert_not_null(ed.get("_smooth_note"), "应有常驻结果文案（被拒绝时要有可读文案 + 问题格）")
+	if src == null:
+		return
+	assert_eq(str(src.get_item_metadata(src.selected)), "__selection__", "默认「作用对象」应是框选区域")
+	var keys: Array[String] = []
+	for i in src.item_count:
+		keys.append(str(src.get_item_metadata(i)))
+	assert_true(keys.has("__board__"), "应能对「整盘形状」做平滑")
+	assert_false(keys.has("__obstacles__"), "障碍（洞）是补集，平滑不该把它列进作用对象（选了是空转）")
+	assert_false(keys.has("__empty__"), "空集同样不该列出来")
+
+
+## 「膨胀一圈」的真往返：挖掉中央 3×3 → 对整盘形状膨胀 → 外沿一圈补回、只剩正中 1 格是洞。
+func test_smooth_dilate_turns_the_hole_rim_back_into_cells() -> void:
+	var ed := _make_editor()
+	var d := EditorDoc.new(5, 5)
+	for y in range(1, 4):
+		for x in range(1, 4):
+			d.obstacles.append(Vector2i(x, y))
+	_bind(ed, d)
+	assert_eq(d.grid().cell_count(), 16, "前置：5×5 挖掉中央 3×3 = 16 格")
+	_opt_pick(ed.get("_smooth_src_opt") as OptionButton, "__board__")
+	ed.call("_on_smooth", "dilate")
+	assert_eq(d.obstacles.size(), 1, "膨胀应把洞的外沿一圈补回来（9 → 1）")
+	assert_false(d.grid().in_board(Vector2i(2, 2)), "正中那一格仍是洞（膨胀只够得到外沿）")
+	assert_true(d.grid().in_board(Vector2i(1, 1)), "(1,1) 应重新变成盘上的格")
+	var note := ed.get("_smooth_note") as Label
+	var text := str(note.text) if note != null else ""
+	assert_true(text.contains("膨胀"), "常驻文案要说出做了什么（实际：%s）" % text)
+
+
+## 按元数据 key 选中下拉的某一项（本文件多个用例用）。
+func _opt_pick(opt: OptionButton, key: String) -> void:
+	if opt == null:
+		return
+	for i in opt.item_count:
+		if str(opt.get_item_metadata(i)) == key:
+			opt.selected = i
+			return

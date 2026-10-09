@@ -98,6 +98,8 @@ $map = @{
     'progress_check' = @('test_progress_check')
     # 2026-10-09 补：形状间空隙的「填充」（文档 §3「填充系统」）——判据 + UI 接线。
     'shape_fill'     = @('test_shape_fill')
+    # 2026-10-09 补：边缘平滑（腐蚀 / 膨胀）的「连通区域数量不变」硬校验（文档 §3）——判据 + UI 接线。
+    'shape_smooth'   = @('test_shape_smooth')
     'hud'            = @('test_ui_rework_contract', 'test_board_view_interaction', 'test_progress_check')
     'game_session'   = @('test_board_view_interaction', 'test_ui_rework_contract', 'test_progress_check')
 }

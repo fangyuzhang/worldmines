@@ -123,6 +123,9 @@ var _topo_cache: Dictionary = {}
 var _topo_sig := ""
 var _grid_cache: GridInterface = null
 var _grid_sig := ""
+## 未挖洞「盘空间」的网格缓存（见 space_grid()；与 grid() 各自一份，互不覆盖）。
+var _space_cache: GridInterface = null
+var _space_sig := ""
 var _audit_sig := ""
 var _audit_errors: Array = []
 var _audit_warnings: Array = []
@@ -482,6 +485,18 @@ func topology() -> Dictionary:
 
 
 func _build_topology() -> Dictionary:
+	var raw := _build_topology_raw()
+	if raw.is_empty() or obstacles.is_empty():
+		return raw
+	return _carve_holes(raw, obstacles)
+
+
+## 未挖洞的拓扑（洞格**仍作为存在的格**保留）：与 `_build_topology()` 只差"最后不 `_carve_holes`"。
+##
+## 【为什么必须单独有这一条】腐蚀 / 膨胀要能"长进洞里"、也要能"从洞里长回来"。若拿**已挖洞**的盘
+## 当判界（`grid().in_board()` 对洞格恒 false），"膨胀补回洞"这条路径物理上不可达 ⇒ 按钮点了没反应，
+## 是个假功能。故 `core/shape_smooth.gd` 的判界一律走本函数的产物（见 `space_grid()`）。
+func _build_topology_raw() -> Dictionary:
 	if shape_kind != "":
 		# 形状族：借 `ShapeGenerator` 的 9 族实现（六边形/三角/截角/环/轮廓…），不自己造
 		var g: AdjacencyGrid = ShapeGenerator.to_adjacency_grid(shape_kind, shape_params)
@@ -489,23 +504,14 @@ func _build_topology() -> Dictionary:
 			return {}
 		# ⚠ 必须归一到非负坐标：六边形等以中心为原点 ⇒ 负坐标会让 CP-SAT 索引越界、
 		# 并让审计报"存在负坐标"（`AdjacencyGrid.normalized` 就是为这件事存在的）。
-		var norm := AdjacencyGrid.normalized(g)
-		var shaped := _topology_dict_of(norm)
-		if obstacles.is_empty():
-			return shaped
-		return _carve_holes(shaped, obstacles)
+		return _topology_dict_of(AdjacencyGrid.normalized(g))
 	if not foreign_topology.is_empty():
 		# 外部盘型：原样返回（障碍只做"再挖一次洞"，幂等）。**绝不**按 dirs/wrap 重建。
-		if obstacles.is_empty():
-			return foreign_topology
-		return _carve_holes(foreign_topology, obstacles)
+		return foreign_topology
 	var r := WrapTopology.build(rows, cols, dirs, include_self, wrap, not obstacles.is_empty())
 	if not bool(r["ok"]):
 		return {}
-	var topo: Dictionary = r["topology"]
-	if obstacles.is_empty() or topo.is_empty():
-		return topo
-	return _carve_holes(topo, obstacles)
+	return r["topology"]
 
 
 ## 棋盘对象（矩形盘 RectGrid / 其余 AdjacencyGrid），供预览与验证共用。
@@ -514,17 +520,31 @@ func grid() -> GridInterface:
 	var sig := struct_signature()
 	if sig == _grid_sig and _grid_cache != null:
 		return _grid_cache
-	var topo := topology()
+	_grid_cache = _grid_from_topo(topology())
+	_grid_sig = sig
+	return _grid_cache
+
+
+## 未挖洞的「盘空间」（洞格存在）：给腐蚀 / 膨胀这类形态学当判界用
+##（与 `grid()` 区别 = 不 `_carve_holes`；理由见 `_build_topology_raw()`）。带缓存，签名同 `grid()`。
+func space_grid() -> GridInterface:
+	var sig := struct_signature()
+	if sig == _space_sig and _space_cache != null:
+		return _space_cache
+	_space_cache = _grid_from_topo(_build_topology_raw())
+	_space_sig = sig
+	return _space_cache
+
+
+## 拓扑字典 → 网格对象（空拓扑 = 默认矩形盘 RectGrid）。`grid()` / `space_grid()` 共用，避免两处建盘口径日久漂移。
+func _grid_from_topo(topo: Dictionary) -> GridInterface:
 	if not topo.is_empty():
 		var ag := AdjacencyGrid.new()
 		ag.setup_from_topo(topo)
-		_grid_cache = ag
-	else:
-		var rg := RectGrid.new()
-		rg.setup(rows, cols)
-		_grid_cache = rg
-	_grid_sig = sig
-	return _grid_cache
+		return ag
+	var rg := RectGrid.new()
+	rg.setup(rows, cols)
+	return rg
 
 
 func mine_set() -> Dictionary:

@@ -679,3 +679,23 @@ func test_wrap_board_can_be_generated_by_the_pipeline() -> void:
 	assert_false(level.is_empty(),
 		"环绕盘应能生成关卡（编辑器画完就能玩）；last_call_stats=%s" % str(gen.last_call_stats))
 	assert_true(level.has("mines"), "产物应含雷位")
+
+
+## 「空间盘」（space_grid）与「棋盘盘」（grid）的唯一差别 = 有没有把洞挖掉。
+##
+## 为什么这条必须钉住：腐蚀 / 膨胀要能「长进洞里」、也要能「从洞里长回来」；若判界走了已挖洞的
+## `grid()`（对洞格 `in_board()` 恒 false），那些路径物理上不可达 ⇒ 按钮点了没反应（假功能）。
+func test_space_grid_keeps_hole_cells_that_grid_carves_away() -> void:
+	var d := EditorDoc.new(4, 4)
+	d.obstacles.append(Vector2i(1, 1))
+	var board := d.grid()
+	var space := d.space_grid()
+	assert_false(board.in_board(Vector2i(1, 1)), "grid()：洞格不存在（已挖掉）")
+	assert_true(space.in_board(Vector2i(1, 1)), "space_grid()：洞格必须存在（形态学要能长进洞）")
+	assert_eq(board.all_positions().size(), 15, "棋盘盘 = 4×4 去掉 1 个洞 = 15 格")
+	assert_eq(space.all_positions().size(), 16, "空间盘 = 整块 4×4（含洞格）= 16 格")
+	assert_eq(space.get_neighbors(Vector2i(1, 1)).size(), 8, "内部格的邻居该跟着盘型走（矩形盘 = 8 邻）")
+	# 没有洞时走 RectGrid 路径：两者对同一张盘应一致。
+	var d2 := EditorDoc.new(5, 5)
+	assert_eq(d2.space_grid().all_positions().size(), 25, "无洞时空间盘 = 整盘 25 格")
+	assert_eq(d2.grid().all_positions().size(), 25, "无洞时两者应一致")
