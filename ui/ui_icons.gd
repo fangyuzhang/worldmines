@@ -136,6 +136,11 @@ static func lens() -> Texture2D:
 	return texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><path fill=\"#FFFFFF\" fill-rule=\"evenodd\" d=\"M13.4 3.6a9.8 9.8 0 1 1 0 19.6 9.8 9.8 0 0 1 0-19.6zm0 4.2a5.6 5.6 0 1 0 0 11.2 5.6 5.6 0 0 0 0-11.2z\"/><rect fill=\"#FFFFFF\" x=\"19.2\" y=\"21.8\" width=\"9.6\" height=\"4.4\" rx=\"2.2\" transform=\"rotate(45 24 24)\"/></svg>")
 
 
+## 折叠：一枚粗左箭头 + 折痕竖条（读作"沿这条线把右边翻到左边"）。
+static func fold() -> Texture2D:
+	return texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><rect fill=\"#FFFFFF\" x=\"3.4\" y=\"4\" width=\"2.8\" height=\"24\" rx=\"1.4\"/><path fill=\"#FFFFFF\" d=\"M20.6 4.4 9 16l11.6 11.6v-7.2H27v-8.8h-6.4z\"/></svg>")
+
+
 ## 撤销：回拐箭头（绘画工具栏「撤回」）。
 static func undo() -> Texture2D:
 	return texture("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><path fill=\"#FFFFFF\" d=\"M13 3.6 4.6 11a1.6 1.6 0 0 0 0 2.4L13 20.8a1.6 1.6 0 0 0 2.6-1.2v-4.2h7.2a4.4 4.4 0 0 1 0 8.8h-5.2a1.8 1.8 0 0 0 0 3.6h5.2a8 8 0 0 0 0-16h-7.2V4.8A1.6 1.6 0 0 0 13 3.6z\"/></svg>")

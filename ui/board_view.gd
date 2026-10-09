@@ -144,6 +144,13 @@ var _lens_on := false
 var _impl_key: int = 0
 var _impl_seams: Array = []
 var _impl_ghosts: Array = []
+## 静态折叠视图开关 + 配对缓存（**折叠盘专属**；见 supports_fold 的判据）。
+##   · `_fold_flat`  —— false = 「折起来」观感（远侧压暗、折痕上的记号指向近侧）；
+##     true = 「摊平看」：把每对 a↔b 的镜像虚线画出来，顺着线就能数清叠了几层。默认折起来。
+##   · `_fold_pairs_cache` —— 见 _fold_pairs()：按 board 实例 id 缓存配对表（换关自动失效）。
+var _fold_flat := false
+var _fold_key: int = 0
+var _fold_pairs_cache: Array = []
 ## 鼠标悬停格（-1,-1 = 无）
 var hover_pos: Vector2i = Vector2i(-1, -1)
 
@@ -3000,6 +3007,8 @@ func _draw_topology_hints() -> void:
 		_draw_wormhole_hints()
 	elif kind == TopologyModel.VIEW_IMPOSSIBLE:
 		_draw_impossible_hints()
+	elif kind == TopologyModel.VIEW_FOLD:
+		_draw_fold_hints()
 
 
 ## 环绕盘：一圈虚线「回卷边框」+ 四条边的双向箭头 +（悬停到边格时）穿过边界的虚线通道。
@@ -3390,6 +3399,225 @@ func _draw_impl_ghost(world_at: Vector2, hot: bool) -> void:
 	draw_arc(at, r, 0.0, TAU, 16, col, w, true)
 	var d := r * 0.72
 	draw_line(at + Vector2(-d, -d), at + Vector2(d, d), col, w, true)
+
+
+# ============ 静态折叠（折叠盘，2026-10-09） ============
+#
+# 【为什么需要】折叠只改了邻接表：远侧翻过去压在近侧上，(5,y) 与 (0,y) 变成真邻居，
+# 但屏幕上它们仍隔着一整排格子。不画出来玩家只会觉得线索数错。呈现分两层：
+#   · 常驻：折痕线（一条虚线折痕 + 指向近侧的「合拢」记号）+ 折起来时把远侧压暗
+#     （读作"这半边是被翻过来盖住的"）；
+#   · 摊平视图（HUD 开关）：把每对 a↔b 的镜像虚线画出来，顺着线就能看清"谁盖在谁身上"。
+# 悬停任一格时把它的叠合对家当场连起来并描边（与虫洞的悬停通道同一读法）。
+
+## 本盘是否支持折叠视图 = 呈现种类为「折叠」**且**带折痕声明（缺一不可，理由同 supports_lens：
+## 少了折痕就没有"谁盖在谁身上"可言，按钮点了没东西）。
+func supports_fold() -> bool:
+	if str(_view_meta().get("kind", "")) != TopologyModel.VIEW_FOLD:
+		return false
+	var f: Variant = _view_meta().get("fold", {})
+	return f is Dictionary and not (f as Dictionary).is_empty()
+
+
+func fold_flat_enabled() -> bool:
+	return _fold_flat
+
+
+## 开关「摊平看」（返回摊平后的状态；HUD 与测试共用这一句判据）。
+func toggle_fold_view() -> bool:
+	_fold_flat = not _fold_flat
+	queue_redraw()
+	return _fold_flat
+
+
+## 折痕声明 {axis, at}；不是折叠盘 ⇒ 空字典。
+func _fold_decl() -> Dictionary:
+	var meta := _view_meta()
+	if str(meta.get("kind", "")) != TopologyModel.VIEW_FOLD:
+		return {}
+	var f: Variant = meta.get("fold", {})
+	return (f as Dictionary).duplicate(true) if f is Dictionary else {}
+
+
+## 配对表（a 底层 / b 覆层），按 board 实例 id 缓存 —— 与 _impossible_pairs 同一套路：
+## 折痕随关卡 JSON 一次性载入、不可变，一局只算一次。
+func _fold_pairs() -> Array:
+	var b: Board = GameSession.board
+	if b == null or b.grid == null:
+		return []
+	var key: int = b.get_instance_id()
+	if key == _fold_key:
+		return _fold_pairs_cache
+	_fold_key = key
+	_fold_pairs_cache = []
+	var decl := _fold_decl()
+	if decl.is_empty():
+		return _fold_pairs_cache
+	var positions: Array[Vector2i] = []
+	for p in b.grid.all_positions():
+		positions.append(p)
+	_fold_pairs_cache = FoldModel.audit(decl, positions)["pairs"] as Array
+	return _fold_pairs_cache
+
+
+## 折痕在屏幕上的坐标（axis x ⇒ 竖直线 x 坐标；axis y ⇒ 水平线 y 坐标）。
+## 纯几何：取一对「折痕两侧都有格」的相邻格，用两格心中点定折痕 —— 对挖洞盘也稳。
+## 找不到这样一对（盘太窄 / 洞把折痕那列挖空）⇒ null（调用方不画）。
+func _fold_crease_coord(axis: String, at: int) -> Variant:
+	var b: Board = GameSession.board
+	if b == null or b.grid == null:
+		return null
+	var grid: GridInterface = b.grid
+	var size := grid.size()
+	if size.x <= 0 or size.y <= 0:
+		return null
+	if axis == FoldModel.AXIS_X:
+		for y in size.y:
+			var a := Vector2i(at - 1, y)
+			var c := Vector2i(at, y)
+			if grid.in_board(a) and grid.in_board(c):
+				return ((_cell_center(a) + _cell_center(c)) * 0.5).x
+	else:
+		for x in size.x:
+			var a2 := Vector2i(x, at - 1)
+			var c2 := Vector2i(x, at)
+			if grid.in_board(a2) and grid.in_board(c2):
+				return ((_cell_center(a2) + _cell_center(c2)) * 0.5).y
+	return null
+
+
+## 折痕线段（纯几何，供绘制与测试共用）：横跨棋盘包围盒（外扩 gap），两端点见返回序。
+func _fold_crease_segment(axis: String, at: int) -> PackedVector2Array:
+	var b: Board = GameSession.board
+	if b == null or b.grid == null:
+		return PackedVector2Array()
+	var size := b.grid.size()
+	if size.x <= 0 or size.y <= 0:
+		return PackedVector2Array()
+	var coord_v: Variant = _fold_crease_coord(axis, at)
+	if coord_v == null:
+		return PackedVector2Array()
+	var coord := float(coord_v)
+	var bb := _cell_rect(Vector2i.ZERO).merge(_cell_rect(size - Vector2i.ONE))
+	var gap := maxf(4.0, float(cell_px) * 0.18)
+	var frame := bb.grow(gap)
+	if axis == FoldModel.AXIS_X:
+		return PackedVector2Array([Vector2(coord, frame.position.y), Vector2(coord, frame.end.y)])
+	return PackedVector2Array([Vector2(frame.position.x, coord), Vector2(frame.end.x, coord)])
+
+
+## 折叠呈现主入口。
+func _draw_fold_hints() -> void:
+	if not supports_fold():
+		return
+	var b: Board = GameSession.board
+	if b == null or b.grid == null:
+		return
+	var grid: GridInterface = b.grid
+	var decl := _fold_decl()
+	var axis := str(decl.get("axis", ""))
+	var at := int(decl.get("at", 0))
+	if axis == "" or at <= 0:
+		return
+	var acc := ThemeManager.accent()
+	var pairs := _fold_pairs()
+	# 1) 摊平视图：常驻画出每对 a↔b 的镜像虚线（谁盖在谁身上一眼可见）
+	if _fold_flat:
+		var link_col := acc
+		link_col.a = 0.30
+		for pr_v: Variant in pairs:
+			var pr: Dictionary = pr_v
+			_draw_fold_link(pr["a"], pr["b"], link_col, 1.0)
+	else:
+		# 2) 折起来：把远侧（覆层）压暗 —— 读作"这半边被翻过来盖住了"
+		_draw_fold_flap_tint(axis, at)
+	# 3) 折痕线（常驻）+ 合拢记号
+	var seg := _fold_crease_segment(axis, at)
+	if seg.size() == 2:
+		var crease_col := acc
+		crease_col.a = 0.55
+		var lw := maxf(1.0, float(cell_px) * 0.045)
+		var dash := maxf(3.0, float(cell_px) * 0.20)
+		draw_dashed_line(seg[0], seg[1], crease_col, lw, dash)
+		_draw_fold_crease_marks(seg, axis, crease_col)
+	# 4) 悬停：把这一格的叠合对家当场连起来 + 描边（与虫洞的悬停通道同一读法）
+	if hover_pos.x >= 0 and grid.in_board(hover_pos):
+		for pr2_v: Variant in pairs:
+			var pr2: Dictionary = pr2_v
+			var pa: Vector2i = pr2["a"]
+			var pb: Vector2i = pr2["b"]
+			if hover_pos == pa or hover_pos == pb:
+				var other: Vector2i = pb if hover_pos == pa else pa
+				_draw_fold_link(hover_pos, other, acc, 1.6)
+				_draw_cell_outline(other, acc, 2.5, 1.0)
+				break
+
+
+## 远侧压暗：只覆盖「翻过来盖住近侧」的那半边格（idx ≥ at）——用格填充色叠一层低 alpha 暗色。
+## 只做低 alpha：提示层晚于数字绘制，压太狠会让线索读不清。
+func _draw_fold_flap_tint(axis: String, at: int) -> void:
+	var b: Board = GameSession.board
+	if b == null or b.grid == null:
+		return
+	var tint := ThemeManager.text_secondary()
+	tint.a = 0.08
+	for p in b.grid.all_positions():
+		if FoldModel.index_of(p, axis) >= at:
+			_draw_cell_fill(p, tint)
+
+
+## 叠合连线：a↔b 之间一条轻微外弓的**虚线**（复用虫洞通道的几何，读法一致：
+## 外弓是为了不和网格线读混；虚线是为了和虫洞的"实管子"区分开）。
+func _draw_fold_link(a: Vector2i, b: Vector2i, col: Color, mul: float) -> void:
+	var pts := _portal_tunnel_points(a, b)
+	var lw := maxf(1.4, float(cell_px) * 0.055) * clampf(mul, 1.0, 2.0)
+	var dash := maxf(3.0, float(cell_px) * 0.18)
+	_draw_dashed_polyline(pts, col, lw, dash)
+	draw_circle(pts[0], lw * 0.8, col)
+	draw_circle(pts[pts.size() - 1], lw * 0.8, col)
+
+
+## 折痕两端的「合拢」记号：沿折痕一串指向**近侧**的 V 形箭头（读作"远侧沿这里翻过去"）。
+## 近侧方向：axis x ⇒ -x；axis y ⇒ -y（与 FoldModel 的近/远侧定义一致）。
+func _draw_fold_crease_marks(seg: PackedVector2Array, axis: String, col: Color) -> void:
+	var sz := maxf(4.5, float(cell_px) * 0.24)
+	var dir := Vector2(-1.0, 0.0) if axis == FoldModel.AXIS_X else Vector2(0.0, -1.0)
+	for t in [0.12, 0.5, 0.88]:
+		_draw_fold_chevron(seg[0].lerp(seg[1], t), dir, sz, col)
+
+
+## 单枚 V 形箭头：尖端在 at、开口朝 dir 的反方向（即"从这里翻向 dir"）。
+func _draw_fold_chevron(at: Vector2, dir: Vector2, sz: float, col: Color) -> void:
+	var back := at - dir * sz
+	var side := Vector2(-dir.y, dir.x) * sz * 0.62
+	draw_polyline(PackedVector2Array([back + side, at, back - side]), col, maxf(1.2, sz * 0.20), true)
+
+
+## 任意折线画虚线（draw_dashed_line 只吃直线；叠合连线是外弓曲线，故自己按段切）。
+## 相位跨段连续（remain 在段间传递），折点处不会出现"双倍实段 / 双倍空段"。
+func _draw_dashed_polyline(pts: PackedVector2Array, col: Color, width: float, dash: float) -> void:
+	if pts.size() < 2:
+		return
+	var on := true
+	var remain := dash
+	for i in pts.size() - 1:
+		var a := pts[i]
+		var b := pts[i + 1]
+		var seg := b - a
+		var seg_len := seg.length()
+		if seg_len <= 0.0001:
+			continue
+		var dir := seg / seg_len
+		var pos := 0.0
+		while pos < seg_len:
+			var step := minf(remain, seg_len - pos)
+			if on:
+				draw_line(a + dir * pos, a + dir * (pos + step), col, width, true)
+			pos += step
+			remain -= step
+			if remain <= 0.0001:
+				on = not on
+				remain = dash
 
 
 func _draw_custom_highlights() -> void:

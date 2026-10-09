@@ -47,6 +47,8 @@ var _pause_btn: Button
 ## 连接透镜按钮（**只在真的存在错觉的盘上装**，见 _sync_lens_button）：
 ## 普通棋盘进场时它是 null ⇒ 右列仍是「提示 / 撤销 / 暂停」三枚，不多一枚按了没反应的死按钮。
 var _lens_btn: Button = null
+## 「摊平 / 折起来」开关（**只在折叠盘上装**，见 _sync_fold_button）：普通棋盘进场时是 null。
+var _fold_btn: Button = null
 var _pause_icon_shown_paused := false
 var _settings_popup: PopupPanel
 ## 右上单排图标簇里的「设置」齿轮（配置类图标，对齐 CozySudoku 顶栏右侧的齿轮位）。
@@ -231,6 +233,7 @@ func _ready() -> void:
 	# 【2026-10-09】连接透镜：**等轴菱面盘专属**的对局工具（见 _sync_lens_button）。
 	# 放在 _apply_theme() 之前 —— 新按钮要吃到 _apply_theme 里的图标着色与样式。
 	_sync_lens_button()
+	_sync_fold_button()
 	# 2026-09-28 删除「重开」与「主菜单」两个按钮（用户决策）：进行中不再提供重开
 	#（终局重开在结算层 game_over）；主菜单场景已删，「关卡列表」是唯一的离开出口。
 
@@ -466,6 +469,51 @@ func _toggle_lens() -> void:
 		target.call("toggle_lens")
 
 
+# ============ 静态折叠（折叠盘专属，2026-10-09） ============
+
+## 本对局的 BoardView（折叠视图的持有者）。与 _lens_target 同一套路：先父链、再 current_scene，
+## 找不到就是不装按钮，绝不抛错（单测里 HUD 常被单独实例化）。
+func _fold_target() -> Node:
+	var n: Node = get_parent()
+	while n != null:
+		if n.has_method("supports_fold"):
+			return n
+		n = n.get_parent()
+	var tree := get_tree()
+	var scene: Node = tree.current_scene if tree != null else null
+	if scene != null and scene.has_method("supports_fold"):
+		return scene
+	return null
+
+
+## 按当前棋盘决定装 / 拆「折起来」按钮（幂等）。判据 = BoardView.supports_fold()（唯一事实源）。
+func _sync_fold_button() -> void:
+	var target := _fold_target()
+	var want := target != null and bool(target.call("supports_fold"))
+	if want == (_fold_btn != null):
+		return
+	if want:
+		_fold_btn = _add_col_icon_button(_right_col, Icons.fold(), "折起来",
+			"静态折叠：这条折痕把远侧翻过来压在近侧上，两层贴住 = 互为邻居。"
+			+ "点一下在「折起来 / 摊平看」之间切换（摊平会画出每一对的镜像连线）",
+			func(): _toggle_fold_view())
+		_fold_btn.name = "FoldBtn"
+		_fold_btn.set_meta("fold_btn", true)   # 测试 / 调试据此定位（meta 不受文案改动影响）
+	else:
+		var gone := _fold_btn
+		_fold_btn = null
+		_side_buttons.erase(gone)   # 先摘出处，再释放：_apply_theme 会遍历这张表
+		_right_col.remove_child(gone)
+		gone.queue_free()
+
+
+## 折叠视图开关转发给 BoardView（几何与判据都在它手里，HUD 只负责这一次点击）。
+func _toggle_fold_view() -> void:
+	var target := _fold_target()
+	if target != null and target.has_method("toggle_fold_view"):
+		target.call("toggle_fold_view")
+
+
 ## 打开对局内设置弹窗（缓存单实例，复用不重复创建）
 func _open_settings() -> void:
 	if _settings_popup == null or not is_instance_valid(_settings_popup):
@@ -576,6 +624,7 @@ func _on_session_started() -> void:
 	_flag_cache = -1
 	_last_shown_sec = -1
 	_sync_lens_button()   # 换关可能换掉「本盘支不支持透镜」这件事（幂等，多数时候无事发生）
+	_sync_fold_button()   # 折叠按钮同理（幂等）
 	if GameSession.board != null and not GameSession.board.cell_state_changed.is_connected(_on_cell_changed):
 		GameSession.board.cell_state_changed.connect(_on_cell_changed)
 

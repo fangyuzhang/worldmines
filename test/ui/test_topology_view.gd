@@ -54,6 +54,22 @@ func _wrap_level() -> Dictionary:
 	}
 
 
+## 一块 4x6 折叠盘（force=true ⇒ 产出邻接表）：折痕在 x=3 —— 左边 3 列近侧 / 右边 3 列远侧。
+func _fold_level() -> Dictionary:
+	var built := WrapTopology.build(4, 6, ShapeGenerator.MOORE8, false, false, true)
+	assert_true(bool(built["ok"]), "应能构建 4x6 拓扑：%s" % str(built.get("reason", "")))
+	var attached := TopologyModel.attach_fold(built["topology"] as Dictionary, {"axis": "x", "at": 3})
+	assert_true(bool(attached["ok"]), "折叠应能写入：%s" % str(attached["errors"]))
+	return {
+		"name": "折叠测试",
+		"size": {"rows": 4, "cols": 6},
+		"total_mines": 2,
+		"mines": [{"r": 1, "c": 2}, {"r": 0, "c": 3}],
+		"revealed": [{"r": 0, "c": 0}],
+		"topology": attached["topology"] as Dictionary,
+	}
+
+
 func test_wormhole_view_meta_exposes_portals() -> void:
 	var b := _install_board(_wormhole_level())
 	assert_true(b.grid is AdjacencyGrid, "带 topology 的关卡应走邻接表网格")
@@ -242,4 +258,81 @@ func test_hud_lens_button_appears_only_on_impossible_boards() -> void:
 	assert_ne(str(lens_btn.tooltip_text), "", "纯图标/短标签按钮必须带 tooltip")
 	lens_btn.pressed.emit()
 	assert_true(_view.lens_enabled(), "点透镜应真的切到 BoardView 的开关")
+	hud_b.queue_free()
+
+
+# ==================== 静态折叠（折叠盘，2026-10-09） ====================
+#
+# 守的是「远侧翻过来压住近侧」这件事**被真的算出来又真的画出来**：
+#   · 拓扑侧：配对必须逐条对上镜像（a.x + b.x = 2*at-1）且两端是真邻居（与模型层同判据）；
+#   · 视图侧：折叠盘才提供折叠视图、折痕画在两半之间、开关能真的翻面。
+func test_fold_level_is_recognised_and_supports_fold() -> void:
+	_install_board(_fold_level())
+	assert_eq(str(_view._view_meta().get("kind", "")), TopologyModel.VIEW_FOLD,
+			"折叠盘应被识别为折叠")
+	assert_true(_view.supports_fold(), "折叠盘应支持折叠视图")
+
+
+func test_fold_is_not_offered_on_other_topologies() -> void:
+	_install_board(_wrap_level())
+	assert_false(_view.supports_fold(), "环绕盘没有折叠，不应提供折叠视图")
+	assert_eq((_view._fold_pairs() as Array).size(), 0, "非折叠盘不该算出配对")
+
+
+func test_fold_pairs_are_mirror_images_and_real_neighbours() -> void:
+	var b := _install_board(_fold_level())
+	var pairs: Array = _view._fold_pairs()
+	assert_eq(pairs.size(), 12, "6 列、at=3 ⇒ 3 列近侧 × 4 行 = 12 对")
+	var grid: GridInterface = b.grid
+	for pr_v: Variant in pairs:
+		var pr: Dictionary = pr_v
+		var a: Vector2i = pr["a"]
+		var c: Vector2i = pr["b"]
+		assert_true(grid.in_board(a) and grid.in_board(c), "配对两端都必须在盘上：%s-%s" % [a, c])
+		assert_true(grid.get_neighbors(a).has(c), "叠合的两格必须是真邻居：%s-%s" % [a, c])
+		assert_eq(a.x + c.x, 5, "两格必须关于折痕镜像（2*3-1=5）：%s-%s" % [a, c])
+		assert_eq(a.y, c.y, "折合不跨行：%s-%s" % [a, c])
+
+
+func test_fold_crease_segment_sits_between_the_two_halves() -> void:
+	_install_board(_fold_level())
+	var seg: PackedVector2Array = _view._fold_crease_segment(FoldModel.AXIS_X, 3)
+	assert_eq(seg.size(), 2, "x 轴折痕应是一条线段（两个端点）")
+	assert_almost_eq(seg[0].x, seg[1].x, 0.001, "x 轴折痕是**竖直线**（两端 x 相同）")
+	assert_lt(seg[0].y, seg[1].y, "线段应从包围盒上沿贯到下沿")
+	var c_left: Vector2 = _view._cell_center(Vector2i(2, 0))
+	var c_right: Vector2 = _view._cell_center(Vector2i(3, 0))
+	assert_gt(seg[0].x, c_left.x, "折痕应在近侧格心右侧")
+	assert_lt(seg[0].x, c_right.x, "折痕应在远侧格心左侧")
+	assert_almost_eq(seg[0].x, (c_left.x + c_right.x) * 0.5, 0.001, "折痕应落在相邻两格心中点")
+
+
+func test_fold_toggle_flips_and_redraws() -> void:
+	_install_board(_fold_level())
+	assert_false(_view.fold_flat_enabled(), "折叠视图默认是「折起来」")
+	assert_true(_view.toggle_fold_view(), "第一次点开摊平")
+	assert_true(_view.fold_flat_enabled(), "摊平态应可读回")
+	assert_false(_view.toggle_fold_view(), "再点折起来")
+	assert_false(_view.fold_flat_enabled(), "折起态应可读回")
+
+
+func test_hud_fold_button_appears_only_on_fold_boards() -> void:
+	# ① 环绕盘：右列不该多一枚按了没反应的死按钮
+	_install_board(_wrap_level())
+	var hud_a: Control = load("res://ui/hud.tscn").instantiate()
+	_view.add_child(hud_a)
+	assert_null(hud_a.get("_fold_btn"), "环绕盘的 HUD 不应装折叠按钮")
+	hud_a.queue_free()
+	# ② 折叠盘：HUD 进场就装上，且点一下真的切到 BoardView 的开关
+	_install_board(_fold_level())
+	var hud_b: Control = load("res://ui/hud.tscn").instantiate()
+	_view.add_child(hud_b)
+	var fold_btn: Button = hud_b.get("_fold_btn") as Button
+	assert_not_null(fold_btn, "折叠盘的 HUD 应装上折叠按钮")
+	if fold_btn == null:
+		return
+	assert_not_null(fold_btn.icon, "折叠按钮应带图标（图标解析失败会静默降级为空）")
+	assert_ne(str(fold_btn.tooltip_text), "", "纯图标按钮必须带 tooltip")
+	fold_btn.pressed.emit()
+	assert_true(_view.fold_flat_enabled(), "点折叠按钮应真的切到 BoardView 的开关")
 	hud_b.queue_free()
