@@ -26,9 +26,13 @@ signal bucket_reported(result: Dictionary)
 ## 编辑器拿它去 `TextToShape.outline_to_cells`（判界一律走 `grid.in_board()`，不按包围盒猜盘内格）。
 signal outline_drawn(points: PackedVector2Array)
 
+## 虫洞配对：配对工具下点了**盘上**的一格。画布不判断"这是第几端"（配对状态在编辑器里），
+## 只负责"把点击翻译成一格坐标"——与它处理其他工具的分工一致。
+signal portal_clicked(pos: Vector2i)
+
 ## 工具枚举。**新工具一律追加在末尾**：`PAINT..PAN` 的序号被 `level_editor.gd` 的按钮表
 ## 与既有测试直接引用，插在中间会静默错位（改的是"按钮点到的工具"）。
-enum Tool { PAINT, ERASE, RECT_FILL, SELECT, PAN, LINE, BUCKET, OUTLINE }
+enum Tool { PAINT, ERASE, RECT_FILL, SELECT, PAN, LINE, BUCKET, OUTLINE, PORTAL }
 
 ## 单元格型（编辑器的"画笔颜色"）。与 `Cell`/`Cell.State` 的映射见 `_apply_kind`。
 const KIND_MINE := "mine"
@@ -110,6 +114,8 @@ var _line_anchor := Vector2i(-1, -1)
 var _line_preview: Array[Vector2i] = []
 ## 手绘轮廓正在记的点列（棋盘坐标，拖动中累积；抬起时发 `outline_drawn` 并清空）。
 var _outline_pts := PackedVector2Array()
+## 虫洞配对的第一端（编辑器写入；(-1,-1) = 当前没有半截配对）。画布只用它画"已选第一格"的记号。
+var portal_pending := Vector2i(-1, -1)
 ## 小地图拖动中（点/拖小地图 = 移动视口）。
 var _minimap_dragging := false
 
@@ -332,6 +338,51 @@ func grid_line_step() -> int:
 	return maxi(1, ceili(GRID_COARSE_TARGET_PX / cp))
 
 
+# ==================== 虫洞（编辑器呈现） ====================
+
+## 把 `doc.portals` 的每一对画成「一条连线 + 两端圆点」，并给"正在配对的第一个端点"加记号。
+##
+## 【为什么编辑器必须画它】虫洞的语义是"这两格互为邻居"：玩家侧由 `board_view` 画成管子，
+## 编辑器侧若只把数据存下来、不给任何视觉，用户点完两格会"什么都看不见"——分不清到底连上没有。
+## 这里刻意用**直线**（不是玩家侧的弓形管子）：编辑期要的是"哪两格是一对"的精确读数，不是沉浸感。
+func _draw_portals() -> void:
+	if doc == null or (doc.portals.is_empty() and portal_pending.x < 0):
+		return
+	var cp := cell_px()
+	var i := 0
+	while i + 1 < doc.portals.size():
+		var a: Vector2i = doc.portals[i]
+		var b: Vector2i = doc.portals[i + 1]
+		var col := portal_color(int(i / 2.0))
+		var pa := cell_rect(a).get_center()
+		var pb := cell_rect(b).get_center()
+		var w := maxf(2.0, cp * 0.09)
+		if cp >= GRID_THIN_MIN_PX:
+			draw_dashed_line(pa, pb, col, w)
+		else:
+			draw_line(pa, pb, col, w)
+		for pt in [a, b]:
+			draw_circle(cell_rect(pt).get_center(), maxf(2.5, cp * 0.15), col)
+		i += 2
+	# 半截配对：把已选的第一端标出来（否则用户不知道刚才那一点算不算数）。
+	if portal_pending.x >= 0:
+		var r := cell_rect(portal_pending)
+		draw_rect(r, ThemeManager.accent(), false, maxf(2.0, cp * 0.12))
+		draw_circle(r.get_center(), maxf(3.0, cp * 0.18), ThemeManager.accent())
+
+
+## 第 i 对虫洞的颜色：与 `board_view._portal_color` 同一套"主题色相 + 黄金角散开"口径
+##（两端同色 ⇒ 作者在编辑器里看到的配对配色，与玩家在游戏里看到的是同一套）。
+func portal_color(i: int) -> Color:
+	var base := ThemeManager.accent()
+	var hue := fposmod(base.h + float(i) * 0.6180339887, 1.0)
+	var sat := clampf(maxf(base.s, 0.55), 0.0, 1.0)
+	var val := clampf(maxf(base.v, 0.88), 0.0, 1.0)
+	var col := Color.from_hsv(hue, sat, val, 1.0)
+	col.a = clampf(maxf(base.a, 0.9), 0.0, 1.0)
+	return col
+
+
 # ==================== 输入 ====================
 
 func _gui_input(event: InputEvent) -> void:
@@ -396,6 +447,13 @@ func _handle_button(mb: InputEventMouseButton) -> void:
 			# 多边形最终由 `grid.in_board()` 裁剪（见 TextToShape.outline_to_cells）。
 			_outline_pts = PackedVector2Array([board_point(mb.position)])
 			queue_redraw()
+			accept_event()
+			return
+		if tool == Tool.PORTAL:
+			# 虫洞配对：只吃"盘上的格"（洞 / 盘外不响应 —— 端点落在洞里这一对本来就不合法，
+			# 真让它成对只会让 `validate()` 在用户看不见的地方报错）。
+			if pos.x >= 0 and doc.grid().in_board(pos):
+				portal_clicked.emit(pos)
 			accept_event()
 			return
 		if pos.x >= 0:
@@ -770,6 +828,7 @@ func _draw() -> void:
 
 	# 叠加层（正式 API：多层、颜色走主题；见 `set_overlay`）
 	_draw_overlays(vis)
+	_draw_portals()
 
 	# 直线工具预览（拖动中“待落笔”的那条线）
 	if tool == Tool.LINE and _dragging and not _line_preview.is_empty():

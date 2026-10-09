@@ -79,6 +79,13 @@ var mines: Array[Vector2i] = []       # 真源：雷位
 var obstacles: Array[Vector2i] = []   # 障碍 = "格不存在"（洞）——由拓扑的 positions 缺项表达
 var revealed: Dictionary = {}         # Vector2i -> null：初始翻开集合（值由预览重算）
 
+## 虫洞对（**关卡内容**，与雷位 / 骨牌同桶）：扁平 `[a, b, a, b, …]`，相邻两格算一条虫洞。
+##
+## 【为什么是内容而不是编辑选择】虫洞**改邻接**（`TopologyModel.attach_portals` 把两端连成双向边）
+## ⇒ 它决定"这一关的盘长什么样"，会被落盘、被 Board 读走；所以它和雷位一样，`load_from` **不清零**
+##（对比：wrap / dirs / shape_kind 是"由参数重算"的会话选择，载入时会清零）。
+var portals: Array[Vector2i] = []
+
 # —— 规则 ——
 var rule_spec: Dictionary = {}        # spec v1 原文；空 = 用 clue_rule_id 或内置 classic
 var clue_rule_id := ""                # 空 ⇒ classic
@@ -473,6 +480,11 @@ func struct_signature() -> String:
 	h = (h ^ obstacles.size()) * 1099511628211
 	for o in obstacles:
 		h = (h ^ (o.x * 31 + o.y)) * 1099511628211
+	# 虫洞对同样改邻接 ⇒ 必须进签名。漏了它 = "加了虫洞但缓存没失效"，
+	# 预览/审计会继续拿旧盘算（本仓最忌讳的幽灵 bug）。
+	h = (h ^ portals.size()) * 1099511628211
+	for pr in portals:
+		h = (h ^ (pr.x * 31 + pr.y)) * 1099511628211
 	h = (h ^ shape_kind.hash()) * 1099511628211
 	h = (h ^ JSON.stringify(shape_params).hash()) * 1099511628211
 	h = (h ^ foreign_topology.size()) * 1099511628211
@@ -496,9 +508,44 @@ func topology() -> Dictionary:
 
 func _build_topology() -> Dictionary:
 	var raw := _build_topology_raw()
-	if raw.is_empty() or obstacles.is_empty():
+	if raw.is_empty():
 		return raw
-	return _carve_holes(raw, obstacles)
+	var built := raw if obstacles.is_empty() else _carve_holes(raw, obstacles)
+	return _apply_portals(built)
+
+
+## 把编辑器里的虫洞对挂进拓扑（补双向边 + 写 `view.kind = wormhole`）。
+##
+## 【为什么必须走 `TopologyModel.attach_portals`】虫洞边要和 8 邻边一样是**真邻接**，否则预览与
+## 求解器不会把两端当邻居、玩家在游戏里也走不通。这里只管"有对就挂"；合法性（端点在不在盘上…）
+## 由 `validate()` 的拓扑体检报给用户 —— 与关卡加载侧同一判据。
+##
+## 【为什么空对时原样返回】不无条件造 `view` / `portals` 键：否则普通关卡"打开→另存"会被塞进
+## 一堆空字段（落盘 diff 变噪音，且有测试逐字节比对）。
+func _apply_portals(topo: Dictionary) -> Dictionary:
+	if portals.is_empty():
+		return topo
+	var r: Dictionary = TopologyModel.attach_portals(topo, portal_dicts())
+	# 即便有条目被拒（端点在洞里），`attach_portals` 也会把**合法**的那些挂上；被拒的由
+	# `validate()` 显式报错，绝不静默吞掉。
+	var out: Variant = r.get("topology", null)
+	if out is Dictionary:
+		return out
+	return topo
+
+
+## 扁平 `[a, b, …]` → `[{a:{x,y}, b:{x,y}, id:"A"}, …]`（给 `TopologyModel` 与呈现共用）。
+## id 用 A/B/C… 与 `tools/gen_wormhole_levels.gd` 同一约定：同一对在两端显示同一个字母。
+func portal_dicts() -> Array:
+	var out: Array = []
+	var i := 0
+	while i + 1 < portals.size():
+		var a: Vector2i = portals[i]
+		var b: Vector2i = portals[i + 1]
+		var pid := (String.chr(65 + out.size()) if out.size() < 26 else str(out.size() + 1))
+		out.append({"a": {"x": a.x, "y": a.y}, "b": {"x": b.x, "y": b.y}, "id": pid})
+		i += 2
+	return out
 
 
 ## 未挖洞的拓扑（洞格**仍作为存在的格**保留）：与 `_build_topology()` 只差"最后不 `_carve_holes`"。
@@ -518,7 +565,10 @@ func _build_topology_raw() -> Dictionary:
 	if not foreign_topology.is_empty():
 		# 外部盘型：原样返回（障碍只做"再挖一次洞"，幂等）。**绝不**按 dirs/wrap 重建。
 		return foreign_topology
-	var r := WrapTopology.build(rows, cols, dirs, include_self, wrap, not obstacles.is_empty())
+	# 强制产出邻接表（`force=true`）的两种情形：① 有洞（RectGrid 没有"格不存在"的表示法）；
+	# ② 有虫洞（虫洞是**额外邻接**，默认矩形盘的快速路径给不出它 ⇒ 必须落到 AdjacencyGrid）。
+	var r := WrapTopology.build(rows, cols, dirs, include_self, wrap,
+		not obstacles.is_empty() or not portals.is_empty())
 	if not bool(r["ok"]):
 		return {}
 	return r["topology"]
@@ -862,6 +912,26 @@ func validate() -> Dictionary:
 						if ag.get_neighbors(p).is_empty():
 							_audit_warnings.append(_issue("isolated_cell",
 								"该格没有任何邻居（排版偏移写错，或被障碍隔开）", p, ISSUE_INFO))
+				# 虫洞端点体检：端点必须落在盘上（越界 / 被挖成洞 ⇒ 这一对根本不生效）。
+				# 【为什么不静默跳过】用户点了"配对"却发现虫洞没连上，是最难自查的一类问题；
+				# 这里显式报错，并把坐标交给高亮（`highlight_cells` 认 pos）。
+				var on_board_pt := {}
+				for p3 in ag.all_positions():
+					on_board_pt[p3] = true
+				var pi := 0
+				while pi + 1 < portals.size():
+					var wa: Vector2i = portals[pi]
+					var wb: Vector2i = portals[pi + 1]
+					if wa == wb:
+						_audit_errors.append(_issue("portal_same_cell",
+							"虫洞两端是同一格 (%d,%d)：请改成两个不同的格子" % [wa.x, wa.y], wa, ISSUE_ERROR))
+					else:
+						for wp in [wa, wb]:
+							if not on_board_pt.has(wp):
+								_audit_errors.append(_issue("portal_off_board",
+									"虫洞端点 (%d,%d) 不在盘上（越界，或被挖成了洞）—— 这一对不会生效；请改端点，或把这个洞补回来" % [wp.x, wp.y],
+									wp, ISSUE_ERROR))
+					pi += 2
 			for e in _audit_errors:
 				errors.append(e)
 			# 审计里的"孤立格"恒为 💡info（只是作者该知道）；"含自身 / 没有邻接表"是 warn。
@@ -1256,6 +1326,9 @@ func snapshot() -> Dictionary:
 			"include_self": include_self,
 			"dirs": dirs.duplicate(),
 			"obstacles": obstacles.duplicate(),
+			# 虫洞对也是结构源（它改邻接）：快照省掉了 topology ⇒ 必须自己带上，
+			# 否则撤销一次"配对"回不到配之前（与 wrap / obstacles 同一条理由）。
+			"portals": portals.duplicate(),
 		},
 		"foreign": foreign_topology,
 		# ⚠ 形状参数也必须**显式**存（2026-10-03 修）：`load_from()` 会把 `shape_kind/shape_params`
@@ -1281,6 +1354,7 @@ func restore(snap: Dictionary) -> bool:
 		include_self = bool(s.get("include_self", false))
 		dirs.assign(s.get("dirs", []))
 		obstacles.assign(s.get("obstacles", []))
+		portals.assign(s.get("portals", []))
 	var f: Variant = snap.get("foreign", {})
 	foreign_topology = f if f is Dictionary else {}
 	var sh: Variant = snap.get("shape", {})
@@ -1332,6 +1406,9 @@ func load_from(level: Dictionary) -> Dictionary:
 	wrap = false
 	include_self = false
 	foreign_topology = {}
+	# 虫洞对是**关卡内容**（与雷位同桶），**不**属于"能由参数重算"的东西 ⇒ 这里只清空，
+	# 真正的值在下面从 topology 的 view.portals 读回（读不到就是空）。
+	portals = []
 	# 形状族是**当前会话的编辑选择**，不是关卡字段 ⇒ 载入关卡时清空
 	#（载入进来的异形盘一律走 foreign_topology 原样保留那条路）
 	shape_kind = ""
@@ -1348,6 +1425,13 @@ func load_from(level: Dictionary) -> Dictionary:
 		else:
 			# 外部拓扑（六边形/三角/轮廓…）：原样保留，**不**按 dirs/wrap 重建
 			foreign_topology = t.duplicate(true)
+		# 虫洞对（关卡内容）：两种拓扑形态都从同一处读 —— `portal_pairs` 同时认顶层 `portals`
+		# 与 `view.portals`（生成器写的是后者）。
+		for pr in TopologyModel.portal_pairs(t):
+			var pa: Vector2i = pr["a"]
+			var pb: Vector2i = pr["b"]
+			portals.append(pa)
+			portals.append(pb)
 		var present := {}
 		for p in t.get("positions", []):
 			var pd: Dictionary = p

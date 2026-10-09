@@ -327,3 +327,48 @@ func test_outline_tool_drops_single_click() -> void:
 	c._gui_input(up)
 	assert_eq(_outline_events.size(), 0, "单点点击不得成交成形")
 	assert_eq(d.mines.size() + d.obstacles.size(), 0, "单点点击不得改动盘面")
+
+
+# ==================== ⑦ 虫洞配对工具 ====================
+
+var _portal_clicks: Array = []
+
+
+func _record_portal(pos: Vector2i) -> void:
+	_portal_clicks.append(pos)
+
+
+func _click_at(c: EditorCanvas, at: Vector2) -> void:
+	var down := InputEventMouseButton.new()
+	down.button_index = MOUSE_BUTTON_LEFT
+	down.pressed = true
+	down.position = at
+	c._gui_input(down)
+
+
+## 配对工具：点盘上的格 = 发一条 `portal_clicked`（坐标正确），且**不动盘面**；
+## 点洞格 = 不发（端点落在洞里的一对本来就不合法，不该让它成交）。
+##
+## 【为什么画布只管发坐标】"第几端 / 成不成对 / 撤销点取在哪"全在编辑器（`level_editor.gd`）——
+## 画布若自己也记一份 pending，两处状态迟早对不上（本仓踩过"两条路径各自漏收尾"的坑）。
+func test_portal_tool_emits_clicks_only_for_cells_on_the_board() -> void:
+	var c := _make_canvas(600, 600)
+	var d := EditorDoc.new(9, 9)
+	d.obstacles.append(Vector2i(3, 3))     # 挖一个洞，用来验证"洞格不响应"
+	c.set_doc(d)
+	c.tool = EditorCanvas.Tool.PORTAL
+	_portal_clicks = []
+	c.portal_clicked.connect(_record_portal)
+
+	_click_at(c, c.cell_rect(Vector2i(1, 1)).get_center())
+	assert_eq(_portal_clicks.size(), 1, "盘上格应恰好发一次 portal_clicked")
+	if _portal_clicks.size() == 1:
+		assert_eq(_portal_clicks[0], Vector2i(1, 1), "信号里必须是点中的那一格")
+
+	_click_at(c, c.cell_rect(Vector2i(3, 3)).get_center())
+	assert_eq(_portal_clicks.size(), 1, "洞格不发信号（这一对本来就不合法）")
+
+	# 盘面必须原封不动：配对工具不是画笔
+	assert_eq(d.mines.size(), 0, "配对不得顺手放雷")
+	assert_eq(d.obstacles.size(), 1, "配对不得改障碍")
+	assert_eq(d.portals.size(), 0, "画布不持配对状态（成对是编辑器的事）")

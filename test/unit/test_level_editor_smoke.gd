@@ -403,15 +403,15 @@ func test_outline_gesture_writes_a_board_shape() -> void:
 
 
 func test_status_bar_names_every_tool_slot() -> void:
-	# 【漂移闸门】`_refresh_status` 里的工具名表必须覆盖 EditorCanvas.Tool 的**每一个**取值。
-	# 新工具追加在枚举末尾却忘了加名字 ⇒ 这里会 IndexError（不是“界面难看”而是直接报错拖崩编辑器）。
+	# 【漂移闸门】工具名表（单一来源 = `_tool_name`）必须覆盖 EditorCanvas.Tool 的**每一个**取值。
+	# 新工具追加在枚举末尾却忘了加名字 ⇒ 状态栏会显示“-”（这里当场抓到，而不是等用户看见）。
 	var ed := _make_editor()
 	_bind(ed, EditorDoc.new(9, 9))
 	var canvas := _canvas_of(ed)
 	var status := ed.get("_status") as Label
 	assert_not_null(status, "应有底部状态栏")
-	var expected := ["画笔", "橡皮", "矩形填充", "区域选择", "平移", "直线", "油漆桶", "手绘轮廓"]
-	assert_eq(expected.size(), 8, "工具名表应与 EditorCanvas.Tool 一样有 8 项（新增工具时这里要一起加）")
+	var expected := ["画笔", "橡皮", "矩形填充", "区域选择", "平移", "直线", "油漆桶", "手绘轮廓", "虫洞配对"]
+	assert_eq(expected.size(), 9, "工具名表应与 EditorCanvas.Tool 一样有 9 项（新增工具时这里要一起加）")
 	for t in range(expected.size()):
 		canvas.tool = t
 		ed.call("_refresh_status")
@@ -617,3 +617,33 @@ func _opt_pick(opt: OptionButton, key: String) -> void:
 		if str(opt.get_item_metadata(i)) == key:
 			opt.selected = i
 			return
+
+
+# ==================== 拓扑 · 虫洞配对（文档「拓扑玩法」）====================
+
+## 虫洞配对：连点两格 = 一对（一步撤销 = 一对），撤销后能回到"还没配"的状态。
+##
+## 【为什么必须走真实路径而不是直接 `doc.portals.append`】撤销点取在"改动**之前**"这条契约，
+## 只有 UI 层的 `_on_portal_clicked` 负责兑现；绕过它直接写 doc，就把这条契约漏掉了
+##（本仓"按一次撤销等于没动"的旧缺陷就是这么来的）。
+func test_portal_pairing_two_clicks_then_undo() -> void:
+	var ed := _make_editor()
+	var d := EditorDoc.new(5, 5)
+	for m in [Vector2i(0, 0), Vector2i(1, 1), Vector2i(2, 2)]:
+		d.mines.append(m)
+	_bind(ed, d)
+	var canvas := _canvas_of(ed)
+	canvas.tool = EditorCanvas.Tool.PORTAL
+
+	ed.call("_on_portal_clicked", Vector2i(0, 4))
+	assert_eq(d.portals.size(), 0, "只点一格不得成对")
+	assert_eq(canvas.portal_pending, Vector2i(0, 4), "第一端应记成 pending（画布上也要标出来）")
+
+	ed.call("_on_portal_clicked", Vector2i(4, 0))
+	assert_eq(d.portals.size(), 2, "第二端点下去应成一对（扁平 [a, b]）")
+	assert_true(d.portals.has(Vector2i(0, 4)) and d.portals.has(Vector2i(4, 0)), "两端坐标要写进文档")
+	assert_eq(canvas.portal_pending, Vector2i(-1, -1), "成对后 pending 必须清空")
+
+	# 撤销：回到"还没配对"（撤销点取在改动之前）
+	ed.call("_undo_once")
+	assert_eq((ed.get("doc") as EditorDoc).portals.size(), 0, "撤销一次应回到未配对状态")

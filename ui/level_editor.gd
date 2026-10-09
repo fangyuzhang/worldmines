@@ -293,6 +293,8 @@ var _mega_note: Label
 var _open_opt: OptionButton
 # ---- 【2026-10-09 接线】文档 §3/§5/§8/§9 的余项（全部只转发到 core，UI 不自造判据）----
 ## 四象染色预览开关（显示组）：数据走 `ColoringPreview.quadrant_preview`，颜色走它的色表。
+## 虫洞配对的第一端（(-1,-1) = 没有半截配对）；第二端点上去就成对。
+var _pair_pending := Vector2i(-1, -1)
 var _quad_btn: Button
 var _quad_note: Label
 ## 行容量侧栏：每行目标雷数 + 可行性预检（`ColoringPreview.row_report`）。
@@ -554,6 +556,7 @@ func _build_ui() -> void:
 	canvas.bucket_reported.connect(_on_bucket_reported)
 	# 手绘轮廓（文档 §3）：画布交出连续点列，这里转成格集写回盘型。
 	canvas.outline_drawn.connect(_on_outline_drawn)
+	canvas.portal_clicked.connect(_on_portal_clicked)
 	body.add_child(canvas)
 	# 热力图不再挂"运行期子节点"：改由画布的正式叠加层 API 承载（`canvas.set_overlay("hotmap", …)`）。
 	# 缩放/平移/改盘后的重画由画布自己 `queue_redraw()` 负责 ⇒ 本文件不必再接 `draw/resized`。
@@ -719,9 +722,13 @@ func _build_left_bar() -> Control:
 			# 参数化形状（方/六边形/三角/圆/星/扇）覆盖不了"我就想要这么个歪形状"。
 			[EditorCanvas.Tool.OUTLINE, "手绘轮廓",
 				"按住鼠标画一个**闭合轮廓**，松手后整块刻成棋盘形状（撤销 Ctrl+Z；画歪了再画一次即可）",
+				"无"],
+			# 拓扑 · 虫洞：把两格连成一对 ⇒ 游戏里这两格互为邻居（跨盘传送）。
+			[EditorCanvas.Tool.PORTAL, "虫洞配对",
+				"点一格、再点另一格：这两格就成一对虫洞（游戏里互为邻居、可互相传过去）。拆对用撤销 Ctrl+Z",
 				"无"]]:
 		var tool_btn := _toggle_button(str(t[1]), _tool_group, func() -> void:
-			canvas.tool = int(t[0]))
+			_pick_tool(int(t[0])))
 		tool_btn.tooltip_text = "%s（快捷键：%s）" % [str(t[2]), str(t[3])]
 		# 按钮下标**不能**当工具号用（见 `_set_tool`）：工具 id 记在 meta 上，加工具不会错位。
 		tool_btn.set_meta("tool_id", int(t[0]))
@@ -3400,15 +3407,15 @@ func _refresh_status() -> void:
 		return
 	_density_label.text = "总格数 %d，可用 %d，雷 %d，密度 %.1f%%" % [
 		doc.rows * doc.cols, doc.cell_count(), doc.mine_count(), doc.density() * 100.0]
-	# 工具名**必须与 `EditorCanvas.Tool` 逐一对应**：数字快选 1~9 能选到直线/油漆桶，
-	# 旧表只有 5 项 ⇒ 会 IndexError（这就是"新工具追加在末尾"要同步的地方）。
-	var tool_names := ["画笔", "橡皮", "矩形填充", "区域选择", "平移", "直线", "油漆桶", "手绘轮廓"]
+	# 状态栏的工具名**只有一份**（走 `_tool_name`）：这里原先**又抄了一张表**，于是新增工具要改两处，
+	# 漏一处就是"状态栏显示 -"（2026-10-09 加「虫洞配对」时被 `test_status_bar_names_every_tool_slot`
+	# 当场抓住）。改走单一来源后，两处漂移的根被拔掉。
 	var kind_names := {"mine": "地雷", "obstacle": "障碍", "reveal": "初始已翻开", "clear": "清空"}
 	var err := str(canvas.get_meta("first_error", "")) if canvas != null else ""
 	var pos_text := "盘外" if canvas == null or canvas.hover.x < 0 else "(%d,%d)" % [canvas.hover.x, canvas.hover.y]
 	_status.text = "坐标 %s ｜ 格 %d×%d ｜ 雷 %d ｜ 密度 %.0f%% ｜ 工具 %s ｜ 格型 %s%s" % [
 		pos_text, doc.cols, doc.rows, doc.mine_count(), doc.density() * 100.0,
-		tool_names[canvas.tool] if canvas != null and canvas.tool >= 0 and canvas.tool < tool_names.size() else "-",
+		_tool_name(canvas.tool) if canvas != null else "-",
 		kind_names.get(canvas.paint_kind, "-") if canvas != null else "-",
 		"" if err == "" else " ｜ ⚠ %s" % err]
 
@@ -5828,6 +5835,8 @@ func _set_tool(p_tool: int) -> void:
 	if canvas == null:
 		return
 	canvas.tool = p_tool
+	# 切走虫洞工具 ⇒ 半截配对作废：留着它，用户回来点一格会"莫名其妙"连到上次那格上。
+	_clear_pair_pending()
 	# 按 meta 里的工具 id 高亮，**不按按钮下标**：LINE / BUCKET 是键盘专用（没有按钮），
 	# 一旦再补按钮（本轮补的 OUTLINE），"下标 = 工具号"就会静默点错工具。
 	for b in _tool_btns:
@@ -5837,8 +5846,50 @@ func _set_tool(p_tool: int) -> void:
 
 
 func _tool_name(t: int) -> String:
-	var names := ["画笔", "橡皮", "矩形填充", "区域选择", "平移", "直线", "油漆桶", "手绘轮廓"]
+	var names := ["画笔", "橡皮", "矩形填充", "区域选择", "平移", "直线", "油漆桶", "手绘轮廓", "虫洞配对"]
 	return names[t] if t >= 0 and t < names.size() else "?"
+
+
+## 工具按钮 → 选工具。集中到一处，是为了"切走虫洞工具时清掉半截配对"这类跨工具状态有唯一落点
+##（工具按钮原先直接写 `canvas.tool`，键盘路径走 `_set_tool`，两条路会各自漏一套收尾）。
+func _pick_tool(p_tool: int) -> void:
+	if canvas == null:
+		return
+	canvas.tool = p_tool
+	_clear_pair_pending()
+	_toast("工具：%s" % _tool_name(p_tool))
+
+
+## 虫洞配对：第一格记 pending，第二格成交（一步撤销 = 一对虫洞）。
+## 【为什么撤销点在改动之前】与画笔同规矩（见 `_push_undo` 的注释）；`allow_merge=false`
+## 保证"连点两格"不会和上一步操作合并成一条撤销。
+func _on_portal_clicked(pos: Vector2i) -> void:
+	if _pair_pending.x < 0:
+		_pair_pending = pos
+		if canvas != null:
+			canvas.portal_pending = pos
+			canvas.queue_redraw()
+		_toast("虫洞：已选第一端 (%d,%d) —— 再点另一格完成配对" % [pos.x, pos.y])
+		return
+	var a := _pair_pending
+	if a == pos:
+		_toast("虫洞：两端不能是同一格", true)
+		return
+	_push_undo(false)
+	doc.portals.append(a)
+	doc.portals.append(pos)
+	_clear_pair_pending()
+	_mark_dirty()
+	_toast("虫洞：(%d,%d) ↔ (%d,%d) 已配对" % [a.x, a.y, pos.x, pos.y])
+	_refresh_all()
+
+
+## 清掉半截配对（切工具 / 成对成功 / 换文档都走它）。
+func _clear_pair_pending() -> void:
+	_pair_pending = Vector2i(-1, -1)
+	if canvas != null:
+		canvas.portal_pending = Vector2i(-1, -1)
+		canvas.queue_redraw()
 
 
 func _set_kind(p_kind: String) -> void:

@@ -699,3 +699,52 @@ func test_space_grid_keeps_hole_cells_that_grid_carves_away() -> void:
 	var d2 := EditorDoc.new(5, 5)
 	assert_eq(d2.space_grid().all_positions().size(), 25, "无洞时空间盘 = 整盘 25 格")
 	assert_eq(d2.grid().all_positions().size(), 25, "无洞时两者应一致")
+
+
+## 虫洞配对：编辑动作 → 拓扑（真邻接 + view.portals）→ 落盘 → 回读，全链路自证。
+##
+## 【为什么必须钉住】虫洞的"两端互为邻居"是**玩法本体**（预览 / 求解器 / 玩家都靠它）；
+## 而 JSON 里那条边和 8 邻边混在同一张邻接表里、分不出谁是谁 ⇒ 落盘必须同时带 `view.portals`
+## 这份显式声明。少任何一半，用户就会看到"编辑器里连了、进游戏没连"，或者"读回来少一对"。
+func test_portal_pair_becomes_real_adjacency_and_round_trips() -> void:
+	var d := _doc(5, 5, [Vector2i(1, 1)])
+	var a := Vector2i(0, 0)
+	var b := Vector2i(4, 4)
+	d.portals.append(a)
+	d.portals.append(b)
+	# ① 拓扑：两端必须真的互为邻居（不是只写了一条元数据）
+	var topo := d.topology()
+	assert_false(topo.is_empty(), "有虫洞的盘必须产出 topology")
+	assert_eq(str((topo["view"] as Dictionary).get("kind", "")), "wormhole", "呈现种类应标成 wormhole")
+	assert_eq(TopologyModel.portal_pairs(topo).size(), 1, "拓扑里应带 1 对虫洞声明")
+	var ag := AdjacencyGrid.new()
+	ag.setup_from_topo(topo)
+	assert_true(ag.get_neighbors(a).has(b), "虫洞两端必须互为邻居：%s" % str(ag.get_neighbors(a)))
+	assert_true(ag.get_neighbors(b).has(a), "虫洞邻接必须对称")
+	# ② 落盘 → 回读（能保存的必定能加载）
+	var back := EditorDoc.new()
+	assert_true(bool(back.load_from(d.to_level_json())["ok"]), "带虫洞的关卡应能读回")
+	assert_eq(back.portals.size(), 2, "虫洞对必须随关卡往返（扁平 [a, b]）")
+	assert_true(back.portals.has(a) and back.portals.has(b), "两端坐标要原样回来")
+	# ③ 回读出来的盘，两端依旧是邻居
+	var ag2 := AdjacencyGrid.new()
+	ag2.setup_from_topo(back.topology())
+	assert_true(ag2.get_neighbors(a).has(b), "回读后的盘也必须保持虫洞邻接")
+
+
+## 虫洞端点被挖成洞 ⇒ **必须报错**，不许静默丢掉这一对。
+##
+## 【为什么不静默跳过】"我明明连了虫洞却没生效"是最难自查的一类问题；本仓纪律是坏数据宁可报错，
+## 也不替用户悄悄修好或丢掉。
+func test_portal_endpoint_on_a_hole_is_reported() -> void:
+	var d := _doc(5, 5, [Vector2i(1, 1)])
+	d.portals.append(Vector2i(2, 2))
+	d.portals.append(Vector2i(3, 3))
+	d.obstacles.append(Vector2i(3, 3))      # 把其中一端挖成洞
+	var rep := d.validate()
+	var codes: Array[String] = []
+	for it in rep["errors"]:
+		codes.append(str((it as Dictionary)["code"]))
+	assert_true(codes.has("portal_off_board"),
+		"端点落在洞里的虫洞必须显式报错（收到的错误码：%s）" % str(codes))
+	assert_false(bool(rep["ok"]), "含坏虫洞的关卡不该通过校验")

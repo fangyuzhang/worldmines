@@ -71,3 +71,39 @@ func test_wormhole_levels_declare_shape_kind_and_read_back_ports() -> void:
 		assert_true(bool(audit["ok"]), "%s 的拓扑应过安全门：%s" % [path.get_file(), str(audit["errors"])])
 		checked += 1
 	assert_gt(checked, 0, "应至少核到一关")
+
+
+## 「打开官方虫洞关 → 另存」必须保住虫洞 —— 本仓最恨的 bug 就是"打开再存把设计弄丢"。
+##
+## 走的是编辑器的真实往返路径：`EditorDoc.load_from(原文)` → `to_level_json()` → 再读回。
+## 它同时钉住两件事：
+##   ① `load_from` 会**从 view.portals 读回**虫洞对（而不是当成陌生字段丢掉）；
+##   ② 另存出来的拓扑里"虫洞边"仍是**真邻接**（不是只剩一条装饰性元数据、引擎走不通）。
+func test_editor_round_trip_keeps_the_wormhole() -> void:
+	var paths := _paths()
+	assert_gt(paths.size(), 0, "应有官方虫洞关")
+	var path := paths[0]
+	var f := FileAccess.open(path, FileAccess.READ)
+	assert_not_null(f, "应能读 %s" % path.get_file())
+	if f == null:
+		return
+	var d: Variant = JSON.parse_string(f.get_as_text())
+	f.close()
+	assert_true(d is Dictionary, "关卡应是合法 JSON 对象")
+	if not (d is Dictionary):
+		return
+	var ed := EditorDoc.new()
+	assert_true(bool(ed.load_from(d)["ok"]), "%s 应能被编辑器打开" % path.get_file())
+	assert_gt(ed.portals.size(), 0, "编辑器应把虫洞对读进来（读不进 = 另存必丢）")
+	var back := EditorDoc.new()
+	assert_true(bool(back.load_from(ed.to_level_json())["ok"]), "另存出来的关卡应能再读回")
+	assert_eq(back.portals.size(), ed.portals.size(), "虫洞对数量必须原样往返")
+	var ag := AdjacencyGrid.new()
+	ag.setup_from_topo(back.topology())
+	var i := 0
+	while i + 1 < back.portals.size():
+		var a: Vector2i = back.portals[i]
+		var b: Vector2i = back.portals[i + 1]
+		assert_true(ag.get_neighbors(a).has(b), "另存后 %s -> %s 的虫洞边必须还在" % [str(a), str(b)])
+		assert_true(ag.get_neighbors(b).has(a), "另存后 %s -> %s 的虫洞边必须还在" % [str(b), str(a)])
+		i += 2
