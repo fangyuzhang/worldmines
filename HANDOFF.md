@@ -129,7 +129,7 @@ Start-Process ... -ArgumentList '--export-release','Windows Desktop', $exe   # �
 | 混合档三张表怎么切 | 页内开关 `_mixed_tab`（0/1/2，`MIXED_TABS = 3`）。**焦点交接（下一关）必须同时切页和切表**——`_mixed_tab_of()` 按组合携带的算子轴判定，否则弹窗会开在一个看不见的表面上 |
 | 为什么没有「任意两约束」表 | GDD §5.1 硬限制：观测恰 1、结构 ≤2、**守恒 ≤1**。代码的 `KIND_GLOBAL` 同时装 S 轴与 Z 轴（`pf` 是 S1、`mx` 是 Z1），按 KIND 配对会造出「两个守恒同关」的违规组合——早先那张 20 个的 G+G 表正是这么来的 |
 | **Def 数据包（`defs/*.json`）的归属** | 它注册进 `DefEngine`（`ModLoader.load_mod_dir` 返回 `[{name,type}]`，`ModAPI` 存在 mod 记录的 `"defs"` 键），**不进 `RuleRegistry`** → 因此不产生选关页卡片，Mod 页如实列出它的 Def 名并注明去模组页生成关卡 |
-| Def 包怎么玩 | 主菜单「模组」页 → `PuzzleGenerator.generate_with_engine(ModAPI.defs, def_name, ...)` 生成到 `user://mods/<mod>/levels/`。它与规则平台（CP-SAT 生成 / 提示 / 可行性）**是两条独立的链**，打通需要 Def→`RulePlugin` 桥 —— 尚未做，别误以为 Def 包是坏的 |
+| Def 包怎么玩 | 主菜单「模组」页 → `PuzzleGenerator.generate_with_engine(ModAPI.defs, def_name, ...)` 生成到 `user://mods/<mod>/levels/`。**Def 桥已打通（2026-10-25 复核并补测，旧「尚未做」说法作废）**：`generate_with_engine` 把 Def 的 (window,aggregate)/op 翻译成规则 id 后统一委托 `generate_with_rules`——CP-SAT 生成/提示/可行性同一条链；无等价组合返回 `{}`。同 seed 两链布雷逐位一致由 `test/unit/test_def_bridge.gd` 钉住（4 用例 17 断言） |
 | 存档/崩溃恢复 | `ui/save_coordinator.gd` |
 | 对局流程 | `ui/game_session.gd` |
 | 棋盘渲染 | `ui/board_view.gd` |
