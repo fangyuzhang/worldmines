@@ -49,7 +49,7 @@ enabled=PackedStringArray("res://addons/debug_menu/plugin.cfg", "res://addons/go
 
 [gui]
 
-theme/custom_font="res://assets/fonts/WenYuanRoundedSCVF.ttf"
+theme/custom_font="res://assets/fonts/WenYuanRoundedSCVF-subset.ttf"
 
 [rendering]
 
