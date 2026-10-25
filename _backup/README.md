@@ -15,6 +15,7 @@
 | `世界扫雷_MVP_交付（源码+8截图+交付说明）.zip` | 主工作区根 | 2026-09-08 MVP 交付包 |
 | `mirror_0927.tar.gz` | 主工作区根 | 2026-09-27 工程镜像快照（490KB） |
 | `workspace_dot_vscode/` | 主工作区 `.vscode/` | 编辑器配置 |
+| `asset_sources/kenney_ui/` | 主工程 `assets/ui/_downloads/kenney_ui` | Kenney UI 素材源库（**CC0**，可再分发，11MB） |
 
 ## 恢复步骤
 
@@ -65,7 +66,7 @@ git clone kim_project_history.git.bundle kim_project_with_history
 
 | 内容 | 原因 | 重新获取 |
 |---|---|---|
-| 主工程 `assets/ui/_downloads/`（473MB：Kenney UI 包 + Resource Boy 蜡笔纹理） | **Resource Boy 许可证禁止再分发**；且均为素材源库，主工程内已提交的是加工后的成品资源 | Kenney：[kenney.nl](https://kenney.nl)（CC0 自由下载）；Resource Boy：[resourceboy.com](https://resourceboy.com) 邮箱获取 |
+| 主工程 `assets/ui/_downloads/rb_crayon*`（233MB：Resource Boy 蜡笔纹理源库） | **Resource Boy 许可证禁止再分发**，入库即违约；主工程内已提交的是加工后的成品资源 | [resourceboy.com](https://resourceboy.com) 邮箱获取；**请务必在本地另行保留此目录** |
 | 各工程的 `.godot/` 导入缓存 | 体积大且 Godot 打开工程时自动重建 | 自动生成 |
 | `.logs/`、`.gdmcp/`、`.codebuddy/` 等工具缓存与日志 | 一次性运行产物 | 不需要 |
 | 根目录 `_staged_levels/`（解压出 3,380/192,532 个文件的不完整副本） | 完整数据在 §2 的 tar 分卷中，以此为准 | 见 §2 |
