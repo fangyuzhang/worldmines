@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "godot-mcp-native": {
+      "url": "http://localhost:9080/mcp",
+      "type": "streamableHttp"
+    }
+  }
+}

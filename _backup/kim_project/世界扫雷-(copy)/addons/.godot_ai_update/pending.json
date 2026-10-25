@@ -1,0 +1,16 @@
+{
+	"backup_root": "res://addons/.godot_ai_update/backup/3.2.5",
+	"clients_migrated": true,
+	"editor_nonce": "7d8b4a9ad401596b42bd91c09052348f",
+	"error": "",
+	"expected_tree_sha256": "cadcae8c15592a1089d68bc13488209b986b00044234f2d95e99c1ffa71a1ef7",
+	"from_version": "3.2.5",
+	"godot_version": "4.7.2-stable (steam)",
+	"live_root": "res://addons/godot_ai",
+	"manifest_sha256": "95edcf240573f513a68f1519a6015c425764bb278a8f1a1ecb797b63eec7c90c",
+	"replace_owned_mismatches": true,
+	"status": "success",
+	"swapped_unix": 1788786453.0,
+	"to_version": "4.0.0",
+	"verified_unix": 1788786459.0
+}

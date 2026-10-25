@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://b66mh73k1ddqx"]
+
+[ext_resource type="Script" uid="uid://csvgm5078dcsp" path="res://scripts/ui/main.gd" id="1_o5qli"]
+
+[node name="main" type="Control" unique_id=1237331729]
+layout_mode = 3
+anchors_preset = 0
+script = ExtResource("1_o5qli")

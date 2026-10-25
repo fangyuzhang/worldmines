@@ -1,0 +1,33 @@
+[gd_scene format=3 uid="uid://bx351d3203ty5"]
+
+[ext_resource type="Script" uid="uid://bvsauvvom6st1" path="res://scenes/main.gd" id="1_main"]
+
+[node name="Main" type="Control" unique_id=277944704]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_main")
+
+[node name="HUD" type="Label" parent="." unique_id=1999914738]
+layout_mode = 0
+offset_left = 12.0
+offset_top = 8.0
+offset_right = 700.0
+offset_bottom = 40.0
+text = "关卡 -"
+
+[node name="Status" type="Label" parent="." unique_id=633598193]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = -48.0
+offset_right = -12.0
+offset_bottom = -12.0
+grow_horizontal = 2
+grow_vertical = 0
+horizontal_alignment = 1

@@ -1,0 +1,56 @@
+[gd_scene format=3 uid="uid://divek5htikyk4"]
+
+[ext_resource type="Script" uid="uid://7o4sscpbe7an" path="res://scripts/ui/ui_base.gd" id="1_tf02q"]
+
+[node name="ui_base" type="Control" unique_id=1218028536]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 484.0
+offset_top = 223.0
+offset_right = 484.0
+offset_bottom = 223.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_tf02q")
+
+[node name="Menu" type="PanelContainer" parent="." unique_id=224530736]
+layout_mode = 0
+
+[node name="TitleBar" type="ColorRect" parent="Menu" unique_id=745416518]
+custom_minimum_size = Vector2(0, 64)
+layout_mode = 2
+color = Color(0.4862745, 0.3019608, 1, 1)
+
+[node name="VariantSection" type="PanelContainer" parent="Menu" unique_id=2103250600]
+custom_minimum_size = Vector2(360, 320)
+layout_mode = 2
+
+[node name="DifficultySection" type="PanelContainer" parent="Menu" unique_id=1454084520]
+custom_minimum_size = Vector2(360, 120)
+layout_mode = 2
+
+[node name="StartBtn" type="Button" parent="Menu" unique_id=555636267]
+custom_minimum_size = Vector2(200, 48)
+layout_mode = 2
+text = "开始游戏"
+
+[node name="GameUI" type="Control" parent="." unique_id=1301504334]
+visible = false
+anchors_preset = 0
+
+[node name="HUD" type="PanelContainer" parent="GameUI" unique_id=458156962]
+layout_mode = 0
+
+[node name="BoardArea" type="PanelContainer" parent="GameUI" unique_id=1808869977]
+layout_mode = 0
+
+[node name="SidePanel" type="PanelContainer" parent="GameUI" unique_id=1593385143]
+layout_mode = 0
+
+[node name="GameOver" type="ColorRect" parent="." unique_id=1867580920]
+visible = false
+layout_mode = 0
+color = Color(0, 0, 0, 0.8)

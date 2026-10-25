@@ -106,6 +106,13 @@ godot --path . -s addons/gut/gut_cmdln.gd -gdir=res://test -ginclude_subdirs -ge
 > ⚠️ 仓库含 46.5 MB 全量中文字体以支撑开箱即跑；做发行版导出前建议按
 > [`assets/fonts/README.md`](assets/fonts/README.md) 的指引做子集化。
 
+## 完整备份与恢复
+
+[`_backup/`](_backup/README.md) 内含本项目周边的全部历史数据：E 盘 kim 主项目快照及其完整 git
+历史（bundle）、暂存关卡 tar 分卷（614MB，192,532 个成员）、相关 Python 原型、MVP 交付包等，
+并附分卷合并与恢复步骤。**克隆本仓库即可在其他电脑完整还原整个项目**（素材源库除外，见
+_backup/README.md 的「重新获取方式」）。
+
 ## English Summary
 
 **World Minesweeper (世界扫雷)** is a variant minesweeper logic-puzzle game built with
