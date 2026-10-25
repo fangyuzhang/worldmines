@@ -635,7 +635,7 @@ func on_load() -> bool:
 
 1. Steam 版 Godot 非 .NET → 必须用 mono 版。
 2. 无 git，误删难回滚。
-3. 程序集名/项目名含空格 `世界扫雷 (Copy)` → 命令行引用加引号。
+3. ~~程序集名/项目名含空格~~（2026-10-26 已改名 `世界扫雷`，csproj/sln 同步 git mv；user:// 数据目录已随迁，含 thin_fill_1025 暂存）。
 4. `tests/`（顶层）是空目录，测试在 `test/unit/`。
 5. ~~`test_wasm_sandbox.gd` 因 wasm DLL 环境稳定失败~~ **已于 2026-09 修复**：根因是 `res://tools/` 下的 wasm 测试模块被归档到 `archive/tools/` 导致读到空字节；已恢复文件，并给 `WasmSandbox.load_module` 加魔数防线（`\0asm`，避免 Godot `Wasm.load` 对垃圾字节 push_error 被 GUT 记为 Unexpected Error）。现在 4/4 通过——**请勿再删 `tools/` 下的 wasm 文件**。
 6. 坐标：JSON `{r,c}` → `Vector2i(c, r)`；存档 `[row,col]` → `Vector2i(col,row)`。

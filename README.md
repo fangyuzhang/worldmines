@@ -50,7 +50,7 @@
 
 1. **Godot 4.7.2 stable .NET**（[godotengine.org](https://godotengine.org/download) 下载 .NET 版）
 2. **.NET SDK 9.0**（首次打开工程时 Godot 会自动恢复 NuGet 包，含 Google.OrTools）
-3. Windows 平台首次运行会自动编译 C# 程序集（`世界扫雷 (Copy).csproj`）
+3. Windows 平台首次运行会自动编译 C# 程序集（`世界扫雷.csproj`）
 
 ### 运行
 

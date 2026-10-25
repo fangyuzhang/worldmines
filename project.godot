@@ -10,7 +10,7 @@ config_version=5
 
 [application]
 
-config/name="世界扫雷 (Copy)"
+config/name="世界扫雷"
 config/version="1.0.0"
 run/main_scene="res://ui/level_select.tscn"
 config/features=PackedStringArray("4.7", "C#", "Forward Plus")
@@ -41,7 +41,7 @@ window/stretch/aspect="expand"
 
 [dotnet]
 
-project/assembly_name="世界扫雷 (Copy)"
+project/assembly_name="世界扫雷"
 
 [editor_plugins]
 
