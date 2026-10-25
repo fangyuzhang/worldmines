@@ -9,6 +9,11 @@ extends RefCounted
 ## GDScript 回退枚举的总雷数必须已知（spec.total_mines >= 0）。
 static var _solver: Object = null
 static var _probed := false
+## 【2026-10-25 线程化】C# 单例实例的互斥锁：no_guess_guard 的投机预计算会在后台线程
+## 调 find_forced_cells，与主线程（生成/提示/同步兜底）并发使用同一实例会互相踩踏
+## 内部解析状态（实测报 "Cannot evaluate '' in an integer expression" 后返回 Nil）。
+## 所有 _solver 调用必须持锁；锁内只有 C# 调用本身，无回调回 GDScript，无死锁面。
+static var _mutex := Mutex.new()
 
 
 ## C# 后端是否可用（探测一次并缓存实例）。
@@ -26,7 +31,10 @@ static func available() -> bool:
 ## 唯一解计数：0=无解 1=唯一 2=多解（截断）。spec 见 RuleOracle.build_spec。
 static func count_solutions(spec: Dictionary) -> int:
 	if available():
-		return int(_solver.CountSolutions(spec))
+		_mutex.lock()
+		var r := int(_solver.CountSolutions(spec))
+		_mutex.unlock()
+		return r
 	return fallback_count(spec)
 
 
@@ -35,7 +43,10 @@ static func count_solutions(spec: Dictionary) -> int:
 ## C# 不可用时返回空（保守降级：判为需猜测，生成失败但不产出坏关卡）。
 static func find_forced_cells(spec: Dictionary) -> Dictionary:
 	if available():
-		return _solver.FindForcedCells(spec)
+		_mutex.lock()
+		var r: Dictionary = _solver.FindForcedCells(spec)
+		_mutex.unlock()
+		return r
 	return {}
 
 
@@ -44,7 +55,10 @@ static func find_forced_cells(spec: Dictionary) -> Dictionary:
 ## 避免对不可能的组合进入「换 seed 重试」的暴力生成（那会白跑几十秒）。
 static func is_feasible(spec: Dictionary) -> bool:
 	if available():
-		return bool(_solver.IsFeasible(spec))
+		_mutex.lock()
+		var r := bool(_solver.IsFeasible(spec))
+		_mutex.unlock()
+		return r
 	# 无 C# 后端：枚举到第一个解即真（max_count=1，找到即停；小盘可用）
 	return fallback_count(spec, 1) >= 1
 

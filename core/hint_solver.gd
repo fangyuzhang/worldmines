@@ -105,23 +105,34 @@ func _resolve_globals(board: Board) -> Array:
 ## 「已标数 == 线索值」提前成立，把含雷格判成安全 → 直接违反「提示永不害死玩家」
 ## （25_HANDOFF §13.2 首项 / §14 开放问题 #7）。
 func hint_rule(board: Board) -> Array[ReasoningStep]:
-	var steps: Array[ReasoningStep] = []
+	# 【2026-10-25 线程化拆分】本函数 = prepare（主线程读盘快照）→ solve（纯函数，
+	# 可安全跑在后台线程，见 no_guess_guard 的投机预计算）→ finish（主线程按当前盘面过滤）。
+	# 三段合一的旧行为逐行保留，现有提示用例零变化。
+	var prep := prepare_rule_inputs(board)
+	if not bool(prep.get("ok", false)):
+		return []
+	return finish_rule_steps(board, prep, solve_rule_fixpoint(prep))
+
+
+## 阶段一（主线程）：读盘快照——此后两个阶段**不再触碰 Board**。
+## 返回 {"ok": bool, "why": str, ...}；why ∈ no_grid / no_rule / empty_active（对应旧早退分支）。
+## 线程安全边界：active/masked/proven 为纯容器拷贝；clue_rule（注册表插件，加载后不可变）
+## 与 topo（AdjacencyGrid，盘后只读的邻接表）为只读共享——实测两者盘后无任何写点。
+func prepare_rule_inputs(board: Board) -> Dictionary:
 	if board.grid == null:
-		return steps
+		return {"ok": false, "why": "no_grid"}
 	var clue_id := board.rule_clue_id
 	if clue_id == "":
 		# 内置变体：映射到同语义的内置规则（P4 统一到约束原语）
 		clue_id = str(VARIANT_TO_RULE.get(board.clue_variant, ""))
 	if clue_id == "":
-		return steps
+		return {"ok": false, "why": "no_rule"}
 	var clue_rule: Object = RuleRegistry.default().resolve(StringName(clue_id))
 	if clue_rule == null:
-		return steps
+		return {"ok": false, "why": "no_rule"}
 	var globals: Array = _resolve_globals(board)
-	var size: Vector2i = board.grid.size()
 	# 异形拓扑（邻接表）：约束构造必须走拓扑邻域，否则方向型窗口在邻接表上无意义。
 	var topo: GridInterface = board.grid if board.grid is AdjacencyGrid else null
-	var oracle := RuleOracle.new(clue_rule, globals, size, board.total_mines, topo)
 	# 玩家视角：**只经 get_player_constraint() 取约束**（不直读 cell.value）。
 	# 结构性意义：① 星号格（终极模式）在玩家视角无线索，自动被排除，不会泄露隐藏值；
 	# ② 与「求解器只准走玩家视角入口」的红线一致（25_HANDOFF §13.2「提示未走 PlayerView」）。
@@ -149,24 +160,36 @@ func hint_rule(board: Board) -> Array[ReasoningStep]:
 			_:
 				pass  # 星号格 / 无线索格：玩家视角无信息，不参与推理
 	if active.is_empty():
-		return steps
-	# 不动点迭代：**只信任「可演绎确证」的雷**。
-	#
-	# 为什么必须迭代：单次零信任推导会漏掉「用已确证的雷继续推」这一大类推理。
-	# 实测代价很实在——对 levels/ 下 20 关导出证明链，单轮版本有 2 关
-	#（classic_07 / generated_07）推不动；迭代后全部推完。
-	#
-	# 为什么仍然安全：每轮加入 known_mines 的都是**上一轮 CP-SAT 在全部模型里
-	# 恒成立的雷**，即演绎确证的结论，不是玩家的猜测。玩家手动插的旗子始终不计入
-	#（错旗会让「已标数 == 线索值」提前成立，把含雷格判成安全）。
-	# 这正是 25_HANDOFF §13.2 给出的正解：「先零信任推理出必然雷集，再只把集合内的旗计入」。
+		return {"ok": false, "why": "empty_active"}
 	# 种子：把**此前已演绎确证**的雷先并入已知条件（不含玩家插的旗）。
 	# 没有这一步，跨调用会丢掉上一批确证结论 → 出现「只剩 1 格却推不动」的假卡死。
-	var proven: Array[Vector2i] = []
+	var proven: Array = []
 	for p in board.proven_mines:
 		proven.append(p)
-	var mine_out: Array[Vector2i] = []
-	var safe_out: Array[Vector2i] = []
+	return {"ok": true, "clue_id": clue_id, "clue_rule": clue_rule, "globals": globals,
+		"size": board.grid.size(), "total_mines": board.total_mines, "topo": topo,
+		"active": active, "masked": masked, "proven": proven}
+
+
+## 阶段二（可后台线程）：不动点迭代——**只信任「可演绎确证」的雷**。纯函数，无 Board 引用。
+##
+## 为什么必须迭代：单次零信任推导会漏掉「用已确证的雷继续推」这一大类推理。
+## 实测代价很实在——对 levels/ 下 20 关导出证明链，单轮版本有 2 关
+##（classic_07 / generated_07）推不动；迭代后全部推完。
+##
+## 为什么仍然安全：每轮加入 known_mines 的都是**上一轮 CP-SAT 在全部模型里
+## 恒成立的雷**，即演绎确证的结论，不是玩家的猜测。玩家手动插的旗子始终不计入
+##（错旗会让「已标数 == 线索值」提前成立，把含雷格判成安全）。
+## 这正是 25_HANDOFF §13.2 给出的正解：「先零信任推理出必然雷集，再只把集合内的旗计入」。
+## C# 侧线程安全：RuleSolver 无静态可变状态（find_forced_cells 每次调用自建模型），
+## spec 为纯 Dictionary/Array（本函数内新建、不与主线程共享可变引用）。
+func solve_rule_fixpoint(prep: Dictionary) -> Dictionary:
+	var oracle := RuleOracle.new(prep["clue_rule"], prep["globals"], prep["size"], prep["total_mines"], prep["topo"])
+	var active: Dictionary = prep["active"]
+	var masked: Dictionary = prep["masked"]
+	var proven: Array = (prep["proven"] as Array).duplicate()
+	var mine_out: Array = []
+	var safe_out: Array = []
 	for _round in MAX_PROOF_ROUNDS:
 		var forced: Dictionary = RuleCpSat.find_forced_cells(oracle.build_spec(active, proven, masked))
 		if forced.is_empty():
@@ -186,9 +209,18 @@ func hint_rule(board: Board) -> Array[ReasoningStep]:
 				grew = true
 		if not grew:
 			break  # 已达不动点
+	return {"mine_out": mine_out, "safe_out": safe_out}
+
+
+## 阶段三（主线程）：按**当前**盘面过滤结论并生成步骤（盘面在后台求解期间变化时，
+## 由调用方的世代号决定整体丢弃，本函数只做展示过滤）。
+func finish_rule_steps(board: Board, prep: Dictionary, result: Dictionary) -> Array[ReasoningStep]:
+	var steps: Array[ReasoningStep] = []
+	var mine_out: Array = result.get("mine_out", [])
+	var safe_out: Array = result.get("safe_out", [])
 	if mine_out.is_empty() and safe_out.is_empty():
 		return steps
-	var tag := "规则演绎(%s)" % clue_id
+	var tag := "规则演绎(%s)" % str(prep.get("clue_id", ""))
 	for p in mine_out:
 		var c: Cell = board.grid.get_cell(p)
 		if c == null or c.state == Cell.State.REVEALED or c.state == Cell.State.FLAGGED:
