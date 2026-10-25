@@ -820,6 +820,15 @@ grep 全部测试文件对「文件名/类名」的引用，以下文件**没有
 
 补测试优先 `theme_manager`（全项目视觉都依赖它）与 `hint_panel`（最大盲区）。
 
+> **【2026-10-25 复核】本表已大幅过期**（以代码为准）：
+> - `theme_manager` 已有 `test/unit/test_theme_manager.gd`（25 用例）+ 4 个 ui 契约测试
+>   （theme_settings / theme_staged / theme_surface_contrast / theme_marks），**不再是盲区**（文件也已长到 1527 行）；
+> - `skin_service` → `test/ui/test_skin_system.gd` ✅；`ui_toast` → 2 个引用文件 ✅；
+>   `variant_capability` → `test_batch_forge` / `test_editor_ux` ✅；`ui_theme`/`hint_coordinator` → 各 2 个引用文件（部分覆盖）；
+> - `audio_manager` → 新增 `test/unit/test_audio_manager.gd`（4 用例 14 断言，2026-10-25）；
+> - `level_artifact` → 新增 `test/unit/test_level_artifact.gd`（3 用例 6 断言，2026-10-25）；
+> - **仍为零覆盖的只剩 `ui/hint_panel.gd`**（326 行，最大剩余盲区）；`no_guess_guard` 待线程化专项顺带补。
+
 ### 发布卫生（导出 exe 的已知构成）
 
 `--export-release`（`export_filter=all_resources`）会把 **addons/ 全部打包**。当前 exe 里含
