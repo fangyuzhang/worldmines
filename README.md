@@ -9,7 +9,7 @@
 
 | 主菜单 | 关卡选择 | 对局中 |
 |---|---|---|
-| ![主菜单](screenshots/01_main_menu.png) | ![关卡选择](screenshots/02_level_select.png) | ![对局中](screenshots/03_playing.png) |
+| ![主菜单](screenshots/10_main_menu.png) | ![关卡选择](screenshots/12_level_select.png) | ![对局中](screenshots/13_playing_classic.png) |
 
 ## 这是什么
 
