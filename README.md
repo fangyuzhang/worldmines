@@ -8,8 +8,10 @@
 ![测试](https://img.shields.io/badge/测试-GUT%20三层-orange)
 
 | 主菜单 | 关卡选择 | 对局中 |
-|---|---|---|
-| ![主菜单](screenshots/10_main_menu.png) | ![关卡选择](screenshots/12_level_select.png) | ![对局中](screenshots/13_playing_classic.png) |
+| :---: | :---: | :---: |
+| ![主菜单](screenshots/10_main_menu.png) | ![关卡选择](screenshots/12_level_select.png) | ![对局中](screenshots/21_playing_board.png) |
+
+<sub>正式版界面。更多截图（结算、提示、规则图鉴、失败恢复等）见 [`screenshots/`](screenshots)。</sub>
 
 ## 这是什么
 
